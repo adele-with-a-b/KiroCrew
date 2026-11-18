@@ -1,0 +1,13 @@
++180
+The ssh-to-self floor cuts out the here-document bodies of a line on which no
+program can run one (a direct cat, tee or cd, or Python reading its program from
+stdin or a file with no -c or -m, never piped), so a Python edit script's
+n = a * localhost is not read as a glob verb naming ssh and its target. The check
+fails closed on every line the shared reader could misread: arithmetic or
+compound syntax, a backslash-newline, more than one <<, a tag that is not a plain
+word or that appears again in any letter case, and an unquoted body holding $ or
+a backtick. The << operator and its tag are cut with the body, so the lines
+after the closing tag keep their comments. It lives in its own owner module,
+argv_floor_ssh_heredoc, which keeps argv_floor_ssh under the line cap;
+argv_floor_ssh calls it once, and the argv_floor facade lists the module and
+the names it serves.

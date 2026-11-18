@@ -31,7 +31,8 @@ Each family lives in an owner module beside this one, and this module is the
 import path of every name they define: ``argv_floor_git`` holds release
 detection, ``argv_floor_self`` the subcommand floors and the credential-mint
 predicates, ``argv_floor_ssh`` the ssh self-target floor, ``argv_floor_ssh_gate`` the
-gate that decides whether a line can run an ssh verb, ``argv_floor_ssh_bodies`` that
+gate that decides whether a line can run an ssh verb, ``argv_floor_ssh_heredoc`` which
+here-document bodies that floor reads as data, ``argv_floor_ssh_bodies`` that
 floor's reading of substitution bodies, and
 ``argv_floor_hosts`` the names and addresses that floor counts as this host.
 A read through this module answers with the owner's object, and a write
@@ -77,6 +78,7 @@ logger = logging.getLogger(__name__)
 #   predicates
 #   ``argv_floor_hosts`` -- the names and addresses the ssh floor counts as this host
 #   ``argv_floor_ssh_gate`` -- the gate that decides whether a line can run an ssh verb
+#   ``argv_floor_ssh_heredoc`` -- which here-document bodies the ssh floor reads as data
 #   ``argv_floor_ssh`` -- the ssh self-target floor
 #   ``argv_floor_ssh_bodies`` -- the ssh floor's reading of substitution bodies
 #   ``argv_floor_git`` -- release detection and the protected-branch push target
@@ -85,6 +87,7 @@ _OWNERS = (
     "kiro_crew.security.argv_floor_self",
     "kiro_crew.security.argv_floor_hosts",
     "kiro_crew.security.argv_floor_ssh_gate",
+    "kiro_crew.security.argv_floor_ssh_heredoc",
     "kiro_crew.security.argv_floor_ssh",
     "kiro_crew.security.argv_floor_ssh_bodies",
     "kiro_crew.security.argv_floor_git",
@@ -283,9 +286,26 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _gate_words,
         _glob_can_name_ssh_verb,
     )
+    from kiro_crew.security.argv_floor_ssh_heredoc import (  # noqa: F401
+        _HEREDOC_COMPOUND_MARKS,
+        _HEREDOC_COMPOUND_WORDS,
+        _HEREDOC_DATA_PROGRAMS,
+        _HEREDOC_PYTHON_OPTIONS,
+        _HEREDOC_PYTHON_RE,
+        _HEREDOC_TAG_ENDS,
+        _heredoc_bodies_as_data,
+        _heredoc_operators,
+        _heredoc_tag,
+        _is_option,
+        _is_word_char,
+        _runs_no_body,
+        _whole_word_count,
+    )
 if TYPE_CHECKING:  # names it serves from outside its owners, from their homes
     from kiro_crew.atomic_write import on_event_loop as _event_loop_running  # noqa: F401
     from kiro_crew.security import argv_rules as _argv_rules  # noqa: F401
+    from kiro_crew.security import rm_floor as _rm  # noqa: F401
+    from kiro_crew.security import shell_commands as _shell_commands  # noqa: F401
     from kiro_crew.security import shell_normalizer as _shell_normalizer  # noqa: F401
     from kiro_crew.security.denied_rules import (  # noqa: F401
         _GIT_PUBLISH_UNGATED,

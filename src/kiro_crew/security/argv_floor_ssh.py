@@ -43,6 +43,7 @@ from .argv_floor_ssh_gate import (  # noqa: F401  (served under these names from
     _gate_words,
     _glob_can_name_ssh_verb,
 )
+from .argv_floor_ssh_heredoc import _heredoc_bodies_as_data
 from .shell_commands import (
     _double_quoted_substitution_bodies,
     _proven_body_spans,
@@ -1077,6 +1078,11 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
     the shell-builtin export spellings (``declare -x``/``typeset -x``), which
     are not leading-assignment syntax and so are not modeled by the walk.
     """
+    # A here-document body that no program on the line can run is data, not argv:
+    # the line read without it may allow; otherwise the whole line is read below.
+    cut, cut_raw = _heredoc_bodies_as_data(text_lower, raw_text)
+    if cut != text_lower and not _is_ssh_to_self(cut, own_line=own_line, raw_text=cut_raw):
+        return False
     # Single quotes read as literal only in the caller's own line, and only when it
     # has no live substitution opener before the splices below rewrite it: a spliced
     # static output (``x'y``) could otherwise pair into quotes around a live one.

@@ -1070,6 +1070,29 @@ Two mechanisms make "the split changed nothing for a caller" a tested claim rath
     line into words (also at the sentinels that stand for a quoted separator) and
     decides whether a glob word can expand to an ssh-family program. It holds the
     ssh-family verb set, the quoted-separator sentinels and `_cannot_name_ssh_verb`.
+  - `argv_floor_ssh_heredoc.py` — which here-document bodies the ssh floor reads as
+    data (`_heredoc_bodies_as_data`). `_judge_ssh_to_self` calls it first. It cuts the
+    bodies out (the rm floor's `_without_bodies`, read through
+    `shell_commands.read_commands(..., heredocs=True)`) only when no program on the line
+    can run one: every program is a directly named `cat`, `tee` or `cd`, or Python
+    reading its program from stdin (`python3 -`) or from a file, with no `-c` or `-m`,
+    and no heredoc command is piped. So `python3 - <<'EOF'` with `n = a * localhost` in
+    its body is allowed, while `python3 runner.py <<'EOF'` keeps its body (`runner.py`
+    could run stdin). A wrapper (`env`, `flock`, `sudo`), an assignment prefix or an
+    unresolved program keeps every body as argv. The line must also be one the shared
+    reader cannot misread. The text outside the bodies holds no paren, brace,
+    backtick, `[[` or `$[`, and no command starts with `let` or a shell keyword: `<<`
+    is a shift in `((cat<<z))`. The text holds no backslash-newline, which can change
+    a delimiter. The line holds exactly one `<<` (not `<<<`). Its tag is ASCII
+    letters, digits or underscores, bare or wholly in one pair of quotes, and appears
+    as a whole word only as that operand and its closing line in any letter case:
+    the floor reads lowered text, while bash matches the delimiter case-sensitively.
+    No unquoted body holds a `$` or backtick, which bash expands even for `cat`.
+    Any other line keeps every body as argv. The `<<` and its tag are cut with the
+    body, so the lines after the closing tag are read as commands, with their
+    comments, not as a body that lost its tag. Once bodies are cut, the floor reads the
+    line's lowered words, since the submitted text's offsets no longer match. Python
+    running a program it reads is the OS network fence's residual, as `python3 -c` is.
   - `argv_floor_ssh.py` — the ssh self-target floor (`_is_ssh_to_self`), which reads
     the gate, the frame walk and the host verdicts below it.
   - `argv_floor_ssh_bodies.py` — the floor's reading of substitution bodies

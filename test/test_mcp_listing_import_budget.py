@@ -84,11 +84,14 @@ FORBIDDEN_BEFORE_THE_LIST = (
 #: Raised by 1 for ``mcp-core`` (491 to 492): the resource-subscription tools'
 #: declarations live in their own ``kiro_crew.mcp_tools.catalog.resources``, which
 #: the core listing loads from ``mcp_tools.DOMAIN_MODULES`` like every other domain.
+#: Raised by 1 again for all four: the ssh-to-self floor's choice of which here-document
+#: bodies are data lives in its own module, ``kiro_crew.security.argv_floor_ssh_heredoc``,
+#: which the ssh floor imports; the module count rose by that one file and nothing new loads.
 PACKAGE_MODULE_CEILING = {
-    "mcp-core": 492,
-    "mcp-cron": 361,
-    "mcp-guide": 355,
-    "mcp-mate": 356,
+    "mcp-core": 493,
+    "mcp-cron": 362,
+    "mcp-guide": 356,
+    "mcp-mate": 357,
 }
 
 #: The modules that read the two live values in the spawn tools' descriptions. They are
