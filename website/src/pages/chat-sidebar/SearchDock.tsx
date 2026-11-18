@@ -206,8 +206,12 @@ export function renderSearchDock(shell: SidebarScope): { field: React.ReactNode;
     paused: pausedFilters.has(key),
     onToggle: () => toggleFilterPaused(key),
     pauseLabel: i18nT('pages.chatSidebar.pause_named_filter', { filter: filterLabel }),
-    resumeLabel: i18nT('pages.chatSidebar.resume_named_filter', { filter: filterLabel }),
-    pausedText: i18nT('pages.chatSidebar.filter_paused_suffix'),
+    resumeLabel: key === 'pinned'
+      ? i18nT('pages.chatSidebar.paused_pinned_chip_title')
+      : i18nT('pages.chatSidebar.resume_named_filter', { filter: filterLabel }),
+    pausedText: key === 'pinned'
+      ? i18nT('pages.chatSidebar.pinned_paused_suffix')
+      : i18nT('pages.chatSidebar.filter_paused_suffix'),
     pauseHint: i18nT('pages.chatSidebar.filter_chip_pause_hint'),
     resumeHint: i18nT('pages.chatSidebar.filter_chip_resume_hint'),
   })
@@ -460,7 +464,7 @@ export function renderSearchDock(shell: SidebarScope): { field: React.ReactNode;
                       className={canHide ? 'flex-1 min-w-0' : undefined}
                     >
                       {filterDef.icon(active)}
-                      <span className="flex-1 truncate">{filterLabel}{slotCount > 0 ? ` (${slotCount})` : ''}{active && pausedFilters.has(filterDef.key) && <span className="text-muted"> · {i18nT('pages.chatSidebar.filter_paused_suffix')}</span>}</span>
+                      <span className="flex-1 truncate">{filterLabel}{slotCount > 0 ? ` (${slotCount})` : ''}{active && pausedFilters.has(filterDef.key) && <span className="text-muted"> · {filterDef.key === 'pinned' ? i18nT('pages.chatSidebar.pinned_paused_suffix') : i18nT('pages.chatSidebar.filter_paused_suffix')}</span>}</span>
                       {active && (pausedFilters.has(filterDef.key) ? <Pause size={14} className="text-muted shrink-0" aria-hidden="true" /> : <Check size={14} className="text-accent shrink-0" />)}
                     </DropdownMenuItem>
                   )

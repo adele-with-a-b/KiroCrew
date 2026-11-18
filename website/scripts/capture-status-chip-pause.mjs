@@ -1,6 +1,6 @@
 /**
  * Status chips narrowing, hovered, and with Pinned paused; then the filter
- * menu with Pinned marked paused, reading "Pause all" and then "Resume all".
+ * menu with Pinned marked "filtered too", reading "Pause all" and then "Resume all".
  * Usage: node scripts/<this file> [outDir]
  */
 import { chromium } from 'playwright'
@@ -28,7 +28,7 @@ const FILTER_BTN = 'button[aria-label^="Sort and filter sessions"]'
 const FRAMES = [
   { name: 'shot-01-all-narrowing', stored: ['1', '1', '1'] },
   { name: 'shot-02-hover-unread', stored: ['1', '1', '1'], hover: 'unread', expectHint: 'pause' },
-  { name: 'shot-03-pinned-paused', stored: ['1', '1', '2'], expectState: 'paused' },
+  { name: 'shot-03-pinned-paused', stored: ['1', '1', '2'], expectState: 'filtered too' },
   { name: 'shot-04-hover-paused-pinned', stored: ['1', '1', '2'], hover: 'pinned', expectHint: 'resume' },
   { name: 'shot-05-menu-pause-all', stored: ['1', '1', '2'], menu: 'Pause all filters' },
   { name: 'shot-06-menu-resume-all', stored: ['2', '2', '2'], menu: 'Resume all filters' },
@@ -85,7 +85,7 @@ async function run() {
         await page.waitForTimeout(300)
         if (!(await item.innerText()).includes(frame.menu)) throw new Error(`${frame.name}: menu row reads ${JSON.stringify(await item.innerText())}`)
         const pinnedRow = page.getByRole('menuitem').filter({ hasText: /^Pinned/ }).first()
-        if (!/· paused/.test(await pinnedRow.innerText())) throw new Error(`${frame.name}: paused Pinned menu row is not marked`)
+        if (!/· filtered too/.test(await pinnedRow.innerText())) throw new Error(`${frame.name}: paused Pinned menu row is not marked`)
         box = union(box, await page.locator('[role="menu"]').boundingBox())
       }
       await page.screenshot({
