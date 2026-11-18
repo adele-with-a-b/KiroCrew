@@ -26,6 +26,9 @@ import {
   AlertTriangle, PowerOff,
 } from 'lucide-react'
 import { api } from '../../api/client'
+import { useQueryClient } from '@tanstack/react-query'
+import { MEMBERS_ROSTER_QUERY_KEY } from '../../api/membersQuery'
+import type { MemberRosterRow } from '../../api/client'
 import { appNavTarget } from '../../appNav'
 import { Btn, EmptyState, PageHeader, PanelSectionHeader, SearchInput } from '../../components/ui'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
@@ -48,7 +51,7 @@ import { uiLocation } from '../../uiLocations/uiLocation'
 import { useGuideSelection } from '../../guide/guidePredicates'
 import { appDisplayName } from '../../components/appstore/appManifest'
 import AppStoreDialog from '../../components/appstore/AppStoreDialog'
-import { appActionNotice } from '../../components/appstore/backendRefused'
+import { appActionNotice, uninstallBotChatStopFailedNotice } from '../../components/appstore/backendRefused'
 
 /** Uninstall preview payload (mirrors ``api.uninstallPreview`` return shape). */
 type UninstallPreview = Awaited<ReturnType<typeof api.uninstallPreview>>
@@ -58,6 +61,7 @@ type UserInstalledDep = UninstallPreview['dependencies']['userInstalled'][number
 
 export default function LibraryPage() {
   const navigate = useNavigate()
+  const qc = useQueryClient()
   // Every management verb below writes to the gateway, so each one is refused
   // while it is offline (offlineProps names why) instead of firing a doomed call.
   const connected = useConnected()
@@ -70,6 +74,7 @@ export default function LibraryPage() {
 
   const [query, setQuery] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+  const [warnMsg, setWarnMsg] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   // The app whose card ⋯ menu is open: a guide's "choose the app" step is done
   // once it is the one the person named (its Details and Uninstall are there).
@@ -221,7 +226,11 @@ export default function LibraryPage() {
         // Disabled, but a hook, config sync or service notify failed: say so.
         const row = installedApps.find(a => a.name === name)
         const warned = appActionNotice(row ? appDisplayName(row) : name, await api.disableApp(name), 'disable')
+        // Trigger the app-list refetch BEFORE showing the warning so the tile
+        // moves to the Disabled section before the warning appears.
+        announceAppsChanged()
         if (warned) setError(warned)
+        return  // skip the announceAppsChanged() call below (already called)
       }
       announceAppsChanged()
     } catch (e) {
@@ -240,10 +249,20 @@ export default function LibraryPage() {
     const name = uninstallTarget.name
     setActionLoading(`${name}:uninstall`)
     setError('')
+    setWarnMsg('')
     try {
-      await api.uninstallApp(name, keepData, false, Array.from(keepSpecific))
+      const result = await api.uninstallApp(name, keepData, false, Array.from(keepSpecific))
       recordEvent('app_uninstall', { app: name, version: uninstallTarget.version })
       announceAppsChanged()
+      // Show a warning if some Bot chats using this app could not be stopped.
+      // The uninstall itself succeeded; this is a cleanup notice, not an error.
+      const roster = qc.getQueryData<MemberRosterRow[]>(MEMBERS_ROSTER_QUERY_KEY) ?? []
+      const resolveSlug = (slug: string): string =>
+        roster.find(r => r.slug === slug)?.display_name
+        || roster.find(r => r.slug === slug)?.name
+        || slug
+      const failedNotice = uninstallBotChatStopFailedNotice(appDisplayName(uninstallTarget), result, resolveSlug)
+      if (failedNotice) setWarnMsg(failedNotice)
     } catch (e) {
       setError((e as Error)?.message || i18nT('pages.appsPage.failed_to_uninstall', { name }))
     } finally {
@@ -387,6 +406,17 @@ export default function LibraryPage() {
             <span aria-hidden="true" className="text-text text-sm flex-1">{successMsg}</span>
             <button aria-label={i18nT('pages.appsPage.dismiss_message')} className="text-muted hover:text-text text-sm" onClick={() => setSuccessMsg('')}><X className="lucide-inline" /></button>
           </div>
+        )}
+
+        {warnMsg && (
+          <ErrorNotice
+            message={warnMsg}
+            onDismiss={() => setWarnMsg('')}
+            className="mb-4 animate-rise"
+            impact="blocking"
+            askAgent
+            actions={<Link to="/settings/system" className="text-sm font-medium underline">{i18nT('pages.appsPage.restart_gateway_link')}</Link>}
+          />
         )}
 
         {remoteCmd && (

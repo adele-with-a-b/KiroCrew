@@ -719,3 +719,35 @@ describe('LibraryPage — a guide picks an app by its card menu', () => {
     await waitFor(() => expect(selectionState('app_tile_menu_open')).toBe('none'))
   })
 })
+
+describe('LibraryPage — bot_chat_stop_incomplete uninstall notice', () => {
+  beforeEach(() => {
+    listApps.mockResolvedValue([SECRETARY])
+    listRegistry.mockResolvedValue([])
+    listRegistries.mockResolvedValue([])
+    uninstallPreview.mockResolvedValue({ dependencies: { removable: [], shared: [], userInstalled: [] } })
+    // Uninstall succeeds but some Bot chats could not be stopped.
+    uninstallApp.mockResolvedValue({
+      ok: true,
+      botChatStopFailed: ['atlas'],
+      botChatStopFailedApp: 'secretary',
+    })
+  })
+
+  it('shows a blocking alert (role="alert") when Bot chats could not be stopped after uninstall', async () => {
+    // The notice must be role="alert" so assistive technology announces it
+    // immediately.  Setting impact="partial" on the ErrorNotice degrades it to
+    // role="status"; impact="blocking" (or no impact, the default) keeps it at
+    // role="alert".  Remove impact="blocking" from LibraryPage's ErrorNotice and
+    // this assertion fails.
+    renderLibrary()
+    const scope = await openTileMenu('secretary', 'Secretary')
+    fireEvent.click(scope.getByRole('menuitem', { name: 'Uninstall' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm uninstall' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Uninstall' }))
+    await waitFor(() => expect(uninstallApp).toHaveBeenCalled())
+    // The notice must appear as role="alert", not role="status".
+    const alert = await screen.findByRole('alert')
+    expect(alert).toBeInTheDocument()
+  })
+})

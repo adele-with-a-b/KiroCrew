@@ -169,6 +169,38 @@ async def shutdown(self: AcpProvider) -> None:
                 # A cancel delivered during the transcript delete must not skip the reclaim.
                 if self._disposable_work_dir:
                     await self._reclaim_work_dir()
+    # Forward the KAS shutdown-confirmation state from the inner session provider
+    # to this outer wrapper.  ``_kas_shutdown_unconfirmed`` and its companion
+    # fields are set on the inner ``AcpSessionProvider`` by ``shutdown_shared``
+    # when a shared-KAS ``session/close`` times out or is refused.
+    # ``discard_conversation`` (teardown.py) reads them from ``session.provider``,
+    # which IS this outer ``AcpProvider``, so without the forward the getattr
+    # always returns False and the unconfirmed close is silently reported as
+    # success.  Forward after the inner shutdown so the values are stable.
+    inner = getattr(self, "_client", None)
+    if isinstance(inner, AcpClient):
+        # The AcpClient host (claude, codex and the rest off the shared runtime)
+        # owns its process: the same judge as an owned runtime decides
+        # (``teardown_confirmed``), on the verdict ``_reset_state`` wrote. Its retry
+        # handle re-checks the PIDs that outlived the kill.
+        from kiro_crew.acp.session_provider_shared import (
+            TreeSurvivors,
+            note_unconfirmed_teardown,
+            teardown_confirmed,
+        )
+
+        if not teardown_confirmed(inner, session_id, killed=True):
+            note_unconfirmed_teardown(
+                self,
+                TreeSurvivors(getattr(inner, "_unreaped_pids", ())),
+                session_id,
+                session_key=getattr(inner, "_session_key", None),
+            )
+        return
+    if inner is not None and getattr(inner, "_kas_shutdown_unconfirmed", False):
+        self._kas_shutdown_unconfirmed = True
+        self._kas_unconfirmed_runtime = getattr(inner, "_kas_unconfirmed_runtime", None)
+        self._kas_unconfirmed_session_id = getattr(inner, "_kas_unconfirmed_session_id", None)
 
 
 async def _delete_pi_session(client: AcpClient, session_id: str) -> None:

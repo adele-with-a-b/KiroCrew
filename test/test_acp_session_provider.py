@@ -1697,6 +1697,80 @@ class TestNewConversation:
         new_handle.destroy.assert_awaited_once()
         assert provider._handle is old
 
+    @pytest.mark.asyncio
+    async def test_old_session_destroy_failure_registers_unconfirmed_close(self):
+        """When old.destroy() fails during new_conversation, the replaced session's
+        ID must be registered via note_unconfirmed_close so that a later trust
+        revocation can retry closing it.
+
+        Without the note_unconfirmed_close call after old.destroy() failure,
+        a revocation sees only the new session and reports success while the old
+        session's app server is still running.
+
+        Remove the note_unconfirmed_close call in new_conversation's except block
+        and ``recorded`` stays empty.
+        """
+        import unittest.mock
+
+        old = _make_handle(session_id="old-replaced-sid")
+        old.destroy = AsyncMock(side_effect=RuntimeError("old close timed out"))
+        runtime, new_handle = self._runtime_with_new_session()
+        provider = AcpSessionProvider(old, runtime)
+
+        recorded: list[tuple] = []
+
+        def _record(session_key, rt, sid):
+            recorded.append((session_key, rt, sid))
+
+        with unittest.mock.patch(
+            "kiro_crew.bot_chat_app_tools.note_unconfirmed_close", side_effect=_record
+        ):
+            await provider.new_conversation()  # must NOT raise
+
+        # The new handle is committed and the replaced old session is registered.
+        assert provider._handle is new_handle, "new handle must be committed after destroy failure"
+        assert any(sid == "old-replaced-sid" for _, _, sid in recorded), (
+            "old session must be registered via note_unconfirmed_close after destroy failure; "
+            "remove the call and recorded stays empty"
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejected_replacement_destroy_failure_registers_unconfirmed_close(self):
+        """When new_handle.destroy() fails after a set_model failure, the rejected
+        replacement session's ID must be registered via note_unconfirmed_close.
+
+        Without the call, the rejected session leaks on KAS.
+
+        Remove the note_unconfirmed_close call in new_conversation's inner except
+        block and ``recorded`` stays empty.
+        """
+        import unittest.mock
+
+        from kiro_crew.acp.client import AcpError
+
+        old = _make_handle(session_id="old-session-1")
+        old.model = "claude-opus-4-8"
+        runtime, new_handle = self._runtime_with_new_session()
+        new_handle.set_model = AsyncMock(side_effect=RuntimeError("set_model boom"))
+        new_handle.destroy = AsyncMock(side_effect=RuntimeError("destroy also boom"))
+        provider = AcpSessionProvider(old, runtime)
+
+        recorded: list[tuple] = []
+
+        def _record(session_key, rt, sid):
+            recorded.append((session_key, rt, sid))
+
+        with unittest.mock.patch(
+            "kiro_crew.bot_chat_app_tools.note_unconfirmed_close", side_effect=_record
+        ):
+            with pytest.raises(AcpError):
+                await provider.new_conversation()
+
+        assert any(sid == new_handle.session_id for _, _, sid in recorded), (
+            "rejected replacement must be registered via note_unconfirmed_close; "
+            "remove the call and recorded stays empty"
+        )
+
 
 class TestLivePathModelEntitlement:
     """The guard has to sit on the path real sessions actually take.

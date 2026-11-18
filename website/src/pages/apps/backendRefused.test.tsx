@@ -181,3 +181,93 @@ describe('useAppActions.runEnable — a refused backend is a warning', () => {
     expect(result.current.displayError).toBe('')
   })
 })
+
+import { uninstallBotChatStopFailedNotice } from '../../components/appstore/backendRefused'
+
+const STOP_KEY = 'pages.appsPage.uninstall_bot_chat_stop_failed'
+
+describe('uninstallBotChatStopFailedNotice', () => {
+  it('names the app when the response carries bot_chat_stop_failed', () => {
+    // The count picks the plural form; i18next does the choosing.
+    expect(uninstallBotChatStopFailedNotice('Notes', { bot_chat_stop_failed: ['atlas', 'nova'] }))
+      .toBe(`${STOP_KEY} ${JSON.stringify({ count: 2, name: 'Notes', slugs: 'atlas, nova' })}`)
+  })
+
+  it('passes a count of one for a single slug', () => {
+    expect(uninstallBotChatStopFailedNotice('Notes', { bot_chat_stop_failed: ['atlas'] }))
+      .toBe(`${STOP_KEY} ${JSON.stringify({ count: 1, name: 'Notes', slugs: 'atlas' })}`)
+  })
+
+  it('is empty when bot_chat_stop_failed is absent, empty, or non-array', () => {
+    expect(uninstallBotChatStopFailedNotice('Notes', { ok: true })).toBe('')
+    expect(uninstallBotChatStopFailedNotice('Notes', { bot_chat_stop_failed: [] })).toBe('')
+    expect(uninstallBotChatStopFailedNotice('Notes', { bot_chat_stop_failed: 'atlas' })).toBe('')
+    expect(uninstallBotChatStopFailedNotice('Notes', undefined)).toBe('')
+    expect(uninstallBotChatStopFailedNotice('Notes', null)).toBe('')
+  })
+})
+
+import { render, screen } from '@testing-library/react'
+import ErrorNotice from '../../components/ErrorNotice'
+
+describe('uninstall bot-chat-stop warning: accessible', () => {
+  it('renders with role="status" (not role="alert") so the uninstall success is not read as a failure', () => {
+    // impact="partial" on ErrorNotice renders role="status", not role="alert".
+    // This is what the warning slot uses so the reader hears it as a notice, not an error.
+    // Drop impact="partial" or add impact="blocking" and this assertion fails.
+    render(
+      <ErrorNotice
+        message="atlas, nova are still running with Test App's tools. They will not get new tools from it."
+        impact="partial"
+        askAgent
+        testId="stop-warn"
+      />,
+    )
+    const notice = screen.getByTestId('stop-warn')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('still running')
+  })
+
+  it('the sr-only live region carries the same text so it is announced on mount', () => {
+    // The sr-only <span role="status"> is always mounted so screen readers hear
+    // the message when warnMsg is first set. The ErrorNotice copy is hidden from AT.
+    // If the live region is absent, readers miss the announcement.
+    const { container } = render(
+      <span role="status" className="sr-only">
+        Test App was uninstalled, but some bot chats could not be stopped.
+      </span>,
+    )
+    const live = container.querySelector('[role="status"]')
+    expect(live).not.toBeNull()
+    expect(live?.textContent).toContain('could not be stopped')
+  })
+})
+
+describe('disable with bot_chat_stop_failed', () => {
+  /**
+   * appActionNotice reads result.warnings (array of strings) and surfaces them
+   * as a disable notice.  When the backend sets bot_chat_stop_failed and adds
+   * the bot-stop message to warnings, the UI shows it.
+   *
+   * Remove the ``if _disable_bot_stop_failures:`` block from handle_disable_app
+   * and no warning key is set; appActionNotice returns '' and the notice never
+   * appears.
+   */
+  it('appActionNotice surfaces bot-stop failure from warnings', () => {
+    const result = {
+      ok: true,
+      warnings: ["Bot chat for 'atlas' could not be stopped; it may still be running the disabled app's tools"],
+      bot_chat_stop_failed: ['atlas'],
+    }
+    const notice = appActionNotice('Test App', result, 'disable')
+    expect(notice).not.toBe('')
+    // The notice must mention the bot slug or the bot-stop failure.
+    expect(notice).toMatch(/atlas|bot|stop/i)
+  })
+
+  it('appActionNotice returns empty when no warnings and no bot_chat_stop_failed', () => {
+    const result = { ok: true }
+    const notice = appActionNotice('Test App', result, 'disable')
+    expect(notice).toBe('')
+  })
+})

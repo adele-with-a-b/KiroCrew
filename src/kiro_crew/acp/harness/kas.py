@@ -1220,6 +1220,25 @@ class KasHarness(MembershipHarness):
         handle.kas_agent_prompt_applied = self.agent_prompt_applied
         handle.kas_bundle_engine_version = self.bundle_engine_version
         handle.kas_untested_version_notice = self.untested_version_notice
+        # Migrate the app-snapshot written by record_mounted from the conversation
+        # key to the native KAS session id.  This must happen here — after session/new
+        # returns and the handle (with its native session_id) is available — so
+        # note_unconfirmed_close can find the snapshot under the native id even when a
+        # swap_conversation has reused the same conversation key for a new session.
+        session_key: str = getattr(handle, "_session_key", "") or ""
+        if session_key:
+            try:
+                from kiro_crew.bot_chat_app_tools import bind_snapshot_to_native_sid
+
+                bind_snapshot_to_native_sid(session_key, handle.session_id)
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "KasHarness.record_session_projection: bind_snapshot_to_native_sid failed "
+                    "for %s / %s",
+                    session_key,
+                    handle.session_id,
+                    exc_info=True,
+                )
 
     async def session_extras(
         self,

@@ -6901,6 +6901,13 @@
       "backend_refused_notice": "The backend of {{name}} did not start: {{reason}}",
       "action_warnings_disabled": "{{name}} is disabled, but not every step finished. Details: {{warnings}}",
       "action_warnings_enabled": "{{name}} is enabled, but not every step finished. Details: {{warnings}}",
+      "uninstall_bot_chat_stop_failed_one": "The bot {{slugs}} is still running with {{name}}'s tools. It will not get new tools from it.",
+      "uninstall_bot_chat_stop_failed_other": "The bots {{slugs}} are still running with {{name}}'s tools. They will not get new tools from it.",
+      "uninstall_bot_chat_stop_failed": "The bots {{slugs}} are still running with {{name}}'s tools. They will not get new tools from it.",
+      "bot_chat_stop_incomplete": "{{slugs}} are still running {{name}}'s tools. Restart {{productName}} to stop these bot chats.",
+      "bot_chat_stop_incomplete_revoked_one": "Trust removed. The bot {{slugs}} is still running {{name}}'s tools. Restart {{productName}} to stop this bot's chat.",
+      "bot_chat_stop_incomplete_revoked_other": "Trust removed. {{slugs}} are still running {{name}}'s tools. Restart {{productName}} to stop these bot chats.",
+      "bot_chat_stop_retry": "Retry stop",
       "cancel": "Cancel",
       "category": "Category",
       "confirm_uninstall": "Confirm uninstall",
@@ -6939,7 +6946,8 @@
       "open_app_details": "Open {{name}} details",
       "refresh_store": "Refresh the store",
       "refreshing_store": "Refreshing the store…",
-      "store_catalog_unreachable": "Could not reach the official app catalog, so the store is showing its offline list. Check that the gateway can reach the internet, then refresh again."
+      "store_catalog_unreachable": "Could not reach the official app catalog, so the store is showing its offline list. Check that the gateway can reach the internet, then refresh again.",
+      "restart_gateway_link": "Open System settings to restart {{productName}}"
     },
     "artifactDeployPage": {
       "0_00_mo": "~$0.00/mo",
