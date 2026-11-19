@@ -41,6 +41,7 @@ from typing import Any
 
 from aiohttp import web
 
+from kiro_crew.browser_harness import live_hub_views
 from kiro_crew.browser_harness.live_hub import (
     HANDBACK_CHOICE_MAX,
     HANDBACK_NOTE_MAX,
@@ -100,8 +101,15 @@ async def _owner_gate(request: web.Request, operation: str) -> web.Response | No
     return await require_owner_dashboard_request(request, operation)
 
 
-def _owned_session_key(request: web.Request, body: dict[str, Any]) -> str | None:
-    """The slot key the body names, when this dashboard owns such a slot."""
+def _owned_session_key(
+    request: web.Request, body: dict[str, Any], *, views: bool = False
+) -> str | None:
+    """The slot key the body names, when this dashboard owns such a slot.
+
+    With *views*, also the key of a live second view (``live_hub_views``) of one of
+    those slots: only the routes that look (visibility, acks, open in browser) pass
+    it, so a view is never taken over, typed into or reopened.
+    """
     raw = body.get("session_key")
     if not isinstance(raw, str) or not _SESSION_KEY_RE.fullmatch(raw):
         return None
@@ -109,7 +117,18 @@ def _owned_session_key(request: web.Request, body: dict[str, Any]) -> str | None
     if not key:
         return None
     slots = getattr(request.app["state"], "_slots", None) or {}
-    return key if key in slots else None
+    if key in slots:
+        return key
+    hub = get_live_hub()
+    parent = live_hub_views.parent_of(hub, key) if views else ""
+    if parent and parent in slots and key in live_hub_views.views_of(hub, parent):
+        return key
+    return None
+
+
+def _slot_of(key: str) -> str:
+    """The slot *key* belongs to: its own, or the parent of the view *key*."""
+    return live_hub_views.parent_of(get_live_hub(), key) or key
 
 
 Action = Callable[[LiveHub, str, dict[str, Any]], Awaitable[dict[str, Any] | web.Response]]
@@ -124,7 +143,7 @@ def _turned_off_app(request: web.Request, key: str) -> str:
     affected. Ending something (hand back, close) is always allowed.
     """
     slots = getattr(request.app["state"], "_slots", None) or {}
-    app = str(getattr(slots.get(key), "_app", "") or "")
+    app = str(getattr(slots.get(_slot_of(key)), "_app", "") or "")
     if not app:
         return ""
     from kiro_crew.apps.manager import is_app_enabled  # noqa: PLC0415 - apps sit below dashboard
@@ -158,6 +177,14 @@ async def end_app_browser_views(state: Any, app: str) -> None:
     for key, slot in list(slots.items()):
         if str(getattr(slot, "_app", "") or "") == app:
             await end_live_view(hub, key)
+            await _end_views(hub, key)
+
+
+async def _end_views(hub: LiveHub, key: str) -> None:
+    """Stop the second views of slot *key*'s tabs, or the view *key* itself."""
+    parent = live_hub_views.parent_of(hub, key)
+    for view in [key] if parent else live_hub_views.views_of(hub, key):
+        await live_hub_views.stop_view(hub, view)
 
 
 #: How a route asks ``capabilities.browse``: audited (someone acted), unaudited (a
@@ -167,7 +194,12 @@ AUDITED, QUIET, UNGATED = "audited", "quiet", "ungated"
 
 
 async def _run(
-    request: web.Request, operation: str, action: Action, *, policy: str = AUDITED
+    request: web.Request,
+    operation: str,
+    action: Action,
+    *,
+    policy: str = AUDITED,
+    views: bool = False,
 ) -> web.Response:
     """The shared shape: gate, policy, body, session, one hub call."""
     refusal = await _owner_gate(request, operation)
@@ -180,7 +212,7 @@ async def _run(
     body, err = await read_bounded_json(request, max_bytes=_MAX_BODY_BYTES)
     if err is not None or body is None:
         return err if err is not None else _error("invalid_json", "invalid JSON", 400)
-    key = _owned_session_key(request, body)
+    key = _owned_session_key(request, body, views=views)
     if key is None:
         return _error("unknown_session", "session_key does not name an open session", 404)
     hub = get_live_hub()
@@ -190,6 +222,7 @@ async def _run(
         # end what is still running, so a stale page cannot keep the stream or a
         # takeover alive, and say why.
         await end_live_view(hub, key)
+        await _end_views(hub, key)
         return _error("app_disabled", "the app that owns this chat is turned off", 403)
     try:
         result = await action(hub, key, body)
@@ -215,7 +248,7 @@ async def api_browser_live_visibility(request: web.Request) -> web.Response:
         await hub.set_visible(key, visible, tab)
         return {"visible": visible}
 
-    return await _run(request, "browser_live_visibility", act, policy=QUIET)
+    return await _run(request, "browser_live_visibility", act, policy=QUIET, views=True)
 
 
 async def api_browser_live_ack(request: web.Request) -> web.Response:
@@ -230,7 +263,7 @@ async def api_browser_live_ack(request: web.Request) -> web.Response:
             return _error("invalid_stream", "stream must be a short string", 400)
         return {"acked": hub.ack(key, seq, stream)}
 
-    return await _run(request, "browser_live_ack", act, policy=QUIET)
+    return await _run(request, "browser_live_ack", act, policy=QUIET, views=True)
 
 
 async def api_browser_input_claim(request: web.Request) -> web.Response:
@@ -306,7 +339,7 @@ async def api_browser_live_open_in_browser(request: web.Request) -> web.Response
             return _error("browser_not_open", "the browser window for this chat is not open", 409)
         return {"focused": True}
 
-    return await _run(request, "browser_live_open_in_browser", act)
+    return await _run(request, "browser_live_open_in_browser", act, views=True)
 
 
 #: A hub ``turn_id`` is a uuid4 hex; bounded the same way as the session key.

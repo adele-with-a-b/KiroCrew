@@ -253,6 +253,10 @@ class LiveSession:
     #: Where the cursor drawn over the live view points (:meth:`LiveHub.aim`):
     #: ``{"x", "y", "label", "seq"}`` in viewport CSS px, or ``None`` before any aim.
     aim: dict[str, Any] | None = None
+    #: Set on a second live view of another session's tab
+    #: (``live_hub_views.start_view``): that session's key. A view owns no tab and
+    #: no turn, and is for looking only.
+    view_of: str = ""
 
     @property
     def relay(self) -> Relay | None:
@@ -1004,6 +1008,7 @@ class LiveHub:
             sess.state = state
         self._update_page(sess, url=url, title=title, browser=browser, headless=headless)
         self._emit(sess)
+        self._follow_views(sess)
 
     def page_changed(self, session_key: str, *, url: str = "", title: str = "") -> None:
         sess = self._session(session_key)
@@ -1011,6 +1016,26 @@ class LiveHub:
         if self.recorder is not None and url:
             self.recorder.note_url(session_key, url)
         self._emit(sess)
+        self._follow_views(sess)
+
+    def _follow_views(self, sess: LiveSession) -> None:
+        """Give each live second view of *sess*'s current tab that tab's new address.
+
+        The agent's page reports reach only its own session; a view
+        (``live_hub_views``) showing the same tab would otherwise keep the address it
+        opened on. A view is look-only, so only the agent moves its tab.
+        """
+        target = sess.target_id
+        if not target:
+            return
+        for view in self._sessions.values():
+            if view.view_of != sess.session_key or view.state == STATE_DONE:
+                continue
+            if view.shown_target != target:
+                continue
+            if (view.url, view.title) != (sess.url, sess.title):
+                self._update_page(view, url=sess.url, title=sess.title)
+                self._emit(view)
 
     @staticmethod
     def _update_page(

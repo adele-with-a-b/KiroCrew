@@ -70,6 +70,16 @@ export function createBrowserLiveEndpoints({ get, post, j }: ClientTransport) {
       /** Fold a reopened view back to its done line. */
       browserLiveClose: (sessionKey: string) =>
         post('/api/browser/live/close', { session_key: sessionKey }).then(j) as Promise<BrowserLiveOk>,
+      /** An app slot's own tabs, for a second view (`BrowserView`'s `tabId`). Owner-only,
+       *  behind the `app_browser_sdk` preview and the app's approved `view` verb. */
+      browserLiveViewTabs: (sessionKey: string) =>
+        post('/api/browser/live/views/tabs', { session_key: sessionKey }).then(j) as Promise<{ tabs?: unknown }>,
+      /** Show one of the slot's own tabs in a second live view; its key. Look only. */
+      browserLiveViewOpen: (sessionKey: string, tabId: string) =>
+        post('/api/browser/live/views/open', { session_key: sessionKey, tab_id: tabId }).then(j) as Promise<{ view_key?: unknown }>,
+      /** End a second view. */
+      browserLiveViewClose: (viewKey: string) =>
+        post('/api/browser/live/views/close', { session_key: viewKey }).then(j) as Promise<BrowserLiveOk>,
       /** The session's recorded turns (the replay's turn picker), parsed loosely by
        *  `readRecordingList`. Resolves `null` on a 404: a gateway that keeps no
        *  recordings is a designed answer (the card replays its own frames), not a

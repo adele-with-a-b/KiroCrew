@@ -43,7 +43,7 @@ import { Provider } from 'react-redux'
 import '../i18n/all'
 import { i18nT } from '../i18n/t'
 import { BrowserView } from '../app-sdk/index'
-import { coordsFor } from '../app-sdk/browserViewHooks'
+import { VIEW_KEEPALIVE_MS, coordsFor, useBrowserView } from '../app-sdk/browserViewHooks'
 import { useAutoSendIntake } from '../pages/chat/page/launchIntake'
 import { AppIdentityProvider } from '../app-sdk/identity'
 import { AppScopedApiProvider } from '../app-sdk/scopedApi'
@@ -575,5 +575,81 @@ describe('coordsFor', () => {
   it('answers null before a frame is drawn', () => {
     expect(coordsFor(undefined).toPage(1, 1)).toBeNull()
     expect(coordsFor({ width: 10, height: 10, frame: null }).toView(1, 1)).toBeNull()
+  })
+})
+
+/*
+ * A second view (`tabId`): one of the slot's own tabs beside the slot's own view,
+ * for looking only. The gateway's checks (own tab only, preview, `view` verb, the
+ * app off) are test_browser_live_views.py; here: it opens only when the page may
+ * show the slot, shows the view's picture under the view's key with no take over,
+ * says why when the gateway refuses, and closes the view on unmount.
+ */
+describe('BrowserView second view (tabId)', () => {
+  const VIEW = `${OWN}.view1`
+
+  it('opens a look-only view of the tab, shows it under its own key, and closes it on unmount', async () => {
+    const open = vi.spyOn(api, 'browserLiveViewOpen').mockResolvedValue({ view_key: VIEW })
+    const close = vi.spyOn(api, 'browserLiveViewClose').mockResolvedValue({ ok: true } as never)
+    act(() => { browserLiveStore.applyEvent(ev(OWN)); browserLiveStore.applyEvent(ev(VIEW, { turn_id: 'v1', url: 'https://b.example/' })) })
+    act(() => { browserLiveStore.applyFrame(frame(VIEW)) })
+    const { unmount } = mount(OWN, <BrowserView slot={OWN} tabId="TB" aria-label="Tab B" />)
+    expect(open).toHaveBeenCalledWith(OWN, 'TB')
+    await act(async () => {})
+    expect(view().dataset.state).toBe('live')
+    expect(view().textContent).toContain('b.example')
+    expect(screen.queryByTestId('app-browser-view-take-over')).toBeNull()
+    expect(writes.visibility).toHaveBeenLastCalledWith(VIEW, true)
+    unmount()
+    expect(close).toHaveBeenCalledWith(VIEW)
+  })
+
+  it('keeps a view on screen looked at, and opens it again once the gateway ended it', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const open = vi.spyOn(api, 'browserLiveViewOpen').mockResolvedValue({ view_key: VIEW })
+      vi.spyOn(api, 'browserLiveViewClose').mockResolvedValue({ ok: true } as never)
+      const keep = vi.spyOn(api, 'browserLiveVisibility').mockResolvedValue({ ok: true } as never)
+      act(() => { browserLiveStore.applyEvent(ev(VIEW, { turn_id: 'v1' })); browserLiveStore.applyFrame(frame(VIEW)) })
+      mount(OWN, <BrowserView slot={OWN} tabId="TB" aria-label="Tab B" />)
+      await act(async () => {})
+      await act(async () => { vi.advanceTimersByTime(VIEW_KEEPALIVE_MS) })
+      expect(keep).toHaveBeenCalledWith(VIEW, true)
+      // A reloaded page's leftover is ended by the gateway once idle; a view that
+      // was ended while mounted is opened again.
+      expect(open).toHaveBeenCalledTimes(1)
+      act(() => { browserLiveStore.applyEvent(ev(VIEW, { turn_id: 'v1', state: 'done' })) })
+      await act(async () => {})
+      expect(open).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('opens nothing for a slot the page may not show', () => {
+    const open = vi.spyOn(api, 'browserLiveViewOpen').mockResolvedValue({ view_key: 'x' })
+    mount(FOREIGN, <BrowserView slot={FOREIGN} tabId="TB" aria-label="Tab B" />)
+    expect(view().dataset.state).toBe('denied')
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it("says why when the gateway refuses the tab", async () => {
+    vi.spyOn(api, 'browserLiveViewOpen').mockRejectedValue(new Error('that tab cannot be shown in a view'))
+    mount(OWN, <BrowserView slot={OWN} tabId="NOT-MINE" aria-label="Tab" />)
+    await act(async () => {})
+    expect(view().dataset.state).toBe('view_error')
+    expect(view().textContent).toContain('that tab cannot be shown in a view')
+  })
+
+  it("lists the slot's own tabs through useBrowserView(slot).tabs()", async () => {
+    vi.spyOn(api, 'browserLiveViewTabs').mockResolvedValue({ tabs: [{ tab_id: 'TA', url: 'https://a/', title: 'A', current: true }, { bad: 1 }] })
+    let got: unknown = null
+    function Probe() {
+      const v = useBrowserView(OWN)
+      return <button onClick={() => { void v.tabs().then((t) => { got = t }) }}>list</button>
+    }
+    mount(OWN, <Probe />)
+    await act(async () => { fireEvent.click(screen.getByText('list')) })
+    expect(got).toEqual([{ tabId: 'TA', url: 'https://a/', title: 'A', current: true }])
   })
 })
