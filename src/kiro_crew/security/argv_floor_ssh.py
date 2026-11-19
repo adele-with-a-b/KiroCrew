@@ -1172,6 +1172,7 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
     for tokens, cased_tokens in zip(frames, cased_frames):
         programs = _argv_programs(tokens)
         executed = _argv_rules._executed_program_indices(tokens, cased_tokens)
+        file_operands = _argv_rules._file_operand_indices(tokens, cased_tokens)
         # A leading ``RSYNC_RSH=<cmd>`` environment assignment selects rsync's
         # remote shell exactly like ``-e``/``--rsh``, but rides BEFORE the verb
         # so the operand walk below never sees it.  When rsync runs live, that
@@ -1237,6 +1238,16 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
                 and _ssh_verb_basename(token) != verb
                 and not any(sep in token for sep in "/\\")
                 and (i not in executed or not token.strip("*"))
+            )
+            # A wildcard that is a plain operand of ``git add``/``rm``/… (see
+            # ``_file_operand_indices``) is a file name, so the words after it
+            # get no DNS lookup -- only this host's own names and literal
+            # loopback are checked. Positive and fail-closed: any slot not
+            # proven a file operand keeps the DNS check, so an ssh verb that bash
+            # really runs (``sshpass s?h <alias>``, a ``find -exec`` glob, a
+            # ``tar --rsh-command`` value) is still refused.
+            filename_glob = (
+                verb is not None and _ssh_verb_basename(token) != verb and i in file_operands
             )
             if verb is None and bound_program_verbs:
                 stripped_prog = token.strip("\"'")
@@ -1414,6 +1425,7 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
                         if checkable and _operand_targets_self(
                             _unmask_separators(remainder),
                             host_position=positional_pending and not value_shadow,
+                            dns=not filename_glob,
                             match_globs=not glob_verb,
                         ):
                             return True
@@ -1551,6 +1563,7 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
                         _unmask_separators(stripped),
                         host_position=positional_pending
                         and (not value_shadow or value_shadow_ambiguous),
+                        dns=not filename_glob,
                         match_globs=not glob_verb,
                     ):
                         return True

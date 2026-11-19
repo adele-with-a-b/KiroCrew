@@ -83,6 +83,16 @@ _WRAPPERS: dict[str, tuple[frozenset[str], int]] = {
 #: ``find`` options whose following words, up to ``;`` or ``+``, are a command.
 _FIND_EXEC = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 
+#: ``git`` subcommands whose operands are a file list (``git add s* notes.txt``).
+#: ``git`` is not in :data:`shell_normalizer._DATA_CONSUMER_PROGRAMS` -- it runs
+#: subcommands, some of which execute (``git -c alias.x='!cmd' x``) -- so these
+#: path-taking subcommands are named one by one. Programs whose every argument
+#: is a path (``cp``, ``ls``, ``tar`` is NOT one) are already covered by the
+#: data-consumer exemption; this adds only ``git``.
+_GIT_FILE_SUBCOMMANDS = frozenset(
+    {"add", "rm", "mv", "diff", "commit", "stage", "restore", "checkout", "reset", "stash", "clean"}
+)
+
 _SEPARATORS = frozenset({";", "|", "||", "&", "&&", "{", "}"})
 
 #: Reserved words after which the next word is still in command position.
@@ -228,6 +238,62 @@ def _executed_program_indices(tokens: "list[str]", cased: "list[str] | None" = N
                 continue
             executed.add(origin)
     return executed
+
+
+def _file_operand_indices(tokens: "list[str]", cased: "list[str] | None" = None) -> "set[int]":
+    """Indices in *tokens* that are a plain operand of ``git`` running a file subcommand.
+
+    ``git add``/``rm``/``mv``/``diff``/``commit``/… (a subcommand in
+    :data:`_GIT_FILE_SUBCOMMANDS`) takes file paths, so a wildcard among its
+    operands is a file name and the ssh-to-self walk skips the DNS lookup on the
+    words after it.  Programs whose every argument is already a path (``cp``,
+    ``ls``, ``cat`` …) need nothing here -- the data-consumer exemption
+    (:func:`_data_consumer_exempt`) already reads them -- and ``tar`` is left
+    out of both on purpose, because ``tar -I <prog>`` / ``--rsh-command`` runs
+    its argument.
+
+    Fail-closed and sure: ``git`` must be the command's OWN program word (only a
+    ``VAR=`` assignment may precede it, never a wrapper), so a wrapper that
+    misreads an option and lands on ``git`` cannot reach here, and the operands
+    are read only AFTER a recognised file subcommand, so no option value is
+    marked.  Any command this does not recognise keeps the DNS check.  The
+    literal loopback and own-name checks still run (``git add s* localhost``
+    stays refused); only the DNS lookup is skipped.  *cased* carries the
+    original case so a mixed-case alias (``ADD``) is not read as the built-in.
+    """
+    operands: set[int] = set()
+    for command in _split_commands_indexed(tokens):
+        words = [word for _, word in command]
+        start = 0
+        while start < len(words) and ENV_ASSIGNMENT_RE.match(words[start]):
+            start += 1
+        if start >= len(words) or _shell._program_basename(words[start]) != "git":
+            continue
+        # The subcommand must be the word IMMEDIATELY after ``git``.  A global
+        # option or its value between them (``git -C x add``, ``git --namespace
+        # add``, ``git -c k=v add``) is not a subcommand, so the command is left
+        # unmarked and keeps its DNS check.  The name is matched lowercase in
+        # the ORIGINAL case (via ``cased``), so a mixed-case shell alias
+        # (``ADD``) is not taken for the built-in ``add``.  When ``cased`` is
+        # absent -- a substitution body is re-read from lowered text only -- no
+        # exemption is granted, so the git reading is top-level only and a
+        # ``$(git ADD …)`` alias keeps the DNS check.
+        sub = start + 1
+        if sub >= len(words) or words[sub] not in _GIT_FILE_SUBCOMMANDS:
+            continue
+        if cased is None or cased[command[sub][0]] != words[sub]:
+            continue
+        for k in range(sub + 1, len(words)):
+            # A separator glued inside a word (``x;s?h``, ``x&&s?h``) keeps the
+            # whole word in this command's argv, but bash runs what follows the
+            # separator as its OWN command. Stop the scan there and mark nothing
+            # past it, so the floor still reads that command's ssh verb with its
+            # DNS check (``git add x;s?h <self alias>`` stays refused).
+            if any(sep in words[k] for sep in ";|&"):
+                break
+            if not words[k].startswith("-"):
+                operands.add(command[k][0])
+    return operands
 
 
 def _case_arm_pattern_indices(tokens: "list[str]") -> "tuple[set[int], set[int]]":
