@@ -16070,7 +16070,16 @@
       "hide_sessions_count_one": "Скрыть {{n}} сессию",
       "hide_sessions_count_few": "Скрыть {{n}} сессии",
       "hide_sessions_count_many": "Скрыть {{n}} сессий",
-      "hide_sessions_count_other": "Скрыть {{n}} сессии"
+      "hide_sessions_count_other": "Скрыть {{n}} сессии",
+      "show_linked_items_one": "Показать {{count}} связанный элемент",
+      "show_linked_items_few": "Показать {{count}} связанных элемента",
+      "show_linked_items_many": "Показать {{count}} связанных элементов",
+      "show_linked_items_other": "Показать {{count}} связанного элемента",
+      "hide_linked_items": "Скрыть связанные элементы",
+      "show_linked_items_failed_one": "Показать {{count}} связанный элемент, проверка не пройдена",
+      "show_linked_items_failed_few": "Показать {{count}} связанных элемента, проверка не пройдена",
+      "show_linked_items_failed_many": "Показать {{count}} связанных элементов, проверка не пройдена",
+      "show_linked_items_failed_other": "Показать {{count}} связанного элемента, проверка не пройдена"
     },
     "connectionsPage": {
       "action_failed": "Не удалось выполнить действие: {{error}}",

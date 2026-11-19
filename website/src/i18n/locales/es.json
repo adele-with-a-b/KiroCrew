@@ -15670,7 +15670,14 @@
       "show_sessions_count_other": "Mostrar {{n}} sesiones",
       "hide_sessions_count_one": "Ocultar {{n}} sesión",
       "hide_sessions_count_many": "Ocultar {{n}} sesiones",
-      "hide_sessions_count_other": "Ocultar {{n}} sesiones"
+      "hide_sessions_count_other": "Ocultar {{n}} sesiones",
+      "show_linked_items_one": "Mostrar {{count}} elemento vinculado",
+      "show_linked_items_many": "Mostrar {{count}} elementos vinculados",
+      "show_linked_items_other": "Mostrar {{count}} elementos vinculados",
+      "hide_linked_items": "Ocultar elementos vinculados",
+      "show_linked_items_failed_one": "Mostrar {{count}} elemento vinculado, una comprobación falló",
+      "show_linked_items_failed_many": "Mostrar {{count}} elementos vinculados, una comprobación falló",
+      "show_linked_items_failed_other": "Mostrar {{count}} elementos vinculados, una comprobación falló"
     },
     "connectionsPage": {
       "action_failed": "La acción falló: {{error}}",

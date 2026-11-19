@@ -14870,7 +14870,10 @@
       "skip_running_sessions_other": "跳过 {{n}} 个运行中的会话",
       "cleanup_move_count_other": "{{n}} 个会话将被移至较早的会话。",
       "show_sessions_count_other": "显示 {{n}} 个会话",
-      "hide_sessions_count_other": "隐藏 {{n}} 个会话"
+      "hide_sessions_count_other": "隐藏 {{n}} 个会话",
+      "show_linked_items_other": "显示 {{count}} 个关联项",
+      "hide_linked_items": "隐藏关联项",
+      "show_linked_items_failed_other": "显示 {{count}} 个关联项，有检查失败"
     },
     "connectionsPage": {
       "action_failed": "操作失败：{{error}}",

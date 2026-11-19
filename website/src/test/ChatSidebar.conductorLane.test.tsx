@@ -467,7 +467,8 @@ describe('chat sidebar — conductor lane', () => {
     ])
     expect(parts.map(p => p.querySelector('svg')?.getAttribute('width'))).toEqual(['11', '11'])
     expect(parts[0].className).toContain('crew-tone-warn')
-    expect(parts[1].className).toContain('text-[var(--ok)]')
+    // Only "needs you" carries colour on the row (#38200); running is muted.
+    expect(parts[1].className).toContain('crew-tone-muted')
     expect(queryByTestId('crew-root-counts')).toBeNull()
   })
 

@@ -15270,7 +15270,12 @@
       "show_sessions_count_one": "{{n}} Sitzung anzeigen",
       "show_sessions_count_other": "{{n}} Sitzungen anzeigen",
       "hide_sessions_count_one": "{{n}} Sitzung ausblenden",
-      "hide_sessions_count_other": "{{n}} Sitzungen ausblenden"
+      "hide_sessions_count_other": "{{n}} Sitzungen ausblenden",
+      "show_linked_items_one": "{{count}} verknüpftes Element anzeigen",
+      "show_linked_items_other": "{{count}} verknüpfte Elemente anzeigen",
+      "hide_linked_items": "Verknüpfte Elemente ausblenden",
+      "show_linked_items_failed_one": "{{count}} verknüpftes Element anzeigen, eine Prüfung ist fehlgeschlagen",
+      "show_linked_items_failed_other": "{{count}} verknüpfte Elemente anzeigen, eine Prüfung ist fehlgeschlagen"
     },
     "connectionsPage": {
       "action_failed": "Aktion fehlgeschlagen: {{error}}",

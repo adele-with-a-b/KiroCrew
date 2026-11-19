@@ -14870,7 +14870,10 @@
       "skip_running_sessions_other": "実行中のセッション {{n}} 件をスキップ",
       "cleanup_move_count_other": "{{n}} 件のセッションが以前のセッションに移動されます。",
       "show_sessions_count_other": "{{n}} 件のセッションを表示",
-      "hide_sessions_count_other": "{{n}} 件のセッションを非表示"
+      "hide_sessions_count_other": "{{n}} 件のセッションを非表示",
+      "show_linked_items_other": "関連項目を {{count}} 件表示",
+      "hide_linked_items": "関連項目を隠す",
+      "show_linked_items_failed_other": "関連項目を {{count}} 件表示（失敗したチェックあり）"
     },
     "connectionsPage": {
       "action_failed": "操作に失敗しました: {{error}}",

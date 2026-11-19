@@ -15670,7 +15670,14 @@
       "show_sessions_count_other": "Afficher {{n}} sessions",
       "hide_sessions_count_one": "Masquer {{n}} session",
       "hide_sessions_count_many": "Masquer {{n}} sessions",
-      "hide_sessions_count_other": "Masquer {{n}} sessions"
+      "hide_sessions_count_other": "Masquer {{n}} sessions",
+      "show_linked_items_one": "Afficher {{count}} élément lié",
+      "show_linked_items_many": "Afficher {{count}} éléments liés",
+      "show_linked_items_other": "Afficher {{count}} éléments liés",
+      "hide_linked_items": "Masquer les éléments liés",
+      "show_linked_items_failed_one": "Afficher {{count}} élément lié, une vérification a échoué",
+      "show_linked_items_failed_many": "Afficher {{count}} éléments liés, une vérification a échoué",
+      "show_linked_items_failed_other": "Afficher {{count}} éléments liés, une vérification a échoué"
     },
     "connectionsPage": {
       "action_failed": "Échec de l’action : {{error}}",
