@@ -161,6 +161,13 @@ def vault_identity() -> str:
 
     if workload_identity.active():
         return workload_identity.catalog_identity()
+    # Machine mode keys the rows by the token file's path: the vault is empty there,
+    # and the engine lists what that file's identity is served.
+    from kiro_crew.agent_sdk.kas_machine import catalog_identity
+
+    machine = catalog_identity()
+    if machine:
+        return machine
     # Deferred: kiro_crew.auth pulls the ``cryptography`` wheel, which must not
     # load on the session drivers' import path (see kiro_crew.acp.kas_host_auth).
     from kiro_crew.auth.bridge import vault_identity_fingerprint

@@ -38,8 +38,9 @@ class EngineAuthRefused(Exception):
 class EngineAuth(Protocol):
     """One spawn's engine credential, as an edition's provider answers it."""
 
-    #: Why the kiro-cli relay route cannot run under this credential.
-    relay_refusal: str
+    @property
+    def relay_refusal(self) -> str:
+        """Why the kiro-cli relay route cannot run under this credential."""
 
     def preflight(self) -> None:
         """Raise :class:`EngineAuthRefused` when the spawn cannot start. Blocking."""
@@ -73,14 +74,18 @@ def active_engine_auth() -> EngineAuth | None:
     provider that raises is logged and read as None: the default route, Crew's own
     sign-in, is what every install already runs.
     """
-    if _provider is None:
-        return None
     from kiro_crew.crew_client_preview import preview_on
 
     if not preview_on():
         return None
+    # An edition's provider first; else Crew's own machine mode
+    # (``agent_sdk/kas_machine.py``), which answers None unless ``agent.kas_auth`` is
+    # ``machine``.
+    from kiro_crew.agent_sdk.kas_machine import builtin_engine_auth
+
+    provider: Callable[[], EngineAuth | None] = _provider or builtin_engine_auth
     try:
-        return _provider()
+        return provider()
     except Exception:  # noqa: BLE001 -- an edition bug keeps the default route
         logger.warning("KAS engine credential provider failed; using Crew's sign-in", exc_info=True)
         return None

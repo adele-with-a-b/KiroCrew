@@ -886,6 +886,8 @@ def main() -> None:
         # line-buffered and is left alone. Gateway-only: no other subcommand
         # is long-lived under a service manager.
         platform_compat.ensure_line_buffered_stdout()
+        # KAS machine mode's one yes/no line on the token variable's name.
+        importlib.import_module("kiro_crew.agent_sdk.kas_machine").log_gateway_env()
         # Seam-supplied pre-launch checks (CPP IdentityProvider seam). Runs
         # HERE in the gateway dispatch — not in boot_platform (which runs for
         # every subcommand incl. the mcp-core/mcp-cron stdio servers, where an
