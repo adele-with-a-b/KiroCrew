@@ -35,6 +35,7 @@ from kiro_crew.relay_client.protocol import (
     crew_origin,
 )
 from kiro_crew.relay_client.token_source import (
+    HOST_TOKEN_NOT_ISSUED_YET,
     HostCredential,
     HostTokenRetryLater,
     HostTokenSource,
@@ -265,6 +266,10 @@ class RelayClient:
             sleeper.cancel()
             stopper.cancel()
 
+    def _never_connected(self) -> bool:
+        """True until a connection reaches ready after the latest :meth:`start`."""
+        return not self._connected_at or self._connected_at < self._started_at
+
     def _fail(self, message: str) -> None:
         logger.warning("relay client stopped: %s", message)
         self._state = STATE_ERROR
@@ -285,7 +290,13 @@ class RelayClient:
                     await self._lose_url()
                     return
                 except HostTokenRetryLater as exc:
-                    self._state, self._error = STATE_RECONNECTING, str(exc)
+                    # Waiting for the first token after a start is still starting:
+                    # nothing was connected, so nothing is reconnecting yet. Any other
+                    # reason needs the owner, so it keeps reading as a reconnect.
+                    first_wait = str(exc).startswith(HOST_TOKEN_NOT_ISSUED_YET)
+                    starting = first_wait and self._never_connected()
+                    self._state = STATE_STARTING if starting else STATE_RECONNECTING
+                    self._error = str(exc)
                     await self._wait(self._backoff.next_delay())
                     continue
                 if self._stopping.is_set():

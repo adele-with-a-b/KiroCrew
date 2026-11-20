@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import * as React from 'react'
 import { act, render, screen, waitFor, cleanup, within } from '@testing-library/react'
+import { KIRO_SIGN_IN_PATH } from '../pages/developer/kiroSignInLink'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
@@ -613,7 +614,7 @@ describe('TeamCrewsGroup', () => {
     ['REMOTE_ACCESS_DISABLED', 'Remote access is turned off for this account.'],
     ['CREW_OFFLINE', 'This Crew is offline.'],
     ['THROTTLED', 'Too many requests. Try again in a minute.'],
-    ['SIGNED_OUT', 'Sign in to Kiro to see your Shared Crews.'],
+    ['SIGNED_OUT', 'Sign in to Kiro to open this Crew.'],
     ['NOT_SET_UP', "Shared Crews over the relay aren't set up."],
     ['INVALID_REQUEST', "Couldn't open this Crew."],
     ['SERVICE_ERROR', "Couldn't open this Crew."],
@@ -630,6 +631,20 @@ describe('TeamCrewsGroup', () => {
     await u.click(row('Build box'))
     expect((await screen.findByTestId('relay-crew-refusal')).textContent).toContain(text)
     expect(screen.getByTestId('team-crews-group')).toBeTruthy()
+  })
+
+  it('tells a signed-out Open as a status with no alert or hand-off (Bug Bash row 62)', async () => {
+    withBridge(vi.fn(async () => ({ ok: false, error: 'SIGNED_OUT' })))
+    vi.spyOn(api, 'relayViewerCrews').mockResolvedValue({ crews: [crew({})] })
+    mount()
+    const u = userEvent.setup()
+    const group = await openGroup(u)
+    await u.click(row('Build box'))
+    expect(await within(group).findByTestId('relay-crew-refusal')).toHaveAttribute('role', 'status')
+    expect(within(group).queryByRole('alert')).toBeNull()
+    expect(within(group).queryByRole('menuitem', { name: 'Ask the agent' })).toBeNull()
+    // The way forward is in the menu itself (UX review): the Kiro account tab.
+    expect(within(group).getByRole('menuitem', { name: /Go to Kiro account/ })).toHaveAttribute('href', KIRO_SIGN_IN_PATH)
   })
 
   it('offers Ask the agent as a menu item tied to a row refusal, one per refused row', async () => {
