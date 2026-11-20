@@ -15,6 +15,7 @@ gates read these lists, and this module imports no other part of the path floor.
 
 from __future__ import annotations
 
+import kiro_crew.security.operator_sensitive as _operator_sensitive
 from kiro_crew.agent_sdk import host_auth, native_allow_stores
 from kiro_crew.apps import credential_masks
 from kiro_crew.identity_stores import AUTH_SQLITE_DB, AUTH_SQLITE_SIDECAR_SUFFIXES, fenced_home_dirs
@@ -842,6 +843,9 @@ _CREW_SECRET_LEAVES: list[str] = [
 _SENSITIVE_HOME_DIRS += [
     f"{prefix}/{leaf}" for prefix in _CREW_HOME_PREFIXES for leaf in _CREW_SECRET_LEAVES
 ]
+
+# The operator's own secret folders (``KIROCREW_EXTRA_SENSITIVE_PATHS``), add-only.
+_SENSITIVE_HOME_DIRS += [p for p in _operator_sensitive.operator_sensitive_paths() if p not in _SENSITIVE_HOME_DIRS]
 
 # ── Publish artifacts of a keystone leaf ──
 # Every leaf above is published through ``atomic_write``, which writes a
