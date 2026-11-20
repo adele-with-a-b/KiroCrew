@@ -65,3 +65,12 @@ def test_no_block_leaves_the_envelope_alone(tmp_path, agents_dir):
     )
     options = _options(tmp_path, "plain")
     assert "settings" not in options and "env" not in options and "strictMcpConfig" not in options
+
+
+def test_tools_narrow_the_builtins_and_never_widen(tmp_path, agents_dir):
+    _spec(agents_dir, "reader", {"tools": ["Read", "Bash", "Read"]})
+    assert _options(tmp_path, "reader")["tools"] == ["Read", "Bash"]
+    client = AcpClient(work_dir=tmp_path, acp_backend=ACP_BACKEND_CLAUDE, agent="reader")
+    client._side_read_only = True
+    client._claude_side_read_denies = ("Read(//secret/**)",)
+    assert client._claude_session_meta()["claudeCode"]["options"]["tools"] == ["Read"]
