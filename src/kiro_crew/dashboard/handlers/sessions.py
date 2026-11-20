@@ -825,9 +825,14 @@ async def _refresh_from_vault() -> None:
         return
     # Deferred: see _vault_owns_usage_sync.
     from kiro_crew.auth.bridge import default_token_store
+    from kiro_crew.auth.login.endpoints import stored_sign_in_registered
     from kiro_crew.auth.provider import KasAuthProvider, NotAuthenticated
     from kiro_crew.auth.refresh import RefreshBlocked, RefreshRejected
 
+    if await asyncio.to_thread(stored_sign_in_registered):
+        logger.info("Kiro usage: usage unavailable for this sign-in (a registered start URL)")
+        _publish_usage({"available": False})
+        return
     # Taken before anything is read: a sign-in landing at any point after this
     # makes a "sign in again" marker from this attempt stale on the next poll.
     stamp = await _vault_write_stamp()

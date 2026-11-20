@@ -103,6 +103,22 @@ def _fresh_reexec_environment(_floor_monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_crew_client_hooks(_floor_monkeypatch):
+    """Start every test with no edition sign-in profile and no KAS engine credential hook.
+
+    ``register_idc_profile``, ``register_engine_auth`` and every KAS spawn write
+    module state, so a test that fills one would otherwise leave it for later tests on
+    the same worker.
+    """
+    from kiro_crew.acp import kas_engine_auth
+    from kiro_crew.auth.login import endpoints
+
+    _floor_monkeypatch.setattr(endpoints, "_IDC_PROFILES", {})
+    _floor_monkeypatch.setattr(kas_engine_auth, "_provider", None)
+    _floor_monkeypatch.setattr(kas_engine_auth, "_last_spawn", None)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_released_sessions_warning(_floor_monkeypatch):
     """Start every test with the stranded-records warning not yet given.
 

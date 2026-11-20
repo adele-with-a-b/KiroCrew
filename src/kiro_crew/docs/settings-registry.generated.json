@@ -1427,6 +1427,14 @@
       "hint": "Your computer connects to this server and shares only the folder you approve. Turning this off stops sharing and never deletes files. Remote Crew is the reverse: it lets you use this server from another device."
     },
     {
+      "id": "developer.crew-client-hooks",
+      "label": "Crew client hooks",
+      "tab": "developer",
+      "route": "/settings/developer/feature-previews?highlight=developer.crew-client-hooks",
+      "description": "Edition sign-in hooks, and launch cards that close.",
+      "hint": "Lets an edition of Kiro Crew register its own company sign-in for one IAM Identity Center start URL, and plug in how Kiro Crew's own engine gets its credential. A finished Remote Crew launch card also gets a close button, and closes by itself 2 minutes after it finishes. Off, all of this is ignored."
+    },
+    {
       "id": "developer.decisions",
       "label": "Decisions",
       "tab": "developer",

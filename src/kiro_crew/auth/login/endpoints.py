@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 
 # Default hosts (kiro-cli consts.rs).
 _DEFAULT_PORTAL = "https://app.kiro.dev"
@@ -67,6 +68,62 @@ OIDC_CLIENT_NAME = "Kiro Crew"
 
 # Device-flow fallback when the poll response omits an expiry (kiro-cli uses 3600).
 DEFAULT_TOKEN_TTL_SECS = 3600
+
+
+@dataclass(frozen=True)
+class IdcProfile:
+    """One Identity Center start URL's own client registration, filled by an edition."""
+
+    scopes: tuple[str, ...]
+    grant_types: tuple[str, ...]
+    issuer_url: str
+    profile_arn: str = ""
+
+
+# Empty in Crew itself: every start URL registers with OIDC_SCOPES, as before. An
+# edition fills it at boot; it is read only while the ``crew_client`` feature preview
+# is on (``kiro_crew.crew_client_preview``), so with the preview off a registered
+# profile changes nothing.
+_IDC_PROFILES: dict[str, IdcProfile] = {}
+
+
+def register_idc_profile(
+    start_url: str, scopes, grants, issuer_url: str, profile_arn: str = ""
+) -> None:
+    """Register *start_url*'s scopes, grant types, issuer URL and pinned profile ARN."""
+    profile = IdcProfile(tuple(scopes), tuple(grants), issuer_url, profile_arn)
+    _IDC_PROFILES[start_url.rstrip("/")] = profile
+
+
+def idc_profile(start_url: str) -> IdcProfile | None:
+    """The profile registered for *start_url*, or ``None`` (the default form).
+
+    ``None`` too while the ``crew_client`` preview is off. Nothing registered reads no
+    config at all.
+    """
+    profile = _IDC_PROFILES.get((start_url or "").rstrip("/"))
+    if profile is None:
+        return None
+    from kiro_crew.crew_client_preview import preview_on
+
+    return profile if preview_on() else None
+
+
+def registered_start_url(url: str | None) -> bool:
+    """Whether *url* is a start URL registered with :func:`register_idc_profile`."""
+    return idc_profile(url or "") is not None
+
+
+def stored_sign_in_registered() -> bool:
+    """Whether Crew's stored sign-in is on a registered start URL. Blocking; never raises."""
+    from kiro_crew.auth.bridge import vault_identity_claims
+
+    if not _IDC_PROFILES:
+        return False
+    from kiro_crew.crew_client_preview import preview_on
+
+    # The preview first: while it is off the vault is not read.
+    return preview_on() and registered_start_url(vault_identity_claims()[1].get("start_url"))
 
 
 def portal_url() -> str:

@@ -2444,6 +2444,19 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     }
   },
   {
+    "id": "developer.crew-client-hooks",
+    "label": "Crew client hooks",
+    "labelKey": "pages.developer.featurePreviewsTab.crew_client",
+    "description": "Edition sign-in hooks, and launch cards that close.",
+    "hint": "Lets an edition of Kiro Crew register its own company sign-in for one IAM Identity Center start URL, and plug in how Kiro Crew's own engine gets its credential. A finished Remote Crew launch card also gets a close button, and closes by itself 2 minutes after it finishes. Off, all of this is ignored.",
+    "tab": "developer",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "sub": "feature-previews"
+    }
+  },
+  {
     "id": "developer.decisions",
     "label": "Decisions",
     "labelKey": "pages.developer.featurePreviewsTab.decisions",

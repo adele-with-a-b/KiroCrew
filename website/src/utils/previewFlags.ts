@@ -250,6 +250,16 @@ export const PREVIEW_APP_BROWSER_SDK = `${PREVIEW_FLAG_PREFIX}app-browser-sdk`
 export const PREVIEW_VISUAL_REFRESH = `${PREVIEW_FLAG_PREFIX}visual-refresh`
 
 /**
+ * Crew client hooks: an edition may register its own company sign-in for one
+ * IAM Identity Center start URL and plug in how Crew's own KAS engine gets its
+ * credential, and a finished Remote Crew launch card may close (by its button, or
+ * by itself 2 minutes after it finished). Has SERVER behavior: off, the gateway
+ * ignores every registered sign-in and engine-credential hook
+ * (`kiro_crew/crew_client_preview.py`). Default OFF, and OFF is `main`.
+ */
+export const PREVIEW_CREW_CLIENT = `${PREVIEW_FLAG_PREFIX}crew-client`
+
+/**
  * Every live preview-flag key, the ones the gateway keeps. Each one's name (see
  * {@link previewFlagName}) is a writable `dashboard.feature_previews.<name>` path
  * in the gateway config; `test_feature_previews_config.py` pins this list equal
@@ -274,6 +284,7 @@ export const PREVIEW_FLAGS: readonly string[] = [
   PREVIEW_WORKER_GRILL,
   PREVIEW_APP_BROWSER_SDK,
   PREVIEW_VISUAL_REFRESH,
+  PREVIEW_CREW_CLIENT,
 ]
 
 /**

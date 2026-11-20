@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from kiro_crew import __version__, acp_tool_gate, agent_scratch
 from kiro_crew import kiro_cli as kiro_cli_mod
 from kiro_crew import platform_compat
-from kiro_crew.acp import batch_guard
+from kiro_crew.acp import batch_guard, kas_engine_auth
 from kiro_crew.acp import managed_agent_shadow as managed_shadow_mod
 from kiro_crew.acp import runtime_process_tree, scope_admission
 from kiro_crew.acp._dispatch import agent_version_from_init
@@ -1385,14 +1385,19 @@ async def ensure_ready(self: AcpClient) -> None:
                 # non-transient ``AcpError`` rather than ``AcpAuthRequired``: the
                 # dashboard reads that type as "Kiro is signed out" and would
                 # mark a valid kiro-cli login as not ready.
-                if isinstance(exc, AcpError) and host_auth.reports_signed_out(
-                    self.backend, str(exc)
+                # Under an edition's engine credential (``acp/kas_engine_auth.py``) a
+                # start the engine refused is worded by that edition, never a sign-in.
+                engine_refusal = kas_engine_auth.start_refusal(
+                    self.backend, str(exc), getattr(exc, "code", None)
+                )
+                if isinstance(exc, AcpError) and (
+                    engine_refusal or host_auth.reports_signed_out(self.backend, str(exc))
                 ):
                     _startup_outcome = "auth_required"
                     await self._cleanup_failed_live_spawn()
                     self._reset_state()
                     raise AcpError(
-                        host_auth.signed_out_message(self.backend),
+                        engine_refusal or host_auth.signed_out_message(self.backend),
                         transient=False,
                         user_worded=True,
                     ) from exc
