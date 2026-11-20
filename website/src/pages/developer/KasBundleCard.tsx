@@ -1,34 +1,54 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Download, Loader2, RotateCcw } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowRight, Check, CheckCircle2, Download, Loader2, RotateCcw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { api, type KasBundleStatus } from '../../api/client'
 import ErrorNotice from '../../components/ErrorNotice'
-import { SettingsToggle } from '../../components/settings'
+import { SettingsLink } from '../../components/SettingsLink'
+import { SettingsButtonGroup } from '../../components/settings'
 import { SchemaRestartBadge } from '../../components/settingRef/RestartRequiredBadge'
 import { Btn } from '../../components/ui'
 import { useOutageFailure } from '../../hooks/useOutageFailure'
 import { fmtBytes, fmtPercent } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 import { reportForError } from '../../utils/errorReport'
+import { isKasEngineHighlight, KAS_BUNDLE_CONFIG_KEY } from './kasEngineLink'
+import { KIRO_SIGN_IN_TARGET } from './kiroSignInLink'
 
-/** The config field this card's switch writes. */
-export const KAS_BUNDLE_CONFIG_KEY = 'agent.kas_bundle'
+export { KAS_BUNDLE_CONFIG_KEY, KAS_ENGINE_SETTING_ID } from './kasEngineLink'
 
 const STATUS_QUERY_KEY = ['kas-bundle'] as const
 
 /** How often the card re-reads status while an install is running. */
 const INSTALL_POLL_MS = 1000
 
+/** Settings search and the all-settings link must open KAS before the engine
+ *  choice, which lives in its detail, can be highlighted. */
+export function KasEngineDeepLink({ onOpen }: { onOpen: () => void }) {
+  const [params] = useSearchParams()
+  const wanted = isKasEngineHighlight(params.get('highlight'))
+  const callback = useRef(onOpen)
+  callback.current = onOpen
+  useEffect(() => {
+    if (wanted) callback.current()
+  }, [wanted])
+  return null
+}
+
+/** The two engine choices, as `engine_choice` names them on `GET /api/kas-bundle`. */
+type EngineChoice = 'engine' | 'kiro_cli'
+
 /**
- * Settings > Agent Harness, inside the KAS row: run Kiro Crew's own KAS engine
- * instead of reaching it through kiro-cli.
+ * Settings > Agent Harness, inside the KAS row: which engine KAS runs on, Kiro
+ * Crew's own or kiro-cli.
  *
- * The switch is `agent.kas_bundle` (an ordinary config PATCH). It can only be
- * turned ON once the pinned engine is installed, because an "on" with nothing
- * installed refuses every KAS session -- the card offers the install instead.
- * Turning it OFF is always allowed, so a broken install never traps anyone on
- * this route.
+ * The choice is `agent.kas_bundle` (an ordinary config PATCH): the built-in engine
+ * saves `true`, Kiro CLI saves `false`. Unsaved, the control shows what this build
+ * prefers (`engine_choice`): a packaged build prefers the built-in engine. The
+ * built-in engine can only be chosen once the pinned engine is installed -- the
+ * card offers the install instead. Kiro CLI is always allowed, so a broken install
+ * never traps anyone on that route.
  *
  * The install runs in the gateway; this card starts it and polls status once a
  * second while it runs. Status is the single authority: nothing here mirrors
@@ -102,11 +122,14 @@ export function KasBundleCard() {
 
   const installed = status.installed
   const canTurnOn = installed !== null && !installing
+  // An older gateway sends no choice: read the saved switch as the choice.
+  const choice: EngineChoice = status.engine_choice ?? (status.enabled ? 'engine' : 'kiro_cli')
+  const onEngine = choice === 'engine'
   // The last KAS spawn took Crew's own engine without agent.kas_bundle: kiro-cli's
-  // relay cannot run here, or the ACP runtime sharing preview picked it. The only
-  // sign of that switch on this card, so it is always shown.
+  // relay cannot run here, or the ACP runtime sharing preview picked it. The build's
+  // own preference ('build_default') needs no line: the choice above already says it.
   const automatic = status.route?.automatic === true
-  const automaticText = !automatic
+  const automaticText = !automatic || status.route?.reason === 'build_default'
     ? ''
     : status.route?.reason === 'chat_runtime_sharing'
       ? i18nT('pages.developer.kasBundleCard.route_auto_sharing_preview')
@@ -136,14 +159,34 @@ export function KasBundleCard() {
             an inline comment would open a template-string state that hides the
             closing tag and drops the setting from the registry.) */}
         <div className="min-w-0 flex-1">
-          <SettingsToggle
+          <SettingsButtonGroup
             configKey={KAS_BUNDLE_CONFIG_KEY}
-            label={i18nT('pages.developer.kasBundleCard.toggle_label')}
-            description={i18nT('pages.developer.kasBundleCard.toggle_description')}
-            checked={status.enabled}
-            onChange={value => toggleMut.mutate(value)}
-            busy={toggleMut.isPending}
-            disabled={!status.enabled && !canTurnOn}
+            label={i18nT('pages.developer.kasBundleCard.engine_label')}
+            description={i18nT('pages.developer.kasBundleCard.engine_description')}
+            value={choice}
+            // A tick on the selected option, so the choice reads without the fill.
+            options={[
+              {
+                value: 'engine',
+                label: i18nT('pages.developer.kasBundleCard.engine_builtin'),
+                disabled: !onEngine && !canTurnOn,
+                icon: onEngine ? <Check className="lucide-inline" aria-hidden="true" data-testid="kas-engine-tick" /> : undefined,
+              },
+              {
+                value: 'kiro_cli',
+                label: i18nT('pages.developer.kasBundleCard.engine_kiro_cli'),
+                icon: onEngine ? undefined : <Check className="lucide-inline" aria-hidden="true" data-testid="kas-engine-tick" />,
+              },
+            ]}
+            // Not disabled while its own save runs: a native disabled would drop the
+            // pressed button's keyboard focus to the page. A second press is ignored,
+            // and so is a press on the option already SAVED; one only shown by the
+            // build's pick still saves, so "Use my Kiro CLI install" can be kept for good.
+            onChange={value => {
+              if (toggleMut.isPending) return
+              if (value === choice && status.choice_saved !== false) return
+              toggleMut.mutate(value === 'engine')
+            }}
           />
         </div>
         {/* Its own notice below says what is pending once a save lands, so the
@@ -154,9 +197,35 @@ export function KasBundleCard() {
         </span>
       </div>
 
-      {automatic && (
+      {/* What the restart does, beside the choice. The pending notice below says
+          it once a save lands, so this line steps aside then. */}
+      {!restartPending && (
+        <div className="text-[12px] text-muted" data-testid="kas-bundle-restart-note">
+          {i18nT('pages.developer.kasBundleCard.engine_restart')}
+        </div>
+      )}
+
+      {automatic && automaticText && (
         <div className="text-[12px] text-muted" role="status" data-testid="kas-bundle-route-auto">
           {automaticText}
+        </div>
+      )}
+
+      {/* Nothing saved and the build prefers the engine, but chats run on kiro-cli
+          until Kiro Crew is signed in: say why the recommended option is not chosen. */}
+      {!status.choice_saved && status.sign_in_moves_to_engine === true && !onEngine && (
+        <div className="flex flex-wrap items-center gap-x-2 text-[12px] text-muted" role="status" data-testid="kas-bundle-sign-in-reason">
+          <span>{i18nT('pages.developer.kasBundleCard.engine_sign_in_reason')}</span>
+          {/* The same way to the sign-in as the row's account line: the Kiro
+              account tab, whose card shows the sign-in choices in place. */}
+          <SettingsLink
+            {...KIRO_SIGN_IN_TARGET}
+            data-testid="kas-bundle-sign-in-link"
+            className="inline-flex items-center gap-1 text-accent hover:underline focus-ring-accent"
+          >
+            {i18nT('components.kiroSignInPrompt.sign_in')}
+            <ArrowRight className="lucide-inline" aria-hidden="true" />
+          </SettingsLink>
         </div>
       )}
 
@@ -183,7 +252,7 @@ export function KasBundleCard() {
                 after a save the gateway has not restarted onto yet, a green tick
                 says "running" before it is true. */}
             <CheckCircle2
-              className={`lucide-inline ${status.enabled && !restartPending ? 'text-ok' : 'text-muted'}`}
+              className={`lucide-inline ${onEngine && !restartPending ? 'text-ok' : 'text-muted'}`}
               aria-hidden="true"
               data-testid="kas-bundle-installed-tick"
             />
@@ -194,13 +263,6 @@ export function KasBundleCard() {
                   })
                 : i18nT('pages.developer.kasBundleCard.installed', { version: installed.version })}
             </span>
-            {/* A green line under an OFF switch reads as "already running" without
-                this, unless the engine runs anyway because kiro-cli cannot. */}
-            {!status.enabled && !automatic && (
-              <span className="text-muted" data-testid="kas-bundle-off-note">
-                {i18nT('pages.developer.kasBundleCard.off_note')}
-              </span>
-            )}
           </>
         ) : status.host_unsupported ? (
           // Every install here is refused, so the reason replaces the button.
