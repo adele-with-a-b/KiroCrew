@@ -5,7 +5,8 @@ A spec under the user's agents directory may carry::
     "claudeCode": {
         "autoMemoryDirectory": "/abs/path/to/memory",
         "env": {"NAME": "value"},
-        "strictMcpConfig": true
+        "strictMcpConfig": true,
+        "tools": ["Read", "Bash"]
     }
 
 ``autoMemoryDirectory`` rides the flag tier (``options.settings``), the tier a
@@ -13,7 +14,9 @@ A spec under the user's agents directory may carry::
 settings files. ``env`` is spread over the adapter's process env
 (``options.env``). ``strictMcpConfig`` can only be turned on: it keeps the
 user's, the project's and plugins' servers out, so the session runs the
-servers its spec names and nothing else.
+servers its spec names and nothing else. ``tools`` names the built-in tools
+the session keeps (``options.tools``); it only narrows, so a list Crew already
+set (``"tools": []``, a worker's or a Side Chat's) is intersected, never widened.
 
 Read from the USER scope only: a checked-out repository's ``.kiro/agents``
 spec never reaches this, so a repo cannot redirect memory writes or set the
@@ -78,6 +81,9 @@ def spec_claude_options(agent: str | None) -> dict[str, Any]:
             out["env"] = kept
     if block.get("strictMcpConfig") is True:
         out["strictMcpConfig"] = True
+    tools = block.get("tools")
+    if isinstance(tools, list) and all(isinstance(t, str) and t for t in tools):
+        out["tools"] = list(dict.fromkeys(tools))
     return out
 
 
@@ -94,6 +100,10 @@ def apply_spec_claude_options(options: dict[str, Any], agent: str | None) -> Non
         options["settings"] = flag
     if extra.get("strictMcpConfig"):
         options["strictMcpConfig"] = True
+    if "tools" in extra:
+        current = options.get("tools")
+        keep = extra["tools"]
+        options["tools"] = [t for t in current if t in keep] if isinstance(current, list) else keep
 
 
 __all__ = ["apply_spec_claude_options", "spec_claude_options"]
