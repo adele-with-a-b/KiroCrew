@@ -14,7 +14,7 @@ Instance fields written: ``_claude_held_asks``, ``_claude_held_mcp``, ``_claude_
 ``_last_substitution_model``, ``_model``, ``_resolved_model_id``, ``_session_mcp_cache``,
 ``claude_mode_pinned_notice``.
 
-Instance fields read: ``_agent_version``, ``_agent_version_read``, ``_include_memory``,
+Instance fields read: ``_agent``, ``_agent_version``, ``_agent_version_read``, ``_include_memory``,
 ``_launch_mcp_servers``, ``_mcp_mount_servers``, ``_permission_mode``, ``_session_id``,
 ``_session_key``, ``_session_mcp_excludes_local``, ``_session_mcp_inline_settings``,
 ``_side_read_only``, ``_spec_shell_allowlist``, ``_spec_write_allowlist``,
@@ -31,6 +31,7 @@ import re
 from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
+from kiro_crew.acp.claude_agent_options import apply_spec_claude_options
 from kiro_crew.acp.claude_settings_sources import (
     CLAUDE_SETTINGS_MAX_BYTES,
     read_claude_settings_bytes,
@@ -732,6 +733,9 @@ def _claude_session_meta(self: ClaudeAcpClient) -> dict[str, Any]:
         side_settings["permissions"] = side_permissions
         side_settings["disableAllHooks"] = True
         options["settings"] = side_settings
+    # The agent's own user-level ``claudeCode`` block (memory folder, env, strict
+    # MCP), before the switches below so the auto-memory off switch still wins.
+    apply_spec_claude_options(options, getattr(self, "_agent", None))
     if self.memory_mode != "persistent" or not getattr(self, "_include_memory", True):
         # Claude Code's auto-memory reads the project's MEMORY.md into the
         # session and writes memory files with no permission request. The
