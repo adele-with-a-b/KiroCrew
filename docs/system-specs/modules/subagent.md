@@ -360,10 +360,12 @@ figure and the unreadable-host fallback), dispatched per operating system (see
   `memory.high`, so the slice term is what lets the posture go `critical` on
   a bare host whose `MemAvailable` is still large while agent process memory
   has filled that ceiling.
-- **macOS** — reclaimable memory (free + inactive + speculative + purgeable
-  pages) via the Mach `host_statistics64` syscall through `ctypes`/`libSystem`
+- **macOS** — the kernel's own available figure (free + active + inactive
+  pages: everything not wired and not in the compressor) via the Mach
+  `host_statistics64` syscall through `ctypes`/`libSystem`
   (`_macos_vm_reclaimable_pages`), combined with the `os.sysconf` page size.
-  The spawn floor reads a tighter figure instead (below).
+  It is what `memory_pressure` prints as the free percentage. The spawn floor
+  reads the same figure (below).
   This is **in-process, non-blocking, no subprocess** — required because the
   probe runs on the gateway event loop at startup and the spawn-audit guard
   rejects unrouted subprocess spawns. A reload re-runs it off the loop
@@ -392,18 +394,15 @@ Windows. A known cgroup bound still applies when the Linux host reading fails;
 readings fail open only when neither host memory nor a finite cgroup limit is
 available.
 
-On macOS the gate does NOT read the reclaimable sum above. It reads
-`platform_compat.host_available_mib` in GiB (`_host_available_gb`, the reader Windows uses too):
-free + purgeable + `min(inactive, external_page_count)` pages, with speculative
-not re-added because `free_count` already holds it. The floor promises what
-stays free after a start, so it compares against what a new process can
-really take; the looser sum read about 3.5 GiB (about 32%) above it on a loaded
-Apple silicon host, because it counted dirty anonymous inactive pages as free.
-Only the gate reads it: the auto cap's disabled-floor fallback and the
-TaskRunner figure (`compute_memory_sized_parallel_cap`) and the memory posture
-(`resource_status`) still read `_available_memory_gb`, the reclaimable sum. So
-on a loaded Mac the floor defers more starts than the reclaimable sum would at the same
-`spawn_min_memory_gb`; `test_subagent_macos_probe.py` pins both readings.
+On macOS the gate reads the same figure as the posture and the auto cap
+(`_macos_available_memory_gb`). macOS compresses or swaps idle app pages on
+demand, so a sum of only free and cache pages read a healthy Mac with large
+wired and compressed figures as nearly full, refused every start and said
+memory was tight while Activity Monitor showed green pressure. The real
+shortage signal on macOS is the kernel pressure level, and the gate's pressure
+hold below reads it. `test_subagent_macos_probe.py` pins the figure against a
+`vm_stat`-shaped sample. Windows keeps `platform_compat.host_available_mib`
+(`_host_available_gb`).
 Because the posture can read AMPLE while the floor holds every start, the
 `resource_status` tool also reports the floor on the gate's own figure
 (`resource_status.spawn_floor_reading`): the floor, that figure, and the bar the
