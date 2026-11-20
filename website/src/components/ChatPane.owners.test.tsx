@@ -47,6 +47,7 @@ describe('ChatPane module boundary', () => {
       'ChatPaneTranscript.tsx',
       'useChatPaneContinue.ts',
       'useChatPaneDraft.ts',
+      'useChatPaneFind.ts',
       'useChatPanePickers.ts',
       'useChatPaneSend.ts',
       'useChatPaneTurnControl.ts',
