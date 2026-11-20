@@ -21,6 +21,7 @@ from kiro_crew.dashboard import (
     session_export,
     session_transfer,
 )
+from kiro_crew.dashboard.attach_conversation import api_chat_slot_attach_conversation
 from kiro_crew.dashboard.handlers._shared import require_owner_dashboard_request
 from kiro_crew.dashboard.handlers.chat_steering import (
     api_chat_slot_steering,
@@ -208,6 +209,9 @@ def register(app: web.Application) -> None:
     app.router.add_post("/api/chat/slots/{slot}/workspace", chat.api_chat_slot_workspace)
     app.router.add_post("/api/chat/slots/{slot}/reload", chat.api_chat_slot_reload)
     app.router.add_post("/api/chat/slots/{slot}/project", chat.api_chat_slot_project)
+    app.router.add_post(
+        "/api/chat/slots/{slot}/attach-conversation", api_chat_slot_attach_conversation
+    )
     # Follow-up suggestion card (suggest_followup MCP tool -> card below composer)
     app.router.add_post("/api/chat/slots/{slot}/followup", chat.api_chat_slot_followup)
     app.router.add_post("/api/worktree/create", api_worktree_create)
