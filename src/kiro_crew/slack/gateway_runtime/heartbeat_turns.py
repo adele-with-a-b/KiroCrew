@@ -32,7 +32,7 @@ if TYPE_CHECKING:
         _build_heartbeat_hooks,
         configured_fallback_chain,
         consume_reinjection,
-        declared_mcp_not_ready_note,
+        declared_mcp_not_ready_change,
         is_keep_response,
         logger,
         note_turn_landed,
@@ -248,7 +248,10 @@ async def _init_heartbeat(self: GatewayOrchestrator) -> None:
             result_text = _annotate_model_fallback(
                 result_text, client, stop_reason=_turn_stop["reason"]
             )
-            _missing = declared_mcp_not_ready_note(client)
+            # A HEARTBEAT_KEEP result is not delivered, so it does not count as printed.
+            _missing = declared_mcp_not_ready_change(
+                client, f"{session_key}:{task_text}", record=not is_keep_response(result_text)
+            )
             if _missing:
                 result_text = f"Warning: {_missing}.\n\n{result_text}"
 

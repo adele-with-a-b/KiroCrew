@@ -56,7 +56,7 @@ if TYPE_CHECKING:
         consume_reinjection,
         context_meter_reading,
         dataclass,
-        declared_mcp_not_ready_note,
+        declared_mcp_not_ready_change,
         effective_job_approval_mode,
         engine_attributed_model,
         live,
@@ -438,7 +438,7 @@ async def _cron_run_sequence(
                 result_text = _annotate_model_fallback(
                     result_text, client, stop_reason=_seq_stop["reason"]
                 )
-                _seq_missing = declared_mcp_not_ready_note(client)
+                _seq_missing = declared_mcp_not_ready_change(client, agent_session_key)
                 if _seq_missing:
                     _seq_mcp_notes.append(f"Warning: {agent}: {_seq_missing}.")
                 # The spec notices for this step's session, once per agent.
@@ -1030,7 +1030,8 @@ async def _cron_run_single(
         result_text = _annotate_model_fallback(
             result_text, client, stop_reason=_turn_stop["reason"]
         )
-        _missing = declared_mcp_not_ready_note(client)
+        # Keyed on the job, not the session: a stateless job's key changes every fire.
+        _missing = declared_mcp_not_ready_change(client, f"cron:{job.id}")
         if _missing:
             result_text = f"Warning: {_missing}.\n\n{result_text}"
         if _directive_refusals:
