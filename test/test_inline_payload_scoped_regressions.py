@@ -292,6 +292,126 @@ class TestACallIsJudgedByWhatItResolvesTo:
         )
 
 
+class TestALoaderNamedAsAMethodIsNotTheBuiltin:
+    """``re.compile(r'...kirocrew...')`` is ``re``'s own function, not the builtin.
+
+    A loader name (``exec``, ``eval``, ``compile``, ``run_path``, ``execfile``) is
+    the builtin unless its receiver is PROVEN unrelated: a lone bare name the
+    payload imports as a non-owner module (``import re`` -> ``re``). Every other
+    receiver -- a free name, an owning module, a name bound any other way, a
+    grouped, computed or dotted expression -- fails CLOSED. The console-script
+    spelling ``kirocrew`` is read only INSIDE a loader argument, so it is the
+    right witness: it fires iff the call resolved as the builtin.
+    """
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            "import re; re.compile(r'foo|kirocrew|bar')",
+            "import regex; regex.compile(r'kirocrew|x')",
+            "import re as r; r.compile(r'kirocrew|x')",
+            "import re; c = re.compile; c(r'foo|kirocrew|bar')",
+            "import re; x = (re.compile)(r'kirocrew|y')",
+        ],
+    )
+    def test_a_loader_method_on_an_imported_non_owner_module_is_allowed(self, spelling):
+        cmd = "python3 -c " + shlex.quote(spelling)
+        assert not argv_floor._is_credential_mint(cmd.lower(), raw_text=cmd), cmd
+        assert _rule_of(cmd) is None, cmd
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            # bare builtin, then qualified by the owning module, ``__builtins__``, and an alias
+            "compile(r'foo|kirocrew|bar')",
+            "exec('kirocrew')",
+            "import builtins; builtins.compile(r'foo|kirocrew|bar')",
+            "__builtins__.compile(r'kirocrew|x')",
+            "import builtins as b; b.compile(r'foo|kirocrew|bar')",
+            "import builtins as b; b.exec('kirocrew')",
+        ],
+    )
+    def test_the_real_builtin_bare_or_module_qualified_is_denied(self, spelling):
+        cmd = "python3 -c " + shlex.quote(spelling)
+        assert argv_floor._is_credential_mint(cmd.lower(), raw_text=cmd), cmd
+        assert _rule_of(cmd) == _MINT, cmd
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            # (a) grouped receiver -- _attribute_receiver cannot read it, fail closed
+            "(builtins).exec('kirocrew')",
+            "x = (builtins.exec)('kirocrew')",
+            # (b) a static module assignment used as the receiver
+            "b = builtins; b.exec('kirocrew')",
+            "b = builtins; b.compile(r'foo|kirocrew|bar')",
+            # (b') binding forms that are not a plain import: comma item, for, walrus
+            "import os, builtins as b; b.exec('kirocrew')",
+            "import builtins; (b := builtins); b.exec('kirocrew')",
+            # computed receivers that still hold the real module
+            "__import__('builtins').exec('kirocrew')",
+            "import importlib; importlib.import_module('builtins').exec('kirocrew')",
+            "import sys; sys.modules['builtins'].exec('kirocrew')",
+            # a free name is not a proven module, so it fails closed too
+            "obj.exec('kirocrew')",
+            "jinja_env.compile('kirocrew')",
+            # a dotted / computed receiver fails closed even if it looks unrelated
+            "a.b.compile('kirocrew')",
+            "build().compile('kirocrew')",
+        ],
+    )
+    def test_a_receiver_not_proven_a_non_owner_module_fails_closed(self, spelling):
+        cmd = "python3 -c " + shlex.quote(spelling)
+        assert argv_floor._is_credential_mint(cmd.lower(), raw_text=cmd), cmd
+        assert _rule_of(cmd) == _MINT, cmd
+
+    @pytest.mark.parametrize(
+        "carrier",
+        [
+            # an owner import alias inside an indented block, and bound by a for-loop,
+            # as -c source and as a heredoc
+            "python3 -c " + shlex.quote("if 1:\n    import builtins as b\nb.exec('kirocrew')"),
+            "python3 - <<'PY'\nif 1:\n    import builtins as b\nb.exec('kirocrew')\nPY",
+            "python3 - <<'PY'\nimport builtins\nfor b in [builtins]:\n    b.exec('kirocrew')\nPY",
+        ],
+    )
+    def test_an_owner_bound_in_a_block_still_denies(self, carrier):
+        assert argv_floor._is_credential_mint(carrier.lower(), raw_text=carrier), carrier
+        assert _rule_of(carrier) == _MINT, carrier
+
+    def test_the_receiver_decides_at_the_resolver(self):
+        resolved = inline_payload._resolved_calls("import re\nre.compile('x')")
+        assert all(entry[0] != "compile" for entry in resolved)
+        qualified = inline_payload._resolved_calls("import builtins; builtins.compile('x')")
+        assert any(entry[0] == "compile" for entry in qualified)
+        grouped = inline_payload._resolved_calls("(builtins).compile('x')")
+        assert any(entry[0] == "compile" for entry in grouped)
+
+    def test_a_non_loader_callable_still_resolves_off_any_receiver(self):
+        assert inline_payload._decode_call_literals('b64.b64decode(s="aGVsbG8=")') == ("hello",)
+        assert inline_payload._inline_payload_reaches_cli('rp.run_module("kiro_crew")')
+
+    def test_foreign_module_names_are_only_imported_non_owners(self):
+        assert inline_payload._foreign_module_names("import re; import regex as r") == frozenset(
+            {"re", "r"}
+        )
+        # Split across newlines, the shape a heredoc body arrives in, still reads.
+        assert "re" in inline_payload._foreign_module_names("import\nre")
+        # An owning module is never a foreign (exempting) name, by any spelling.
+        assert inline_payload._foreign_module_names("import builtins as b") == frozenset()
+        assert inline_payload._foreign_module_names("import os, builtins as b") == frozenset({"os"})
+
+    def test_a_loader_bound_off_an_unrelated_receiver_is_not_bound(self):
+        # c = re.compile is re's method, so c('kirocrew') must stay allowed.
+        allowed = "import re; c = re.compile; c(r'foo|kirocrew|bar')"
+        cmd = "python3 -c " + shlex.quote(allowed)
+        assert _rule_of(cmd) is None, cmd
+        # c = builtins.compile is the builtin, so it stays denied.
+        denied = "import builtins; c = builtins.compile; c(r'foo|kirocrew|bar')"
+        cmd = "python3 -c " + shlex.quote(denied)
+        assert _rule_of(cmd) == _MINT, cmd
+
+
 class TestTheInspectionIsOnePassAndNotRecursive:
     def test_names_the_mint_does_not_call_itself(self):
         tree = ast.parse(inspect.getsource(inline_payload._names_the_mint))

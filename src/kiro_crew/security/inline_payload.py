@@ -78,6 +78,11 @@ _CALLABLE_MODULES = {
     "importlib": frozenset({"import_module"}),
     "builtins": _INLINE_CODE_LOADER_NAMES | frozenset({"__import__"}),
 }
+#: Modules a code-loader name is the real builtin OFF OF (``re.compile`` is not).
+_LOADER_OWNER_MODULES = frozenset(_CALLABLE_MODULES)
+#: ``import <dotted>[ as <name>]``; ``\s+`` spans the newlines a heredoc body is
+#: split on. A missed comma item only over-denies (exemption needs positive membership).
+_IMPORT_BINDING_RE = re.compile(r"\bimport\s+([A-Za-z_][\w.]*)(?:\s+as\s+([A-Za-z_]\w*))?")
 _GETATTR_CALL_RE = re.compile(r"(?<![a-z0-9_])getattr\s*\(")
 _ATTRIBUTE_NAME_LITERAL_RE = re.compile(r"""(["'])([A-Za-z_]\w*)\1""")
 #: ``m.__dict__["exec"]`` names a callable through a subscript, which is not a
@@ -341,6 +346,72 @@ def _preceded_by_attribute_access(view: str, position: int) -> bool:
     return cursor >= 0 and view[cursor] == "."
 
 
+def _attribute_receiver(view: str, position: int) -> str | None:
+    """The bare identifier the name at *position* is an attribute of, or ``None``.
+
+    Reads back over the ``.`` to the receiver word: ``re.compile`` has receiver
+    ``re``, ``b.compile`` has ``b``. A computed receiver (``foo().compile``,
+    ``a.b.compile``) returns ``None`` here -- it is not a plain module name, so it
+    cannot be one of the loader-owning modules.
+    """
+    cursor = position - 1
+    while cursor >= 0 and view[cursor].isspace():
+        cursor -= 1
+    if cursor < 0 or view[cursor] != ".":
+        return None
+    cursor -= 1
+    while cursor >= 0 and view[cursor].isspace():
+        cursor -= 1
+    end = cursor + 1
+    while cursor >= 0 and (view[cursor].isalnum() or view[cursor] == "_"):
+        cursor -= 1
+    start = cursor + 1
+    if start >= end or (start > 0 and view[start - 1] in ").]"):
+        return None  # a ``)``/``]``/``.`` before the word means a computed receiver
+    return view[start:end]
+
+
+def _foreign_module_names(view: str) -> frozenset[str]:
+    """Names this payload binds by ``import`` to a NON-owner module.
+
+    These are the only receivers a loader method may be exempt off: a name PROVEN
+    to be an unrelated module (``import re`` -> ``re``, ``import regex as r`` ->
+    ``r``). An owning module is skipped, so ``import builtins as b`` never exempts
+    ``b.exec``. Read by regex, not tokens, so an import survives the whitespace
+    split a heredoc body arrives in; a comma item or binding form it misses only
+    OVER-denies, never exempts, because exemption requires positive membership.
+    """
+    foreign: set[str] = set()
+    for match in _IMPORT_BINDING_RE.finditer(view):
+        head = match.group(1).split(".")[0]
+        if head in _LOADER_OWNER_MODULES:
+            continue  # an owning module can never be an exempting receiver
+        foreign.add(match.group(2) or head)
+    return frozenset(foreign)
+
+
+def _loader_method_is_exempt(receiver: str | None, foreign: frozenset[str]) -> bool:
+    """True if a loader called as ``<receiver>.loader(...)`` is NOT the builtin.
+
+    Exempt ONLY a receiver positively bound to a non-owner module. A grouped,
+    computed or dotted receiver (``None``), a bare word (``""``), an owner module
+    and every name not bound by an import all fail closed to the builtin -- a
+    receiver that could be the real module is never exempt.
+    """
+    return receiver is not None and receiver in foreign
+
+
+def _dotted_receiver(head_text: str) -> str | None:
+    """The receiver of a dotted head: a lone bare name, ``""`` for a bare word, or
+    ``None`` for a multi-component (computed) receiver that fails closed."""
+    parts = [part.strip() for part in head_text.split(".")]
+    if len(parts) == 1:
+        return ""
+    if len(parts) == 2:
+        return parts[0]
+    return None
+
+
 def _expression_start(view: str, position: int) -> int:
     """Where the dotted expression ending at *position* begins.
 
@@ -416,10 +487,14 @@ def _indirect_heads(
         closing = arguments[-1][1]
         if closing >= len(view) or view[closing] != ")":
             continue
-        dotted = _DOTTED_HEAD_RE.match(_unwrapped_head(view[opening:closing]))
+        head_text = _unwrapped_head(view[opening:closing])
+        dotted = _DOTTED_HEAD_RE.match(head_text)
         if dotted is None:
             continue
         word = dotted.group(1)
+        if word in _INLINE_CODE_LOADER_NAMES:
+            if _loader_method_is_exempt(_dotted_receiver(head_text), _foreign_module_names(view)):
+                continue  # a loader grouped off a non-owner module is not the builtin
         canonical = word if word in _RESOLVABLE_NAMES else (aliases or {}).get(word)
         if canonical is not None:
             heads.append((opening - 1, closing + 1, canonical))
@@ -448,6 +523,7 @@ def _callable_aliases(
         for item, start, _ in _lex(view)
         if item.type not in (tokenize.COMMENT, tokenize.NL, tokenize.ENCODING)
     ]
+    foreign = _foreign_module_names(view)
     aliases: dict[str, str] = {}
     index = 0
     while index < len(items):
@@ -479,18 +555,26 @@ def _callable_aliases(
         # its result, so a trailing ``(`` disqualifies the binding.
         if item.type == token.NAME and index + 2 < len(items) and items[index + 1][0].string == "=":
             cursor = index + 2
-            last = None
+            components: list[str] = []
             while cursor < len(items) and items[cursor][0].type == token.NAME:
-                last = items[cursor][0].string
+                components.append(items[cursor][0].string)
                 cursor += 1
                 if cursor < len(items) and items[cursor][0].string == ".":
                     cursor += 1
                     continue
                 break
+            last = components[-1] if components else None
             if last in _RESOLVABLE_NAMES and (
                 cursor >= len(items) or items[cursor][0].string != "("
             ):
-                aliases[item.string] = last
+                # Bind a loader only off a bare name or its owning module; a lone
+                # foreign receiver (``c = re.compile``) is the receiver's method.
+                receiver = components[-2] if len(components) == 2 else None
+                if not (
+                    last in _INLINE_CODE_LOADER_NAMES
+                    and _loader_method_is_exempt(receiver, foreign)
+                ):
+                    aliases[item.string] = last
         index += 1
     for head, _, canonical in _indirect_heads(view, spans, brackets):
         binding = _ALIAS_BINDING_RE.search(view[:head])
@@ -520,6 +604,7 @@ def _resolved_calls(
     if brackets is None:
         brackets = _argument_spans(view)
     aliases = _callable_aliases(view, spans, brackets)
+    foreign = _foreign_module_names(view)
     resolved: list[tuple[str, int, int, int]] = []
     for name, start, end in spans:
         written = _CALL_NAME_RE.match(view, name)
@@ -527,6 +612,14 @@ def _resolved_calls(
             continue
         word = written.group(1)
         if word in _RESOLVABLE_NAMES:
+            # A loader word written as a method is the builtin unless its receiver
+            # is PROVEN unrelated; a grouped or computed receiver fails closed.
+            if (
+                word in _INLINE_CODE_LOADER_NAMES
+                and _preceded_by_attribute_access(view, name)
+                and _loader_method_is_exempt(_attribute_receiver(view, name), foreign)
+            ):
+                continue
             resolved.append((word, name, start, end))
             continue
         canonical = aliases.get(word)

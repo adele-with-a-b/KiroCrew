@@ -1,0 +1,9 @@
++93
+A code-loader name written as a method (`re.compile`, `obj.exec`) was resolved as
+the builtin by its bare word alone, so a regex pattern naming the product tripped
+the mint check. The resolver now reads the receiver and fails closed: a loader is
+the builtin unless its receiver is a name the payload imports as a non-owner
+module (an allowlist). Every other receiver -- a free name, an owner module, a
+grouped, computed or dotted expression, a name bound any other way -- stays
+denied. This needs a receiver walk and an import scan, shared across the three
+sites that resolve a loader by the last word of a dotted head.
