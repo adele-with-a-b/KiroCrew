@@ -993,6 +993,7 @@ every other mirrored harness.
 | `hooks` | honoured | dropped from the wire projection; fired by Crew's turn loop | Crew's gate, renamed events |
 | `toolsSettings` | honoured | no wire slot; session-start notice | not read |
 | `toolAliases` | honoured | no wire slot; session-start notice unless Crew's Connections pass wrote every pair | not read |
+| `claudeCode` (adele-with-a-b fork) | not read | not read | user-scope specs only: `autoMemoryDirectory` (absolute) rides the flag tier, `env` is spread over the adapter's env, `strictMcpConfig: true` keeps the user's, project's and plugins' servers out (`acp/claude_agent_options.py`) |
 | `managedToolPolicy` | Crew-side, per session | Crew-side, per session | Crew-side, per session |
 | `welcomeMessage` | Crew-only (welcome page, chat transcript) | welcome page and chat transcript, and a wire field from the same capped reading | Crew-only (welcome page, chat transcript) |
 
