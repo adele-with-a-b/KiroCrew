@@ -60,7 +60,7 @@
     "you_re_on_the_latest_version": "You're on the latest version",
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Updated {{ago}}",
-    "status_item_unknown_value": "?",
+    "status_item_unknown_value": "Unknown",
     "status_item_failed": "Could not read {{label}}"
   },
   "appSdk": {

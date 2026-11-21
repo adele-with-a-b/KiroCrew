@@ -341,7 +341,7 @@
     "titlebar_menu_refused_notice": "\"{{item}}\" नहीं चला। यह कमांड अभी यहाँ उपलब्ध नहीं है।",
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "{{ago}} अपडेट किया गया",
-    "status_item_unknown_value": "?",
+    "status_item_unknown_value": "अज्ञात",
     "status_item_failed": "{{label}} पढ़ा नहीं जा सका"
   },
   "appSdk": {

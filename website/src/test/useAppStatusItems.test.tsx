@@ -3,7 +3,7 @@
  * app's untrusted answer, polling, and the pill + card the top bar draws.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 
 import { renderHookWithProviders, renderWithProviders } from './helpers'
 import {
@@ -35,16 +35,16 @@ const app = (name: string, statusItems: Item[], extra: Record<string, unknown> =
   },
 })
 
-const twoItems = () => app('cred-pill', [
-  { id: 'creds', label: 'Model calls', icon: 'Cloud', statusPath: 'status/creds' },
-  { id: 'midway', label: 'YubiKey tap', icon: 'Key', statusPath: 'status/midway' },
+const twoItems = () => app('status-app', [
+  { id: 'disk', label: 'Disk free', icon: 'Database', statusPath: 'status/disk' },
+  { id: 'sync', label: 'Last sync', icon: 'Shield', statusPath: 'status/sync' },
 ])
 
 describe('resolveStatusItems', () => {
   it('flattens, keys and marks process-backed apps', () => {
     const out = resolveStatusItems([twoItems()])
-    expect(out.map(i => i.key)).toEqual(['cred-pill:creds', 'cred-pill:midway'])
-    expect(out[0]).toMatchObject({ label: 'Model calls', icon: 'Cloud', statusPath: 'status/creds', processBacked: true })
+    expect(out.map(i => i.key)).toEqual(['status-app:disk', 'status-app:sync'])
+    expect(out[0]).toMatchObject({ label: 'Disk free', icon: 'Database', statusPath: 'status/disk', processBacked: true })
   })
 
   it('skips disabled apps and items missing an id, label or route', () => {
@@ -73,23 +73,31 @@ describe('resolveStatusItems', () => {
     expect(out).toEqual([])
   })
 
-  it('dedupes a repeated id and caps the bar as a whole, in byte order', () => {
+  it('dedupes a repeated id, mirrors the per-app cap, and sorts in byte order', () => {
     const many = ['d', 'c', 'b', 'a'].map(n => app(n, [
       { id: 'one', label: '1', statusPath: 'one' },
       { id: 'one', label: 'dup', statusPath: 'dup' },
       { id: 'two', label: '2', statusPath: 'two' },
+      { id: 'three', label: '3', statusPath: 'three' },
     ]))
     const out = resolveStatusItems(many)
-    expect(out).toHaveLength(MAX_STATUS_ITEMS)
-    expect(out.map(i => i.key)).toEqual(['a:one', 'a:two', 'b:one', 'b:two'])
+    expect(out.map(i => i.key)).toEqual(['a:one', 'a:two', 'b:one', 'b:two', 'c:one', 'c:two', 'd:one', 'd:two'])
     expect(out[0].label).toBe('1')
+  })
+
+  it('cleans the label and skips one past the install-time length limit', () => {
+    const out = resolveStatusItems([app('a', [
+      { id: 'x', label: 'Disk\u202e free', statusPath: 'x' },
+      { id: 'y', label: 'y'.repeat(41), statusPath: 'y' },
+    ])])
+    expect(out.map(i => i.label)).toEqual(['Disk free'])
   })
 })
 
 describe('normalizeStatusItemValue', () => {
   it('keeps a well-formed answer', () => {
-    expect(normalizeStatusItemValue({ text: '54m', tone: 'ok', tooltip: 'Fine.' }))
-      .toEqual({ text: '54m', tone: 'ok', tooltip: 'Fine.' })
+    expect(normalizeStatusItemValue({ text: '54 GB', tone: 'ok', tooltip: 'Fine.' }))
+      .toEqual({ text: '54 GB', tone: 'ok', tooltip: 'Fine.' })
   })
 
   it('draws an unknown tone muted', () => {
@@ -115,13 +123,13 @@ describe('useAppStatusItems', () => {
   it('polls each item through the app route with no params, grouped per app', async () => {
     mockListApps.mockResolvedValue([twoItems()])
     mockStatus.mockImplementation((_app: string, path: string) =>
-      Promise.resolve(path === 'status/creds' ? { text: '54m', tone: 'muted' } : { text: '19h', tone: 'ok' }))
+      Promise.resolve(path === 'status/disk' ? { text: '54 GB', tone: 'muted' } : { text: '2h', tone: 'ok' }))
     const { result } = renderHookWithProviders(() => useAppStatusItems())
     await waitFor(() => expect(result.current[0]?.readings).toHaveLength(2))
-    expect(mockStatus).toHaveBeenCalledWith('cred-pill', 'status/creds', {}, true)
-    expect(mockStatus).toHaveBeenCalledWith('cred-pill', 'status/midway', {}, true)
+    expect(mockStatus).toHaveBeenCalledWith('status-app', 'status/disk', {}, true)
+    expect(mockStatus).toHaveBeenCalledWith('status-app', 'status/sync', {}, true)
     expect(result.current).toHaveLength(1)
-    expect(result.current[0].readings.map(r => r.value?.text)).toEqual(['54m', '19h'])
+    expect(result.current[0].readings.map(r => r.value?.text)).toEqual(['54 GB', '2h'])
     expect(STATUS_ITEM_POLL_MS).toBe(60_000)
   })
 
@@ -132,15 +140,27 @@ describe('useAppStatusItems', () => {
     expect(result.current).toEqual([])
   })
 
+  it('caps the drawn readings after hiding empty ones, so a hidden item holds no slot', async () => {
+    mockListApps.mockResolvedValue(['a', 'b', 'c'].map(n => app(n, [
+      { id: 'one', label: '1', statusPath: 'one' },
+      { id: 'two', label: '2', statusPath: 'two' },
+    ])))
+    mockStatus.mockImplementation((name: string) =>
+      Promise.resolve(name === 'a' ? { text: '' } : { text: 'v', tone: 'ok' }))
+    const { result } = renderHookWithProviders(() => useAppStatusItems())
+    await waitFor(() => expect(result.current.flatMap(g => g.readings)).toHaveLength(MAX_STATUS_ITEMS))
+    expect(result.current.map(g => g.appName)).toEqual(['b', 'c'])
+  })
+
   it('keeps a failing item as a reading carrying its error', async () => {
     mockListApps.mockResolvedValue([twoItems()])
     mockStatus.mockImplementation((_app: string, path: string) =>
-      path === 'status/creds' ? Promise.reject(new Error('HTTP 502')) : Promise.resolve({ text: '19h', tone: 'ok' }))
+      path === 'status/disk' ? Promise.reject(new Error('HTTP 502')) : Promise.resolve({ text: '2h', tone: 'ok' }))
     const { result } = renderHookWithProviders(() => useAppStatusItems())
     await waitFor(() => expect(result.current[0]?.readings).toHaveLength(2))
-    const creds = result.current[0].readings.find(r => r.item.id === 'creds')!
-    expect(creds.value).toBeNull()
-    expect(creds.error?.message).toBe('HTTP 502')
+    const disk = result.current[0].readings.find(r => r.item.id === 'disk')!
+    expect(disk.value).toBeNull()
+    expect(disk.error?.message).toBe('HTTP 502')
   })
 })
 
@@ -157,31 +177,31 @@ describe('AppStatusItems', () => {
   it('draws one button per app with a pill per item, and opens the card on a click', async () => {
     mockListApps.mockResolvedValue([twoItems()])
     mockStatus.mockImplementation((_app: string, path: string) =>
-      Promise.resolve(path === 'status/creds'
-        ? { text: 'tap', tone: 'danger', tooltip: 'Session cookie expired.' }
-        : { text: '19h', tone: 'ok', tooltip: 'Tap due in 19 h.' }))
+      Promise.resolve(path === 'status/disk'
+        ? { text: 'low', tone: 'danger', tooltip: 'Under 1 GB free.' }
+        : { text: '2h', tone: 'ok', tooltip: 'Synced 2 h ago.' }))
     renderWithProviders(<AppStatusItems />)
     const button = await screen.findByTestId('app-status-items')
     await waitFor(() => expect(button.querySelectorAll('[data-testid="app-status-pill"]')).toHaveLength(2))
     const pills = Array.from(button.querySelectorAll<HTMLElement>('[data-testid="app-status-pill"]'))
     expect(pills.map(p => p.dataset.tone)).toEqual(['danger', 'ok'])
-    expect(pills.map(p => p.textContent)).toEqual(['tap', '19h'])
+    expect(pills.map(p => p.textContent)).toEqual(['low', '2h'])
     // The labels are the accessible name; they are never drawn on the pill.
-    expect(button.getAttribute('aria-label')).toContain('Model calls: tap')
-    expect(button.getAttribute('aria-label')).toContain('YubiKey tap: 19h')
+    expect(button.getAttribute('aria-label')).toContain('Disk free: low')
+    expect(button.getAttribute('aria-label')).toContain('Last sync: 2h')
 
     fireEvent.click(button)
     const card = await screen.findByTestId('app-status-card')
-    expect(card.textContent).toContain('Model calls: tap')
-    expect(card.textContent).toContain('Session cookie expired.')
-    expect(card.textContent).toContain('Tap due in 19 h.')
+    expect(card.textContent).toContain('Disk free: low')
+    expect(card.textContent).toContain('Under 1 GB free.')
+    expect(card.textContent).toContain('Synced 2 h ago.')
     expect(screen.getByTestId('app-status-updated').textContent).toMatch(/^Updated /)
   })
 
   it('marks a failing item unknown and explains the failure in the card', async () => {
     mockListApps.mockResolvedValue([twoItems()])
     mockStatus.mockImplementation((_app: string, path: string) =>
-      path === 'status/creds' ? Promise.reject(new Error('HTTP 502')) : Promise.resolve({ text: '19h', tone: 'ok' }))
+      path === 'status/disk' ? Promise.reject(new Error('HTTP 502')) : Promise.resolve({ text: '2h', tone: 'ok' }))
     renderWithProviders(<AppStatusItems />)
     const button = await screen.findByTestId('app-status-items')
     await waitFor(() => expect(button.querySelectorAll('[data-testid="app-status-pill"]')).toHaveLength(2))
@@ -190,5 +210,41 @@ describe('AppStatusItems', () => {
     expect(first.textContent).toBe('?')
     fireEvent.click(button)
     expect(await screen.findByTestId('app-status-item-error')).toBeTruthy()
+  })
+
+  it('drops the last good value when a later poll fails, instead of freezing it', async () => {
+    mockListApps.mockResolvedValue([twoItems()])
+    mockStatus.mockResolvedValue({ text: '54 GB', tone: 'ok' })
+    const { queryClient } = renderWithProviders(<AppStatusItems />)
+    const button = await screen.findByTestId('app-status-items')
+    await waitFor(() => expect(button.querySelectorAll('[data-testid="app-status-pill"]')).toHaveLength(2))
+    mockStatus.mockRejectedValue(new Error('HTTP 502'))
+    await queryClient.refetchQueries({ queryKey: ['app-status-item'] })
+    await waitFor(() => {
+      const pills = Array.from(button.querySelectorAll<HTMLElement>('[data-testid="app-status-pill"]'))
+      expect(pills.map(p => [p.dataset.tone, p.textContent])).toEqual([['muted', '?'], ['muted', '?']])
+    })
+  })
+
+  it('keeps a hover-opened card open when the pointer then clicks', async () => {
+    mockListApps.mockResolvedValue([twoItems()])
+    mockStatus.mockResolvedValue({ text: '54 GB', tone: 'ok' })
+    renderWithProviders(<AppStatusItems />)
+    const button = await screen.findByTestId('app-status-items')
+    fireEvent.pointerEnter(button, { pointerType: 'mouse' })
+    await screen.findByTestId('app-status-card')
+    await act(async () => { fireEvent.click(button) })
+    expect(screen.queryByTestId('app-status-card')).not.toBeNull()
+  })
+
+  it('opens on a touch tap without the hover path', async () => {
+    mockListApps.mockResolvedValue([twoItems()])
+    mockStatus.mockResolvedValue({ text: '54 GB', tone: 'ok' })
+    renderWithProviders(<AppStatusItems />)
+    const button = await screen.findByTestId('app-status-items')
+    fireEvent.pointerEnter(button, { pointerType: 'touch' })
+    expect(screen.queryByTestId('app-status-card')).toBeNull()
+    fireEvent.click(button)
+    expect(await screen.findByTestId('app-status-card')).toBeTruthy()
   })
 })

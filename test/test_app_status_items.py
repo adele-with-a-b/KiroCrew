@@ -22,7 +22,7 @@ BASE = {
     "description": "d",
 }
 
-GOOD = {"id": "creds", "label": "Model calls", "icon": "Cloud", "statusPath": "status/creds"}
+GOOD = {"id": "disk", "label": "Disk free", "icon": "Database", "statusPath": "status/disk"}
 
 
 def _mf(items, **contributes) -> AppManifest:
@@ -38,10 +38,10 @@ class TestParsing:
         m = _mf([GOOD])
         (item,) = m.contributes.statusItems
         assert (item.id, item.label, item.icon, item.statusPath) == (
-            "creds",
-            "Model calls",
-            "Cloud",
-            "status/creds",
+            "disk",
+            "Disk free",
+            "Database",
+            "status/disk",
         )
 
     def test_absent_is_empty_and_omitted_from_output(self):
@@ -50,9 +50,9 @@ class TestParsing:
         assert "statusItems" not in m.to_dict().get("contributes", {})
 
     def test_round_trip_preserves_items_and_normalizes_the_leading_slash(self):
-        m = _mf([{**GOOD, "statusPath": "/status/creds"}])
+        m = _mf([{**GOOD, "statusPath": "/status/disk"}])
         again = AppManifest.from_dict(m.to_dict())
-        assert again.contributes.statusItems[0].statusPath == "status/creds"
+        assert again.contributes.statusItems[0].statusPath == "status/disk"
         assert again.contributes.statusItems[0].to_dict() == GOOD
 
     def test_icon_is_optional_and_omitted_when_unset(self):
@@ -62,19 +62,19 @@ class TestParsing:
         assert "icon" not in m.contributes.statusItems[0].to_dict()
 
     def test_a_non_dict_entry_is_kept_so_validate_refuses_it(self):
-        m = _mf(["creds"])
+        m = _mf(["disk"])
         assert len(m.contributes.statusItems) == 1
         assert any("missing required field: id" in e for e in m.validate())
 
     def test_a_non_list_value_is_refused_not_silently_empty(self):
-        m = _mf({"id": "creds"})
+        m = _mf({"id": "disk"})
         assert m.contributes.statusItems == []
         assert any("statusItems must be an array" in e for e in m.validate())
 
 
 class TestValidation:
     def test_a_well_formed_pair_validates_clean(self):
-        m = _mf([GOOD, {**GOOD, "id": "midway", "label": "YubiKey tap", "icon": "Key"}])
+        m = _mf([GOOD, {**GOOD, "id": "sync", "label": "Last sync", "icon": "Shield"}])
         assert _status_errors(m) == []
 
     @pytest.mark.parametrize("field", ["id", "label", "statusPath"])
@@ -86,7 +86,7 @@ class TestValidation:
         m = _mf([{**GOOD, "label": "   "}])
         assert any("missing required field: label" in e for e in m.validate())
 
-    @pytest.mark.parametrize("bad", ["Creds", "creds_1", "-creds", "creds-", "cr eds"])
+    @pytest.mark.parametrize("bad", ["Disk", "disk_1", "-disk", "disk-", "di sk"])
     def test_id_must_be_kebab_case(self, bad):
         assert any("kebab-case" in e for e in _mf([{**GOOD, "id": bad}]).validate())
 
@@ -98,6 +98,21 @@ class TestValidation:
         items = [{**GOOD, "id": f"i{n}"} for n in range(MAX_STATUS_ITEMS_PER_APP + 1)]
         assert any("at most" in e for e in _mf(items).validate())
         assert not any("at most" in e for e in _mf(items[:-1]).validate())
+
+    @pytest.mark.parametrize("bad", [None, 5, ["Disk"]])
+    def test_a_non_string_label_is_missing_not_stringified(self, bad):
+        m = _mf([{**GOOD, "label": bad}])
+        assert m.contributes.statusItems[0].label == ""
+        assert any("missing required field: label" in e for e in m.validate())
+
+    @pytest.mark.parametrize("bad", ["Disk\u202efree", "Disk\u0007", "Disk\u2028free"])
+    def test_a_label_with_hidden_characters_is_refused(self, bad):
+        assert any(
+            "control, format or separator" in e for e in _mf([{**GOOD, "label": bad}]).validate()
+        )
+
+    def test_a_label_may_carry_the_joiners(self):
+        assert _status_errors(_mf([{**GOOD, "label": "ডিস্ক\u200c"}])) == []
 
     def test_label_length_cap(self):
         m = _mf([{**GOOD, "label": "x" * (MAX_STATUS_ITEM_LABEL + 1)}])
@@ -115,8 +130,8 @@ class TestValidation:
             "//evilhost/x",
             "../other-app/status",
             "status?x=1",
-            "Status/Creds",
-            "status/creds\n",
+            "Status/Disk",
+            "status/disk\n",
             "x" * 65,
         ],
     )

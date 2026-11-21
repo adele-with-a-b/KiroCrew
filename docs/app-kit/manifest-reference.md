@@ -437,7 +437,7 @@ each replaced field with its old and new value (a WARNING line ending in
 | `contributes.sessionControls[].icon` | string | | Icon name. Only `Shield`, `Bot`, `Search`, `Tag`, `Users`, `Zap`, `Star`, `Package`, `Cat`, `AudioLines` and `Mic` are rendered; any other name falls back to `Package`. Use `AudioLines` for a control that starts a voice conversation and `Mic` only for voice input: the composer's own dictation button already draws `Mic`, so a conversation chip with that glyph reads as a second dictation button |
 | `contributes.sessionControls[].statusPath` | string | | Optional backend route reporting per-session chip state (see below) |
 | `contributes.statusItems[].id` | string | | Item id, kebab-case; addressed as `<appName>:<id>` |
-| `contributes.statusItems[].label` | string | | Accessible name and the detail card's row heading, at most 40 characters; never drawn on the pill |
+| `contributes.statusItems[].label` | string | | Accessible name and the detail card's row heading, at most 40 characters, with no control, format or separator character (the zero-width joiners are allowed); never drawn on the pill |
 | `contributes.statusItems[].icon` | string | | Icon name from the app icon set listed under `contributes.panelTabs`; any other name draws the generic panel glyph |
 | `contributes.statusItems[].statusPath` | string | | Required backend route answering `{text, tone, tooltip}` (see below) |
 
@@ -782,8 +782,8 @@ nothing else.
 {
   "contributes": {
     "statusItems": [
-      { "id": "creds", "label": "Model calls", "icon": "Cloud", "statusPath": "status/creds" },
-      { "id": "midway", "label": "YubiKey tap", "icon": "Key", "statusPath": "status/midway" }
+      { "id": "disk", "label": "Disk free", "icon": "Database", "statusPath": "status/disk" },
+      { "id": "sync", "label": "Last sync", "icon": "Shield", "statusPath": "status/sync" }
     ]
   }
 }
@@ -795,7 +795,7 @@ process-backed app at `/apps/<app>/api/`, a hook app at `/api/apps/<app>/`) with
 query parameters, about once a minute, and reads:
 
 ```json
-{ "text": "54m", "tone": "muted", "tooltip": "Calls keep working 54 min if wlap leaves now." }
+{ "text": "54 GB", "tone": "ok", "tooltip": "54 GB free on the data volume." }
 ```
 
 | Field | Meaning |
@@ -808,14 +808,17 @@ The host draws the pill: the icon comes from the fixed app icon set, the colour
 from one of the four tones and the accessible name from `label`. An app cannot put
 its own markup in the bar.
 
-**One control per app, and two caps.** An app's items share ONE button, so the bar
-gains one control per app however many items it declares; the card lists them all.
-The backend allows at most **2** items per app. The dashboard draws at most **4**
-across all apps, in `<appName>:<id>` byte order, and drops the rest.
+**One control, and two caps.** Every app's items share ONE button, so the bar
+gains one control however many apps declare items; the card lists them all, a
+section per app. The backend allows at most **2** items per app. The dashboard
+draws at most **4** across all apps, in `<appName>:<id>` byte order, counting only
+items with something to show, and drops the rest.
 
 **Failure.** An unreachable app list draws no pills. An item whose route fails is
 drawn muted with `?`, and its row in the card says the read failed, with the
-error. A failed route is not retried until the next poll.
+error; it never keeps showing the last good value. A failed route is not retried
+until the next poll, but returning to the tab re-reads any value older than a
+minute.
 
 ### `contributes.fileMenuItems` — Rows in File / Tree / Folder Menus
 

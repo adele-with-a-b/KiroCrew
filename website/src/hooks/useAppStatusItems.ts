@@ -15,14 +15,20 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { safeStatusPath } from './useSessionControls'
 
-/** Hard cap on status items drawn across ALL apps.
+/** Hard cap on status items DRAWN across ALL apps.
  *
  * The backend caps each app at 2; this caps the bar as a whole. The top bar is
  * one row shared with the readout capsule and the bell, so N apps must not be
- * able to grow it without bound. Items past the cap are dropped, in the stable
- * key order below, rather than wrapped.
+ * able to grow it without bound. The cap counts drawable readings, so an item
+ * answering "nothing to show" gives its slot to the next one; past the cap
+ * items are dropped, in the stable key order below, rather than wrapped.
  */
 export const MAX_STATUS_ITEMS = 4
+
+/** Mirrors of the install-time limits (`manifest_status_items.py`), so a
+ *  hand-edited manifest cannot draw or poll more than an installed one could. */
+export const MAX_STATUS_ITEMS_PER_APP = 2
+export const MAX_STATUS_LABEL = 40
 
 /** How often each item's route is polled. "About once a minute" is the contract
  *  the manifest reference states; an app that needs fresher numbers belongs on
@@ -95,17 +101,20 @@ export function resolveStatusItems(apps: AppLike[]): ResolvedStatusItem[] {
     if (app.enabled === false) continue
     const declared = app.manifest?.contributes?.statusItems
     if (!Array.isArray(declared)) continue
+    let perApp = 0
     for (const item of declared) {
       if (!item || typeof item !== 'object') continue
       const id = typeof item.id === 'string' ? item.id : ''
-      const label = typeof item.label === 'string' ? item.label.trim() : ''
+      const label = cleanText(item.label, Infinity)
       const statusPath = safeStatusPath(item.statusPath)
       // All three are required server-side. Without a route there is no value to
       // draw, and without a label the pill has no accessible name.
       if (!id || !label || !statusPath) continue
+      if (Array.from(label).length > MAX_STATUS_LABEL) continue
       const key = `${app.name}:${id}`
       if (seen.has(key)) continue
       seen.add(key)
+      if (++perApp > MAX_STATUS_ITEMS_PER_APP) break
       out.push({
         key,
         appName: app.name,
@@ -121,14 +130,23 @@ export function resolveStatusItems(apps: AppLike[]): ResolvedStatusItem[] {
   // Byte order, not `localeCompare`: these are machine keys, and the pill order
   // must not change with the UI language.
   out.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-  return out.slice(0, MAX_STATUS_ITEMS)
+  return out
 }
 
 /** Strip what could reorder or hide text (the Unicode C category and the
- *  line/paragraph separators), then cap by code points so a pair never splits. */
+ *  line/paragraph separators), keeping the zero-width joiner and non-joiner
+ *  that Bengali, Hindi and emoji sequences need, then cap at `max` grapheme
+ *  clusters so a character never splits. */
+const STRIP = /(?![\u200c\u200d])[\p{C}\p{Zl}\p{Zp}]/gu
+const graphemes = typeof Intl !== 'undefined' && 'Segmenter' in Intl
+  ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  : null
 function cleanText(raw: unknown, max: number): string {
   if (typeof raw !== 'string') return ''
-  return Array.from(raw.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '').trim()).slice(0, max).join('')
+  const text = raw.replace(STRIP, '').trim()
+  if (!Number.isFinite(max)) return text
+  const parts = graphemes ? Array.from(graphemes.segment(text), g => g.segment) : Array.from(text)
+  return parts.slice(0, max).join('')
 }
 
 /**
@@ -153,7 +171,7 @@ export interface StatusItemReading {
   value: StatusItemValue | null
   /** The probe's failure, or `null`. */
   error: Error | null
-  /** When `value` was last fetched (epoch ms), or 0 before the first answer. */
+  /** When this item was last polled, answered or failed (epoch ms), or 0 before the first poll. */
   updatedAt: number
 }
 
@@ -200,21 +218,31 @@ export function useAppStatusItems(): StatusItemGroup[] {
         return normalizeStatusItemValue(await api.appSessionStatus(item.appName, item.statusPath, {}, item.processBacked))
       },
       refetchInterval: STATUS_ITEM_POLL_MS,
+      // Stale after one interval, so a return to the tab, a remount or a
+      // reconnect re-reads at once instead of showing the old value for up to a
+      // minute (the shared client's default never goes stale).
+      staleTime: STATUS_ITEM_POLL_MS,
       // A third-party app that is down must not be hammered from every page.
       retry: false,
     })),
   })
   const groups: StatusItemGroup[] = []
+  let drawn = 0
   items.forEach((item, i) => {
     const r = results[i]
+    // A failed refetch keeps the last answer in `data`; drawing it would show an
+    // old value in its old tone for as long as the app is down.
+    const failed = r?.isError === true
     const reading: StatusItemReading = {
       item,
-      value: r?.data ?? null,
-      error: (r?.error as Error | null | undefined) ?? null,
-      updatedAt: r?.dataUpdatedAt ?? 0,
+      value: failed ? null : (r?.data ?? null),
+      error: failed ? ((r?.error as Error | null | undefined) ?? null) : null,
+      updatedAt: Math.max(r?.dataUpdatedAt ?? 0, r?.errorUpdatedAt ?? 0),
     }
-    // Nothing to draw yet: neither an answer nor a failure.
+    // Nothing to draw yet: neither an answer nor a failure. Skipped before the
+    // cap, so a hidden item does not hold a slot.
     if (!reading.value && !reading.error) return
+    if (drawn++ >= MAX_STATUS_ITEMS) return
     const last = groups[groups.length - 1]
     // `items` is sorted by key, whose prefix is the app name, so one app's items
     // are adjacent and grouping needs no map.

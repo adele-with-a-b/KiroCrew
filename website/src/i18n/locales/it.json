@@ -356,7 +356,7 @@
     "titlebar_menu_refused_notice": "\"{{item}}\" non è stato eseguito. Questo comando non è disponibile qui in questo momento.",
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Aggiornato {{ago}}",
-    "status_item_unknown_value": "?",
+    "status_item_unknown_value": "Sconosciuto",
     "status_item_failed": "Impossibile leggere {{label}}"
   },
   "appSdk": {

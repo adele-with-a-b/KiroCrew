@@ -341,7 +341,7 @@
     "titlebar_menu_refused_notice": "„{{item}}“ wurde nicht ausgeführt. Dieser Befehl ist hier derzeit nicht verfügbar.",
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Aktualisiert {{ago}}",
-    "status_item_unknown_value": "?",
+    "status_item_unknown_value": "Unbekannt",
     "status_item_failed": "{{label}} konnte nicht gelesen werden"
   },
   "appSdk": {

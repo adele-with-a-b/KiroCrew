@@ -356,7 +356,7 @@
     "titlebar_menu_refused_notice": "« {{item}} » ne s'est pas exécuté. Cette commande n'est pas disponible ici pour le moment.",
     "status_item_reading": "{{label}}\u202f: {{value}}",
     "status_item_updated": "Mis à jour {{ago}}",
-    "status_item_unknown_value": "?",
+    "status_item_unknown_value": "Inconnu",
     "status_item_failed": "Impossible de lire {{label}}"
   },
   "appSdk": {

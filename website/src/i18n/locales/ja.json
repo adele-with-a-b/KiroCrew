@@ -326,7 +326,7 @@
     "titlebar_menu_refused_notice": "「{{item}}」は実行されませんでした。このコマンドは現在ここでは利用できません。",
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "{{ago}}に更新",
-    "status_item_unknown_value": "?",
+    "status_item_unknown_value": "不明",
     "status_item_failed": "{{label}}を読み取れませんでした"
   },
   "appSdk": {

@@ -12,9 +12,9 @@ import { errMessage } from '../../utils/thunkError'
  * App-contributed top-bar readouts (`contributes.statusItems`): small pills on
  * the desktop top bar and in the phone chat header.
  *
- * Each APP's items are ONE button holding its pills, so the bar gains one
- * control per app however many items it declares, and a tap or hover opens one
- * card saying what each value means. The pill draws only what the app's route
+ * Every app's items share ONE button holding the pills, so the bar gains one
+ * control however many apps and items there are, and a tap or hover opens one
+ * card saying what each value means, a section per app. The pill draws only what the app's route
  * answered (`{text, tone, tooltip}`) inside host chrome: the icon comes from the
  * fixed app icon set, the colour from one of four tones, and the label from the
  * manifest. An app cannot draw its own markup here.
@@ -36,8 +36,15 @@ function toneOf(r: StatusItemReading): StatusItemTone {
   return r.value?.tone ?? 'muted'
 }
 
+/** The value in words, for the card and the accessible name. */
 function textOf(r: StatusItemReading): string {
   return r.value?.text ?? i18nT('app.status_item_unknown_value')
+}
+
+/** The value as the pill draws it: a bare `?` when it could not be read, the
+ *  card and the accessible name saying it in words. */
+function pillTextOf(r: StatusItemReading): string {
+  return r.value?.text ?? '?'
 }
 
 /** One pill. `size` is the desktop bar (`md`) or the phone header (`sm`). */
@@ -55,10 +62,10 @@ function Pill({ reading, size }: { reading: StatusItemReading; size: 'md' | 'sm'
       data-testid="app-status-pill"
       data-tone={tone}
       style={style}
-      className={`inline-flex items-center shrink-0 rounded-full border font-medium tabular-nums whitespace-nowrap ${sizing} ${chrome} ${tone === 'danger' ? 'text-text-strong' : 'text-text'} [&_svg]:shrink-0 [&_svg]:text-[var(--c)]`}
+      className={`inline-flex items-center min-w-0 rounded-full border font-medium tabular-nums whitespace-nowrap ${sizing} ${chrome} ${tone === 'danger' ? 'text-text-strong' : 'text-text'} [&_svg]:shrink-0 [&_svg]:text-[var(--c)]`}
     >
       <span aria-hidden="true" className="inline-flex">{appIcon(reading.item.icon)}</span>
-      <span aria-hidden="true">{textOf(reading)}</span>
+      <span aria-hidden="true" className="min-w-0 truncate">{pillTextOf(reading)}</span>
     </span>
   )
 }
@@ -101,9 +108,13 @@ function useNowWhile(active: boolean): number {
   return now
 }
 
-function AppStatusGroup({ group, size }: { group: StatusItemGroup; size: 'md' | 'sm' }) {
+function AppStatusButton({ groups, size }: { groups: StatusItemGroup[]; size: 'md' | 'sm' }) {
   const [open, setOpen] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // A hover-opened card is a glance: it neither takes focus on open nor hands it
+  // to the pill on close, so typing in the composer is never interrupted.
+  // A click or keyboard open is a deliberate one and moves focus as Radix does.
+  const viaHover = useRef(false)
   const now = useNowWhile(open)
   const cancelClose = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current)
@@ -115,6 +126,7 @@ function AppStatusGroup({ group, size }: { group: StatusItemGroup; size: 'md' | 
   const hoverOpen = (e: PointerEvent) => {
     if (e.pointerType !== 'mouse') return
     cancelClose()
+    if (!open) viaHover.current = true
     setOpen(true)
   }
   const hoverClose = (e: PointerEvent) => {
@@ -122,24 +134,34 @@ function AppStatusGroup({ group, size }: { group: StatusItemGroup; size: 'md' | 
     cancelClose()
     closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_MS)
   }
+  const readings = groups.flatMap(g => g.readings)
+  // `short`, not `narrow`: a narrow unit list joins with a bare space (or with
+  // nothing, in ja), which runs "label: value" pairs together when read aloud.
   const label = fmtList(
-    group.readings.map(r => i18nT('app.status_item_reading', { label: r.item.label, value: textOf(r) })),
-    { type: 'unit', style: 'narrow' },
+    readings.map(r => i18nT('app.status_item_reading', { label: r.item.label, value: textOf(r) })),
+    { type: 'unit', style: 'short' },
   )
-  const updatedAt = Math.max(...group.readings.map(r => r.updatedAt))
+  const cardName = fmtList(groups.map(g => g.appDisplayName), { type: 'unit', style: 'short' })
+  const updatedAt = Math.max(...readings.map(r => r.updatedAt))
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
           data-testid="app-status-items"
-          data-app={group.appName}
           aria-label={label}
-          className="inline-flex items-center gap-1.5 shrink-0 rounded-full bg-transparent border-none p-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-accent"
+          className="inline-flex items-center gap-1.5 min-w-0 rounded-full bg-transparent border-none p-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-accent"
           onPointerEnter={hoverOpen}
           onPointerLeave={hoverClose}
+          onClick={e => {
+            // The pointer hovered the card open on its way to the click; the
+            // trigger's toggle would close it under the pointer, so keep it.
+            cancelClose()
+            viaHover.current = false
+            if (open) e.preventDefault()
+          }}
         >
-          {group.readings.map(r => <Pill key={r.item.key} reading={r} size={size} />)}
+          {readings.map(r => <Pill key={r.item.key} reading={r} size={size} />)}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -147,15 +169,24 @@ function AppStatusGroup({ group, size }: { group: StatusItemGroup; size: 'md' | 
         sideOffset={6}
         className="w-[300px] max-w-[calc(100vw-1rem)] rounded-[var(--radius-lg)] border-border-strong px-3.5 py-3 text-[13px] shadow-lg"
         data-testid="app-status-card"
+        aria-label={cardName}
         onPointerEnter={hoverOpen}
         onPointerLeave={hoverClose}
-        // An information card: focus stays on the pill, so a hover never steals it.
-        onOpenAutoFocus={e => e.preventDefault()}
+        onOpenAutoFocus={e => { if (viaHover.current) e.preventDefault() }}
+        onCloseAutoFocus={e => {
+          if (viaHover.current) e.preventDefault()
+          viaHover.current = false
+        }}
       >
-        <div className="flex items-center gap-1.5 mb-1">
-          {group.readings.map(r => <Pill key={r.item.key} reading={r} size="md" />)}
-        </div>
-        {group.readings.map(r => <CardRow key={r.item.key} reading={r} />)}
+        {groups.map(g => (
+          <section key={g.appName} aria-label={g.appDisplayName} className="mb-1" data-app={g.appName}>
+            {groups.length > 1 && <div className="text-[12px] font-semibold text-muted mb-0.5">{g.appDisplayName}</div>}
+            <div className="flex items-center gap-1.5 mb-1">
+              {g.readings.map(r => <Pill key={r.item.key} reading={r} size="md" />)}
+            </div>
+            {g.readings.map(r => <CardRow key={r.item.key} reading={r} />)}
+          </section>
+        ))}
         {updatedAt > 0 && (
           <div className="mt-2 text-[12px] text-muted" data-testid="app-status-updated">
             {i18nT('app.status_item_updated', { ago: fmtRelative(updatedAt, { now, numeric: 'always' }) })}
@@ -174,8 +205,13 @@ export default function AppStatusItems({ size = 'md' }: { size?: 'md' | 'sm' }) 
   const groups = useAppStatusItems()
   if (groups.length === 0) return null
   return (
-    <div className="flex items-center gap-1.5 shrink-0" data-testid="app-status-items-bar">
-      {groups.map(g => <AppStatusGroup key={g.appName} group={g} size={size} />)}
+    // Shrinkable, and the pills' values truncate, so the row gives way before
+    // the bell or the phone's session title. The desktop ladder measures
+    // max-content widths, so its rungs still fold first; the row only shrinks
+    // once the last rung leaves the group too wide. On the phone it takes at
+    // most 65% of the centre cell, the title keeping the rest.
+    <div className={`flex items-center gap-1.5 min-w-0 overflow-hidden${size === 'sm' ? ' max-w-[65%]' : ''}`} data-testid="app-status-items-bar">
+      <AppStatusButton groups={groups} size={size} />
     </div>
   )
 }

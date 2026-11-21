@@ -18,6 +18,7 @@ its ``validate``.
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,11 +66,34 @@ class StatusItemContribution:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StatusItemContribution:
         return cls(
-            id=str(data.get("id", "")),
-            label=str(data.get("label", "")),
-            icon=str(data.get("icon", "")),
+            # A non-string value parses as missing, so `validate` refuses it with
+            # a reason instead of installing `None` or `5` as the text.
+            id=_str_field(data, "id"),
+            label=_str_field(data, "label"),
+            icon=_str_field(data, "icon"),
             statusPath=normalize_status_path(data.get("statusPath", "")),  # noqa: N815
         )
+
+
+def _str_field(data: dict[str, Any], key: str) -> str:
+    value = data.get(key, "")
+    return value if isinstance(value, str) else ""
+
+
+#: The zero-width non-joiner and joiner: format characters Bengali, Hindi and
+#: emoji sequences need, so a label may carry them.
+_JOINERS = frozenset("\u200c\u200d")
+
+
+def _has_hidden_characters(text: str) -> bool:
+    """Whether ``text`` holds a character that could reorder or hide what is drawn
+    beside it (Unicode category C, or a line/paragraph separator)."""
+    return any(
+        ch not in _JOINERS
+        and unicodedata.category(ch)[0] == "C"
+        or unicodedata.category(ch) in ("Zl", "Zp")
+        for ch in text
+    )
 
 
 def parse_status_items(data: dict[str, Any]) -> tuple[list[StatusItemContribution], bool]:
@@ -115,6 +139,11 @@ def status_item_errors(items: list[StatusItemContribution], bad: bool) -> list[s
             seen.add(item.id)
         if not item.label.strip():
             errors.append(f"status item contribution {name} missing required field: label")
+        elif _has_hidden_characters(item.label):
+            errors.append(
+                f"status item contribution {name} label holds a control, format or "
+                "separator character"
+            )
         elif len(item.label) > MAX_STATUS_ITEM_LABEL:
             errors.append(
                 f"status item contribution {name} label is longer than "

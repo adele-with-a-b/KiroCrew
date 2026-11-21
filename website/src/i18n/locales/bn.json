@@ -341,7 +341,7 @@
     "titlebar_menu_refused_notice": "\"{{item}}\" চলেনি। এটি এই মুহূর্তে এখানে উপলব্ধ নয়।",
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "{{ago}} আপডেট হয়েছে",
-    "status_item_unknown_value": "?",
+    "status_item_unknown_value": "অজানা",
     "status_item_failed": "{{label}} পড়া যায়নি"
   },
   "appSdk": {
