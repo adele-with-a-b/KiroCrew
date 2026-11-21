@@ -375,6 +375,28 @@ async def test_the_start_pass_learns_closed_roots_and_writes_no_stamp(_switch):
     assert "old-worker" not in crew_mode.known_roots()
 
 
+def test_a_closed_released_conductor_is_learned_as_a_root(_switch, monkeypatch):
+    """A closed conductor chat another chat made keeps its birth ``created_by`` on its
+    saved line; the start pass learns it as a root only when the session tree holds
+    its release, under the bare key a stacked history stem resolves to."""
+
+    class _Log:
+        def list_sessions(self) -> list[dict]:
+            return [
+                {"key": "dashboard_dashboard_let-go", "agent": "kirocrew-conductor"},
+                {"key": "dashboard_held", "agent": "kirocrew-conductor"},
+            ]
+
+        def get_metadata(self, key: str) -> dict:
+            return {"agent": "kirocrew-conductor", "created_by": "maker"}
+
+    monkeypatch.setattr(crew_mode, "persisted_parents", lambda: {})
+    monkeypatch.setattr(crew_mode, "released_slots", lambda: frozenset({"let-go"}))
+    assert _switch.mig._closed_roots(_Log()) == ["let-go"]
+    monkeypatch.setattr(crew_mode, "released_slots", lambda: frozenset())
+    assert _switch.mig._closed_roots(_Log()) == []
+
+
 class _RootLog:
     def list_sessions(self) -> list[dict]:
         return [{"key": "dashboard_closed-root", "agent": "kirocrew-conductor"}]

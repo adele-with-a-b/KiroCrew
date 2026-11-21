@@ -430,6 +430,9 @@ def _closed_roots(log: Any) -> list[str]:
     # The persisted lineage outranks the birth stamp: an adopted conductor's saved
     # line still says "no creator", but the session tree holds its parent edge.
     parents = crew_mode.persisted_parents()
+    # A conductor another chat made and then let go keeps that birth stamp on its
+    # line; the session tree's release record is what makes it a root.
+    released = crew_mode.released_slots()
     found: list[str] = []
     for row in log.list_sessions():
         key = str(row.get("key") or "")
@@ -442,7 +445,9 @@ def _closed_roots(log: Any) -> list[str]:
         except Exception:
             # A row whose metadata cannot be read is left out; one bad row must not stop the rest.
             continue
-        if isinstance(meta, dict) and crew_mode.saved_row_is_root(meta):
+        if isinstance(meta, dict) and crew_mode.saved_row_is_root(
+            meta, released=history_slot_key(key) in released
+        ):
             found.append(history_slot_key(key))
     return found
 

@@ -310,14 +310,60 @@ def persisted_tree_slots() -> frozenset[str] | None:
         return None
 
 
-def _row_is_root(row: Mapping[str, Any]) -> bool:
-    """Whether *row* (a slot payload) is a Crew Mode root.
+def released_slots() -> frozenset[str]:
+    """Slots the settled session tree holds under no parent because a parent let them go.
 
-    Root means no creator by either reading the sidebar nests on: ``created_by``
-    (the session-control create stamp) and the crew log's ``parent`` edge (which also
-    carries an adoption). App-owned and remote rows never conduct here.
+    The newest decision on the slot is a ``session/released``
+    (``SessionTreeProjection.released``) and its node has no parent. A parentless node
+    alone is not enough: a session the tree never saw created (a cron-opened chat,
+    whose ``created_by`` names its job) and a restored one whose log opened without its
+    creator have one too, and their birth stamp still stands. Empty unless
+    :func:`lineage_is_settled`. In memory; never raises.
+
+    shortcut: the release lives only in the session tree, so once retention or the
+    edge cap drops that record the birth ``created_by`` holds the chat again; persist
+    the release on the slot if released conductor chats outlive their logs.
     """
-    if row.get("created_by") or row.get("parent") or row.get("app") or row.get("instance_id"):
+    if not lineage_is_settled():
+        return frozenset()
+    try:
+        from kiro_crew.crew_log.session_tree_projection import projection
+
+        tree = projection()
+        nodes = tree.nodes()
+        return frozenset(
+            slot
+            for slot in tree.released()
+            if (node := nodes.get(slot)) is not None and node.parent_slot is None
+        )
+    except Exception:
+        return frozenset()
+
+
+def _birth_holds(row: Mapping[str, Any], released: frozenset[str] | None) -> bool:
+    """Whether *row*'s birth ``created_by`` still keeps it from being a root.
+
+    It does unless the settled session tree recorded the row's release (*released*,
+    :func:`released_slots`; read only when the row has a ``created_by``).
+    """
+    if not row.get("created_by"):
+        return False
+    key = str(row.get("key") or "")
+    known = released_slots() if released is None else released
+    return key not in known and f"dashboard:{key}" not in known
+
+
+def _row_conducts(row: Mapping[str, Any]) -> bool:
+    """Whether *row* (a slot payload) would be a Crew Mode root if nothing held it.
+
+    Everything a root needs except its lineage: a local, non-app, Persistent session
+    on a conductor template or on the agent its Crew Mode stamp names. Whether
+    something holds it is the caller's to read: the birth ``created_by`` unless a
+    release cleared it (:func:`_birth_holds`), then the current lineage
+    (:func:`_creator_of` for a slot frame row, :func:`_live_creator_of` for a live
+    slot). App-owned and remote rows never conduct here.
+    """
+    if row.get("app") or row.get("instance_id"):
         return False
     if (row.get("memory_mode") or "persistent") != "persistent":
         return False
@@ -329,7 +375,7 @@ def _row_is_root(row: Mapping[str, Any]) -> bool:
 def _row_is_mate_root(row: Mapping[str, Any]) -> bool:
     """Whether *row* (a slot payload) is a mate thread: its slot ``mode`` is the mate's.
 
-    App-owned and remote rows are left out, as :func:`_row_is_root` leaves them out.
+    App-owned and remote rows are left out, as :func:`_row_conducts` leaves them out.
     """
     if row.get("app") or row.get("instance_id"):
         return False
@@ -408,6 +454,7 @@ def stamp_rows(
     parents: Mapping[str, str] | None = None,
     saved_creators: Mapping[str, str] | None = None,
     tree_slots: Iterable[str] | None = None,
+    released: Iterable[str] | None = None,
 ) -> None:
     """Stamp :data:`ROOT_FIELD` on every row and :data:`WORKER_FIELD` on each worker. IN PLACE.
 
@@ -438,8 +485,22 @@ def stamp_rows(
     on each session a mate thread (:func:`_row_is_mate_root`) dispatched, stopping
     at the nearest root of either kind; a mate thread remembered in
     :func:`known_mate_roots` holds its sessions after its tab closes.
+
+    A row with a ``created_by`` is no root unless the settled session tree recorded
+    its release (*released*, default :func:`released_slots`, read only when a
+    conducting row has one), so a conductor chat another chat made and let go is a
+    root, and one the tree never saw created keeps its birth stamp.
     """
     rows = list(rows)
+    released_set: list[frozenset[str] | None] = [None if released is None else frozenset(released)]
+
+    def birth_holds(row: Mapping[str, Any]) -> bool:
+        if not row.get("created_by"):
+            return False
+        if released_set[0] is None:
+            released_set[0] = released_slots() if settled else frozenset()
+        return _birth_holds(row, released_set[0])
+
     saved_of = saved_creators or {}
     tree: list[frozenset[str] | None] = [None if tree_slots is None else frozenset(tree_slots)]
     tree_read = [tree_slots is not None]
@@ -464,8 +525,13 @@ def stamp_rows(
             by_key[key] = row
     # A root has no creator by ANY reading, the saved metadata line included: a
     # reopened child that inherited its conductor's template is still that
-    # conductor's worker, not a root of its own.
-    roots = {key for key, row in by_key.items() if _row_is_root(row) and not creator_of(key, row)}
+    # conductor's worker, not a root of its own. Its birth ``created_by`` counts too,
+    # unless the session tree recorded its release.
+    roots = {
+        key
+        for key, row in by_key.items()
+        if _row_conducts(row) and not birth_holds(row) and not creator_of(key, row)
+    }
     note_roots(roots)
     # A live row that is not a root now (its agent was switched off a conductor
     # while idle, or it was adopted) is no remembered root either: forgetting it
@@ -523,17 +589,20 @@ def stamp_rows(
             creator = creator_of(creator, above)
 
 
-def saved_row_is_root(meta: Mapping[str, Any]) -> bool:
+def saved_row_is_root(meta: Mapping[str, Any], *, released: bool = False) -> bool:
     """Whether a saved session's metadata (a closed session) describes a Crew Mode root.
 
-    The same rule a live row meets (:func:`_row_is_root`), read off the fields a
+    The same rule a live row meets (:func:`_row_conducts`), read off the fields a
     session's metadata line keeps: no creator, not an app's, Persistent, and on a
     conductor template or on the agent its Crew Mode stamp names. A metadata line
-    carries no ``parent`` edge, so the birth stamp alone says whether it had a creator.
+    carries no ``parent`` edge, so the birth stamp says whether it had a creator,
+    unless the caller read its release off the session tree (*released*,
+    :func:`released_slots`).
     """
-    return _row_is_root(
+    if meta.get("created_by") and not released:
+        return False
+    return _row_conducts(
         {
-            "created_by": meta.get("created_by"),
             "app": meta.get("app"),
             "instance_id": meta.get("instance_id"),
             "memory_mode": meta.get("memory_mode"),
@@ -570,11 +639,12 @@ def _live_creator_of(row: Mapping[str, Any]) -> str:
 def slot_is_crew_mode_root(slot: Any) -> bool:
     """Whether live slot *slot* is a Crew Mode root, by the rule the slot list stamps.
 
-    A root has no creator by ANY reading: the slot's own ``created_by``, the saved
+    A root has no creator by ANY reading: the slot's own ``created_by`` (unless the
+    settled session tree recorded its release, :func:`_birth_holds`), the saved
     metadata line and the session tree's parent edge (:func:`_live_creator_of`).
     """
     row = _live_row(slot)
-    return _row_is_root(row) and not _live_creator_of(row)
+    return _row_conducts(row) and not _birth_holds(row, None) and not _live_creator_of(row)
 
 
 def in_crew_tree(row: Mapping[str, Any] | None) -> bool:
