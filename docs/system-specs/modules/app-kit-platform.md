@@ -5257,6 +5257,8 @@ The boundary:
   the chat's session key: `MarkdownRenderer` writes `data-link-preview-session`
   (`dashboard:<previewSlot>`) on the scope only when its host passes the local slot
   the rows belong to, and `LinkPreviewLayer` reads it from the hovered message's scope.
+  On touch a tap on a text span opens its card at once and the next tap closes it
+  (`website/docs/narrow-viewport.md`, "A link-preview span opens on a tap").
 - **Mount.** Behind a reverse proxy at a sub-path the gateway never sees the mount,
   so the frame derives it from its own URL and prefixes the module and fetch paths.
 - **Text patterns** stay in core (`textPatterns.ts`): matched in a Web Worker with a

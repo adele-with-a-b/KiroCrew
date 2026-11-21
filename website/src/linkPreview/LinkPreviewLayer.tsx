@@ -229,6 +229,8 @@ export default function LinkPreviewLayer() {
     const moved = (e: PointerEvent) => Math.abs(e.clientX - pointer.x) >= 1 || Math.abs(e.clientY - pointer.y) >= 1
 
     const onOver = (e: PointerEvent) => {
+      // A finger has no hover: a tap opens the card instead (`onTap`).
+      if (e.pointerType === 'touch') return
       if (kept && current) {
         // A link the scroll slid under a still pointer is not a hover. A real
         // move off the kept link is a leave first, so its card gets `leave`.
@@ -238,6 +240,10 @@ export default function LinkPreviewLayer() {
       }
       const hit = linkOf(e)
       if (!hit) return
+      begin(hit, e, HOVER_DELAY_MS)
+    }
+    /** Start showing `hit`'s card after `delay`: a hover's short wait, or none for a tap. */
+    const begin = (hit: NonNullable<ReturnType<typeof linkOf>>, e: PointerEvent, delay: number) => {
       // Back on a link (its own or another): a close pending from leaving goes.
       cancelGraceOf(graceRef)
       if (hit.a === current?.a) return
@@ -269,7 +275,7 @@ export default function LinkPreviewLayer() {
           pending = false
           if (current?.a !== hit.a || !hit.a.isConnected) return
           setNotice({ key, cause: lastFailed.cause, ...spotFor(hit.a), retrying: false })
-        }, HOVER_DELAY_MS)
+        }, delay)
         return
       }
       // Create the frame during the delay, so the first card is not late by the load.
@@ -284,7 +290,19 @@ export default function LinkPreviewLayer() {
         void host.show(frame, link, { left: r.left, top: r.top, width: r.width, height: r.height }, modifiers).then((ok) => {
           if (ok) failedAt.current.delete(key)
         })
-      }, HOVER_DELAY_MS)
+      }, delay)
+    }
+    // Touch: a tap on a matched span opens its card now, and the card stays until
+    // the next tap (on it again, or anywhere else in this document). A link keeps
+    // its own tap, which follows it. A drag that scrolls ends in `pointercancel`,
+    // never here.
+    const onTap = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return
+      // The failure card is this document's: its Retry is a tap on the card.
+      if (e.target instanceof Node && cardRef.current?.contains(e.target)) return
+      const hit = linkOf(e)
+      if (hit && hit.url === undefined && hit.a !== current?.a) { begin(hit, e, 0); return }
+      if (current) endHover()
     }
     const endHover = () => {
       setNotice(null)
@@ -298,7 +316,7 @@ export default function LinkPreviewLayer() {
       host.leave(key)
     }
     const onOut = (e: PointerEvent) => {
-      if (!current || kept) return
+      if (e.pointerType === 'touch' || !current || kept) return
       const to = e.relatedTarget instanceof Element ? e.relatedTarget.closest('a[href], [data-link-preview-text]') : null
       if (to === current.a) return
       // Into the failure card: the hover goes on, so its Retry can be pressed.
@@ -319,6 +337,7 @@ export default function LinkPreviewLayer() {
     // A move inside a card's frame never reaches this document, so a move seen
     // here is outside every card.
     const onMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return
       // While a card is kept, the baseline stays where the pointer was when the
       // scroll kept it, so many tiny moves still add up to a real one.
       if (kept && current && !moved(e)) return
@@ -382,6 +401,7 @@ export default function LinkPreviewLayer() {
     doc.addEventListener('pointerover', onOver, true)
     doc.addEventListener('pointerout', onOut, true)
     doc.addEventListener('pointermove', onMove, true)
+    doc.addEventListener('pointerup', onTap, true)
     doc.addEventListener('keydown', onKey)
     window.addEventListener('scroll', onScroll, true)
     window.addEventListener('blur', onBlur)
@@ -400,6 +420,7 @@ export default function LinkPreviewLayer() {
       doc.removeEventListener('pointerover', onOver, true)
       doc.removeEventListener('pointerout', onOut, true)
       doc.removeEventListener('pointermove', onMove, true)
+      doc.removeEventListener('pointerup', onTap, true)
       doc.removeEventListener('keydown', onKey)
       window.removeEventListener('scroll', onScroll, true)
       window.removeEventListener('blur', onBlur)
