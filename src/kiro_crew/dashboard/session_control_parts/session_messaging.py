@@ -338,6 +338,11 @@ async def send_to_target(
         target=target,
         operation="send",
         precomputed_ownership_fenced=caller_fenced,
+        # A plain session_send may reach the session that created the caller; a
+        # steer, a broadcast, a create's seed and a workflow send may not. The
+        # steer re-gates below are only reached with ``steer`` set, so they never
+        # pass it.
+        creator_message=(via == "session_send" and not steer),
     )
 
     # A relay archive is read-only: the delivery below would run the crew's old

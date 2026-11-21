@@ -33,7 +33,7 @@ unreachable in production because the caller's `X-Internal-Secret` is ignored.
 | `session_close` | `POST /api/session-control/close` | Close (archive) another session, or the caller itself, as the tab ✕ does — heavier than stop, and recoverable rather than a delete |
 | `session_revive` | `POST /api/session-control/revive` | Bring an archived session back into the live sidebar, as clicking it in the History tab does — the mirror of close, optionally filing it into a folder |
 | `session_history_list` | `GET /api/session-control/history` | List the archived sessions the caller could revive, newest first, optionally narrowed to one folder; every row passes the same containment and ownership fence `session_revive` applies |
-| `session_send` | `POST /api/session-control/send` | Deliver a message that another session runs as its next turn, or cut it into the turn already running (`steer`) |
+| `session_send` | `POST /api/session-control/send` | Deliver a message that another session runs as its next turn, or cut it into the turn already running (`steer`). A fenced caller may also send, without `steer`, to the one session that created it (see "A created session may message its creator") |
 | `session_broadcast` | `POST /api/session-control/broadcast` | Deliver ONE message to the named `targets`, or with `all: true` to every session the caller created, in a required `queue` or `steer` mode, reporting the outcome per target; a call that selects neither, or both, is refused |
 | `session_status` | `GET /api/session-control/status` | List the sessions the caller stood up and what each is doing, with the roster taken from the crew log's session tree so a session that is gone still appears |
 | `session_adopt` | `POST /api/session-control/adopt` | Take another session under the caller in the session tree, keeping the parent it had on record; refused when the target is already above the caller |
@@ -1686,6 +1686,41 @@ agent-created session is fenced there, so a created session reaches only slots i
 created itself and nothing an unfenced creator could reach. A person's own tab and
 a fork reach `get_or_create_slot` directly and stay unattributed, so ordinary human
 use is unaffected.
+
+#### A created session may message its creator, and do nothing else to it
+
+The fence has one opening, so a worker can report to whoever started it however
+it was started: a fenced caller may `session_send` to the one session its OWN slot
+records as `_created_by` (`_is_callers_creator` in `target_authorization.py`).
+`send_to_target` asks for it (`authorize_target(..., creator_message=True)`) only
+for a `session_send` without `steer`, and the gate honours it only for the `send`
+operation. What still holds:
+
+- **Message only.** Every other verb on the creator (read, summary, queue, stop,
+  close, adopt, release, handoff, fork, rename, set_model, set_color, set_note,
+  end_wait, reload, status, retry, continue, generate_title) is refused
+  `not_creator` with the wording `CREATOR_MESSAGE_ONLY`. So is `steer=true`, before
+  any RPC, so nothing is injected into the creator's running turn. A broadcast, a
+  workflow script's send and a create's seed do not ask for it and keep the plain
+  fence.
+- **One target.** A sibling, the person's own tabs, and the creator's own creator
+  stay refused: the stamp names one slot key.
+- **The caller's own record.** The creator is read off the calling slot, resolved
+  from its attested key; no request field names it. `unverified:creator` and a
+  cron's `cron:<job>` stamp match no slot key, and a fenced caller with a blank
+  stamp (a Bot's chat, a cron tab) reaches nothing new.
+- **A handoff moves no creator.** `_created_by` is never rewritten, so a worker
+  handed to a new manager still reaches its creator and not the manager.
+- **Every other refusal runs first.** The caller-side app, ephemeral and channel
+  refusals, the target's unattended, ephemeral, app, link and mirror refusals, and
+  the workspace compare all still apply. So a scheduled run's child cannot reach the
+  cron tab (`unattended_target`), a channel session's child cannot reach it
+  (`linked_session_target` / `mirrored_target`), and an app-scoped child stays
+  `app_scoped_caller`.
+
+A busy creator queues the message as any `session_send` does, and the row carries
+the usual `meta.relay` sender, so it lands tagged as sent by the worker.
+Pinned in `test/test_session_send_to_creator.py`.
 
 The one place an owner-rooted agent chain must be LET THROUGH is the
 private-member delegation gate in `create_session`: a conductor the owner started

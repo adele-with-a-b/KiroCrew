@@ -185,6 +185,10 @@ is heading the wrong way, or the thing it is grinding on is already done.
 The message lands in the target's transcript tagged as sent by your session, so
 the person reading it can tell it from their own typing.
 
+A session an agent created may send to the one session that created it, to report
+back. Only a plain message: `steer=true` and every other verb on that session are
+refused `not_creator`, and a broadcast does not reach it.
+
 ### `work_dispatch`
 
 Dispatches one work item in one call, for a conductor whose agent mounts
@@ -1182,7 +1186,7 @@ gateway-issued key counts. Refusals you should expect, by code:
 | `target_already_live` | session_revive only: the session is open already. The message carries its live key — address it directly |
 | `ambiguous_target` | The string matches more than one session across the three forms below. Address it by its session key |
 | `self_target` | A session cannot control itself. session_close and session_release are the exceptions: both accept the caller as the target |
-| `not_creator` | The caller is fenced to sessions it created itself (a Bot's DM slot, a scheduled run, and anything either of them created) |
+| `not_creator` | The caller is fenced to sessions it created itself (a Bot's DM slot, a scheduled run, and anything either of them created). The session that created the caller takes a plain session_send and nothing else |
 | `workspace_mismatch` | Peers must be in the same workspace — that is the memory boundary |
 | `ephemeral_target` | Incognito and temporary sessions are not addressable |
 | `app_scoped_target` | App-scoped sessions are not addressable, in either direction |

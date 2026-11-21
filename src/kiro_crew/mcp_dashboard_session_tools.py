@@ -712,7 +712,9 @@ def _session_tools() -> tuple[Tool, ...]:
                 "result says which happened. The message lands in the target's "
                 "transcript tagged as sent by your session, so the person reading "
                 "it can tell it from their own typing. Use session_read_message "
-                "afterwards to watch what the target did with it."
+                "afterwards to watch what the target did with it. A session an agent "
+                "created may also send to the one session that created it, without "
+                "steer; no other verb reaches that session."
             ),
             schema={
                 "type": "object",
