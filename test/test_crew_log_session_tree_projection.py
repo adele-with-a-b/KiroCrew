@@ -181,6 +181,26 @@ def test_apply_adds_an_edge_without_touching_the_store(monkeypatch):
     assert spy.total == 0, "a projection read the store; it is supposed to be pure memory"
 
 
+def test_released_names_only_the_slots_whose_newest_decision_is_a_release():
+    """A parentless node is also a session nobody created; only a release record says a
+    parent let it go, and a later adoption takes the slot out again."""
+    from kiro_crew.crew_log.session_tree import EdgeRecord
+
+    proj = SessionTreeProjection()
+    proj.apply(_rec("s-maker", "maker"))
+    proj.apply(_rec("s-child", "child", created=2, parent="maker"))
+    proj.apply(_rec("s-cron", "cron", created=3))
+    assert proj.released() == frozenset()
+
+    proj.apply_edge(EdgeRecord(slot="child", parent_slot=None, at=4, sid="s-child", seq=5))
+    assert proj.nodes()["child"].parent_slot is None
+    assert proj.nodes()["cron"].parent_slot is None
+    assert proj.released() == frozenset({"child"})
+
+    proj.apply_edge(EdgeRecord(slot="child", parent_slot="maker", at=5, sid="s-child", seq=6))
+    assert proj.released() == frozenset()
+
+
 def test_a_parentless_record_is_what_lets_a_child_edge_be_followed(monkeypatch):
     """A root's own record is load-bearing, so the hook cannot skip parentless entries.
 

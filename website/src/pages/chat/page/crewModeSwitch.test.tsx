@@ -304,3 +304,41 @@ describe("useCrewModeSwitch the welcome page's Board button", () => {
     expect(openView).toHaveBeenCalledWith('workers')
   })
 })
+
+describe('useCrewModeSwitch a conductor chat another chat created', () => {
+  beforeEach(() => { setCrewModeCatalog('kirocrew-conductor', ['kirocrew-conductor']); localStorage.clear() })
+  afterEach(() => setCrewModeCatalog(undefined, undefined))
+
+  // `session_create` stamps `created_by` for good; `session_release` clears only the
+  // session tree's edge, and the gateway then stamps the chat `crew_mode_root`.
+  const child = (released: boolean): ChatSlot => ({
+    ...plain('made', 'kirocrew-conductor'), created_by: 'maker', parent: null,
+    ...(released ? { crew_mode_root: true } : {}),
+  } as unknown as ChatSlot)
+  const enter = (slot: ChatSlot) => {
+    const store = createTestStore()
+    const openView = vi.fn()
+    const wrapper = ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>
+    const hook = renderHook(() => useCrewModeSwitch({ currentSlot: slot, defaultAgent: 'default', hasUserMessage: true, switchAgent: vi.fn(), openView }), { wrapper })
+    return { hook, store, openView }
+  }
+
+  it('turns on once released: the panel opens on the Board and the Board button works', () => {
+    const { hook, store, openView } = enter(child(true))
+    expect(hook.result.current.crewModeOn).toBe(true)
+    expect(store.getState().chat.activityOpen).toBe(true)
+    expect(openView).toHaveBeenCalledWith('workers')
+    act(() => { store.dispatch(closeActivityPanel()) })
+    openView.mockClear()
+    act(() => { hook.result.current.openTaskBoard!() })
+    expect(store.getState().chat.activityOpen).toBe(true)
+    expect(openView).toHaveBeenCalledWith('workers')
+  })
+
+  it('offers no Board while its creator still holds it', () => {
+    const { hook, store, openView } = enter(child(false))
+    expect(hook.result.current.openTaskBoard).toBeUndefined()
+    expect(store.getState().chat.activityOpen).toBe(false)
+    expect(openView).not.toHaveBeenCalled()
+  })
+})

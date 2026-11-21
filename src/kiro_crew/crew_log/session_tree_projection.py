@@ -102,6 +102,7 @@ from kiro_crew.crew_log.session_tree import (
     _ScanFaults,
     edge_supersedes,
     fold_tree,
+    latest_edges,
     log_rank_of,
 )
 from kiro_crew.crew_log.session_tree_projection_checkpoint import (
@@ -179,6 +180,9 @@ class SessionTreeProjection:
         #: The cached fold. ``None`` marks it owed, so :meth:`nodes` recomputes once and
         #: then hands out the same object until something actually changes.
         self._nodes: Optional[dict[str, TreeNode]] = None
+        #: :meth:`released` for the fold it was read beside, recomputed once that fold
+        #: is owed again: every change that can move a decision also resets ``_nodes``.
+        self._released: Optional[tuple[dict[str, TreeNode], frozenset[str]]] = None
         self._incomplete = False
         #: ``(read, sid)`` for each unit whose decision (``"edge"``) or spawn (``"spawn"``)
         #: reconcile read FAULTED and has not read cleanly since. Part of
@@ -454,6 +458,24 @@ class SessionTreeProjection:
         if best is None or not best.parent_slot or best.parent_slot == slot:
             return ""
         return best.parent_slot
+
+    def released(self) -> frozenset[str]:
+        """The slots whose newest decision is a ``session/released``. No I/O.
+
+        The tree alone cannot say this: a parentless node is also a session nobody
+        created (a cron-opened chat), or one whose restored log opened without its
+        creator. Only the release record says a parent let it go. Newest by the same
+        :func:`latest_edges` the fold uses, so a later adoption takes a slot out again.
+        """
+        with self._lock:
+            if self._nodes is None:
+                self._nodes = self._fold_locked()
+            if self._released is not None and self._released[0] is self._nodes:
+                return self._released[1]
+            newest = latest_edges(self._edges.values(), log_rank_of(self._records.values()))
+            out = frozenset(slot for slot, edge in newest.items() if edge.parent_slot is None)
+            self._released = (self._nodes, out)
+            return out
 
     def created(self) -> "dict[str, tuple[str, int]]":
         """Each slot's creator and when, from CREATION records only. No I/O.
