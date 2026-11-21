@@ -422,6 +422,13 @@ OFF_CARD_SETS: Mapping[str, str] = {
         "control whose clear names nothing, which leaves the steer to run, and is a "
         "defect"
     ),
+    "ACP_BACKENDS_STEER_HELD_RETRACT": (
+        "whether a steer held behind an open tool call can be taken back before it is "
+        "sent. Like the clear above, the controls are drawn only on a steer that can "
+        "still be taken back, and only while it can, so no reader is promised an undo "
+        "the harness lacks. A wrong membership offers a control on a steer that is "
+        "never held, which is refused, and is a defect"
+    ),
     "ACP_BACKENDS_SERIAL_SESSION_STARTS": (
         "which backend's process answers session starts and mode switches one at a "
         "time. It decides only what a timed-out start's error says about the "

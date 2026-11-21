@@ -249,7 +249,9 @@ function without<T>(record: Readonly<Record<string, T>>, key: string): Readonly<
  *   is what Queue instead asked for.
  * - `steerRetract: false`: the agent refused to take a steer back, unless the row is
  *   also `steerRetractExpired`: a later turn withdrew the offer of a steer whose own
- *   turn ended without settling it, which reads as the next case.
+ *   turn ended without settling it, which reads as the next case. Or the row is
+ *   `steerRetractReleased`: a steer held behind a tool call went out to the turn
+ *   before the take-back reached it, so the turn reads it, as for `consumed`.
  * - the turn gone with the row still `written`: a hard stop discarded the steer, so
  *   an Edit or a Queue instead gets its text back in the composer rather than lose it.
  *
@@ -400,6 +402,9 @@ export function useSteerRetract({ slot, messages, transcriptAuthoritative = true
     } else if (state === 'consumed' || state === 'requeued' || state === 'superseded') {
       // `superseded`: the requeued row already ran as its own drained turn, so
       // nothing is held to give back.
+      settle(taken)
+    } else if (row?.meta?.steerRetract === false && row.meta.steerRetractReleased === true) {
+      // Sent to the turn before the take-back reached it: the turn reads it.
       settle(taken)
     } else if (row?.meta?.steerRetract === false && row.meta.steerRetractExpired === true) {
       // A later turn withdrew the offer because this steer's turn ended without

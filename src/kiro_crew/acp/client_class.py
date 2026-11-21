@@ -1466,6 +1466,10 @@ class AcpClient:
     _steer_via_steering_request = _client_turn_control._steer_via_steering_request
     _held_steers = _client_turn_control._held_steers
     _release_held_steers = _client_turn_control._release_held_steers
+    supports_steer_retract = property(_client_turn_control.supports_held_steer_retract)
+    takes_back_held_steers = property(_client_turn_control.takes_back_held_steers)
+    steer_is_held = _client_turn_control.steer_is_held
+    drop_held_steer = _client_turn_control.drop_held_steer
     _held_steer_writes = _client_turn_control._held_steer_writes
     _send_held_steers = _client_turn_control._send_held_steers
     _send_steering_request = _client_turn_control._send_steering_request
@@ -1512,6 +1516,8 @@ class AcpClient:
     # The task sending the held steers, or None: the read loop starts it when
     # the turn's last open tool call ends.
     _held_steer_task: asyncio.Task[None] | None = None
+    # The held steer the sender has picked up and is writing, or None.
+    _held_steer_sending: tuple[int, str] | None = None
     # The text of each held steer of the running or last turn whose write may
     # have reached the adapter with no answer read, until the next turn starts.
     _held_steers_unanswered: set[str]

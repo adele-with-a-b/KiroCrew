@@ -1,0 +1,363 @@
+[
+  {
+    "agent_capabilities": {
+      "_meta": {
+        "authStatus": {},
+        "claudeCode": {
+          "promptQueueing": true
+        }
+      },
+      "auth": {
+        "logout": {},
+        "status": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "acp": true,
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "providers": {},
+      "sessionCapabilities": {
+        "additionalDirectories": {},
+        "close": {},
+        "delete": {},
+        "fork": {},
+        "list": {},
+        "options": {},
+        "resume": {},
+        "status": {},
+        "systemPrompt": {
+          "mode": {
+            "override": {}
+          }
+        },
+        "title": {}
+      }
+    },
+    "agent_version": "0.109.0",
+    "frame": "response",
+    "id": 1,
+    "protocol_version": 1
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      36164,
+      300000
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "title": "Terminal",
+        "tool_call_id": "toolu_claude-steer-held-1_1",
+        "tool_kind": "execute",
+        "wire_title": "Terminal"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo first-done"
+        },
+        "title": "sleep 10; echo first-done",
+        "tool_call_id": "toolu_claude-steer-held-1_1",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo first-done\"\n}",
+        "wire_title": "sleep 10; echo first-done"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-held-1_1",
+        "tool_output": "Wait 10 seconds then print first-done",
+        "tool_output_bytes": 37,
+        "tool_output_digest": "c47d1bf1a5998c3622cc4a8d7e28606e774856b3d592822bdea9168df58a28cf"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo first-done",
+          "description": "Wait 10 seconds then print first-done"
+        },
+        "title": "Wait 10 seconds then print first-done",
+        "tool_call_id": "toolu_claude-steer-held-1_1",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo first-done\",\n  \"description\": \"Wait 10 seconds then print first-done\"\n}"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      36239,
+      300000
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-held-1_1",
+        "tool_final": true,
+        "tool_output": "```console\nfirst-done\n```",
+        "tool_output_bytes": 25,
+        "tool_output_digest": "4cdee237a1b8988b63dd11e857d8a84ff9717e942e643996424a50b28120c661",
+        "tool_status": "completed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "frame": "response",
+    "id": 4
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      36239,
+      300000
+    ],
+    "usage_cost": 0.1064428
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      36288,
+      300000
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "title": "Terminal",
+        "tool_call_id": "toolu_claude-steer-held-1_2",
+        "tool_kind": "execute",
+        "wire_title": "Terminal"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo second-done"
+        },
+        "title": "sleep 10; echo second-done",
+        "tool_call_id": "toolu_claude-steer-held-1_2",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo second-done\"\n}",
+        "wire_title": "sleep 10; echo second-done"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-held-1_2",
+        "tool_output": "Wait 10 seconds then print second-done",
+        "tool_output_bytes": 38,
+        "tool_output_digest": "7c4e17144d8297f5f0041489f7cf3efe6f3f0f4f0f9f2bc75c550718faa5a866"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo second-done",
+          "description": "Wait 10 seconds then print second-done"
+        },
+        "title": "Wait 10 seconds then print second-done",
+        "tool_call_id": "toolu_claude-steer-held-1_2",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo second-done\",\n  \"description\": \"Wait 10 seconds then print second-done\"\n}"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      36363,
+      300000
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-held-1_2",
+        "tool_final": true,
+        "tool_output": "```console\nsecond-done\n```",
+        "tool_output_bytes": 26,
+        "tool_output_digest": "ce4918e914023d4d894ee523a532686054cd1ec0c1f9f27074bb7cc374e9a03f",
+        "tool_status": "completed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      36399,
+      300000
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_ivimzujppca3jl7t77rmskryxc3aq57ygcktvrhhumqobmr2z6aq",
+        "text": "DONE:"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "DONE:",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_ivimzujppca3jl7t77rmskryxc3aq57ygcktvrhhumqobmr2z6aq",
+        "text": " both commands finished ("
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " both commands finished (",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_ivimzujppca3jl7t77rmskryxc3aq57ygcktvrhhumqobmr2z6aq",
+        "text": "first-done, second-done)."
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "first-done, second-done).",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_ivimzujppca3jl7t77rmskryxc3aq57ygcktvrhhumqobmr2z6aq",
+        "text": " PINEAPPLE"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " PINEAPPLE",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      36399,
+      300000
+    ],
+    "usage_cost": 0.1251136
+  },
+  {
+    "frame": "response",
+    "id": 3,
+    "prompt_tokens": [
+      8,
+      210,
+      96668,
+      12115
+    ],
+    "stop_reason": "end_turn"
+  }
+]

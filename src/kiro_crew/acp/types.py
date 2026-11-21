@@ -88,6 +88,7 @@ from kiro_crew.acp_backends import (  # noqa: F401 - re-exported for existing im
     ACP_BACKENDS_SPEC_SERVERS_OFF_WIRE,
     ACP_BACKENDS_STEER,
     ACP_BACKENDS_STEER_CONCURRENT_PROMPT,
+    ACP_BACKENDS_STEER_HELD_RETRACT,
     ACP_BACKENDS_STEER_RETRACT,
     ACP_BACKENDS_STEERING_REQUEST,
     ACP_BACKENDS_STRUCTURED_REFUSAL,
@@ -169,6 +170,10 @@ EVENT_STEER_CLEARED = "steer_cleared"
 #: Not KAS's ``steering_cleared``, which arrives after a turn ends and names steers
 #: the turn already read (``EVENT_STEER_CLEARED``).
 EVENT_STEER_DROPPED = "steer_dropped"
+#: A steer ``AcpClient`` held behind an open tool call is being sent now, so it can
+#: no longer be taken back (``ACP_BACKENDS_STEER_HELD_RETRACT``). Carries the
+#: steer's text as it was handed to :meth:`AcpClient.steer`.
+EVENT_STEER_RELEASED = "steer_released"
 #: A typed :class:`StructuredStatus` from the EXECUTION LAYER (the versioned
 #: ``kirocrew/status`` extension on a routed ``session/update`` frame, or the
 #: watchdog's own post-stall classification). Never derived from model text —

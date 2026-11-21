@@ -293,6 +293,20 @@ def _queued_entry_id(slot: Any, delivery_id: str) -> str:
     return ""
 
 
+def steer_take_back_offered(client: Any, message: str) -> bool:
+    """Whether *client* can still take back the steer *message* it was just given.
+
+    kiro-cli drops any steer it holds unread (``supports_steer_retract``). A client
+    that holds a steer itself behind an open tool call (``steer_is_held``, claude)
+    can take back only the steer it is holding: one it sent at once is read at once.
+    """
+    if getattr(client, "supports_steer_retract", False) is not True:
+        return False
+    if getattr(client, "takes_back_held_steers", False) is not True:
+        return True
+    return client.steer_is_held(message) is True
+
+
 def is_retracted_steer_row(row: dict[str, Any]) -> bool:
     """Whether *row* is a steer the person took back before the turn read it.
 
@@ -1141,7 +1155,7 @@ async def steer_into_running_turn(
         and not channel_origin
         and nudge_meta is None
         and not responsive
-        and getattr(client, "supports_steer_retract", False) is True
+        and steer_take_back_offered(client, message)
     )
     if _retractable:
         meta[STEER_RETRACTABLE_META] = True

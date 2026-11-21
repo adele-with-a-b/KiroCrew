@@ -62,6 +62,7 @@ from kiro_crew.acp.types import (
     EVENT_MODEL_FALLBACK,
     EVENT_STEER_CONSUMED,
     EVENT_STEER_DROPPED,
+    EVENT_STEER_RELEASED,
     STOP_CLASS_FAILED,
     STOP_REASON_CANCELLED,
     STOP_REASON_COMPACTION_FAILED,
@@ -256,6 +257,7 @@ from kiro_crew.dashboard.chat_turn.steer_queue import (  # noqa: F401
     _has_user_queued_followup,
     _on_steer_consumed,
     _on_steer_dropped,
+    _on_steer_released,
     _requeue_unconsumed_steers,
 )
 from kiro_crew.dashboard.chat_turn.stop_recovery import (
@@ -1278,6 +1280,8 @@ async def _run_chat(
                 await _release_held_text(turn)
             elif event.kind == EVENT_STEER_DROPPED:
                 await _on_steer_dropped(turn, event)
+            elif event.kind == EVENT_STEER_RELEASED:
+                _on_steer_released(turn, event)
             elif event.kind == EVENT_COMPACTION_STATUS:
                 await _on_compaction_status(turn, event)
             elif event.kind == EVENT_CLEAR_STATUS:

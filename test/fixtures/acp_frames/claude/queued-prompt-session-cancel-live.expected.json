@@ -1,0 +1,169 @@
+[
+  {
+    "agent_capabilities": {
+      "_meta": {
+        "authStatus": {},
+        "claudeCode": {
+          "promptQueueing": true
+        }
+      },
+      "auth": {
+        "logout": {},
+        "status": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "acp": true,
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "providers": {},
+      "sessionCapabilities": {
+        "additionalDirectories": {},
+        "close": {},
+        "delete": {},
+        "fork": {},
+        "list": {},
+        "options": {},
+        "resume": {},
+        "status": {},
+        "systemPrompt": {
+          "mode": {
+            "override": {}
+          }
+        },
+        "title": {}
+      }
+    },
+    "agent_version": "0.109.0",
+    "frame": "response",
+    "id": 1,
+    "protocol_version": 1
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      35913,
+      300000
+    ],
+    "usage_cost": null
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "title": "Terminal",
+        "tool_call_id": "toolu_claude-queued-session-cancel-1_1",
+        "tool_kind": "execute",
+        "wire_title": "Terminal"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo first-done"
+        },
+        "title": "sleep 10; echo first-done",
+        "tool_call_id": "toolu_claude-queued-session-cancel-1_1",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo first-done\"\n}",
+        "wire_title": "sleep 10; echo first-done"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-queued-session-cancel-1_1",
+        "tool_output": "Wait 10 seconds then print first-done",
+        "tool_output_bytes": 37,
+        "tool_output_digest": "c47d1bf1a5998c3622cc4a8d7e28606e774856b3d592822bdea9168df58a28cf"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo first-done",
+          "description": "Wait 10 seconds then print first-done"
+        },
+        "title": "Wait 10 seconds then print first-done",
+        "tool_call_id": "toolu_claude-queued-session-cancel-1_1",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo first-done\",\n  \"description\": \"Wait 10 seconds then print first-done\"\n}"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      35987,
+      300000
+    ],
+    "usage_cost": null
+  },
+  {
+    "frame": "response",
+    "id": 4,
+    "stop_reason": "cancelled"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-queued-session-cancel-1_1",
+        "tool_output": "```\nThe user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed. Correction to the text above: this call was stopped while running, not refused before it ran. It may have run in part or in full, and its changes may have been written. No permission prompt was involved. Work it started elsewhere (a remote command, a background process) may still be running, so check before starting the same work again. The instruction to stop and wait still stands.\n```",
+        "tool_output_bytes": 619,
+        "tool_output_digest": "cb2fd8f6a64297c110f11d3a270bfd01d73a8d3b50f3922b5a98d9298d63a91d",
+        "tool_status": "failed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "usage_update",
+    "usage": [
+      35987,
+      300000
+    ],
+    "usage_cost": 0.10442679999999999
+  },
+  {
+    "frame": "response",
+    "id": 3,
+    "prompt_tokens": [
+      2,
+      91,
+      24254,
+      11640
+    ],
+    "stop_reason": "cancelled"
+  }
+]

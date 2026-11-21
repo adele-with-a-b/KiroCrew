@@ -1,0 +1,683 @@
+[
+  {
+    "agent_capabilities": {
+      "_meta": {
+        "authStatus": {},
+        "claudeCode": {
+          "promptQueueing": true
+        }
+      },
+      "auth": {
+        "logout": {},
+        "status": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "acp": true,
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "providers": {},
+      "sessionCapabilities": {
+        "additionalDirectories": {},
+        "close": {},
+        "delete": {},
+        "fork": {},
+        "list": {},
+        "options": {},
+        "resume": {},
+        "status": {},
+        "systemPrompt": {
+          "mode": {
+            "override": {}
+          }
+        },
+        "title": {}
+      }
+    },
+    "agent_version": "0.109.0",
+    "frame": "response",
+    "id": 1,
+    "protocol_version": 1
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "title": "Terminal",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_1",
+        "tool_kind": "execute",
+        "wire_title": "Terminal"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo first-done"
+        },
+        "title": "sleep 10; echo first-done",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_1",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo first-done\"\n}",
+        "wire_title": "sleep 10; echo first-done"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_1",
+        "tool_output": "Wait 10 seconds then print first-done",
+        "tool_output_bytes": 37,
+        "tool_output_digest": "c47d1bf1a5998c3622cc4a8d7e28606e774856b3d592822bdea9168df58a28cf"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo first-done",
+          "description": "Wait 10 seconds then print first-done"
+        },
+        "title": "Wait 10 seconds then print first-done",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_1",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo first-done\",\n  \"description\": \"Wait 10 seconds then print first-done\"\n}"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "frame": "response",
+    "id": 4
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_1",
+        "tool_final": true,
+        "tool_output": "```console\nCommand was moved to the background (ID: bg1) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /tmp/claude/tasks/output You will be notified when it completes. If it is still running after 30m in the background (plus the timeout it was started with, up to the background maximum), it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.\n```",
+        "tool_output_bytes": 574,
+        "tool_output_digest": "e99f49045fbce1f18354ae5fbbecd34c915045ed0aca0eff0a4193784aa5dcad",
+        "tool_status": "completed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call",
+        "title": "Read File",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_2",
+        "tool_kind": "read",
+        "wire_title": "Read File"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "file_path": "/tmp/claude/tasks/output"
+        },
+        "title": "Read /tmp/claude/tasks/output",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_2",
+        "tool_input": "{\n  \"file_path\": \"/tmp/claude/tasks/output\"\n}",
+        "wire_title": "Read /tmp/claude/tasks/output"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_2",
+        "tool_final": true,
+        "tool_output": "```\n<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>\n```",
+        "tool_output_bytes": 95,
+        "tool_output_digest": "21ce685cf837cbff6e3a89544e7b1ed7d9f99e064f542352b644e33eb9d32ea7",
+        "tool_status": "completed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call",
+        "title": "ToolSearch",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_3",
+        "tool_kind": "other",
+        "wire_title": "ToolSearch"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "query": "select:Monitor"
+        },
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_3",
+        "tool_input": "{\n  \"query\": \"select:Monitor\"\n}"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "max_results": 1,
+          "query": "select:Monitor"
+        },
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_3",
+        "tool_input": "{\n  \"query\": \"select:Monitor\",\n  \"max_results\": 1\n}"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_3",
+        "tool_final": true,
+        "tool_output": "Tool: Monitor",
+        "tool_output_bytes": 13,
+        "tool_output_digest": "1922d262a1b3cb48dd79e8809e5da47a4a2c452f7ed07df3646187e95bbba989",
+        "tool_status": "completed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call",
+        "title": "Terminal",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_4",
+        "tool_kind": "execute",
+        "wire_title": "Terminal"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo second-done"
+        },
+        "title": "sleep 10; echo second-done",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_4",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo second-done\"\n}",
+        "wire_title": "sleep 10; echo second-done"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_4",
+        "tool_output": "Wait 10 seconds then print second-done",
+        "tool_output_bytes": 38,
+        "tool_output_digest": "7c4e17144d8297f5f0041489f7cf3efe6f3f0f4f0f9f2bc75c550718faa5a866"
+      },
+      {
+        "is_shell": true,
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "command": "sleep 10; echo second-done",
+          "description": "Wait 10 seconds then print second-done"
+        },
+        "title": "Wait 10 seconds then print second-done",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_4",
+        "tool_input": "{\n  \"command\": \"sleep 10; echo second-done\",\n  \"description\": \"Wait 10 seconds then print second-done\"\n}"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_4",
+        "tool_final": true,
+        "tool_output": "```console\nsecond-done\n```",
+        "tool_output_bytes": 26,
+        "tool_output_digest": "ce4918e914023d4d894ee523a532686054cd1ec0c1f9f27074bb7cc374e9a03f",
+        "tool_status": "completed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_i65bs623cnzxcjcgfkpidqt55lw7wnnubiv4yhvzfda4zbsn2kbq",
+        "text": "DONE: both commands fin"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "DONE: both commands fin",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_i65bs623cnzxcjcgfkpidqt55lw7wnnubiv4yhvzfda4zbsn2kbq",
+        "text": "ished with"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "ished with",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_i65bs623cnzxcjcgfkpidqt55lw7wnnubiv4yhvzfda4zbsn2kbq",
+        "text": " exit code 0. The first"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " exit code 0. The first",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_i65bs623cnzxcjcgfkpidqt55lw7wnnubiv4yhvzfda4zbsn2kbq",
+        "text": " printed first"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " printed first",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_i65bs623cnzxcjcgfkpidqt55lw7wnnubiv4yhvzfda4zbsn2kbq",
+        "text": "-done and the second printed second"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "-done and the second printed second",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_i65bs623cnzxcjcgfkpidqt55lw7wnnubiv4yhvzfda4zbsn2kbq",
+        "text": "-done. PINEAP"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "-done. PINEAP",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_i65bs623cnzxcjcgfkpidqt55lw7wnnubiv4yhvzfda4zbsn2kbq",
+        "text": "PLE"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "PLE",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call",
+        "title": "Read File",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_5",
+        "tool_kind": "read",
+        "wire_title": "Read File"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_call_update",
+        "raw_tool_params": {
+          "file_path": "/tmp/claude/tasks/output"
+        },
+        "title": "Read /tmp/claude/tasks/output",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_5",
+        "tool_input": "{\n  \"file_path\": \"/tmp/claude/tasks/output\"\n}",
+        "wire_title": "Read /tmp/claude/tasks/output"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "tool_result",
+        "tool_call_id": "toolu_claude-steer-mid-tool-1_5",
+        "tool_final": true,
+        "tool_output": "```\n1\tfirst-done\n2\t\n3\t[exited with code 0]\n```",
+        "tool_output_bytes": 46,
+        "tool_output_digest": "bf84e89d82ed90f3c90bc4b19aa922387975cf76d06195a3eaadb2e9f5744aa4",
+        "tool_status": "completed"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "tool_call_update"
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": "DONE:"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "DONE:",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": " first"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " first",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": "-done printed and exited "
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "-done printed and exited ",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": "0 (confirmed in"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "0 (confirmed in",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": " its output file); second-done "
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " its output file); second-done ",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": "ran in the foreground and"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "ran in the foreground and",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": " printed second"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " printed second",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": "-done in its own"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": "-done in its own",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": " result, so"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " result, so",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": " it has no output file to read."
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " it has no output file to read.",
+      "thinking": false
+    }
+  },
+  {
+    "action": "update",
+    "events": [
+      {
+        "kind": "text_chunk",
+        "message_id": "msg_bdrk_u45ucf7xumidl47hmkutk6zdxa5cj6b7xlsqofsyzqb576seqlfa",
+        "text": " PINEAPPLE"
+      }
+    ],
+    "frame": "session/update",
+    "session_update": "agent_message_chunk",
+    "text_chunk": {
+      "text": " PINEAPPLE",
+      "thinking": false
+    }
+  },
+  {
+    "frame": "response",
+    "id": 3,
+    "prompt_tokens": [
+      16,
+      1054,
+      308193,
+      5362
+    ],
+    "stop_reason": "end_turn"
+  }
+]

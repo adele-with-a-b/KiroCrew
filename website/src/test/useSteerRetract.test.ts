@@ -715,6 +715,18 @@ describe('useSteerRetract', () => {
     expect(hook.result.current.refusals).toEqual({ 'm-1': { refusal: 'unsupported', action } })
   })
 
+  it.each(['unsend', 'edit', 'queue'] as const)('settles a %s as read when its held steer went out first, with no refusal', (action) => {
+    const { hook, restoreDraft } = setup([row({ steerState: 'written' })])
+    act(() => { hook.result.current.onSteerAction('m-1', action) })
+
+    // claude: the steer the client held behind a tool call was sent before the take-back reached it.
+    hook.rerender({ messages: [row({ steerState: 'written', steerRetract: false, steerRetractReleased: true })] })
+
+    expect(restoreDraft).not.toHaveBeenCalled()
+    expect(hook.result.current.refusals).toEqual({})
+    expect(hook.result.current.pending).toEqual({})
+  })
+
   const expiredOffer = () => row({ steerState: 'written', steerRetract: false, steerRetractExpired: true })
 
   it.each(['edit', 'queue'] as const)('hands a %s back when a later turn withdrew its stopped turn offer', (action) => {

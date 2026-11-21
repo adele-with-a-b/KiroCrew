@@ -29,6 +29,12 @@ the action), ``consumed``, or ``requeued`` for a ``queue`` take-back the turn's 
 overtook, since that requeue is exactly what was asked. The route only arms the
 take-back and writes the clear, and answers before any of that is known.
 
+claude's adapter drops nothing, so a claude steer is taken back while Crew still
+holds it, behind a tool call the turn has open (``ACP_BACKENDS_STEER_HELD_RETRACT``).
+The client drops that one steer, or says it already sent it, in the same step
+(:func:`_take_back_held`), so the outcome is known before the route answers. A held
+steer the client sends stops being offered (:func:`on_released`).
+
 kiro-cli drops EVERY steer it holds, not only the one asked for. The steers
 pending when the clear was written are its batch, and the ones the drop took
 besides the taken-back steer are sent again, in their order. A steer sent while a
@@ -77,6 +83,14 @@ RETRACT_ACTION_META = "steerRetractAction"
 #: the offer because the steer's turn ended without settling it. A page holding a
 #: take-back of that row reads the turn as over, not as a refusal.
 RETRACT_EXPIRED_META = "steerRetractExpired"
+
+#: Set beside ``steerRetract: false`` when a steer the client held behind a tool
+#: call went out to the turn (:func:`on_released`), or had already gone when the
+#: take-back reached it (:func:`_take_back_held`). The turn reads it, so a page
+#: holding a take-back of that row settles it as read, not as a refusal.
+RETRACT_RELEASED_META = "steerRetractReleased"
+
+_RELEASED = {STEER_RETRACTABLE_META: False, RETRACT_RELEASED_META: True}
 
 # What :func:`begin` answers.
 RETRACT_ACCEPTED = "accepted"
@@ -196,6 +210,8 @@ async def begin(state: "DashboardState", slot: "_ChatSlot", mid: str, action: st
     client = getattr(slot, "_acp_client", None)
     if client is None or getattr(client, "supports_steer_retract", False) is not True:
         return RETRACT_UNSUPPORTED
+    if getattr(client, "takes_back_held_steers", False) is True:
+        return _take_back_held(state, slot, client, message, mid, action)
     _drop_stale(slot)
     if slot._steer_retract is not None or slot._steer_clear is not None:
         return RETRACT_BUSY
@@ -239,6 +255,56 @@ async def begin(state: "DashboardState", slot: "_ChatSlot", mid: str, action: st
         _withdraw_offer(state, slot, record)
         return RETRACT_UNSUPPORTED
     return RETRACT_ACCEPTED
+
+
+def _take_back_held(
+    state: "DashboardState", slot: "_ChatSlot", client: Any, message: str, mid: str, action: str
+) -> str:
+    """Take back a steer the client is still holding behind an open tool call.
+
+    The client drops that one steer, or answers that it has none to drop because
+    it already sent it (``drop_held_steer``), in the same step, so the outcome is
+    known here and nothing is armed: no clear runs, no other steer is touched and
+    none is sent again. A steer already on its way is read by the turn, which is
+    ``not_pending``, and its row stops offering the take-back here as well as at
+    the release (:func:`on_released`), which can reach the turn before the row is
+    written. An offered row is never a responsive steer's, so the text the client
+    holds is the row's own.
+    """
+    from kiro_crew.dashboard import session_control
+
+    if client.drop_held_steer(message) is not True:
+        _patch_row_meta(state, slot, mid, _RELEASED)
+        return RETRACT_NOT_PENDING
+    record = SteerRetract(
+        message=message,
+        mid=mid,
+        action=action,
+        admission=(
+            session_control.containment_meta(state, slot) if action == RETRACT_QUEUE else None
+        ),
+        directive_user_origin=True,
+        turn=slot.task,
+    )
+    take_back(state, slot, record)
+    return RETRACT_ACCEPTED
+
+
+def on_released(state: "DashboardState", slot: "_ChatSlot", message: str) -> None:
+    """A held steer is being sent: its row stops offering the take-back.
+
+    Only a row still offering it changes. Its state stays ``written``: the turn
+    reports it consumed, or the teardown requeues it, as for any sent steer.
+    """
+    if not message:
+        return
+    row = find_written_steer_row(slot, message)
+    meta = row.get("meta") if row is not None else None
+    if not isinstance(meta, dict) or meta.get(STEER_RETRACTABLE_META) is not True:
+        return
+    mid = meta.get("mid")
+    if isinstance(mid, str) and mid:
+        _patch_row_meta(state, slot, mid, _RELEASED)
 
 
 async def wait_for_clear(slot: "_ChatSlot") -> None:

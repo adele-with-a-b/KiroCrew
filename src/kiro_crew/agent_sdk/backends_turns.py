@@ -259,7 +259,40 @@ ACP_BACKENDS_STEER_CONCURRENT_PROMPT = frozenset({ACP_BACKEND_OPENCODE})
 # naming two steers ``steering_injected`` had already reported, and the turn obeyed
 # both. Its answer and its ``steering_cleared`` name steers the turn already read,
 # so neither can tell a dropped steer from a delivered one.
+#
+# claude is not a member: claude-agent-acp has no request that drops one message
+# it has not read while its turn keeps running. Measured on 0.109.0, a second
+# ``session/prompt`` sent during a Bash call and then named by ``$/cancel_request``
+# still ran (``test/fixtures/acp_frames/claude/queued-prompt-cancel-request-live.jsonl``),
+# and ``session/cancel`` dropped it only by cancelling the running turn with it
+# (``test/fixtures/acp_frames/claude/queued-prompt-session-cancel-live.jsonl``). A
+# claude steer is taken back while Crew still holds it instead
+# (``ACP_BACKENDS_STEER_HELD_RETRACT``).
 ACP_BACKENDS_STEER_RETRACT = frozenset({ACP_BACKEND_KIRO})
+
+# Backends whose user steer ``AcpClient`` holds itself while a tool call of the
+# running turn is open, so a steer still held can be taken back before it is
+# ever sent. Read by ``AcpClient.supports_steer_retract``; the dashboard's Unsend,
+# Edit and Queue instead are offered on a steer only while it is held, and a held
+# steer leaves the offer the moment it is released (``EVENT_STEER_RELEASED``).
+#
+# claude is a member on LIVE captures against claude-agent-acp 0.109.0. A
+# ``_session/steering`` sent while a Bash call ran was answered ``injected`` and
+# moved that call to the background, and the turn then wrote three replies
+# (``test/fixtures/acp_frames/claude/steering-during-tool-live.jsonl``), which is
+# why the steer is held. The same steer held until the call's ``tool_call_update``
+# reported ``completed`` and sent then was answered ``injected`` and read at the
+# model's next step: the second call ran in the foreground and the one reply obeyed
+# it (``test/fixtures/acp_frames/claude/steering-held-after-tool-live.jsonl``). So
+# holding costs the steer none of its effect inside the turn. What is never held, a
+# steer sent while the model writes with no tool call open, goes out at once and the
+# adapter reads it at once, so it is never offered. The adapter itself drops nothing
+# (see ``ACP_BACKENDS_STEER_RETRACT``).
+#
+# Only the per-chat ``AcpClient`` holds: a claude chat on the shared runtime
+# queues a steer sent during a tool call instead (``session_handle_steering``),
+# and its queue card already has its own cancel and edit.
+ACP_BACKENDS_STEER_HELD_RETRACT = frozenset({ACP_BACKEND_CLAUDE})
 
 # Backends that can serve a MANUAL ``/compact`` (the user-typed slash command).
 # Every member acts on the ``/compact`` prompt that ``AcpProvider.compact()``

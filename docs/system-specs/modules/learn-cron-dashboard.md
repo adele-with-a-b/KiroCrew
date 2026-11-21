@@ -3787,7 +3787,9 @@ over-keep default. Pinned by the requeue sendId tests in
 `written` steer row carries `meta.steerRetract: true` when it can be taken back:
 the session's own human typed it into the composer (not a peer, a channel, an
 automation or a Bot's responsive turn), and the slot's live client answers
-`supports_steer_retract` (`ACP_BACKENDS_STEER_RETRACT`, kiro-cli). The dashboard
+`supports_steer_retract` (`ACP_BACKENDS_STEER_RETRACT`, kiro-cli; or
+`ACP_BACKENDS_STEER_HELD_RETRACT`, claude, for a steer the client is holding, see
+below). The dashboard
 draws Unsend, Edit and Queue instead from that mark alone, and the
 `steer_push` frame carries it too. A hard Stop discards the pending steers
 without settling their rows, and a gateway restart mid-turn leaves them as saved,
@@ -3839,6 +3841,30 @@ one are sent again only when kiro-cli reports the drop, so a steer sent between
 the two can reach the turn before them. A
 resend that fails leaves its steer pending for the teardown's requeue. Pinned by
 `test_steer_retract.py` and `test_steer_clear_handle.py`.
+
+claude's adapter drops no single unread message: a second `session/prompt` it
+queues is read at the next tool boundary, `$/cancel_request` naming it changes
+nothing, and `session/cancel` drops it only by cancelling the running turn too
+(0.109.0 captures, `test/fixtures/acp_frames/claude/queued-prompt-*-live.jsonl`).
+What can be taken back is a steer `AcpClient` itself holds: it sends no claude
+steer while a tool call of the turn is open, since a steer then moves the call to
+the background (`steering-during-tool-live.jsonl`), and sends it when the call
+completes, when the model reads it at its next step
+(`steering-held-after-tool-live.jsonl`). So a claude steer row is offered only
+when the client says it is holding it (`steer_is_held`, via
+`steer_take_back_offered`). A steer sent with no call open goes straight to the
+turn and is not offered. The take-back runs no clear: `begin` asks the client to
+drop that one steer (`drop_held_steer`), which it does unless it has already
+picked it up to send, and the answer is known before the route answers. Dropped,
+the steer is taken back as above (`take_back`). Already gone, the route answers
+409 and the row's mark is withdrawn. When a held steer is sent, the turn reports
+`EVENT_STEER_RELEASED` and its row's mark is withdrawn (`on_released`). Both
+withdrawals carry `steerRetractReleased: true`, so a page holding a take-back of
+that row settles it as read, not as a refusal. No other held steer is touched and
+none is sent again. Not covered: a claude chat on a shared runtime
+(`CHAT_RUNTIME_SHARING_HARNESSES`, off by default) queues a mid-tool message as a
+queue card, which already has its own cancel and edit. Pinned by
+`test_claude_steering_request.py` and `test_steer_retract_held.py`.
 
 **A manual `/compact` takes no steer.** That turn runs the compaction, not a
 prompt, so a steer would reach nothing the model reads. `_begin_compact_command`

@@ -23,6 +23,7 @@ from kiro_crew.acp.types import (
     EVENT_COMPLETE,
     EVENT_PERMISSION_REQUEST,
     EVENT_STEER_CONSUMED,
+    EVENT_STEER_RELEASED,
     METHOD_REQUEST_PERMISSION,
     METHOD_SESSION_STEERING,
     JsonRpcMessage,
@@ -31,6 +32,8 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_CLAUDE,
     ACP_BACKEND_CODEX,
     ACP_BACKENDS_STEER,
+    ACP_BACKENDS_STEER_HELD_RETRACT,
+    ACP_BACKENDS_STEER_RETRACT,
     ACP_BACKENDS_STEERING_REQUEST,
 )
 from kiro_crew.testing.clock import ManualClock
@@ -917,3 +920,122 @@ async def test_a_steer_after_the_tool_finished_is_sent():
         wire.end_turn()
         kinds = [e.kind for e in await await_until(turn, what="the turn")]
         assert EVENT_STEER_CONSUMED in kinds
+
+
+# Taking back a held steer (``ACP_BACKENDS_STEER_HELD_RETRACT``). The adapter drops
+# no single unread message (test/fixtures/acp_frames/claude/queued-prompt-*-live.jsonl),
+# so only a steer the client still holds behind an open call can be taken back.
+
+
+def test_claude_takes_back_held_steers_and_not_through_the_clear():
+    assert ACP_BACKEND_CLAUDE in ACP_BACKENDS_STEER_HELD_RETRACT
+    assert ACP_BACKEND_CLAUDE not in ACP_BACKENDS_STEER_RETRACT
+    client = _client()
+    assert client.supports_steer_retract is True
+    assert client.takes_back_held_steers is True
+    # Below the steering floor no steer is held, so none is offered.
+    assert _client("0.64.2").supports_steer_retract is False
+    assert _client(advertised=False).supports_steer_retract is False
+    codex = _client(backend=ACP_BACKEND_CODEX)
+    assert codex.supports_steer_retract is False
+    assert codex.takes_back_held_steers is False
+
+
+@pytest.mark.asyncio
+async def test_a_steer_is_held_only_while_a_tool_call_is_open():
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        direct = _spawn(spawned, client.steer("sent at once"))
+        wire.answer(await wire.next_steering_id(), "injected")
+        assert await await_until(direct, what="the direct steer") is True
+        assert client.steer_is_held("sent at once") is False
+
+        wire.inbound.put_nowait(_open_tool())
+        await async_wait_until(lambda: client._active_tool_calls.possibly_open)
+        assert await client.steer("held") is True
+        assert client.steer_is_held("held") is True
+        assert client.steer_is_held("not sent") is False
+
+        wire.inbound.put_nowait(_close_tool())
+        await _wait_closed(client, "tc1")
+        # Released: on its way out, no longer offered.
+        assert client.steer_is_held("held") is False
+        assert client.drop_held_steer("held") is False
+        wire.answer(await wire.next_steering_id(), "injected")
+        await async_wait_until(lambda: len(client._steers_accepted) == 2)
+        wire.end_turn()
+        await await_until(turn, what="the turn")
+        assert _steered_texts(wire) == ["sent at once", "held"]
+
+
+@pytest.mark.asyncio
+async def test_dropping_a_held_steer_takes_only_that_one_and_it_is_never_sent():
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        wire.inbound.put_nowait(_open_tool())
+        await async_wait_until(lambda: client._active_tool_calls.possibly_open)
+        for text in ("first", "taken back", "third"):
+            assert await client.steer(text) is True
+
+        assert client.drop_held_steer("taken back") is True
+        assert client.drop_held_steer("taken back") is False
+        assert client.steer_is_held("first") and client.steer_is_held("third")
+
+        wire.inbound.put_nowait(_close_tool())
+        wire.answer(await wire.next_steering_id(), "injected")
+        await async_wait_until(lambda: len(wire.steering_frames()) == 2)
+        wire.answer(wire.steering_frames()[-1]["id"], "injected")
+        await async_wait_until(lambda: len(client._steers_accepted) == 2)
+        wire.end_turn()
+        events = await await_until(turn, what="the turn")
+        assert _steered_texts(wire) == ["first", "third"]
+        # Released once, at the call's end, and the dropped one is not among them.
+        assert [e.text for e in events if e.kind == EVENT_STEER_RELEASED] == ["first", "third"]
+
+
+@pytest.mark.asyncio
+async def test_a_held_steer_being_sent_cannot_be_dropped():
+    """The sender has picked it up: the frame may already be in the pipe."""
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        wire.inbound.put_nowait(_open_tool("tc1"))
+        await async_wait_until(lambda: client._active_tool_calls.possibly_open)
+        assert await client.steer("in flight") is True
+        wire.inbound.put_nowait(_close_tool("tc1"))
+        steering_id = await wire.next_steering_id()
+        # A new call opens while the send waits for its answer: the steer still
+        # sits at the head of the held list, but it is being sent.
+        wire.inbound.put_nowait(_open_tool("tc2"))
+        await async_wait_until(lambda: "tc2" in client._active_tool_calls)
+        assert client._steers_held and client._steers_held[0][1] == "in flight"
+        assert client.steer_is_held("in flight") is False
+        assert client.drop_held_steer("in flight") is False
+
+        wire.answer(steering_id, "injected")
+        await async_wait_until(lambda: client._steers_accepted)
+        wire.inbound.put_nowait(_close_tool("tc2"))
+        await _wait_closed(client, "tc2")
+        wire.end_turn()
+        await await_until(turn, what="the turn")
+        assert _steered_texts(wire) == ["in flight"]
+
+
+@pytest.mark.asyncio
+async def test_a_steer_held_for_an_ended_turn_cannot_be_dropped_or_offered():
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        wire.inbound.put_nowait(_open_tool())
+        await async_wait_until(lambda: client._active_tool_calls.possibly_open)
+        assert await client.steer("never sent") is True
+        wire.end_turn("cancelled")
+        await await_until(turn, what="the turn")
+        assert client.steer_is_held("never sent") is False
+        assert client.drop_held_steer("never sent") is False

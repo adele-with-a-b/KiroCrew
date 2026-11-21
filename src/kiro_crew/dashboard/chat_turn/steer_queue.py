@@ -802,6 +802,13 @@ async def _on_steer_dropped(turn: _ChatTurn, event) -> None:
     await steer_retract.on_dropped(turn.state, turn.slot)
 
 
+def _on_steer_released(turn: _ChatTurn, event) -> None:
+    """A steer the client held behind a tool call is being sent: no take-back now."""
+    from kiro_crew.dashboard import steer_retract
+
+    steer_retract.on_released(turn.state, turn.slot, event.text or "")
+
+
 async def _on_steer_consumed(turn: _ChatTurn, event) -> None:
     """A steer the session took in mid-turn."""
     _person_steered_turn = turn._person_steered_turn

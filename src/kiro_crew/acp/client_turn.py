@@ -91,6 +91,7 @@ from kiro_crew.acp.types import (
     EVENT_MCP_SERVER_INIT_FAILURE,
     EVENT_MCP_SERVER_INITIALIZED,
     EVENT_STEER_CONSUMED,
+    EVENT_STEER_RELEASED,
     EVENT_SUBAGENT_ACTIVITY,
     EVENT_SUBAGENT_LIST,
     EVENT_TEXT_CHUNK,
@@ -1335,8 +1336,10 @@ async def _dispatch_events(
                     self._active_tool_calls.discard(tool_result_event.tool_call_id or "")
                     self._tool_dispatched = self._active_tool_calls.possibly_open
                     self._stale_eligible = not self._active_tool_calls.possibly_open
-                    # A steer held while a call ran goes out once none is open.
-                    self._release_held_steers()
+                    # A steer held while a call ran goes out once none is open,
+                    # and can no longer be taken back.
+                    for released in self._release_held_steers():
+                        yield AcpEvent(kind=EVENT_STEER_RELEASED, text=released)
                 # Fire the PostToolUse HOOK ENGINE now that the tool RESULT
                 # (and its output) exists — the Pre-vs-Post split is required
                 # because fire_tool_hooks above is PreToolUse-only. No-op

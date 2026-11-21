@@ -55,6 +55,7 @@ from kiro_crew.acp.types import (
     ACP_BACKEND_KIRO,
     ACP_BACKEND_PI,
     ACP_BACKENDS_STEER_CONCURRENT_PROMPT,
+    ACP_BACKENDS_STEER_HELD_RETRACT,
     ACP_BACKENDS_STEERING_REQUEST,
     EVENT_COMPLETE,
     EVENT_STEER_CONSUMED,
@@ -761,20 +762,81 @@ def _held_steer_writes(self: AcpClient) -> set[str]:
     return writes
 
 
-def _release_held_steers(self: AcpClient) -> None:
+def _release_held_steers(self: AcpClient) -> list[str]:
     """Start sending the held steers if no tool call of the turn is open.
 
     The turn's read loop calls this each time a tool call reaches a terminal
     status. The sends run on a task of their own, one at a time: the loop is
     the one reader of the adapter's stdout and has to keep reading while a
     steer waits for its answer.
+
+    Returns the text of every steer this release sends, oldest first, so the
+    loop can report each as ``EVENT_STEER_RELEASED``: from here on none of them
+    can be taken back (:func:`drop_held_steer`). Empty when nothing is released.
     """
-    if not getattr(self, "_steers_held", None) or self._active_tool_calls.possibly_open:
-        return
+    held = getattr(self, "_steers_held", None)
+    if not held or self._active_tool_calls.possibly_open:
+        return []
     task = self._held_steer_task
-    if task is not None and not task.done():
-        return
-    self._held_steer_task = asyncio.get_running_loop().create_task(self._send_held_steers())
+    if task is None or task.done():
+        self._held_steer_task = asyncio.get_running_loop().create_task(self._send_held_steers())
+    return [text for _aimed_at, text in held]
+
+
+def supports_held_steer_retract(self: AcpClient) -> bool:
+    """Whether a steer this client holds can be taken back before it is sent.
+
+    Membership in ``ACP_BACKENDS_STEER_HELD_RETRACT``, on a session that takes
+    the steering request at all (:meth:`_steering_request_ready`): only a steer
+    that arrives while a tool call of the turn is open is held, and only a held
+    steer is offered (:func:`steer_is_held`).
+    """
+    return self.backend in ACP_BACKENDS_STEER_HELD_RETRACT and self._steering_request_ready()
+
+
+def takes_back_held_steers(self: AcpClient) -> bool:
+    """Whether this client's take-back is of a steer it holds itself, one at a time
+    (:func:`drop_held_steer`), rather than a clear the adapter answers."""
+    return self.backend in ACP_BACKENDS_STEER_HELD_RETRACT
+
+
+def _held_steer_waiting(self: AcpClient, text: str) -> tuple[int, str] | None:
+    """The held entry for *text* that is still waiting, or None.
+
+    Waiting means held for the running turn, not the one being sent right now,
+    and behind a tool call or an approval that is still open: a steer held with
+    none open is on its way out already.
+    """
+    if not (self._active_tool_calls.possibly_open or self._parked_on_permission):
+        return None
+    sending = getattr(self, "_held_steer_sending", None)
+    for entry in self._held_steers():
+        if entry is not sending and entry[0] == self._steering_turn_req and entry[1] == text:
+            return entry
+    return None
+
+
+def steer_is_held(self: AcpClient, text: str) -> bool:
+    """Whether the steer *text* is held unsent and can still be taken back."""
+    return self.supports_steer_retract and _held_steer_waiting(self, text) is not None
+
+
+def drop_held_steer(self: AcpClient, text: str) -> bool:
+    """Take the held steer *text* back before it is sent; True when it was.
+
+    Synchronous against the read loop and the sender, which share this event
+    loop: a steer this removes is never written, and one the sender has picked
+    up is not removed. Only the one steer goes; any other held steer stays
+    where it was. False when *text* is not held, already being sent, or the
+    client does not hold steers.
+    """
+    if not self.supports_steer_retract:
+        return False
+    entry = _held_steer_waiting(self, text)
+    if entry is None:
+        return False
+    self._held_steers().remove(entry)
+    return True
 
 
 async def _send_held_steers(self: AcpClient) -> None:
@@ -808,6 +870,8 @@ async def _send_held_steers(self: AcpClient) -> None:
         # still in flight finds the text here, as for a direct steer's RPC.
         possibly_delivered = self._held_steer_writes()
         possibly_delivered.add(text)
+        # Picked up: from here a take-back cannot reach it (``drop_held_steer``).
+        self._held_steer_sending = steer
         try:
             delivered = await self._send_steering_request(aimed_at, text)
         except Exception as exc:
@@ -819,9 +883,11 @@ async def _send_held_steers(self: AcpClient) -> None:
         else:
             if delivered is not None:
                 possibly_delivered.discard(text)
+        finally:
+            self._held_steer_sending = None
         # Read again: a turn that ended during the send started a new list.
         current = self._held_steers()
-        if current and current[0] == steer:
+        if current and current[0] is steer:
             current.pop(0)
 
 
