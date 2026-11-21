@@ -6,19 +6,20 @@
  * paired raw inline HTML tags is skipped. Runs after the autolink pass, so a token
  * an edition already turned into a link stays a link.
  *
- * The span is `<span class="link-preview-text" data-link-preview-text>`; it carries
- * no URL (see `textPatterns.ts`). Inert when no pattern is active; a text node the
+ * The span is `<span class="link-preview-text" data-link-preview-text>`, plus
+ * `data-tone="<tone>"` when its pattern names one; it carries no URL (see
+ * `textPatterns.ts`). Inert when no pattern is active; a text node the
  * worker has not answered for yet renders as plain text until it has.
  */
 import { OPAQUE, tagKind, type MdNode } from '../utils/remarkAutolinkRules'
-import { hasTextPatterns, textPatternHits } from './textPatterns'
+import { hasTextPatterns, textPatternHits, type TextPatternTone } from './textPatterns'
 
 type SpanNode = MdNode & { data?: { hName: string; hProperties: Record<string, unknown> } }
 
-function span(value: string): SpanNode {
+function span(value: string, tone?: TextPatternTone): SpanNode {
   return {
     type: 'linkPreviewText',
-    data: { hName: 'span', hProperties: { className: ['link-preview-text'], dataLinkPreviewText: '' } },
+    data: { hName: 'span', hProperties: { className: ['link-preview-text'], dataLinkPreviewText: '', ...(tone ? { dataTone: tone } : {}) } },
     children: [{ type: 'text', value }],
   }
 }
@@ -43,7 +44,7 @@ function transform(parent: MdNode, enclosingDepth = 0): void {
         let pos = 0
         for (const h of hits) {
           if (h.start > pos) next.push({ type: 'text', value: node.value.slice(pos, h.start) })
-          next.push(span(node.value.slice(h.start, h.end)))
+          next.push(span(node.value.slice(h.start, h.end), h.tone))
           pos = h.end
         }
         if (pos < node.value.length) next.push({ type: 'text', value: node.value.slice(pos) })

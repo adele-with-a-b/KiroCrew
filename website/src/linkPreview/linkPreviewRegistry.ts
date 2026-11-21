@@ -9,7 +9,7 @@
  * @module linkPreview/linkPreviewRegistry
  */
 import { claimableUrlHost, claimsHost, grantedSet, readHostClaims } from '../appFrame/hosts'
-import { MAX_TEXT_PATTERNS, type RawTextPattern } from './textPatterns'
+import { MAX_TEXT_PATTERNS, isTextPatternTone, type RawTextPattern } from './textPatterns'
 
 // The host rule lives in appFrame/hosts, shared by every point that names hosts.
 export { CC_SECOND_LEVELS, PUBLIC_SUFFIXES, isPublicSuffix, normalizeHost } from '../appFrame/hosts'
@@ -29,7 +29,7 @@ function readTextPatterns(raw: unknown): RawTextPattern[] {
   const out: RawTextPattern[] = []
   raw.slice(0, MAX_TEXT_PATTERNS).forEach((tp, index) => {
     if (!tp || typeof tp !== 'object') return
-    const { pattern, flags, id, defaultOff } = tp as Record<string, unknown>
+    const { pattern, flags, id, defaultOff, tone } = tp as Record<string, unknown>
     if (typeof pattern !== 'string') return
     if (flags !== undefined && typeof flags !== 'string') return
     if (id !== undefined && typeof id !== 'string') return
@@ -41,6 +41,8 @@ function readTextPatterns(raw: unknown): RawTextPattern[] {
       // renames a later one or its off switch.
       id: (id as string | undefined) || String(index),
       ...(defaultOff === true ? { defaultOff: true } : {}),
+      // Cosmetic, so not part of the grant entry; an unknown tone draws the default span.
+      ...(isTextPatternTone(tone) ? { tone } : {}),
     })
   })
   return out

@@ -663,7 +663,10 @@ MAX_LINK_PREVIEW_TEXT_PATTERNS = 16
 MAX_LINK_PREVIEW_TEXT_PATTERN_LEN = 200
 #: JavaScript regex flags an entry may carry; `g` is implied. No repeats.
 _TEXT_PATTERN_FLAGS_RE = re.compile(r"^(?!.*(.).*\1)[giu]*$")
-_TEXT_PATTERN_KEYS = frozenset({"pattern", "flags", "id", "defaultOff"})
+_TEXT_PATTERN_KEYS = frozenset({"pattern", "flags", "id", "defaultOff", "tone"})
+#: The colours a text pattern's span may take: theme tokens, never an app's own CSS.
+#: Mirrors `TEXT_PATTERN_TONES` in `website/src/linkPreview/textPatterns.ts`.
+TEXT_PATTERN_TONES = ("accent", "info", "ok", "warn", "danger", "muted")
 
 
 @dataclass
@@ -692,9 +695,10 @@ class LinkPreviewConfig:
     bad_hosts: bool = False
     # Optional: plain text in chat messages that also opens a card, as
     # ``{"pattern": <JS regex source>, "flags"?: "giu" subset, "id"?: <slug>,
-    # "defaultOff"?: bool}``. The host wraps each match in a hoverable span (never
-    # a link) and, on hover, hands the provider the matched text. ``id`` is what the
-    # app's module names when it switches patterns off (``ctx.setTextPatternsOff``).
+    # "defaultOff"?: bool, "tone"?: one of TEXT_PATTERN_TONES}``. The host wraps each
+    # match in a hoverable span (never a link) and, on hover, hands the provider the
+    # matched text. ``id`` is what the app's module names when it switches patterns off
+    # (``ctx.setTextPatternsOff``); ``tone`` colours the span with that theme token.
     textPatterns: list[dict[str, Any]] = field(default_factory=list)  # noqa: N815
     #: ``textPatterns`` present but not a list, or an entry that was not an object
     #: of two strings. Not serialized.
@@ -732,7 +736,7 @@ class LinkPreviewConfig:
                 isinstance(p, dict)
                 and "pattern" in p
                 and set(p) <= _TEXT_PATTERN_KEYS
-                and all(isinstance(p[k], str) for k in ("pattern", "flags", "id") if k in p)
+                and all(isinstance(p[k], str) for k in ("pattern", "flags", "id", "tone") if k in p)
                 and isinstance(p.get("defaultOff", False), bool)
             ):
                 patterns.append({k: p[k] for k in sorted(p)})
@@ -771,7 +775,7 @@ class LinkPreviewConfig:
         if self.bad_text_patterns:
             errors.append(
                 f"{where}: textPatterns must be an array of "
-                "{pattern, flags?, id?, defaultOff?} objects"
+                "{pattern, flags?, id?, defaultOff?, tone?} objects"
             )
         if len(self.textPatterns) > MAX_LINK_PREVIEW_TEXT_PATTERNS:
             errors.append(
@@ -791,6 +795,10 @@ class LinkPreviewConfig:
                 errors.append(f"{where}: textPatterns[{i}] flags must be a subset of 'giu'")
             if "id" in tp and not _PANEL_TAB_ID_RE.fullmatch(tp["id"]):
                 errors.append(f"{where}: textPatterns[{i}] id must be a storage-safe slug")
+            if "tone" in tp and tp["tone"] not in TEXT_PATTERN_TONES:
+                errors.append(
+                    f"{where}: textPatterns[{i}] tone must be one of {', '.join(TEXT_PATTERN_TONES)}"
+                )
         # `entry` traversal is checked in `AppManifest.validate` (needs the app root).
         return errors
 

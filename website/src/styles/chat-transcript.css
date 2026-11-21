@@ -520,3 +520,11 @@ file-tree-container{
 /* Plain text an app's link-preview `textPatterns` match (linkPreview/remarkLinkPreviewText.ts): hoverable, not a link. */
 /* A solid accent underline, so it never reads as inline code's dotted click-to-copy one. */
 .link-preview-text{text-decoration:underline solid;text-decoration-thickness:1px;text-decoration-color:color-mix(in srgb,var(--accent) 60%,transparent);text-underline-offset:3px;cursor:default}
+/* A pattern's `tone` (textPatterns.ts TEXT_PATTERN_TONES): the text and its underline take that theme token. */
+.link-preview-text[data-tone]{color:var(--lp-tone);text-decoration-color:color-mix(in srgb,var(--lp-tone) 60%,transparent)}
+.link-preview-text[data-tone="accent"]{--lp-tone:var(--accent)}
+.link-preview-text[data-tone="info"]{--lp-tone:var(--info)}
+.link-preview-text[data-tone="ok"]{--lp-tone:var(--ok)}
+.link-preview-text[data-tone="warn"]{--lp-tone:var(--warn)}
+.link-preview-text[data-tone="danger"]{--lp-tone:var(--danger)}
+.link-preview-text[data-tone="muted"]{--lp-tone:var(--muted)}

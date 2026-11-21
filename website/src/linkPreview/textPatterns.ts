@@ -2,9 +2,10 @@
  * Plain-text link previews: `contributes.linkPreviews[].textPatterns`.
  *
  * An app may declare text shapes (a ticket key, an id) that open its card the way
- * a link does. Each entry is `{ pattern, flags?, id?, defaultOff? }`: a regex source
- * with its own flags (`g` is implied), and an optional id the app uses to switch the
- * pattern off (`ctx.setTextPatternsOff`). The core wraps each match in a hoverable
+ * a link does. Each entry is `{ pattern, flags?, id?, defaultOff?, tone? }`: a regex
+ * source with its own flags (`g` is implied), an optional id the app uses to switch
+ * the pattern off (`ctx.setTextPatternsOff`), and an optional tone, one of
+ * `TEXT_PATTERN_TONES`, that colours its spans with that theme token. The core wraps each match in a hoverable
  * `<span data-link-preview-text>` (never a link); on hover the provider gets the
  * matched `text`.
  *
@@ -45,11 +46,20 @@ const STORE_PREFIX = 'kirocrew:link-preview-text-off:'
  *  cache instead would make every mounted message ask again, forever. */
 export const MAX_CACHED_TEXTS = 20000
 
+/** The colours a pattern's span may take, each a theme token (`var(--<tone>)`); never
+ *  an app's own CSS. Mirrors `TEXT_PATTERN_TONES` in `apps/manifest_contributes.py`. */
+export const TEXT_PATTERN_TONES = ['accent', 'info', 'ok', 'warn', 'danger', 'muted'] as const
+export type TextPatternTone = (typeof TEXT_PATTERN_TONES)[number]
+export function isTextPatternTone(x: unknown): x is TextPatternTone {
+  return typeof x === 'string' && (TEXT_PATTERN_TONES as readonly string[]).includes(x)
+}
+
 export interface RawTextPattern {
   pattern: string
   flags?: string
   id?: string
   defaultOff?: boolean
+  tone?: TextPatternTone
 }
 
 interface Declared {
@@ -60,11 +70,14 @@ interface Declared {
   defaultOff: boolean
   source: string
   flags: string
+  tone?: TextPatternTone
 }
 
 export interface TextHit {
   start: number
   end: number
+  /** The owning pattern's tone; absent draws the default span. */
+  tone?: TextPatternTone
 }
 
 interface WorkerLike {
@@ -177,7 +190,7 @@ export function setLinkPreviewTextPatterns(
     p.textPatterns.slice(0, MAX_TEXT_PATTERNS).forEach((tp, i) => {
       const flags = tp.flags ?? ''
       if (!usable(tp.pattern, flags)) return
-      next.push({ owner: p.key, appName: p.appName, id: tp.id || String(i), defaultOff: tp.defaultOff === true, source: tp.pattern, flags })
+      next.push({ owner: p.key, appName: p.appName, id: tp.id || String(i), defaultOff: tp.defaultOff === true, source: tp.pattern, flags, ...(isTextPatternTone(tp.tone) ? { tone: tp.tone } : {}) })
     })
   }
   declared = next
@@ -273,7 +286,10 @@ function onAnswer(e: MessageEvent<FromWorker>): void {
     active = active.filter((d) => !disabled.has(keyOf(d)))
   }
   f.texts.forEach((text, t) => {
-    const hits = (msg.hits[t] ?? []).map((h: ScanHit) => ({ start: h.start, end: h.end, owner: f.patterns[h.pattern]?.owner ?? '' }))
+    const hits = (msg.hits[t] ?? []).map((h: ScanHit) => {
+      const d = f.patterns[h.pattern]
+      return { start: h.start, end: h.end, owner: d?.owner ?? '', ...(d?.tone ? { tone: d.tone } : {}) }
+    })
     answers.set(text, hits)
     // The worker named each hit's owner from its text alone, so this is the same
     // for a given text in every message.

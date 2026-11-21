@@ -1039,6 +1039,10 @@ class TestLinkPreviewTextPatterns:
             ([dict(_TICKET_PATTERN, extra="x")], "must be an array of"),
             ([dict(_TICKET_PATTERN, flags=1)], "must be an array of"),
             ([dict(_TICKET_PATTERN, defaultOff="yes")], "must be an array of"),
+            ([dict(_TICKET_PATTERN, tone=1)], "must be an array of"),
+            # A tone names a theme token; an app never brings its own colour.
+            ([dict(_TICKET_PATTERN, tone="#ff0000")], "tone must be one of"),
+            ([dict(_TICKET_PATTERN, tone="var(--info)")], "tone must be one of"),
             ([dict(_TICKET_PATTERN, flags="gy")], "subset of 'giu'"),
             ([dict(_TICKET_PATTERN, flags="gg")], "subset of 'giu'"),
             ([dict(_TICKET_PATTERN, id="Bad Id")], "storage-safe slug"),
@@ -1053,6 +1057,28 @@ class TestLinkPreviewTextPatterns:
         )
         errors = m.contributes.validate()
         assert any(fragment in e for e in errors), errors
+
+
+@pytest.mark.parametrize("tone", ["accent", "info", "ok", "warn", "danger", "muted"])
+def test_a_text_pattern_tone_is_kept_signed_and_not_a_grant(tone):
+    """A tone colours the span; it is signed with the manifest but grants nothing."""
+    from kiro_crew.apps.link_preview_grants import pattern_grant
+
+    toned = dict(_TICKET_PATTERN, tone=tone)
+    m = AppManifest.from_dict(
+        _valid_manifest(contributes={"linkPreviews": [_link_preview(textPatterns=[toned])]})
+    )
+    assert m.contributes.validate() == []
+    assert m.contributes.to_dict()["linkPreviews"][0]["textPatterns"] == [
+        dict(sorted(toned.items()))
+    ]
+    plain = AppManifest.from_dict(
+        _valid_manifest(
+            contributes={"linkPreviews": [_link_preview(textPatterns=[_TICKET_PATTERN])]}
+        )
+    )
+    assert m.signing_payload() != plain.signing_payload()
+    assert pattern_grant(toned, 0) == pattern_grant(_TICKET_PATTERN, 0)
 
 
 def test_a_text_pattern_keeps_its_own_flags_and_switch():
