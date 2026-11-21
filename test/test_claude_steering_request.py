@@ -960,7 +960,7 @@ async def test_a_steer_is_held_only_while_a_tool_call_is_open():
 
         wire.inbound.put_nowait(_close_tool())
         await _wait_closed(client, "tc1")
-        # Released: on its way out, no longer offered.
+        # Released: on its way out, so not offered.
         assert client.steer_is_held("held") is False
         assert client.drop_held_steer("held") is False
         wire.answer(await wire.next_steering_id(), "injected")

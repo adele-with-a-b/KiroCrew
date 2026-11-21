@@ -1337,7 +1337,7 @@ async def _dispatch_events(
                     self._tool_dispatched = self._active_tool_calls.possibly_open
                     self._stale_eligible = not self._active_tool_calls.possibly_open
                     # A steer held while a call ran goes out once none is open,
-                    # and can no longer be taken back.
+                    # past the point where it can be taken back.
                     for released in self._release_held_steers():
                         yield AcpEvent(kind=EVENT_STEER_RELEASED, text=released)
                 # Fire the PostToolUse HOOK ENGINE now that the tool RESULT

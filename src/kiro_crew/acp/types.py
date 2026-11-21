@@ -170,8 +170,8 @@ EVENT_STEER_CLEARED = "steer_cleared"
 #: Not KAS's ``steering_cleared``, which arrives after a turn ends and names steers
 #: the turn already read (``EVENT_STEER_CLEARED``).
 EVENT_STEER_DROPPED = "steer_dropped"
-#: A steer ``AcpClient`` held behind an open tool call is being sent now, so it can
-#: no longer be taken back (``ACP_BACKENDS_STEER_HELD_RETRACT``). Carries the
+#: A steer ``AcpClient`` held behind an open tool call is being sent now, so it
+#: cannot be taken back (``ACP_BACKENDS_STEER_HELD_RETRACT``). Carries the
 #: steer's text as it was handed to :meth:`AcpClient.steer`.
 EVENT_STEER_RELEASED = "steer_released"
 #: A typed :class:`StructuredStatus` from the EXECUTION LAYER (the versioned
