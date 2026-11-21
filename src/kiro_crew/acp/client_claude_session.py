@@ -31,7 +31,10 @@ import re
 from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew.acp.claude_agent_options import apply_spec_claude_options
+from kiro_crew.acp.claude_agent_options import (
+    apply_crewmate_claude_options,
+    apply_spec_claude_options,
+)
 from kiro_crew.acp.claude_settings_sources import (
     CLAUDE_SETTINGS_MAX_BYTES,
     read_claude_settings_bytes,
@@ -736,7 +739,16 @@ def _claude_session_meta(self: ClaudeAcpClient) -> dict[str, Any]:
     # The agent's own user-level ``claudeCode`` block (memory folder, env, strict
     # MCP), before the switches below so the auto-memory off switch still wins.
     apply_spec_claude_options(options, getattr(self, "_agent", None))
-    if self.memory_mode != "persistent" or not getattr(self, "_include_memory", True):
+    # A Bot's own block (its file under mates/agents), for its DM thread and its
+    # workers; a Bot whose file names no memory folder has auto-memory off (fork only).
+    bot_without_memory = apply_crewmate_claude_options(
+        options, getattr(self, "_session_key", None)
+    )
+    if (
+        self.memory_mode != "persistent"
+        or not getattr(self, "_include_memory", True)
+        or bot_without_memory
+    ):
         # Claude Code's auto-memory reads the project's MEMORY.md into the
         # session and writes memory files with no permission request. The
         # adapter spreads this env over its own process env. Claude Code then
