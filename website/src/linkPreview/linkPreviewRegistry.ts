@@ -65,6 +65,8 @@ export interface ResolvedLinkPreview {
   textPatterns: RawTextPattern[]
   /** Hand the module the hovered URL whole; by default the query and fragment are dropped. */
   fullUrl: boolean
+  /** Tell the module which chat the hovered link or text sits in (`show({ sessionKey })`). */
+  sessionKey: boolean
   /** Which install of the module this is (entry, version, install and update time). A frame
    *  made for another revision runs the old module and is replaced. */
   revision: string
@@ -77,7 +79,7 @@ interface AppLike {
   installedAt?: string
   updatedAt?: string
   /** What the owner approved (`apps/link_preview_grants.py`). Absent: nothing to filter. */
-  linkPreviewGrant?: { hosts?: unknown; textPatterns?: unknown; fullUrl?: unknown }
+  linkPreviewGrant?: { hosts?: unknown; textPatterns?: unknown; fullUrl?: unknown; sessionKey?: unknown }
   manifest?: {
     backend?: { entryPoint?: string }
     contributes?: { linkPreviews?: unknown }
@@ -123,6 +125,9 @@ export function resolveLinkPreviews(apps: readonly AppLike[]): ResolvedLinkPrevi
       // Whole URLs only once the owner approved them: a query or fragment can
       // carry a signed link's credential.
       fullUrl: p.fullUrl === true && grant?.fullUrl === true,
+      // The chat's session key only once the owner approved it: which conversations
+      // a person has open is theirs.
+      sessionKey: p.sessionKey === true && grant?.sessionKey === true,
       // `updatedAt` too: a same-version Sync replaces the files and keeps installedAt.
       revision: JSON.stringify([entry, app.version ?? '', app.installedAt ?? '', app.updatedAt ?? '']),
     })

@@ -11867,6 +11867,7 @@
       "grants_reconsent_link_hosts": "Link-Hosts: erlaubt den Hover-Karten der App, Links zu diesen Seiten in Chat-Nachrichten zu sehen.",
       "grants_reconsent_link_patterns": "Textmuster: erlaubt den Hover-Karten der App, Chat-Text zu sehen, auf den diese Muster passen.",
       "grants_reconsent_link_full_url": "Vollständige Linkadressen: Die Hover-Karten der App sehen auch den Teil eines Links nach ? oder #, der einen Anmeldecode enthalten kann.",
+      "grants_reconsent_link_session_key": "Welcher Chat: Die Hover-Karten der App erfahren, in welcher Unterhaltung der Link oder Text steht, über dem der Zeiger liegt.",
       "grants_reconsent_message_actions": "Nachrichtenaktionen: was die Menüeinträge der App an Chatnachrichten lesen können.",
       "grants_approved": "Genehmigt: {{entries}}. Die App kann sie jetzt nutzen.",
       "grants_reconsent_frame_sources": "Eingebettete Websites: Erlaubt den Seiten der App, diese Websites im Dashboard anzuzeigen.",

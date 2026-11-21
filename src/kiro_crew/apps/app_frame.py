@@ -970,6 +970,7 @@ const POINT = {
         const link = { rect: m.rect, theme: m.theme === 'dark' ? 'dark' : 'light', card: cardControls(m.invocation) };
         if (typeof m.url === 'string') link.url = m.url;
         if (typeof m.text === 'string') link.text = m.text;
+        if (typeof m.sessionKey === 'string') link.sessionKey = m.sessionKey;
         if (m.modifiers && typeof m.modifiers === 'object') {
           const k = m.modifiers;
           link.modifiers = { alt: k.alt === true, shift: k.shift === true, ctrl: k.ctrl === true, meta: k.meta === true };

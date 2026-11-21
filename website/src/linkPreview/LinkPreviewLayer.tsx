@@ -28,6 +28,7 @@ import { withoutQuery } from '../appFrame/hosts'
 import { currentTheme } from '../appFrame/sandboxFrame'
 import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions } from './linkPreviewFrames'
 import { resolveTextPreview, setLinkPreviewTextPatterns, setTextPatternsOff } from './textPatterns'
+import type { PreviewLink } from './linkPreviewProtocol'
 
 const HOVER_DELAY_MS = 300
 /** A provider whose frame failed to load or activate is tried again on a hover this long after. */
@@ -128,7 +129,7 @@ export default function LinkPreviewLayer() {
   const hideAllRef = useRef<(reason: string) => void>(() => {})
   // The hover in progress and its provider: a frame's failure is shown only under
   // its own hover, and nothing is shown once the user has left it.
-  const anchorRef = useRef<{ el: HTMLElement; key: string; appName: string; link: { url?: string; text?: string } } | null>(null)
+  const anchorRef = useRef<{ el: HTMLElement; key: string; appName: string; link: PreviewLink } | null>(null)
 
   const chip = useFrameLinkBridge(frameRefs)
 
@@ -204,13 +205,16 @@ export default function LinkPreviewLayer() {
       const path = e.composedPath()
       // Chat messages only: a link elsewhere in the dashboard (Connections, an
       // OAuth approval, Settings) never reaches an app.
-      if (!path.some((n) => n instanceof HTMLElement && n.hasAttribute('data-link-preview-scope'))) return null
+      const scope = path.find((n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute('data-link-preview-scope'))
+      if (!scope) return null
+      // Which chat the message is in, for an app the owner approved for it.
+      const session = scope.getAttribute('data-link-preview-session') || undefined
       // composedPath, so a link inside an open shadow root (a rendered widget)
       // is seen, not only its retargeted host.
       const el = path.find((n): n is HTMLAnchorElement => n instanceof HTMLAnchorElement && Boolean(n.href))
       if (el) {
         const p = providerFor(el.href, providersRef.current)
-        return p ? { a: el as HTMLElement, url: (p.fullUrl ? el.href : withoutQuery(el.href)) as string | undefined, text: undefined as string | undefined, p } : null
+        return p ? { a: el as HTMLElement, url: (p.fullUrl ? el.href : withoutQuery(el.href)) as string | undefined, text: undefined as string | undefined, p, session } : null
       }
       // A plain-text match: the owner is re-derived from the span's own text, and
       // the provider gets that text and nothing else.
@@ -219,7 +223,7 @@ export default function LinkPreviewLayer() {
       const text = sp.textContent ?? ''
       const hit = resolveTextPreview(text)
       const p = hit ? providersRef.current.find((x) => x.key === hit.owner) : undefined
-      return p ? { a: sp, url: undefined as string | undefined, text: text as string | undefined, p } : null
+      return p ? { a: sp, url: undefined as string | undefined, text: text as string | undefined, p, session } : null
     }
 
     const moved = (e: PointerEvent) => Math.abs(e.clientX - pointer.x) >= 1 || Math.abs(e.clientY - pointer.y) >= 1
@@ -239,7 +243,10 @@ export default function LinkPreviewLayer() {
       if (hit.a === current?.a) return
       const key = hit.p.key
       const lastFailed = failedAt.current.get(key)
-      const link = hit.url ? { url: hit.url } : { text: hit.text }
+      const link: PreviewLink = {
+        ...(hit.url ? { url: hit.url } : { text: hit.text }),
+        ...(hit.p.sessionKey && hit.session ? { sessionKey: hit.session } : {}),
+      }
       // A different link ends the earlier hover here, whether or not its own
       // pointerout ended it (the failure card's leave grace defers that): its
       // pending show, a Retry's included, is dropped and its app told `leave`.

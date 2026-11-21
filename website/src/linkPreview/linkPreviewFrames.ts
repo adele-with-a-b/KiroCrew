@@ -26,6 +26,7 @@ import {
   type AnchorRect,
   type FromFrame,
   type Modifiers,
+  type PreviewLink,
   type ToFrame,
 } from './linkPreviewProtocol'
 
@@ -161,7 +162,7 @@ export class FrameHost {
   /** Show `link` in the provider's hover frame, next to `anchor`. */
   async show(
     frame: PreviewFrame,
-    link: { url?: string; text?: string },
+    link: PreviewLink,
     anchor: AnchorRect,
     modifiers?: Modifiers,
   ): Promise<boolean> {

@@ -5252,7 +5252,11 @@ The boundary:
   parent's loopback origins to `frame-ancestors`. An edited port voids the token. A message over
   `MAX_MESSAGE_BYTES` (8 KB) or past the per-frame token bucket (120, refilled at
   60/s) is dropped unread. Hover sends the URL without query and fragment unless
-  the provider sets `fullUrl: true`.
+  the provider sets `fullUrl: true`. A provider with an approved `sessionKey: true`
+  (grant family `linkPreviewSessionKey`, `apps/link_preview_grants.py`) is also told
+  the chat's session key: `MarkdownRenderer` writes `data-link-preview-session`
+  (`dashboard:<previewSlot>`) on the scope only when its host passes the local slot
+  the rows belong to, and `LinkPreviewLayer` reads it from the hovered message's scope.
 - **Mount.** Behind a reverse proxy at a sub-path the gateway never sees the mount,
   so the frame derives it from its own URL and prefixes the module and fetch paths.
 - **Text patterns** stay in core (`textPatterns.ts`): matched in a Web Worker with a

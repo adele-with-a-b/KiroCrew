@@ -11607,6 +11607,7 @@
       "grants_reconsent_link_hosts": "链接主机：允许应用的悬停卡片看到聊天消息中指向这些站点的链接。",
       "grants_reconsent_link_patterns": "文本模式：允许应用的悬停卡片看到聊天中与这些模式匹配的文本。",
       "grants_reconsent_link_full_url": "完整链接地址：应用的悬停卡片还会看到链接中 ? 或 # 之后的部分，其中可能包含登录代码。",
+      "grants_reconsent_link_session_key": "哪个聊天：应用的悬停卡片会得知所悬停的链接或文字位于哪个对话中。",
       "grants_reconsent_message_actions": "消息操作：应用在聊天消息上的菜单项能读取哪些内容。",
       "grants_approved": "已批准：{{entries}}。应用现在可以使用它们。",
       "grants_reconsent_frame_sources": "嵌入的网站：允许应用的页面在仪表板内显示这些网站。",

@@ -884,8 +884,8 @@ describe('AppDetailPage — uncovered surfaces', () => {
     }))
     fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
     await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, {
-      api: ['/api/memory'], events: ['log'], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], messageActions: [], linkOpenHosts: [], linkOpenFullUrl: [],
-      api: ['/api/memory'], events: ['log'], bots: [], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], messageActions: [], composerActions: [], selectionActions: [], workerAutoApprove: [], reachableByUserSessions: [], desktopCapabilities: [], frameSources: [],
+      api: ['/api/memory'], events: ['log'], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], linkOpenHosts: [], linkOpenFullUrl: [],
+      api: ['/api/memory'], events: ['log'], bots: [], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], composerActions: [], selectionActions: [], workerAutoApprove: [], reachableByUserSessions: [], desktopCapabilities: [], frameSources: [],
     }))
     expect(await screen.findByText('Approved: /api/memory, log. The app can use them now.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve new permissions' })).not.toBeInTheDocument()
@@ -903,6 +903,19 @@ describe('AppDetailPage — uncovered surfaces', () => {
     expect(screen.getByText('summarize')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
     await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ composerActions: ['summarize:insert'] })))
+  })
+
+  it('lists a held-back link-preview session key and approves its one entry', async () => {
+    getApp.mockResolvedValue(installedApp({
+      manifest: { displayName: 'Ledger Lens', permissions: { api: [], events: [] } },
+      approvedGrants: { api: [], events: [] },
+      linkPreviewGrant: { hosts: ['tickets.example.com'], textPatterns: [], sessionKey: false, stagedSessionKey: true },
+    }))
+    renderDetail()
+    await loaded()
+    expect(screen.getByText(/Which chat: the app's hover cards are told which conversation/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
+    await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ linkPreviewSessionKey: ['sessionKey'], linkPreviewFullUrl: [] })))
   })
 
   it('lists a held-back worker auto-approve grant and approves its one entry', async () => {

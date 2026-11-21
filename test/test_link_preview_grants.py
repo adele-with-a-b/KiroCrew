@@ -86,17 +86,25 @@ def test_the_manifest_keeps_the_normalized_form() -> None:
     assert cfg.validate() == []
 
 
-def test_full_url_is_an_explicit_boolean_opt_in() -> None:
+#: Each opt-in flag of a provider: its grant family, the one entry, and the row keys.
+_FLAGS = [
+    ("fullUrl", "linkPreviewFullUrl", g.FULL_URL_ENTRY, "stagedFullUrl"),
+    ("sessionKey", "linkPreviewSessionKey", g.SESSION_KEY_ENTRY, "stagedSessionKey"),
+]
+
+
+@pytest.mark.parametrize("flag", [f[0] for f in _FLAGS])
+def test_an_opt_in_flag_is_an_explicit_boolean(flag: str) -> None:
     on = LinkPreviewConfig.from_dict(
-        {"id": "c", "entry": "x.mjs", "hosts": ["a.example.com"], "fullUrl": True}
+        {"id": "c", "entry": "x.mjs", "hosts": ["a.example.com"], flag: True}
     )
-    assert on.fullUrl and on.to_dict()["fullUrl"] is True
+    assert getattr(on, flag) and on.to_dict()[flag] is True
     off = LinkPreviewConfig.from_dict({"id": "c", "entry": "x.mjs", "hosts": ["a.example.com"]})
-    assert "fullUrl" not in off.to_dict()
+    assert flag not in off.to_dict()
     bad = LinkPreviewConfig.from_dict(
-        {"id": "c", "entry": "x.mjs", "hosts": ["a.example.com"], "fullUrl": "yes"}
+        {"id": "c", "entry": "x.mjs", "hosts": ["a.example.com"], flag: "yes"}
     )
-    assert any("fullUrl" in e for e in bad.validate())
+    assert any(f"{flag} must be true or false" in e for e in bad.validate())
 
 
 def test_the_descriptor_is_hosts_and_patterns() -> None:
@@ -128,34 +136,40 @@ def test_a_widening_update_holds_the_new_host_and_pattern_back() -> None:
     assert held["linkPreviewTextPatterns"] == ["t::T-\\d+|.*"]
 
 
-def _with_full_url(m: dict[str, Any], on: bool) -> dict[str, Any]:
-    m["contributes"]["linkPreviews"][0]["fullUrl"] = on
+def _with_flag(m: dict[str, Any], flag: str, on: bool) -> dict[str, Any]:
+    m["contributes"]["linkPreviews"][0][flag] = on
     return m
 
 
-def test_turning_full_urls_on_is_held_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Query and fragment can carry a signed link's credential: asking for them widens."""
-    old = pg.grant_source(_with_full_url(_manifest(["a.example.com"]), False))
-    new = pg.grant_source(_with_full_url(_manifest(["a.example.com"]), True))
+@pytest.mark.parametrize("flag,family,entry,staged_key", _FLAGS)
+def test_turning_an_opt_in_flag_on_is_held_back(
+    monkeypatch: pytest.MonkeyPatch, flag: str, family: str, entry: str, staged_key: str
+) -> None:
+    """Whole URLs can carry a signed link's credential, and which chat a person has
+    open is theirs: asking for either widens."""
+    old = pg.grant_source(_with_flag(_manifest(["a.example.com"]), flag, False))
+    new = pg.grant_source(_with_flag(_manifest(["a.example.com"]), flag, True))
     assert old is not None and new is not None
-    assert old["linkPreviewFullUrl"] == []
-    assert new["linkPreviewFullUrl"] == [g.FULL_URL_ENTRY]
+    assert old[family] == []
+    assert new[family] == [entry]
     approved = _approved_grants_after_manifest_change(
         existing_approved=_declared_grant_entries(old), old_permissions=old, new_permissions=new
     )
-    assert approved["linkPreviewFullUrl"] == []
-    assert _held_back_entries(approved, new)["linkPreviewFullUrl"] == [g.FULL_URL_ENTRY]
+    assert approved[family] == []
+    assert _held_back_entries(approved, new)[family] == [entry]
 
-    def staged(name: str, family: str, read: Any) -> list[str]:
-        return list(approved[family])
+    def staged(name: str, fam: str, read: Any) -> list[str]:
+        return list(approved[fam])
 
     monkeypatch.setattr("kiro_crew.apps.manager_records.staged_app_grants", staged)
-    row = g.link_preview_grant_row("cards-app", _with_full_url(_manifest(["a.example.com"]), True))
-    assert row["linkPreviewGrant"]["fullUrl"] is False
-    assert row["linkPreviewGrant"]["stagedFullUrl"] is True
+    row = g.link_preview_grant_row(
+        "cards-app", _with_flag(_manifest(["a.example.com"]), flag, True)
+    )
+    assert row["linkPreviewGrant"][flag] is False
+    assert row["linkPreviewGrant"][staged_key] is True
     # Turning it off again needs nothing.
     back = _approved_grants_after_manifest_change(
-        existing_approved={**approved, "linkPreviewFullUrl": [g.FULL_URL_ENTRY]},
+        existing_approved={**approved, family: [entry]},
         old_permissions=new,
         new_permissions=old,
     )

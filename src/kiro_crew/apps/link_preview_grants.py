@@ -8,7 +8,7 @@ back on a widening update until the owner approves them (``manager_records``).
 Narrowing needs nothing: an entry the new manifest drops simply stops being
 declared.
 
-Three grant families:
+Four grant families:
 
 ``linkPreviewHosts``
     Each host after normalization (:func:`normalize_host`): lowercase, no
@@ -22,6 +22,9 @@ Three grant families:
     ``["fullUrl"]`` when the provider asks for whole URLs (query and fragment,
     where a signed link carries its credential), else empty. Turning it on is a
     widening like any other.
+``linkPreviewSessionKey``
+    ``["sessionKey"]`` when the provider asks to be told which chat a hovered link
+    or text sits in, else empty. A widening the same way.
 
 Hosts follow the one rule every point shares (``apps/app_hosts.py``): normalized,
 and never a public suffix or a bare TLD. The families are registered with the other
@@ -44,9 +47,16 @@ from kiro_crew.apps.app_hosts import (  # noqa: F401
 )
 
 #: Grant families this module derives, in the order they are stored.
-LINK_PREVIEW_GRANT_FAMILIES = ("linkPreviewHosts", "linkPreviewTextPatterns", "linkPreviewFullUrl")
+LINK_PREVIEW_GRANT_FAMILIES = (
+    "linkPreviewHosts",
+    "linkPreviewTextPatterns",
+    "linkPreviewFullUrl",
+    "linkPreviewSessionKey",
+)
 #: The one entry of ``linkPreviewFullUrl``.
 FULL_URL_ENTRY = "fullUrl"
+#: The one entry of ``linkPreviewSessionKey``.
+SESSION_KEY_ENTRY = "sessionKey"
 
 
 def pattern_grant(tp: dict[str, Any], index: int) -> str:
@@ -79,14 +89,17 @@ def _first_provider(contributes: Any) -> dict[str, Any] | None:
 
 
 def link_preview_grant_entries(contributes: Any) -> dict[str, list[str]]:
-    """The two grant families a manifest's ``contributes`` declares."""
+    """The grant families a manifest's ``contributes`` declares."""
     provider = _first_provider(contributes)
     hosts: list[str] = []
     patterns: list[str] = []
     full_url: list[str] = []
+    session_key: list[str] = []
     if provider is not None:
         if provider.get("fullUrl") is True:
             full_url.append(FULL_URL_ENTRY)
+        if provider.get("sessionKey") is True:
+            session_key.append(SESSION_KEY_ENTRY)
         hosts = normalized_hosts(provider.get("hosts"))
         raw_patterns = provider.get("textPatterns")
         for i, tp in enumerate(raw_patterns if isinstance(raw_patterns, list) else []):
@@ -98,6 +111,7 @@ def link_preview_grant_entries(contributes: Any) -> dict[str, list[str]]:
         "linkPreviewHosts": hosts,
         "linkPreviewTextPatterns": patterns,
         "linkPreviewFullUrl": full_url,
+        "linkPreviewSessionKey": session_key,
     }
 
 
@@ -141,6 +155,10 @@ def link_preview_grant_row(name: str, manifest: Any) -> dict[str, Any]:
             "fullUrl": FULL_URL_ENTRY in granted["linkPreviewFullUrl"],
             "stagedFullUrl": bool(declared["linkPreviewFullUrl"])
             and FULL_URL_ENTRY not in granted["linkPreviewFullUrl"],
+            # The dashboard tells the module the chat's session key only when approved.
+            "sessionKey": SESSION_KEY_ENTRY in granted["linkPreviewSessionKey"],
+            "stagedSessionKey": bool(declared["linkPreviewSessionKey"])
+            and SESSION_KEY_ENTRY not in granted["linkPreviewSessionKey"],
         }
     }
 
@@ -150,6 +168,7 @@ __all__ = [
     "FULL_URL_ENTRY",
     "LINK_PREVIEW_GRANT_FAMILIES",
     "PUBLIC_SUFFIXES",
+    "SESSION_KEY_ENTRY",
     "host_refusal",
     "is_public_suffix",
     "link_preview_grant_entries",
