@@ -381,6 +381,14 @@ it is what tells the next reader the class is API.
 - The empty-string element means a class-only compound such as `.topbar:hover`,
   which is the normal case.
 
+**Custom-property hooks.** A bare `body` rule may set two custom properties that
+no palette variable covers, both read by the inline-code chip
+(`components/markdown/InlineCode.tsx`): `--inline-code-fg`, the colour of a chip
+that only copies (unset: the surrounding text's), and `--inline-code-bg`, every
+chip's fill (unset: `--bg-elevated`). A chip that opens something keeps
+`--accent`. Scope them per mode with the `[data-theme="custom-<slug>-dark"]`
+prefix, e.g. `[data-theme="custom-mytheme-dark"] body { --inline-code-fg: #b1b9f9 }`.
+
 **Forbidden classes** (`_FORBIDDEN_CLASSES`, rejected even when chained onto an
 otherwise-allowed compound): `token`, `credential`. These name credential-bearing
 chrome, and a pack that could restyle them could hide or spoof them.

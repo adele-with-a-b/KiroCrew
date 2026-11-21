@@ -88,8 +88,16 @@ function codeTextOf(node: React.ReactNode): string | null {
  *  class adds its own (`CHIP_ACTIONABLE` below, or the plain code look of
  *  `CopyableCode`). One constant carried both for a long time, which dressed
  *  every copy chip as a link: readers clicked expecting navigation and got a
- *  silent clipboard write. */
-const CHIP_BASE = 'bg-bg-elevated px-1.5 py-0.5 rounded text-sm font-mono'
+ *  silent clipboard write.
+ *
+ *  The fill reads `--inline-code-bg` first, so a theme pack can set it (and
+ *  `--inline-code-fg`, the plain chip's colour) as custom properties on `body`
+ *  in its overrides.css; unset, the stock look is unchanged. */
+const CHIP_BASE = 'bg-[var(--inline-code-bg,var(--bg-elevated))] px-1.5 py-0.5 rounded text-sm font-mono'
+
+/** A chip that only copies: plain code, in the pack's inline-code colour when it
+ *  sets one, else the surrounding text's. */
+const CHIP_PLAIN = `${CHIP_BASE} text-[color:var(--inline-code-fg,currentColor)]`
 
 /** The look of a chip whose click NAVIGATES or OPENS something — a confirmed
  *  path, a session, an autolinked work item: the accent colour and the hover
@@ -589,7 +597,7 @@ export function InlineCode({ children, ...props }: { children?: React.ReactNode 
     // raw child, an image), or there is no visible text at all (an image-only
     // span, where a button would write '' — clearing the clipboard — and then
     // confirm it). Stay an inert, selectable code span.
-    if (visibleText === null || raw === '') return keep(<code className={CHIP_BASE} {...safeProps}>{reserve}{children}</code>)
+    if (visibleText === null || raw === '') return keep(<code className={CHIP_PLAIN} {...safeProps}>{reserve}{children}</code>)
     const session = sessionTarget
     if (session) {
       return (
@@ -657,7 +665,7 @@ export function InlineCode({ children, ...props }: { children?: React.ReactNode 
     // to it, and becomes the path chip below if it names a file or directory.
     // Until then it is a copy chip, and its click copies.
     const onIntent = !probeEnabled && pathResolution.shaped ? () => setAsked(true) : undefined
-    return keep(<CopyableCode className={CHIP_BASE} safeProps={safeProps} text={codeStr} onIntent={onIntent}>{reserve}{children}</CopyableCode>)
+    return keep(<CopyableCode className={CHIP_PLAIN} safeProps={safeProps} text={codeStr} onIntent={onIntent}>{reserve}{children}</CopyableCode>)
   }
   const isDir = pathResolution.kind === 'dir'
   const { path, splitPath, kind, line: targetLine, endLine: targetEndLine } = pathResolution
