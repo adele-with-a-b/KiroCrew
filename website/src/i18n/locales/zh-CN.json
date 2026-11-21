@@ -12666,6 +12666,11 @@
         "blocked": "已拦截",
         "warning": "警告"
       },
+      "untestedVersionNotice": {
+        "dismiss": "此版本不再显示",
+        "dismiss_aria": "对 {{harness}} {{version}} 不再显示此提示",
+        "dismiss_failed": "无法保存忽略操作，请重试。"
+      },
       "crewDispatchNotice": {
         "openBoard": "打开看板",
         "text": "已启动团队成员。团队成员列在侧边栏的看板中，而不在会话列表里。"

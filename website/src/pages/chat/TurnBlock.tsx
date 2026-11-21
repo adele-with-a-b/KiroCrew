@@ -2,6 +2,7 @@ import { memo, useContext, useState, useRef, useEffect, useMemo, useCallback, ty
 import { ChevronRight } from 'lucide-react'
 import { RowActivityContext, type RowActivityReporter } from './rowActivity'
 import type { DisplayItem, TurnItem } from './types'
+import type { ChatMessage } from '../../types'
 import { uniqueRowKeys } from '../../chat-core/transcript/rowKeys'
 import { useStableMessageKey } from '../../chat-core/transcript/useStableMessageKey'
 import { useLanguageGeneration } from '../../i18n/useLanguageGeneration'
@@ -22,6 +23,7 @@ import { hasKeepVisibleMarker } from '../../app-sdk/protocol/keepVisibleMarker'
 import { i18nT } from '../../i18n/t'
 import BrowserLiveCard, { browserLiveAnchor, isBrowserToolMessage } from './BrowserLiveCard'
 import { isSpecHooksRunNowhereNotice, useSpecHooksRunNowhereDismissed } from './SpecHooksNotice'
+import { isUntestedVersionNotice, useDismissedVersionNotice } from './UntestedVersionNotice'
 
 /**
  * Where a turn's live-browser card goes. The card belongs to the turn's FIRST
@@ -215,8 +217,8 @@ const LIVE_ACTIVITY_WINDOW = 5
 /** A hidden ✅/🚫 completion row renders nothing in every host, so it is
  *  never folded and never counted: one call is one step. A notice the user
  *  dismissed draws nothing either, so it is not a step to expand onto. */
-const isCountedRow = (it: TurnItem, noticeDismissed: boolean) =>
-  !isHiddenTool(it) && !(noticeDismissed && it.kind === 'single' && isSpecHooksRunNowhereNotice(it.msg))
+const isCountedRow = (it: TurnItem, noticeDismissed: (m: ChatMessage) => boolean) =>
+  !isHiddenTool(it) && !(it.kind === 'single' && noticeDismissed(it.msg))
 
 type FoldMode = 'interim' | 'collapseAll' | 'default'
 
@@ -235,7 +237,7 @@ type FoldMode = 'interim' | 'collapseAll' | 'default'
  * The settled set contains the running set, so completion only ever folds
  * more rows. It never opens a row the window had folded.
  */
-function foldCandidates(items: TurnItem[], appToolCallIds: ReadonlySet<string>, mode: FoldMode, complete: boolean, pinnedRows: ReadonlySet<TurnItem>, noticeDismissed: boolean): number[] {
+function foldCandidates(items: TurnItem[], appToolCallIds: ReadonlySet<string>, mode: FoldMode, complete: boolean, pinnedRows: ReadonlySet<TurnItem>, noticeDismissed: (m: ChatMessage) => boolean): number[] {
   const tools = items.flatMap((it, i) => isTool(it, appToolCallIds) && isCountedRow(it, noticeDismissed) ? [i] : [])
   const out = new Set(tools.slice(0, Math.max(0, tools.length - LIVE_ACTIVITY_WINDOW)))
   if (complete && mode === 'default') tools.forEach(i => out.add(i))
@@ -595,9 +597,19 @@ function TurnBlock({ turn, renderItem, collapseAll = false, appToolCallIds = EMP
   const mode: FoldMode = turn.interim ? 'interim' : collapseAll && !expandSteps ? 'collapseAll' : 'default'
   // A dismiss drops its notice from the count at once, not on the next flush.
   const specHooksNoticeDismissed = useSpecHooksRunNowhereDismissed()
+  // Only a turn that holds an untested-version notice watches its dismissals.
+  const hasVersionNotice = useMemo(
+    () => items.some(it => it.kind === 'single' && isUntestedVersionNotice(it.msg)),
+    [items],
+  )
+  const versionNoticeDismissed = useDismissedVersionNotice(hasVersionNotice)
+  const noticeDismissed = useCallback(
+    (m: ChatMessage) => (specHooksNoticeDismissed && isSpecHooksRunNowhereNotice(m)) || versionNoticeDismissed(m),
+    [specHooksNoticeDismissed, versionNoticeDismissed],
+  )
   const candidates = useMemo(
-    () => foldCandidates(items, appToolCallIds, mode, turn.complete, pinnedRows, specHooksNoticeDismissed),
-    [items, appToolCallIds, mode, turn.complete, pinnedRows, specHooksNoticeDismissed],
+    () => foldCandidates(items, appToolCallIds, mode, turn.complete, pinnedRows, noticeDismissed),
+    [items, appToolCallIds, mode, turn.complete, pinnedRows, noticeDismissed],
   )
   const fold = useMemo(() => {
     const rows = new Set<number>()

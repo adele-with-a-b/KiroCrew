@@ -13232,6 +13232,11 @@
         "blocked": "Bloqueado",
         "warning": "Aviso"
       },
+      "untestedVersionNotice": {
+        "dismiss": "Não mostrar novamente para esta versão",
+        "dismiss_aria": "Não mostrar novamente este aviso para {{harness}} {{version}}",
+        "dismiss_failed": "Não foi possível salvar o descarte. Tente novamente."
+      },
       "crewDispatchNotice": {
         "openBoard": "Abrir o Quadro",
         "text": "Foram iniciados membros do crew: eles aparecem no Quadro do painel lateral, não na lista de sessões."

@@ -7337,6 +7337,11 @@
         "blocked": "Blocked",
         "warning": "Warning"
       },
+      "untestedVersionNotice": {
+        "dismiss": "Don't show again for this version",
+        "dismiss_aria": "Don't show this notice again for {{harness}} {{version}}",
+        "dismiss_failed": "Couldn't save the dismissal. Try again."
+      },
       "crewDispatchNotice": {
         "openBoard": "Open Board",
         "text": "Crew members were started — they're listed on the Board in the side panel, not the session list."

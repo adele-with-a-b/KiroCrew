@@ -200,6 +200,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "supports_steer": ("property", False, "a6632a57e602", "acp"),
     "take_batch_refusal": ("function", False, "85a6851f62f8", "acp"),
     "tested_version_notice": ("property", False, "bb418bb7ece8", "acp"),
+    "tested_version_notice_subject": ("property", False, "8791792e3e20", "acp"),
     "tool_search_settings": ("property", False, "da838953900b", "acp"),
     "telemetry_unconfirmed_notice": ("property", False, "bb418bb7ece8", "acp"),
     "touch_activity": ("function", False, "b60c5fea256e", "acp"),

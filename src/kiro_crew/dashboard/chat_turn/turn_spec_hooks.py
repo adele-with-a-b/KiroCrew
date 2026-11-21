@@ -61,6 +61,10 @@ from kiro_crew.dashboard.state import (
     should_queue_hook_continuation,
     should_queue_refusal_recovery,
 )
+from kiro_crew.dashboard.version_notice_dismissals import (
+    is_dismissed as version_notice_is_dismissed,
+)
+from kiro_crew.dashboard.version_notice_dismissals import notice_meta as version_notice_meta
 from kiro_crew.hooks import (
     HOOK_EVENT_AGENT_SPAWN,
     HOOK_EVENT_POST_TOOL_USE,
@@ -884,7 +888,13 @@ def _notice_steer_upgrade(state: "DashboardState", slot: "_ChatSlot", client: An
             continue
         if name == "telemetry_unconfirmed_notice" and not _telemetry_notice_is_new(slot, notice):
             continue
-        append_and_surface(state, slot, "notice", _redact_display_text(notice), "msg msg-info")
+        # The person can dismiss the untested-version notice for one release.
+        meta = version_notice_meta(client) if name == "tested_version_notice" else None
+        if meta is not None and version_notice_is_dismissed(meta["harness"], meta["version"]):
+            continue
+        append_and_surface(
+            state, slot, "notice", _redact_display_text(notice), "msg msg-info", meta=meta
+        )
 
 
 def _telemetry_notice_is_new(slot: "_ChatSlot", notice: str) -> bool:

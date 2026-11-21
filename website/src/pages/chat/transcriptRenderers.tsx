@@ -48,6 +48,7 @@ import { kasSignedOutBesideButton, resolveGatewayNotice } from './gatewayNotice'
 import CrewDispatchNoticeCard from './CrewDispatchNoticeCard'
 import CrewPausedNoticeCard from './CrewPausedNoticeCard'
 import McpSignInNeededNotice, { isMcpSignInNeededNotice } from './McpSignInNeededNotice'
+import UntestedVersionNotice, { untestedVersionSubject } from './UntestedVersionNotice'
 import TrustResetNoticeCard, { type LostMode } from './TrustResetNoticeCard'
 import WorkflowRunCard, { extractWorkflowRunId, isWorkflowRunTool } from './WorkflowRunCard'
 import SubagentRunCard, { extractSpawnRunLaunch, isSpawnRunTool } from './SubagentRunCard'
@@ -454,6 +455,20 @@ export function createTranscriptRenderers(
       roles: ['notice'],
       match: isMcpSignInNeededNotice,
       render: (m, ctx) => ctx.row(<McpSignInNeededNotice key={ctx.key} content={m.content} meta={m.meta} />),
+    },
+    {
+      // A new session's notice that its harness runs a release Crew was not
+      // tested on, with its "Don't show again" link. Dashboard-only: the read
+      // and the dismiss are owner routes, so the SDK default draws it plainly.
+      id: 'untested_version_notice',
+      roles: ['notice'],
+      match: m => untestedVersionSubject(m) !== null,
+      render: (m, ctx) => {
+        const subject = untestedVersionSubject(m)
+        return subject && ctx.row(
+          <UntestedVersionNotice key={ctx.key} content={m.content} subject={subject} askAgent={ctx.handOff !== false} />,
+        )
+      },
     },
     {
       // The main chat's one "You paused the crew" row (conductor mode Pause all).

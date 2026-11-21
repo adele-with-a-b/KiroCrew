@@ -313,6 +313,8 @@ class TestLeafOnlyPopulationIsRecorded:
     #:   under the sandbox read-write ``trust/``. Leaf-only for the same reason.
     #: * ``pinned-order`` -- the person's pinned-session order, person-only by
     #:   route, masked so an agent cannot rewrite it on disk.
+    #: * ``notice-dismissals`` -- the person's dismissals of the untested-version
+    #:   notice, person-only by route, masked so an agent cannot hide the warning.
     #:
     #: One more root-level leaf landed since, three more entries per tier:
     #:
@@ -622,6 +624,7 @@ class TestLeafOnlyPopulationIsRecorded:
         "<crew>/memory_stores": (3, "standard cc strict"),
         "<crew>/microvm_crews.json": (3, "standard cc strict"),
         "<crew>/models": (3, "standard cc strict"),
+        "<crew>/notice-dismissals": (3, "standard cc strict"),
         "<crew>/oauth_endpoints.json": (3, "standard cc strict"),
         "<crew>/ops_mission_control_policy.json": (3, "standard cc strict"),
         "<crew>/ops_mission_control_secrets.json": (3, "standard cc strict"),

@@ -12666,6 +12666,11 @@
         "blocked": "차단됨",
         "warning": "경고"
       },
+      "untestedVersionNotice": {
+        "dismiss": "이 버전에서는 다시 표시하지 않기",
+        "dismiss_aria": "{{harness}} {{version}}에서 이 알림을 다시 표시하지 않기",
+        "dismiss_failed": "숨기기를 저장하지 못했습니다. 다시 시도하세요."
+      },
       "crewDispatchNotice": {
         "openBoard": "보드 열기",
         "text": "크루 멤버가 시작되었습니다. 크루 멤버는 세션 목록이 아니라 사이드 패널의 보드에 표시됩니다."

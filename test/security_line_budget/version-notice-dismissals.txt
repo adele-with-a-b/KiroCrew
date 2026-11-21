@@ -1,0 +1,4 @@
++2
+The notice-dismissals leaf in paths._CREW_SECRET_LEAVES: the person's dismissals of
+the untested-version notice are fenced from agent file tools like pinned-order beside
+it, so an agent cannot hide the warning by writing the store on disk.

@@ -3559,6 +3559,52 @@ Contract:
 Rationale for each choice is in the docstrings of those functions and of
 `dashboard/agent_welcome.py`, not repeated here.
 
+### Untested-version notice
+
+A new session whose harness runs a release outside the one Crew tested it on gets
+one notice row (`AcpProvider.tested_version_notice`, the rule in
+[harness-parity](harness-parity.md)). The row carries `meta.kind`
+`untested_version_notice` with `meta.harness` (`claude`, `codex`, `goose`,
+`kiro-cli` or `pi`) and `meta.version`, read from
+`AcpProvider.tested_version_notice_subject`; a KAS relay's row names no release,
+so it carries no meta and keeps showing.
+
+The dashboard draws the tagged row with **Don't show again for this version**
+after its copy (`pages/chat/UntestedVersionNotice.tsx`, registered in
+`transcriptRenderers.tsx`; the SDK's default row set draws it plainly, since its
+read and its dismiss are owner routes). The click dismisses that harness at that
+release on the gateway, per data home, so the phone and the desktop agree:
+
+- `POST /api/chat/version-notices/dismiss` with `{harness, version}` stores it
+  (`dashboard/version_notice_dismissals.py`, the fenced `notice-dismissals/`
+  directory described in [security](security.md)) and answers the dismissals
+  after the write. Only the person's own browser may: owner-gated, then 403
+  `version_notice_person_only` for an agent's `X-Internal-Secret` call or an app
+  or member principal. 400 `harness_invalid` / `version_invalid` for a harness
+  with no tested range or a release that is not a version string; 500
+  `dismissal_not_saved` when the write fails, which the row shows inline.
+- `GET /api/chat/version-notices` answers `{dismissed: {harness: [release, …]}}`,
+  owner only. Every release dismissed is kept, newest last, at most 20 per
+  harness, so an older transcript's row stays hidden after a newer one is
+  dismissed.
+- A dismissal sends the owner-only WebSocket event `version_notice_dismissed`
+  (`{harness, version}`), which re-reads the dismissals on every open page; a
+  reconnect re-reads them too (`refreshServerStateAfterReconnect`). One query
+  (`['version-notice-dismissals']`) backs every copy of the row, and `TurnBlock`
+  leaves a hidden row out of its fold count by watching that cached read.
+- A new session at a dismissed release writes no row
+  (`turn_spec_hooks._notice_steer_upgrade`). A different installed release is a
+  different notice: its row shows until it is dismissed in turn.
+
+Until the first read of the dismissals answers, the row draws nothing, so a
+dismissed notice never flashes on a page load; when the read fails the row shows,
+so a lost read costs one more notice, never a hidden warning. A viewer the
+gateway refuses with `owner_only` gets the row without the link. Pinned by
+`test/test_version_notice_dismissals.py`,
+`website/src/pages/chat/UntestedVersionNotice.test.tsx`,
+`website/src/test/TurnBlock.versionNoticeDismissed.test.tsx` and
+`website/src/test/useWebSocket.versionNoticeDismissed.test.ts`.
+
 ### Mid-Turn Steer (dashboard transcript contract)
 
 A steer (`POST /api/chat` with `steer: true` while the slot is running) injects

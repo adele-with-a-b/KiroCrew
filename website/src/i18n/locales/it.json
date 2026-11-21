@@ -13232,6 +13232,11 @@
         "blocked": "Bloccato",
         "warning": "Avviso"
       },
+      "untestedVersionNotice": {
+        "dismiss": "Non mostrare più per questa versione",
+        "dismiss_aria": "Non mostrare più questo avviso per {{harness}} {{version}}",
+        "dismiss_failed": "Impossibile salvare. Riprova."
+      },
       "crewDispatchNotice": {
         "openBoard": "Apri la Bacheca",
         "text": "Sono stati avviati dei membri del crew: compaiono nella Bacheca del pannello laterale, non nell'elenco delle sessioni."

@@ -547,6 +547,19 @@ class AcpProvider(LLMProvider):
         return notice if isinstance(notice, str) else ""
 
     @property
+    def tested_version_notice_subject(self) -> tuple[str, str] | None:
+        """``(harness, release)`` for :attr:`tested_version_notice` when this session's
+        harness reported the release itself, which a dismissal is kept under; else None
+        (also for a KAS relay's notice, which names a kiro-cli this session did not
+        report)."""
+        from kiro_crew.acp.client_turn_control import untested_version_harness
+
+        backend = getattr(self._client, "backend", None)
+        version = self.agent_version
+        harness = untested_version_harness(backend, version) if isinstance(backend, str) else ""
+        return (harness, version) if harness else None
+
+    @property
     def known_limitation_notice(self) -> str:
         """The notice for a known problem this session's adapter release has and a
         newer one fixes (``KNOWN_LIMITATIONS``), else ``""``. Read from the session's

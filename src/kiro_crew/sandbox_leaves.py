@@ -333,6 +333,9 @@ _CREW_HIDDEN_LEAVES: tuple[str, ...] = (
     # it would reorder for must not rewrite it on disk. Gateway-only reader and
     # writer, like tag-grants above.
     "pinned-order",
+    # The person's dismissals of the untested-version notice: person-only by route,
+    # so an agent must not hide the warning by writing it on disk. Gateway-only.
+    "notice-dismissals",
     "agentcore-inbound",
     "routing",
     "webhooks",

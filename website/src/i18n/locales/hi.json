@@ -12949,6 +12949,11 @@
         "blocked": "अवरुद्ध",
         "warning": "चेतावनी"
       },
+      "untestedVersionNotice": {
+        "dismiss": "इस संस्करण के लिए फिर न दिखाएँ",
+        "dismiss_aria": "{{harness}} {{version}} के लिए यह सूचना फिर न दिखाएँ",
+        "dismiss_failed": "खारिज करना सहेजा नहीं जा सका। फिर से कोशिश करो।"
+      },
       "crewDispatchNotice": {
         "openBoard": "बोर्ड खोलो",
         "text": "crew सदस्य शुरू किए गए। crew सदस्य साइड पैनल के बोर्ड में सूचीबद्ध होते हैं, सत्र सूची में नहीं।"

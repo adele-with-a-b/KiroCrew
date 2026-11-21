@@ -12949,6 +12949,11 @@
         "blocked": "Blockiert",
         "warning": "Warnung"
       },
+      "untestedVersionNotice": {
+        "dismiss": "Für diese Version nicht mehr anzeigen",
+        "dismiss_aria": "Diesen Hinweis für {{harness}} {{version}} nicht mehr anzeigen",
+        "dismiss_failed": "Das Ausblenden konnte nicht gespeichert werden. Versuch es erneut."
+      },
       "crewDispatchNotice": {
         "openBoard": "Board öffnen",
         "text": "Crew-Mitglieder wurden gestartet – sie stehen auf dem Board in der Seitenleiste, nicht in der Sitzungsliste."

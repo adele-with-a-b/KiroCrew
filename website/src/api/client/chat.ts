@@ -114,6 +114,11 @@ async function readNewestPage(slot: string, limit: number, read: SlotDetailRead)
   return page
 }
 
+/** `GET /api/chat/version-notices`: the releases dismissed per harness name. */
+export interface VersionNoticeDismissals {
+  dismissed: Record<string, string[]>
+}
+
 export function createChatEndpoints({ post, put, del, patch, j, jAccepted, jfetch: fetch, sessionKeyHeader: _sk, sendResponseAuthRecovery }: ClientTransport) {
   const summaries = {
     /** Intent summary for the chat summary panel.
@@ -329,6 +334,12 @@ export function createChatEndpoints({ post, put, del, patch, j, jAccepted, jfetc
      *  Resolves once the take-back is armed; what became of the steer lands on its
      *  own row (`steerState`), which is where the caller reads the outcome. */
     retractSteer: (slot: string, mid: string, action: 'unsend' | 'edit' | 'queue') => post('/api/chat/slots/' + encodeURIComponent(slot) + '/steers/' + encodeURIComponent(mid) + '/retract', { action }).then(j),
+    /** The untested-version notices the person dismissed, per harness, oldest
+     *  release first. Owner only; a dismissed release writes no new notice. */
+    versionNoticeDismissals: () => fetch('/api/chat/version-notices').then(j) as Promise<VersionNoticeDismissals>,
+    /** Dismiss one harness's untested-version notice at one release, on every
+     *  device. Only the person's own browser may (403 for an agent or an app). */
+    dismissVersionNotice: (harness: string, version: string) => post('/api/chat/version-notices/dismiss', { harness, version }).then(j) as Promise<VersionNoticeDismissals>,
     interruptSlot: (slot: string, queueId?: string) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/interrupt', queueId ? { queue_id: queueId } : {}).then(j),
     /** Ask the sleeping `wait` tool to return early. Cooperative, not a stop:
      *  the turn continues with a normal tool result. `waitId` must name the sleep

@@ -13232,6 +13232,11 @@
         "blocked": "Bloqueado",
         "warning": "Advertencia"
       },
+      "untestedVersionNotice": {
+        "dismiss": "No volver a mostrar para esta versión",
+        "dismiss_aria": "No volver a mostrar este aviso para {{harness}} {{version}}",
+        "dismiss_failed": "No se pudo guardar el descarte. Inténtalo de nuevo."
+      },
       "crewDispatchNotice": {
         "openBoard": "Abrir el Tablero",
         "text": "Se iniciaron miembros del crew: aparecen en el Tablero del panel lateral, no en la lista de sesiones."

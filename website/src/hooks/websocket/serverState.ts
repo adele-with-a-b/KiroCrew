@@ -313,6 +313,9 @@ export function refreshServerStateAfterReconnect(queryClient: QueryClient): void
   // another tab, which is how the update switches learn of it) was never
   // delivered either. Only observed readers refetch.
   queryClient.invalidateQueries({ queryKey: ['kirocrewConfig'] })
+  // A `version_notice_dismissed` frame is one-shot too: a notice dismissed on
+  // another device while this socket was down would keep showing here.
+  queryClient.invalidateQueries({ queryKey: ['version-notice-dismissals'] })
   queryClient.invalidateQueries({ queryKey: ['safety-switches'] })
   queryClient.invalidateQueries({ queryKey: ['mcp-tool-grants'] })
   // The runtime monitor contract is fetched once with no staleTime, so a

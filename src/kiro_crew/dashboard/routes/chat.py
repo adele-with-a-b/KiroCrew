@@ -20,6 +20,7 @@ from kiro_crew.dashboard import (
     queue_edit_hold,
     session_export,
     session_transfer,
+    version_notice_dismissals,
 )
 from kiro_crew.dashboard.attach_conversation import api_chat_slot_attach_conversation
 from kiro_crew.dashboard.handlers._shared import require_owner_dashboard_request
@@ -246,6 +247,11 @@ def register(app: web.Application) -> None:
     # untouched. Dashboard-only, human-initiated; no MCP/CLI surface — see
     # chat_fork.api_chat_slot_promote.
     app.router.add_post("/api/chat/slots/{slot}/promote", chat.api_chat_slot_promote)
+    # The untested-version notices the person dismissed, one release at a time.
+    app.router.add_get("/api/chat/version-notices", version_notice_dismissals.api_version_notices)
+    app.router.add_post(
+        "/api/chat/version-notices/dismiss", version_notice_dismissals.api_version_notice_dismiss
+    )
     app.router.add_post("/api/chat/slots/{slot}/side/open", handlers.api_side_open)
     app.router.add_post("/api/chat/slots/{slot}/side/turn", handlers.api_side_turn)
     app.router.add_post("/api/chat/slots/{slot}/side/stop", handlers.api_side_stop)

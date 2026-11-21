@@ -12666,6 +12666,11 @@
         "blocked": "ブロック済み",
         "warning": "警告"
       },
+      "untestedVersionNotice": {
+        "dismiss": "このバージョンでは今後表示しない",
+        "dismiss_aria": "{{harness}} {{version}} ではこのお知らせを今後表示しない",
+        "dismiss_failed": "非表示の設定を保存できませんでした。もう一度お試しください。"
+      },
       "crewDispatchNotice": {
         "openBoard": "ボードを開く",
         "text": "クルーメンバーを開始しました。クルーメンバーはセッション一覧ではなく、サイドパネルのボードに表示されます。"

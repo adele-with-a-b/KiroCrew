@@ -13232,6 +13232,11 @@
         "blocked": "Bloqué",
         "warning": "Avertissement"
       },
+      "untestedVersionNotice": {
+        "dismiss": "Ne plus afficher pour cette version",
+        "dismiss_aria": "Ne plus afficher cet avis pour {{harness}} {{version}}",
+        "dismiss_failed": "Impossible d’enregistrer le rejet. Réessaie."
+      },
       "crewDispatchNotice": {
         "openBoard": "Ouvrir le Tableau",
         "text": "Des membres du crew ont été démarrés : ils figurent dans le Tableau du panneau latéral, pas dans la liste des sessions."

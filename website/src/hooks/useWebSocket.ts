@@ -20,6 +20,7 @@ import { applyCardUpdate } from '../api/cards'
 import type { Notification, TodoList, McpSessionReport } from '../types'
 import { i18nT } from '../i18n/t'
 import { CONFIG_PENDING_QUERY_KEY } from '../pages/settings/configPendingQuery'
+import { VERSION_NOTICE_DISMISSALS_QUERY_KEY } from '../pages/chat/UntestedVersionNotice'
 import { MCP_GATEWAY_STATUS_QUERY_KEY } from '../pages/overview/mcpShareRefusedQuery'
 import { teamRoots } from '../pages/chat/command-center/model'
 import {
@@ -331,6 +332,12 @@ export function useWebSocket() {
             // pending or was resolved. The Settings nav dot and the Security cards
             // read this one query (pages/settings/configPendingQuery.ts).
             void queryClient.invalidateQueries({ queryKey: CONFIG_PENDING_QUERY_KEY })
+            break
+          case 'version_notice_dismissed':
+            // Owner-only frame: an untested-version notice was dismissed on some
+            // device, so every copy of it on this page hides
+            // (pages/chat/UntestedVersionNotice.tsx).
+            void queryClient.invalidateQueries({ queryKey: VERSION_NOTICE_DISMISSALS_QUERY_KEY })
             break
           case 'skills.pending_changed': {
             // A skill candidate (new or an update proposal) was just staged for

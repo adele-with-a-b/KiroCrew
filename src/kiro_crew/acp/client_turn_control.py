@@ -271,6 +271,22 @@ def untested_version_issue(backend: str, agent_version: str) -> str:
     )
 
 
+#: The harness names an untested-version notice names, one per backend with a tested
+#: range: the key a dismissal of that notice is kept under
+#: (``dashboard/version_notice_dismissals.py``).
+TESTED_VERSION_NOTICE_HARNESSES = frozenset(
+    _NOTICE_NAMES.get(backend, backend) for backend in _TESTED_VERSION_RANGES
+)
+
+
+def untested_version_harness(backend: str, agent_version: str) -> str:
+    """The harness name :func:`untested_version_issue`'s notice for *backend* at
+    *agent_version* starts with, when there is a notice; else ``""``."""
+    if not untested_version_issue(backend, agent_version):
+        return ""
+    return _NOTICE_NAMES.get(backend, backend)
+
+
 def steer_unadvertised_issue(backend: str, init: object) -> str:
     """The notice for a session whose handshake withdrew the card's steer line, else ``""``.
 
