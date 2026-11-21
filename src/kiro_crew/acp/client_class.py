@@ -1466,7 +1466,7 @@ class AcpClient:
     _steer_via_steering_request = _client_turn_control._steer_via_steering_request
     _held_steers = _client_turn_control._held_steers
     _release_held_steers = _client_turn_control._release_held_steers
-    supports_steer_retract = property(_client_turn_control.supports_held_steer_retract)
+    supports_steer_retract = property(_client_turn_control.supports_steer_retract)
     takes_back_held_steers = property(_client_turn_control.takes_back_held_steers)
     steer_is_held = _client_turn_control.steer_is_held
     drop_held_steer = _client_turn_control.drop_held_steer

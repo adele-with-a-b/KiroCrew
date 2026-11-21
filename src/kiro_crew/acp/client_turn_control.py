@@ -783,7 +783,7 @@ def _release_held_steers(self: AcpClient) -> list[str]:
     return [text for _aimed_at, text in held]
 
 
-def supports_held_steer_retract(self: AcpClient) -> bool:
+def supports_steer_retract(self: AcpClient) -> bool:
     """Whether a steer this client holds can be taken back before it is sent.
 
     Membership in ``ACP_BACKENDS_STEER_HELD_RETRACT``, on a session that takes
@@ -800,18 +800,18 @@ def takes_back_held_steers(self: AcpClient) -> bool:
     return self.backend in ACP_BACKENDS_STEER_HELD_RETRACT
 
 
-def _held_steer_waiting(self: AcpClient, text: str) -> tuple[int, str] | None:
+def _held_steer_waiting(client: AcpClient, text: str) -> tuple[int, str] | None:
     """The held entry for *text* that is still waiting, or None.
 
     Waiting means held for the running turn, not the one being sent right now,
     and behind a tool call or an approval that is still open: a steer held with
     none open is on its way out already.
     """
-    if not (self._active_tool_calls.possibly_open or self._parked_on_permission):
+    if not (client._active_tool_calls.possibly_open or client._parked_on_permission):
         return None
-    sending = getattr(self, "_held_steer_sending", None)
-    for entry in self._held_steers():
-        if entry is not sending and entry[0] == self._steering_turn_req and entry[1] == text:
+    sending = getattr(client, "_held_steer_sending", None)
+    for entry in client._held_steers():
+        if entry is not sending and entry[0] == client._steering_turn_req and entry[1] == text:
             return entry
     return None
 

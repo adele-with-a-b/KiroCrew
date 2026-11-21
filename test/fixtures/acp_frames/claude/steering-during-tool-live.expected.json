@@ -119,9 +119,9 @@
         "kind": "tool_result",
         "tool_call_id": "toolu_claude-steer-mid-tool-1_1",
         "tool_final": true,
-        "tool_output": "```console\nCommand was moved to the background (ID: bg1) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /tmp/claude/tasks/output You will be notified when it completes. If it is still running after 30m in the background (plus the timeout it was started with, up to the background maximum), it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.\n```",
-        "tool_output_bytes": 574,
-        "tool_output_digest": "e99f49045fbce1f18354ae5fbbecd34c915045ed0aca0eff0a4193784aa5dcad",
+        "tool_output": "```console\nCommand was moved to the background (ID: bg1) so that a message that arrived while it was running can reach you; it was not interrupted. Output is being written to: /work/tasks/output You will be notified when it completes. If it is still running after 30m in the background (plus the timeout it was started with, up to the background maximum), it will be stopped and you will be notified. It is running now: do not start a second copy while it runs. If it is no longer needed, stop it with TaskStop. To check interim output, use Read on that file path.\n```",
+        "tool_output_bytes": 568,
+        "tool_output_digest": "f1c9e8d53874174f7e2a6f0d51f905916f2438f8087be8b3b2bc962f9cec7513",
         "tool_status": "completed"
       }
     ],
@@ -148,12 +148,12 @@
       {
         "kind": "tool_call_update",
         "raw_tool_params": {
-          "file_path": "/tmp/claude/tasks/output"
+          "file_path": "/work/tasks/output"
         },
-        "title": "Read /tmp/claude/tasks/output",
+        "title": "Read /work/tasks/output",
         "tool_call_id": "toolu_claude-steer-mid-tool-1_2",
-        "tool_input": "{\n  \"file_path\": \"/tmp/claude/tasks/output\"\n}",
-        "wire_title": "Read /tmp/claude/tasks/output"
+        "tool_input": "{\n  \"file_path\": \"/work/tasks/output\"\n}",
+        "wire_title": "Read /work/tasks/output"
       }
     ],
     "frame": "session/update",
@@ -460,12 +460,12 @@
       {
         "kind": "tool_call_update",
         "raw_tool_params": {
-          "file_path": "/tmp/claude/tasks/output"
+          "file_path": "/work/tasks/output"
         },
-        "title": "Read /tmp/claude/tasks/output",
+        "title": "Read /work/tasks/output",
         "tool_call_id": "toolu_claude-steer-mid-tool-1_5",
-        "tool_input": "{\n  \"file_path\": \"/tmp/claude/tasks/output\"\n}",
-        "wire_title": "Read /tmp/claude/tasks/output"
+        "tool_input": "{\n  \"file_path\": \"/work/tasks/output\"\n}",
+        "wire_title": "Read /work/tasks/output"
       }
     ],
     "frame": "session/update",
