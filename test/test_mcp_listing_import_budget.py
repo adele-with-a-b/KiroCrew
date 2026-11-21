@@ -70,8 +70,11 @@ FORBIDDEN_BEFORE_THE_LIST = (
 #: Raised by 1 again for all four: the ssh-to-self floor's substitution-body check lives in
 #: its own module, ``kiro_crew.security.argv_floor_ssh_bodies``, which the deny floor that
 #: every listing already loads imports.
+#: Raised by 1 for ``mcp-core`` (488 to 489), fork only: the sensitive-path floor every
+#: listing loads imports ``kiro_crew.security.operator_sensitive``, which reads the
+#: operator's ``extra_sensitive_paths.txt`` when the floor is built.
 PACKAGE_MODULE_CEILING = {
-    "mcp-core": 488,
+    "mcp-core": 489,
     "mcp-cron": 359,
     "mcp-guide": 353,
     "mcp-mate": 354,

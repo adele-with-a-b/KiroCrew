@@ -479,6 +479,10 @@ _RELOCATED_CREW_HIDDEN_LEAVES: tuple[str, ...] = (".vault",)
 #: never writable by it. See the READONLY note above for why hiding a ceiling
 #: inverts its effect; named memory stores need write integrity, not secrecy.
 _CREW_READONLY_LEAVES: tuple[str, ...] = (
+    # The operator's own sensitive-path declarations (``security.operator_sensitive``,
+    # fork only). Every process that imports the floor reads it, sandboxed ones too;
+    # a writer could take a folder off the floor at the next restart.
+    "extra_sensitive_paths.txt",
     # The empty directory kiro-cli starts in when it runs an app agent's launch copy
     # (``apps.agent_launch.launch_process_cwd``). kiro-cli reads project agents from
     # its process directory, so a sandboxed writer that could create
@@ -1062,6 +1066,11 @@ _CREW_CHILD_WITHHELD_LEAVES: tuple[str, ...] = (
 #: stayed masked and broke a boot, which someone notices. Under a complement it would
 #: be exposed, which nobody notices.
 _CREW_CHILD_READABLE_LEAVES: tuple[str, ...] = (
+    # The operator's sensitive-path declarations (fork only): folder NAMES, no
+    # credential. Any child that imports the floor must read it to fence those
+    # folders; withheld, it would fence less. Read-gate fenced, so the agent's own
+    # file tools still cannot open or rewrite it.
+    "extra_sensitive_paths.txt",
     # The empty directory a launch copy's kiro-cli starts in. It holds nothing, so a
     # foreign child that reads it learns nothing.
     "app-agent-launch",

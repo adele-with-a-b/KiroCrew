@@ -838,14 +838,19 @@ _CREW_SECRET_LEAVES: list[str] = [
     # file access behavior. See docs/system-specs/modules/security.md.
     MEMORY_STORES_DIR_NAME,
     *credential_masks.declared_crew_leaves(installed=False),  # built-ins' credentialMasks
+    # The operator's sensitive-path declarations: an agent that could rewrite them
+    # could take a folder off the floor at the next restart (fork only).
+    _operator_sensitive.FILE_NAME,
 ]
 
 _SENSITIVE_HOME_DIRS += [
     f"{prefix}/{leaf}" for prefix in _CREW_HOME_PREFIXES for leaf in _CREW_SECRET_LEAVES
 ]
 
-# The operator's own secret folders (``KIROCREW_EXTRA_SENSITIVE_PATHS``), add-only.
-_SENSITIVE_HOME_DIRS += [p for p in _operator_sensitive.operator_sensitive_paths() if p not in _SENSITIVE_HOME_DIRS]
+# The operator's own secret folders (``<crew home>/extra_sensitive_paths.txt``), add-only.
+_SENSITIVE_HOME_DIRS += [
+    p for p in _operator_sensitive.operator_sensitive_paths() if p not in _SENSITIVE_HOME_DIRS
+]
 
 # ── Publish artifacts of a keystone leaf ──
 # Every leaf above is published through ``atomic_write``, which writes a

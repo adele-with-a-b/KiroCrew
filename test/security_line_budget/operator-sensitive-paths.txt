@@ -1,0 +1,5 @@
++92
+Fork only: operator_sensitive.py reads <crew home>/extra_sensitive_paths.txt, the
+operator's own secret folders (one $HOME-relative path per line, '*' segments expanded at
+import), and paths_lists adds them to _SENSITIVE_HOME_DIRS and the file itself to the crew
+secret leaves. Add-only: it can never remove a floor entry.
