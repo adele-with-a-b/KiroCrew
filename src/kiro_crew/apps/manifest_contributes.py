@@ -708,6 +708,12 @@ class LinkPreviewConfig:
     fullUrl: bool = False  # noqa: N815
     #: ``fullUrl`` present but not a boolean. Not serialized.
     bad_full_url: bool = False
+    # Optional: tell the module which chat the hovered link or text sits in
+    # (``show({ sessionKey })``). Off by default: which conversations a person has
+    # open is theirs, so knowing it is a grant like ``fullUrl``.
+    sessionKey: bool = False  # noqa: N815
+    #: ``sessionKey`` present but not a boolean. Not serialized.
+    bad_session_key: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {}
@@ -723,6 +729,8 @@ class LinkPreviewConfig:
             d["textPatterns"] = [dict(p) for p in self.textPatterns]
         if self.fullUrl:
             d["fullUrl"] = True
+        if self.sessionKey:
+            d["sessionKey"] = True
         return d
 
     @classmethod
@@ -758,6 +766,8 @@ class LinkPreviewConfig:
             bad_text_patterns=bad_patterns,
             fullUrl=data.get("fullUrl") is True,
             bad_full_url="fullUrl" in data and not isinstance(data.get("fullUrl"), bool),
+            sessionKey=data.get("sessionKey") is True,
+            bad_session_key="sessionKey" in data and not isinstance(data.get("sessionKey"), bool),
         )
 
     def validate(self) -> list[str]:
@@ -772,6 +782,8 @@ class LinkPreviewConfig:
         errors.extend(host_list_errors(where, self.hosts, self.bad_hosts, _MAX_LINK_PREVIEW_HOSTS))
         if self.bad_full_url:
             errors.append(f"{where}: fullUrl must be true or false")
+        if self.bad_session_key:
+            errors.append(f"{where}: sessionKey must be true or false")
         if self.bad_text_patterns:
             errors.append(
                 f"{where}: textPatterns must be an array of "

@@ -938,6 +938,7 @@ export function createTranscriptRenderers(
                   sessions: o.sessions,
                   activeSession: o.activeSession,
                   messageTs: m.ts,
+                  previewSlot: o.slot,
                 })}
                 // Delivery mechanics stay in Sessions, including old scrollback.
                 hideSteerBadge={!!crewmate || o.hideSteerBadge}

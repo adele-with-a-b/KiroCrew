@@ -63,10 +63,18 @@ export interface Modifiers {
   meta: boolean
 }
 
+/** What one hover shows: a link's URL or a pattern's matched text, and, for an app
+ *  the owner approved for it, the session key of the chat the message is in. */
+export type PreviewLink = {
+  url?: string
+  text?: string
+  sessionKey?: string
+}
+
 export type ToFrame =
   | { type: 'init'; capability: string | null; theme: 'dark' | 'light' }
   | { type: 'capability'; capability: string | null }
-  | { type: 'show'; invocation: number; url?: string; text?: string; rect: AnchorRect; theme: 'dark' | 'light'; modifiers?: Modifiers }
+  | ({ type: 'show'; invocation: number; rect: AnchorRect; theme: 'dark' | 'light'; modifiers?: Modifiers } & PreviewLink)
   | { type: 'leave' }
   | { type: 'hide'; reason: string }
   | { type: 'theme'; theme: 'dark' | 'light' }

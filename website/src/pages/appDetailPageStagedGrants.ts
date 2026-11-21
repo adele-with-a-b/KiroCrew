@@ -21,6 +21,7 @@ export function stagedGrantsOf(app: AppInfo | null) {
   const stagedLinkHosts = app?.linkPreviewGrant?.stagedHosts || []
   const stagedLinkPatterns = app?.linkPreviewGrant?.stagedTextPatterns || []
   const stagedFullUrl = app?.linkPreviewGrant?.stagedFullUrl === true
+  const stagedSessionKey = app?.linkPreviewGrant?.stagedSessionKey === true
   // Message-action reach an update widened (the user role, markdown, a new action).
   const stagedMessageActions = app?.messageActionGrant?.staged || []
   const declaredMessageActions = (app?.manifest as { contributes?: { messageActions?: unknown } } | undefined)?.contributes?.messageActions
@@ -38,9 +39,9 @@ export function stagedGrantsOf(app: AppInfo | null) {
   const stagedDesktopCapabilities = knownDesktopCapabilities(app?.desktopCapabilitiesGrant?.staged)
   // Framed sites (`ui.frameSources`) an update or an edit added wait the same way.
   const stagedFrameSources = app?.frameSourcesGrant?.staged || []
-  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedOpenFullUrl || stagedWorkerAutoApprove
+  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedSessionKey || stagedOpenFullUrl || stagedWorkerAutoApprove
   return {
-    stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl,
+    stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey,
     stagedMessageActions, declaredMessageActions, stagedOpenHosts, stagedOpenFullUrl,
     stagedComposerActions, stagedSelection, declaredSelectionActions, stagedWorkerAutoApprove,
     stagedUserSessionReach, stagedDesktopCapabilities, stagedFrameSources, hasStagedGrants,

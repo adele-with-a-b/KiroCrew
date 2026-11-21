@@ -966,10 +966,12 @@ No app code runs until a link on one of the provider's `hosts` is hovered.
 | `hosts` | string[] | 1-64 hostnames; a leading dot means the domain and every subdomain. Only `https:` links match. Stored lowercased, in IDNA (punycode) form and without a trailing dot. A public suffix (`co.uk`, `.github.io`) or a bare TLD (`com`) is refused |
 | `textPatterns` | object[] | Optional. Plain text in chat messages that also opens a card; see below |
 | `fullUrl` | boolean | Optional. `show` gets the URL without its query and fragment unless this is `true` and the owner approved it |
+| `sessionKey` | boolean | Optional. `show` also gets the session key of the chat the hovered link or text is in (`dashboard:<slot>`) when this is `true` and the owner approved it |
 
-**Approval.** The hosts, the text patterns (id, flags and source) and `fullUrl` are
-part of what the owner approves for the app, like `permissions.api`. An update that
-adds a host, changes a pattern or turns `fullUrl` on waits on the app's page until
+**Approval.** The hosts, the text patterns (id, flags and source), `fullUrl` and
+`sessionKey` are part of what the owner approves for the app, like
+`permissions.api`. An update that adds a host, changes a pattern or turns `fullUrl`
+or `sessionKey` on waits on the app's page until
 the owner approves it, and
 until then the app previews only what was approved before. An update that only
 removes entries needs nothing. When no host and no pattern is approved, the
@@ -991,7 +993,8 @@ network on the gateway only, images from any `https:` host, no workers, frames,
 objects, forms or `<base>`), and it sends no referrer. A frame that navigates itself
 away is removed. The frame imports `entry` and calls
 `activate(ctx)` once. The dashboard sends it only the hovered URL or text, the
-anchor's rect, the theme and the modifier keys, over `postMessage`, and it
+anchor's rect, the theme and the modifier keys (and, with an approved `sessionKey`,
+the chat's session key), over `postMessage`, and it
 positions and sizes the frame itself.
 
 ```ts
@@ -1006,8 +1009,10 @@ export function activate(ctx: {
   setRegions(rects: { left: number; top: number; width: number; height: number }[]): void
 }): {
   // A link: `url`. A `textPatterns` match: `text`. `rect` is where it is on screen.
+  // `sessionKey`: the chat the message is in, only with an approved `sessionKey`,
+  // and only in the dashboard's own chats (absent in another gateway's rows).
   show(link: {
-    url?: string; text?: string; theme: 'dark' | 'light'
+    url?: string; text?: string; sessionKey?: string; theme: 'dark' | 'light'
     rect: { left: number; top: number; width: number; height: number }
     modifiers?: { alt: boolean; shift: boolean; ctrl: boolean; meta: boolean }
     // Card mode: the controls for THIS show's card, placed next to its link.

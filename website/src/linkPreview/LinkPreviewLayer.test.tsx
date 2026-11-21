@@ -40,13 +40,14 @@ async function mount() {
   return { mod, qc }
 }
 /** A link in a chat message: inside the scope a MarkdownRenderer with textPreviews draws. */
-function link(href = 'https://tickets.example.com/t/TK-1', scoped = true) {
+function link(href = 'https://tickets.example.com/t/TK-1', scoped = true, session?: string) {
   const a = document.createElement('a')
   a.href = href
   a.textContent = 'TK-1'
   a.getBoundingClientRect = () => ({ left: 100, top: 50, width: 40, height: 16, right: 140, bottom: 66, x: 100, y: 50, toJSON() {} })
   const holder = document.createElement('div')
   if (scoped) holder.setAttribute('data-link-preview-scope', '')
+  if (session) holder.setAttribute('data-link-preview-session', session)
   holder.append(a)
   document.body.append(holder)
   return a
@@ -828,6 +829,34 @@ describe('LinkPreviewLayer: the protocol is bounded', () => {
     await mount()
     const { sent } = await hoverReady(link('https://tickets.example.com/t/TK-1?sig=secret#frag'))
     expect(sent.find((m) => m.type === 'show')).toMatchObject({ url: 'https://tickets.example.com/t/TK-1?sig=secret#frag' })
+  })
+
+  const CHAT = 'dashboard:chat-7-1789049480'
+  const withSessionKey = { contributes: { linkPreviews: [{ ...APP.manifest.contributes.linkPreviews[0], sessionKey: true }] } }
+
+  it('the chat the link is in reaches no module that did not ask for it', async () => {
+    listApps.mockResolvedValue([{ ...APP, linkPreviewGrant: { hosts: ['tickets.example.com'], textPatterns: [], sessionKey: true } }])
+    await mount()
+    const { sent } = await hoverReady(link(undefined, true, CHAT))
+    expect(sent.find((m) => m.type === 'show')).not.toHaveProperty('sessionKey')
+  })
+
+  it('with sessionKey the module is told the chat, once the owner approved it', async () => {
+    // Asked for but still waiting on the App Detail page: not told.
+    const waiting = resolveLinkPreviews([{ ...APP, manifest: withSessionKey, linkPreviewGrant: { hosts: ['tickets.example.com'], textPatterns: [], sessionKey: false } }])
+    expect(waiting[0].sessionKey).toBe(false)
+    expect(resolveLinkPreviews([{ ...APP, manifest: withSessionKey }])[0].sessionKey).toBe(false)
+    listApps.mockResolvedValue([{ ...APP, manifest: withSessionKey, linkPreviewGrant: { hosts: ['tickets.example.com'], textPatterns: [], sessionKey: true } }])
+    await mount()
+    const { sent } = await hoverReady(link(undefined, true, CHAT))
+    expect(sent.find((m) => m.type === 'show')).toMatchObject({ url: 'https://tickets.example.com/t/TK-1', sessionKey: CHAT })
+  })
+
+  it('a message whose host named no local slot sends no session key, even when approved', async () => {
+    listApps.mockResolvedValue([{ ...APP, manifest: withSessionKey, linkPreviewGrant: { hosts: ['tickets.example.com'], textPatterns: [], sessionKey: true } }])
+    await mount()
+    const { sent } = await hoverReady(link())
+    expect(sent.find((m) => m.type === 'show')).not.toHaveProperty('sessionKey')
   })
 })
 

@@ -431,6 +431,15 @@ describe('textPatterns: rendering', () => {
     expect(granted[0]?.textPatterns).toEqual([{ ...TICKET, tone: 'warn' }])
   })
 
+  it("the scope names the message's chat only when its host passed the local slot", () => {
+    const scopes = [
+      render(<MarkdownRenderer textPreviews previewSlot="chat-7-1789049480" content="hi" />),
+      render(<MarkdownRenderer textPreviews content="hi" />),
+      render(<MarkdownRenderer previewSlot="chat-7-1789049480" content="hi" />),
+    ].map(({ container }) => container.querySelector('[data-message-body]')?.getAttribute('data-link-preview-session') ?? null)
+    expect(scopes).toEqual(['dashboard:chat-7-1789049480', null, null])
+  })
+
   it('re-renders an already painted message when patterns arrive', async () => {
     const { container } = render(<MarkdownRenderer textPreviews content="TK-1234" />)
     expect(spans(container)).toEqual([])

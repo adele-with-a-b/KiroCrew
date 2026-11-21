@@ -17,6 +17,9 @@ export interface LinkPreviewGrantRow {
   /** Whole URLs (query and fragment) approved, and asked for but waiting. */
   fullUrl?: boolean
   stagedFullUrl?: boolean
+  /** The chat's session key on `show()` approved, and asked for but waiting. */
+  sessionKey?: boolean
+  stagedSessionKey?: boolean
 }
 
 /** An app row's `messageActionGrant` (`apps/message_action_grants.py`): each action
