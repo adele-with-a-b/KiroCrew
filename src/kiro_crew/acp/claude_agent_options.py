@@ -42,7 +42,7 @@ def spec_claude_options(agent: str | None) -> dict[str, Any]:
     """The validated ``claudeCode`` block of *agent*'s user-level spec, or ``{}``."""
     if not agent:
         return {}
-    from kiro_crew.agent_parts.spec_lookup import _read_spec_capped, session_agent_spec_path
+    from kiro_crew.agent import _read_spec_capped, session_agent_spec_path
 
     try:
         path = session_agent_spec_path(agent)
