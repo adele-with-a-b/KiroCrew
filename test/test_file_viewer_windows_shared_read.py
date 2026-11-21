@@ -192,6 +192,7 @@ def mock_sel():
 _ROUTES: dict[str, Callable] = {
     "/api/file-read": handlers.api_file_read,
     "/api/file-raw": handlers.api_file_raw,
+    "/api/file-html": handlers.api_file_html,
     "/api/file-download": handlers.api_file_download,
     "/api/file-stream": handlers.api_file_stream,
     "/api/file-sheet": handlers.api_file_sheet,
@@ -250,6 +251,7 @@ async def test_a_document_open_in_office_reads_as_when_closed(
     [
         ("/api/file-read", "notes.csv"),
         ("/api/file-raw", "chart.png"),
+        ("/api/file-html", "mock.html"),
         ("/api/file-download", "notes.csv"),
         ("/api/file-stream", "talk.mp4"),
         ("/api/file-sheet", "budget.xlsx"),

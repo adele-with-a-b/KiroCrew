@@ -8,7 +8,7 @@ import { ExcalidrawBlock } from './ExcalidrawBlock'
 import ErrorNotice from './ErrorNotice'
 import FileDownloadLink from './FileDownloadLink'
 import { useCanOpenFile, useCopyAck } from './FilePathMenu'
-import { fileStreamUrl, fileOfficePreviewUrl, fileOfficeSlidesUrl, fileOfficeSlideUrl } from '../utils/fileReadUrl'
+import { fileHtmlUrl, fileStreamUrl, fileOfficePreviewUrl, fileOfficeSlidesUrl, fileOfficeSlideUrl } from '../utils/fileReadUrl'
 import { sendErrorToChat } from '../utils/errorReport'
 import { useLanguageGeneration } from '../i18n/useLanguageGeneration'
 import { useIsDark } from '../hooks/useIsDark'
@@ -464,12 +464,26 @@ export const JsonlViewer = memo(function JsonlViewer({ content }: { content: str
 })
 
 /* ── HTML preview (sandboxed iframe) ── */
-export const HtmlViewer = memo(function HtmlViewer({ content }: { content: string }) {
+
+/** A buffer that holds the whole file renders as `srcdoc`, unsaved edits
+ *  included. A PARTIAL one -- `/api/file-read` stops at its cap, so a page
+ *  with inline images is cut short -- is not the page, and with an absolute
+ *  `filePath` the frame loads the whole file from `/api/file-html` instead,
+ *  which also gives a `#section` link a URL of its own to scroll within.
+ *  `wholeFileRevision` is set only for such a buffer: the panel counts the
+ *  writes the file watch reports and each Refresh, because the capped text
+ *  cannot say that the file changed past the cut. The sandbox is empty either
+ *  way: no script, an opaque origin. */
+export const HtmlViewer = memo(function HtmlViewer({ content, filePath, wholeFileRevision }: { content: string; filePath?: string; wholeFileRevision?: number }) {
   useLanguageGeneration() // memo() bails out of the provider-level repaint; subscribe directly
+  const src = filePath && wholeFileRevision != null ? fileHtmlUrl(filePath, String(wholeFileRevision)) : null
   return (
     <div className="h-full border border-border rounded-md overflow-hidden bg-white">
       <iframe
-        srcDoc={content}
+        // A new URL remounts the frame: setting `src` on a live frame adds a
+        // joint-history entry per reload, so Back would walk through revisions.
+        key={src ?? 'srcdoc'}
+        {...(src ? { src } : { srcDoc: content })}
         sandbox=""
         className="w-full h-full border-none"
         // Own compositing layer: a sandboxed srcDoc frame with no transform can

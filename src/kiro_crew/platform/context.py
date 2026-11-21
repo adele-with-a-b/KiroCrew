@@ -1224,7 +1224,7 @@ def redact_owner_view_via_context(text: str) -> str:
     disabled -- ``handlers/files.py`` ``_owner_view_bypasses_credential_pass``);
     when either is missing it calls :func:`redact_via_context` or ``redact``
     instead, so there is no ``bypass`` flag to thread. Use it at the file
-    viewer's two handlers only; every other egress never consults the switch.
+    viewer's handlers only; every other egress never consults the switch.
     """
     from kiro_crew.security.redaction_switch import owner_view
 

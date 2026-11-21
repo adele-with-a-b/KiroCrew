@@ -147,6 +147,33 @@ describe('HtmlViewer', () => {
     // is what keeps the srcDoc document inert.
     expect(iframe.getAttribute('sandbox')).toBe('')
   })
+
+  it('loads a partial buffer whole from /api/file-html, in the same empty sandbox', () => {
+    const { container, rerender } = render(<HtmlViewer content="<p>a</p>" filePath="/zzq dir/mock.html" wholeFileRevision={0} />)
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement
+    expect(iframe.getAttribute('src')).toBe('/api/file-html?path=%2Fzzq%20dir%2Fmock.html&v=0')
+    // The capped buffer is not the page: nothing renders it as srcdoc.
+    expect(iframe.hasAttribute('srcdoc')).toBe(false)
+    expect(iframe.getAttribute('sandbox')).toBe('')
+    // A write past the cut leaves the capped text as it was; the count still
+    // moves, so the frame reloads the file.
+    rerender(<HtmlViewer content="<p>a</p>" filePath="/zzq dir/mock.html" wholeFileRevision={1} />)
+    expect((container.querySelector('iframe') as HTMLIFrameElement).getAttribute('src')).toBe('/api/file-html?path=%2Fzzq%20dir%2Fmock.html&v=1')
+  })
+
+  it('renders a whole buffer as srcdoc, so unsaved edits show', () => {
+    const { container } = render(<HtmlViewer content="<p>edited</p>" filePath="/zzq dir/mock.html" />)
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement
+    expect(iframe.hasAttribute('src')).toBe(false)
+    expect(iframe.getAttribute('srcdoc')).toBe('<p>edited</p>')
+  })
+
+  it('renders a partial buffer as srcdoc for a relative path, which the route cannot resolve', () => {
+    const { container } = render(<HtmlViewer content="<p>rel</p>" filePath="docs/mock.html" wholeFileRevision={0} />)
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement
+    expect(iframe.hasAttribute('src')).toBe(false)
+    expect(iframe.getAttribute('srcdoc')).toBe('<p>rel</p>')
+  })
 })
 
 /** OfficeViewer (and SheetViewer's fallback card, which renders it) fetch via
