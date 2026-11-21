@@ -502,6 +502,7 @@ from kiro_crew.slack.code_channels.worker_approvals import start as start_worker
 from kiro_crew.slack.handler import post_linked_approval
 from kiro_crew.start_priority import StartPriority
 from kiro_crew.tracing import turns as trace_turns
+from kiro_crew.steering_plan import entries_matching_a_file
 from kiro_crew.trust_patterns import (  # noqa: F401 -- compatibility re-export
     _mask_quoted_separators,
 )
