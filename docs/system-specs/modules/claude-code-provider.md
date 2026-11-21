@@ -1176,6 +1176,11 @@ an image to a file and names it in its reply, as the default prompt teaches.
 
 ### A turn Claude Code starts on its own
 
+The same path carries a turn that was running when the gateway restarted, once a
+chat keeper is adopted (`agent.chat_keeper`, off by default; claude is the only
+member of `ACP_BACKENDS_CHAT_KEEPER`). See
+[runtime-ownership § Chats that outlive the gateway](runtime-ownership.md#chats-that-outlive-the-gateway-the-chat-keeper).
+
 Claude Code can start a turn after the dashboard's turn has ended: a
 `run_in_background` command exits and the model answers its task notification, a
 background subagent hands back, or a background or Workflow agent asks for a

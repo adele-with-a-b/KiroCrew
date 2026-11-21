@@ -3494,6 +3494,14 @@ The reset goes out in the background, so a snapshot the host sent before process
 
 ### Idle reader and agent-started turns (`AcpClient`)
 
+An adopted chat keeper reuses this path for the turn it finds running. A client that
+attached to a keeper the previous gateway left (`agent.chat_keeper`) never sent the
+`session/prompt` that is still in flight. The replayed frames of that prompt are
+therefore an agent-started turn to it, and the old prompt's response ends that turn.
+The keeper, its transport (`chat_keeper.transport.KeeperProcess`) and the adopt
+handshake are specified in
+[runtime-ownership § Chats that outlive the gateway](runtime-ownership.md#chats-that-outlive-the-gateway-the-chat-keeper).
+
 On a backend in `ACP_BACKENDS_AGENT_STARTED_TURNS` (claude), Claude Code can
 start a turn by itself after a prompt's turn has ended, for example when a
 `run_in_background` command exits, and claude-agent-acp writes that turn to

@@ -833,6 +833,18 @@ still need the manual retirement in `pod/README.md`.
 Native tests exercise owner-only access, descendant containment,
 nested resource jobs and breakaway refusal; injected failures run on all hosts.
 
+## The chat keeper is POSIX only
+
+The chat keeper (`kiro_crew/chat_keeper/`) is POSIX only: it reads peer credentials
+by pid on an AF_UNIX socket, and it relies on process groups and on the session that
+`start_new_session` gives it. `chat_keeper.supported()` returns
+`platform_compat.IS_POSIX`. On Windows, `agent.chat_keeper` is ignored with one log
+line, and a chat's process is the gateway's child as before. The keeper signals its
+own process group through `platform_compat.signal_own_process_group`, the one kill
+helper that may address the caller's group. It sits with the other kill helpers in
+`platform_compat_kill`, the file the kill-chokepoint ratchet exempts. Design:
+[runtime-ownership § Chats that outlive the gateway](../modules/runtime-ownership.md#chats-that-outlive-the-gateway-the-chat-keeper).
+
 ## Verifying a change
 
 `rename_noreplace` uses the Linux libc wrapper when available. On older glibc

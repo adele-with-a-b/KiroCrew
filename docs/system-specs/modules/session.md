@@ -5429,6 +5429,14 @@ dashboard-turn-loop refactor.
 
 ## Session Lifecycle at Startup
 
+With `agent.chat_keeper` on, the dashboard restore is followed by the chat keeper's
+adopt pass (`chat_keeper.adopt_pass`). For each live keeper record that names a
+restored persistent slot, the pass starts that slot's session through the eager
+spawn. `AcpClient._spawn` then attaches to the keeper instead of launching a new
+process. At shutdown, `close_all` detaches those sessions instead of shutting them
+down. See
+[runtime-ownership § Chats that outlive the gateway](runtime-ownership.md#chats-that-outlive-the-gateway-the-chat-keeper).
+
 ```
 start_pool()
   ├── session_map.prune()

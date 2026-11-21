@@ -833,7 +833,260 @@ its expected passing count rather than trusting a zero-failure exit.
 runtime root from outside and the registry must forget it and the lease holder must
 recover.
 
+## Chats that outlive the gateway: the chat keeper
+
+**Status: behind `agent.chat_keeper` (default off), POSIX only, claude backend only.**
+
+Without the keeper, a gateway exit ends every chat. Every exit counts: `kirocrew restart`,
+an applied update, the dashboard Restart, a crash and the supervisor's relaunch. A chat's
+adapter is the gateway's child, its stdin closes when the gateway goes, and
+`close_all` kills it on the way out. Claude Code dies with it, and so does everything
+Claude Code was running: the turn in flight, its background subagents, its background
+shells. The keeper is a small process that owns the adapter's stdio. It outlives the
+gateway, so the next gateway can attach to it and carry on the same conversation in the
+same adapter process.
+
+### Shape
+
+```
+gateway ──unix socket (authenticated)──▶ keeper (setsid'd by the launch; recorded pid)
+                                            └─ adapter (keeper's process group) ─▶ claude ─▶ …
+```
+
+- **The keeper is the process the gateway starts.** `acp.launch.launch` builds the
+  adapter's argv, environment, sandbox wrap, scope and rlimit profile exactly as for a
+  direct spawn. Then `chat_keeper.spawn.spawn_through_keeper` starts
+  `python -P -m kiro_crew.chat_keeper.keeper -- <that argv>` in the adapter's place, with
+  the same environment, working directory and `start_new_session=True`. The keeper
+  starts the wrapped argv as its own child, in its own process group, so the recorded
+  pid (`AcpClient._pid`) is the keeper's, and every kill path that signals that pid's
+  group (`runtime_tree_kill`, `session_pid_provider_kill`, the boot sweep) ends the
+  keeper, the adapter and its whole tree, as it ended the adapter tree before. The inner
+  argv rides the keeper's own argv after `--`, so `session_pid_harness`'s argv markers
+  still see `claude-agent-acp`. The keeper starts from the gateway's interpreter with
+  `-P`, so a module planted in the chat's working directory is never imported. It loads
+  its code once, so an update that replaces the package on disk does not change a
+  running keeper.
+- **The gateway talks to it through `chat_keeper.transport.KeeperProcess`**, which has
+  the members `AcpClient` reads on an `asyncio.subprocess.Process`: `pid`,
+  `returncode`, `stdin`, `stdout`, `stderr`, `wait()`, `kill()`, `terminate()`,
+  `send_signal()`. Above that object, the client cannot tell a keeper from a pipe.
+- **Why a relay, and not fd passing or a bare `setsid`.** A bare `setsid` leaves the
+  adapter reading a closed stdin (claude-agent-acp exits) and writing into a pipe
+  nobody reads. Passing the pipes to the next gateway over `SCM_RIGHTS` still leaves
+  nobody reading stdout during the gap, so the adapter blocks once the pipe fills,
+  mid-turn. It also leaves no record of which frames the old gateway consumed or which
+  requests are still open. A relay keeps the agent unblocked through the gap and makes
+  the gap observable. The keeper reads every line the adapter writes, and it numbers
+  and journals each one.
+- **Why the adopted turn is an agent-started turn.** The new gateway never sent the
+  prompt that is running, so from its side the adapter is running a turn with no
+  request open. That is exactly a turn the agent started on its own
+  (`ACP_BACKENDS_AGENT_STARTED_TURNS`,
+  [claude-code-provider](claude-code-provider.md) "A turn Claude Code starts on its
+  own"). The client's idle reader sees the replayed frames, the chat runs
+  `_run_chat(_agent_started=True)`, and that turn's tool rows, permission cards, hooks,
+  SEL records and persistence are a user turn's own. It ends on the response to the
+  old `session/prompt` id (`_ends_agent_started_turn`). No second turn runner exists.
+
+### Process tree and who reaps a keeper
+
+A keeper is reaped by exactly one of these:
+
+1. **The gateway that holds it.** Every teardown that ends a chat's process today
+   (close, reset, eviction, a stalled child, a failed start) ends the keeper through the
+   same calls, the same lease and the same `authorize_runtime_kill`. The adopt runs
+   inside `AcpClient._spawn`, so an adopted client takes its lease, its tracking rows
+   and its tenancy on the ordinary path.
+2. **The keeper itself.** When the adapter exits, the keeper hands the exit status
+   and the frames still journaled to an attached gateway, then exits. If no gateway is
+   attached, it keeps them until the adopt window closes. With no gateway attached
+   for `agent.chat_keeper_adopt_secs` (default 300, bounds 30 to 3600), counted from
+   the moment the last attachment closed, it sends SIGTERM to its process group,
+   waits `KEEPER_TERM_GRACE_SECS` (5), sends SIGKILL, removes its files and exits.
+   That window is today's teardown, only later.
+3. **The adopt pass of the next gateway**, when it refuses to adopt (see version
+   skew below). It sends an authenticated `terminate`. If the keeper does not exit
+   within the grace, it falls back to the kill gate and the group kill on the
+   recorded pid, start token pinned.
+
+The sweeps recognise a keeper this way. `cleanup_orphaned_sessions` at boot skips any
+tracked pid that a live keeper record names. The record's keeper pid and start token
+must both match, and the flag must be on. The pid stays in `kiro_session_pids.txt`
+for the adopt pass to settle. With the flag off, that skip never happens and the sweep
+kills keepers exactly as it killed adapters. The reconciler sees a keeper as a tracked
+runtime and never as a leak. On Linux, a keeper's cgroup scope is a transient unit of
+its own, separate from the gateway service's unit, so stopping the service does not
+take it down. `reap_abandoned_agent_scopes` skips a scope whose root pid a live keeper
+record names (not verified on Linux yet; see Known gaps).
+
+### Gateway exit: detach, never kill
+
+When the gateway exits (`SessionLifecycleService.close_all`, which the shutdown and
+both in-app restarts run), each provider whose client is attached to a keeper and is
+**eligible** is detached instead of shut down. Eligible means three things: the chat
+is a persistent dashboard chat, it is not the background session, and its backend is
+in `ACP_BACKENDS_CHAT_KEEPER`. A detach:
+
+1. marks the client detached first, so a write that any unwinding task attempts after
+   this point (a `session/cancel`, a permission answer, a prompt) is refused locally
+   and never reaches the adapter;
+2. sends `detach(ack)` to the keeper. `ack` is the sequence number of the last line the
+   client's reader consumed, minus the lines the client still holds in its buffer;
+3. closes the socket. It does not kill the process, discard the settings seed, send
+   `session/cancel` or delete the native record.
+
+`drain_active_turns` leaves these providers alone: `turn_survives_disconnect` is True
+for an attached, eligible keeper client, the same flag a Kiro Cloud turn uses. The
+session map keeps the session id that `close_all` already writes. Every other
+keeper-backed process (the warm pool, a chat that is not eligible) is shut down as
+before, and its group dies with it.
+
+### Discovery and authentication
+
+- **Where.** `<data home>/chat-keepers/`, mode 0700, is a `HIDDEN` sandbox leaf
+  (`sandbox_leaves._CREW_HIDDEN_LEAVES`). Nothing sandboxed reads or writes it, and the
+  keeper, which runs outside the adapter's sandbox wrap, is its only in-tree writer
+  besides the gateway. Each keeper has an instance id (the spawn's
+  `KIROCREW_SPAWN_INSTANCE`) and three files: `<instance>.json`, the record (session
+  key, backend, keeper pid and start token, adapter pid, socket path, wire version,
+  creation time; nothing secret); `<instance>.key`, 32 random bytes, mode 0600; and
+  `<instance>.sock`, the listener, mode 0600.
+- **The secret never rides argv or the environment.** Any same-uid process can read
+  both (`ps`, `KERN_PROCARGS2`, `/proc/<pid>/environ`). The gateway mints the secret,
+  writes the key file and hands the secret to the keeper on its stdin, which the
+  keeper then closes. The keeper holds it in memory only.
+- **The handshake proves both ends.** The gateway connects and reads the kernel peer
+  credentials (`mcp_gateway.socketsec.get_peer_pid`, `check_peer_is_self`). The
+  peer's pid must equal the record's keeper pid, the pid's start token must equal the
+  recorded one, and the peer's uid must be the gateway's own. A planted socket at the
+  path therefore fails before any byte is sent. Each side then sends a nonce, and each
+  answers with `HMAC-SHA256(secret, role ‖ instance ‖ wire version ‖ both nonces)`,
+  compared with `hmac.compare_digest`. The keeper refuses a peer whose uid is not its
+  own, and an attach that fails the HMAC. The keeper's authenticated hello names its
+  session key, and the adopting gateway refuses a keeper whose key is not the slot's.
+- **What this closes, and what it does not.** A sandboxed agent cannot read the key
+  or the record, cannot create a socket in the directory, and cannot pass the HMAC, so
+  it can neither attach to its own chat's keeper nor to another chat's, nor stand in
+  for one. Each keeper has its own secret, so a key one chat could read opens no
+  other. With the sandbox off, the agent runs as the operator with the operator's
+  reach. It can then read the key, just as it can read `token_signing.key`; the keeper
+  adds no exposure beyond that.
+- **One attachment at a time.** An authenticated attach replaces the current one,
+  because only a gateway holds the secret and a new attach means the old gateway is
+  gone or going. An unauthenticated connection never affects the current attachment.
+
+### Wire (version 1)
+
+Each frame is a 4-byte big-endian length, then 1 byte of kind, then the payload. The
+kinds are `hello`/`auth` (JSON), `stdin` (bytes for the adapter), `stdout` (8-byte
+sequence number plus one line), `stderr` (bytes), `ack`, `detach`, `resume`, `exit`
+(the adapter's status) and `terminate`. The keeper parses JSON-RPC envelopes only:
+`id`, `method`, and whether the frame has a `result` or an `error`. It reads three
+ACP names besides: the `session/new` and `session/load` answers it caches, and the
+`session/update` kinds it caches (`current_mode_update`, `config_option_update`,
+`usage_update`). Nothing else about Crew or about the harness is in it. That is why
+an old keeper and a new gateway can still talk: the ACP wire is the contract, and
+`KEEPER_WIRE_VERSION` versions the relay.
+
+### Replay and ordering
+
+- The keeper numbers each adapter stdout line from 1. The journal holds every line
+  after the last ack, bounded at `KEEPER_JOURNAL_MAX_BYTES` (64 MiB). If the journal
+  overflows while no gateway is attached, the keeper drops its oldest lines and sets
+  `gap`. A gateway that then attaches refuses to adopt, because a turn with frames
+  missing cannot be shown truthfully.
+- While a gateway is attached, the keeper delivers each line as soon as it reads it.
+  The gateway acks at safe points: no turn running and nothing buffered. On an orderly
+  detach it acks exactly what it consumed.
+- **Delivery is held on attach.** Until the gateway sends `resume`, the keeper
+  delivers only responses to requests that this attachment sent. This lets the adopt
+  handshake (`initialize`, `session/status`) be answered without the in-flight turn's
+  frames reaching a reader that is not ready for them. On `resume`, it delivers three
+  things in order: first, each adapter-to-client request (a permission, an fs or
+  terminal call) that is still unanswered and whose line was at or before the ack,
+  because the old gateway saw it and never answered; then every journaled line after
+  the ack, in sequence; then live lines. Each line is delivered at most once per
+  attachment.
+- **The guarantee.** Delivery is exactly-once across an orderly gateway exit, and
+  at-least-once from the last safe-point ack across a crash, so a crash can show a
+  turn's frames again from the last idle point.
+- **Ids.** The keeper records the highest request id the gateway ever sent and
+  returns it in the attach reply. The adopting client starts its counter above that
+  id, so no new request can share an id with the old prompt whose answer is still to
+  come.
+
+### What the adopting gateway rebuilds
+
+The adopt pass (`chat_keeper.adopt_pass`) runs after the dashboard restores its open
+slots. For each live keeper record whose session key names a restored, persistent
+slot, it starts that slot's session through the eager spawn
+(`schedule_eager_spawn(allow_resume=True)`). It then registers the slot's
+agent-started-turn watch, the one `_watch_agent_turns` registers at a turn's start,
+so the idle reader runs on the adopted client before any user turn does. A keeper
+record that names no restored slot gets the refusal path.
+
+In `AcpClient._spawn`, the preparation runs as for a spawn: the spec checks, the
+settings seed (adopted through `seed_provenance`, so the file the live adapter reads
+is left as it is), the session identity, and the scratch window. The launch is
+replaced by `chat_keeper.adopt.attach`. The handshake is then
+`chat_keeper.client_adopt.adopt_session` in place of `_initialize_session`:
+
+| Step | On a spawn | On an adopt |
+|---|---|---|
+| `initialize` | sent | sent again. claude-agent-acp's handler is stateless: it records the client's capabilities and returns its own and its version, so the floor checks judge the live adapter |
+| restore | `session/load` | `session/status` must answer `open` for the mapped session id. No `session/load`: on a session it already holds, the adapter replays the whole transcript into the live stream |
+| mode, model, config options | `set_mode` / `set_model` / the pin | nothing is sent. The keeper's cached session answer and its latest mode and config updates go through `_capture_available_models`, `_store_session_config` and `_verify_session_mode`, so the picker, the mode and the switches show what the old gateway showed, and a session whose mode reads back permissive is refused just as on a load |
+| running turn | (none) | the replay starts an agent-started turn, which ends at the old prompt's response |
+| meter | from `usage_update` | from the keeper's cached last `usage_update`, then from the replay |
+| queue | | already durable (session.md "Queued prompt durability"); it drains behind the adopted turn as behind any agent-started turn |
+| pending approvals | | each re-delivered request opens its card on the normal path. While no gateway is attached the adapter waits, so a tool that needs an answer cannot run during the gap: the gap fails closed |
+| Trust / Read mode | | restored by the boot restore that owns it (the signed Trust record); the adopt path reads and writes no mode of its own |
+
+### Version skew and refusal
+
+The adopting gateway refuses, and falls back to today's cold start (`session/load` in
+a new process), when any of these holds:
+
+- the keeper's wire version is not this gateway's;
+- the handshake fails (peer credentials, HMAC, session key);
+- `initialize` errors, or the adapter's reported version fails the floor checks the
+  client applies at every start;
+- `session/status` is not `open`;
+- the journal has a gap;
+- the flag is off.
+
+A refusal ends the keeper (see "Process tree and who reaps a keeper") before the
+replacement spawns, so two adapters never run one session.
+
+### Platforms and harnesses
+
+- **POSIX only.** The keeper relies on AF_UNIX peer credentials by pid, process groups
+  and `setsid`. `chat_keeper.supported()` is `platform_compat.IS_POSIX`; on Windows
+  the flag is ignored and logged once, and the client spawns as before.
+- **Membership is positive.** `ACP_BACKENDS_CHAT_KEEPER` (`agent_sdk.backends_sessions`)
+  is `{claude}`. A member must:
+  - run one process per chat on `AcpClient` (the shared `AcpRuntime` is out of scope);
+  - answer a repeated `initialize` statelessly;
+  - answer `session/status` with `open` for a session it holds;
+  - be in `ACP_BACKENDS_AGENT_STARTED_TURNS`, which is what carries the adopted turn.
+
+  Every other backend keeps today's behaviour.
+
+Tests land with the build. They cover the wire, a real keeper with a fake adapter, the client
+adopt handshake, and the sweep skip and detach.
+
 ## Known gaps
+
+- **The chat keeper is unproven on Linux.** It is written against POSIX calls only,
+  and the live proof ran on macOS. The two Linux paths it relies on are untested:
+  the transient-scope separation from the service unit, and
+  `reap_abandoned_agent_scopes` skipping a keeper's scope. The namespace launcher's
+  confinement record (`remember_namespace_launcher`) names the keeper's pid, while the
+  launcher is the keeper's child; that is not reconciled yet either. Crew-spawned
+  subagent runtimes (`AcpRuntime`) and the shared chat runtime get no keeper, so they
+  still end at a gateway exit. Claude Code's own Agent-tool subagents run inside the
+  chat's adapter and survive with it.
 
 - **A session token binds only where the tables can speak.** `X-Session-Token` is
   a bearer: a same-uid process that can read `/proc/<pid>/environ` can present a
