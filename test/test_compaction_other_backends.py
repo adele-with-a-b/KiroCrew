@@ -185,10 +185,19 @@ class TestTheTwoHarnessesThatDoNot:
         assert ACP_BACKEND_DEEPSEEK not in ACP_BACKENDS_COMPACT
         assert ACP_BACKEND_DEEPSEEK not in _harness_managed_set()
 
-    def test_kas_is_the_only_backend_in_both_sets(self) -> None:
+    def test_claude_manages_itself_and_takes_a_manual_compact(self) -> None:
+        """Claude Code compacts at its own ``autoCompactWindow`` and reports it as
+        a ``compaction_update``; a manual ``/compact`` is served as a prompt."""
+        assert ACP_BACKEND_CLAUDE in ACP_BACKENDS_COMPACT
+        assert ACP_BACKEND_CLAUDE in _harness_managed_set()
+
+    def test_kas_and_claude_are_the_backends_in_both_sets(self) -> None:
         """Holding both means: manual ``/compact`` is served, and the threshold
         is the harness's own. Any other overlap is a deliberate edit."""
-        assert ACP_BACKENDS_COMPACT & _harness_managed_set() == {ACP_BACKEND_KAS}
+        assert ACP_BACKENDS_COMPACT & _harness_managed_set() == {
+            ACP_BACKEND_KAS,
+            ACP_BACKEND_CLAUDE,
+        }
 
     def test_subset_of_known_backends(self) -> None:
         """H8: a capability cannot be granted to an identifier nothing knows."""

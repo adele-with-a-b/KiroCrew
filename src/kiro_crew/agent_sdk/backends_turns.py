@@ -387,6 +387,16 @@ ACP_BACKENDS_COMPACT = frozenset(
 # (kiro-cli 2.36.0) with a low threshold, one turn crosses it and the engine sends
 # both frames with no client request (acp_frames/kas/auto-compaction-live.jsonl).
 #
+# claude is a member. Claude Code compacts on its own at its ``autoCompactWindow``
+# (``~/.claude/settings.json``, the same number its terminal sessions use), and
+# claude-agent-acp reports it as a ``compaction_update`` (``context-compaction.js``);
+# a ``completed`` one calls ``reset_after_compaction()`` (``acp/client_claude_turn.py``).
+# Left to Crew's global threshold, Crew would ``/compact`` first, at that share of
+# the window Claude reports, so one chat would follow two numbers. LIVE on
+# claude-agent-acp 0.109.0 (acp_frames/claude/auto-compaction-live.jsonl): with no
+# ``/compact`` sent, the turn after ``used`` 45306 opens with ``compaction_update``
+# ``in_progress`` then ``completed``, and ``used`` reads 11829 before the reply.
+#
 # A backend outside both this set and ``ACP_BACKENDS_COMPACT`` has no compaction Crew
 # can see, so nothing bounds its context. :data:`ACP_BACKENDS_CONTEXT_RECYCLE` decides
 # what happens then: a member is recycled at the threshold; a backend in none of the
@@ -405,7 +415,7 @@ ACP_BACKENDS_COMPACT = frozenset(
 #
 # kiro-cli is not a member: no capture shows it compacting on its own, and its
 # ``/compact`` is served through ``ACP_BACKENDS_COMPACT``.
-ACP_BACKENDS_HARNESS_MANAGED_COMPACTION = frozenset({ACP_BACKEND_KAS})
+ACP_BACKENDS_HARNESS_MANAGED_COMPACTION = frozenset({ACP_BACKEND_KAS, ACP_BACKEND_CLAUDE})
 
 # Backends whose FULL context is answered by recycling the session, because no
 # compaction reaches them from either side.
