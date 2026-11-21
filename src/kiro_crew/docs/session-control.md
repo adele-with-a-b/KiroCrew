@@ -189,6 +189,10 @@ A session an agent created may send to the one session that created it, to repor
 back. Only a plain message: `steer=true` and every other verb on that session are
 refused `not_creator`, and a broadcast does not reach it.
 
+A send to a busy session whose queue already holds 50 waiting messages is refused
+`queue_full` (429); send again once it drains. A send to an idle session always
+starts its turn.
+
 ### `work_dispatch`
 
 Dispatches one work item in one call, for a conductor whose agent mounts

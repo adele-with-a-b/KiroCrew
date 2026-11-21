@@ -877,6 +877,18 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"Error: could not send to that session: {refused.error}"
     target = resp.get("target", args["target"])
     caps = redact(_worker_capabilities_line(resp))
+    if resp.get("toCreator"):
+        # The session that created the caller takes this message and nothing
+        # else, so pointing at session_read_message would send it to a refusal.
+        how = (
+            "it started a turn on your message"
+            if resp.get("started")
+            else "it is mid-turn, so your message runs when the current turn ends"
+        )
+        return (
+            f"\U0001f4e8 Sent to `{target}`, the session that created you: {how}. "
+            "You cannot read or check it from here." + caps
+        )
     if resp.get("steered"):
         return (
             f"\U0001f4e8 Steered `{target}` — your message went into the turn it "

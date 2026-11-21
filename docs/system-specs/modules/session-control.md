@@ -1683,21 +1683,24 @@ the surface wider than it is.
 this session" at any depth. `_caller_is_ownership_fenced` reads this marker alone
 for the ownership boundary `authorize_target` evaluates on every verb: ANY
 agent-created session is fenced there, so a created session reaches only slots it
-created itself and nothing an unfenced creator could reach. A person's own tab and
+created itself, plus a plain message to its own creator (below), and nothing else
+an unfenced creator could reach. A person's own tab and
 a fork reach `get_or_create_slot` directly and stay unattributed, so ordinary human
 use is unaffected.
 
 #### A created session may message its creator, and do nothing else to it
 
-The fence has one opening, so a worker can report to whoever started it however
-it was started: a fenced caller may `session_send` to the one session its OWN slot
+The fence has one opening, so a worker can report to the session that started it
+by message: a fenced caller may `session_send` to the one session its OWN slot
 records as `_created_by` (`_is_callers_creator` in `target_authorization.py`).
-`send_to_target` asks for it (`authorize_target(..., creator_message=True)`) only
-for a `session_send` without `steer`, and the gate honours it only for the `send`
-operation. What still holds:
+Only the `POST /api/session-control/send` route asks for it
+(`send_to_target(..., creator_message=True)`); `send_to_target` passes it to
+`authorize_target` only without `steer`, and the gate honours it only for the
+`send` operation. A caller that does not ask, including any new one, keeps the
+fence. What still holds:
 
 - **Message only.** Every other verb on the creator (read, summary, queue, stop,
-  close, adopt, release, handoff, fork, rename, set_model, set_color, set_note,
+  close, adopt, release, handoff, fork, rename, set_model, set_mode, set_color, set_note,
   end_wait, reload, status, retry, continue, generate_title) is refused
   `not_creator` with the wording `CREATOR_MESSAGE_ONLY`. So is `steer=true`, before
   any RPC, so nothing is injected into the creator's running turn. A broadcast, a
@@ -1716,11 +1719,29 @@ operation. What still holds:
   the workspace compare all still apply. So a scheduled run's child cannot reach the
   cron tab (`unattended_target`), a channel session's child cannot reach it
   (`linked_session_target` / `mirrored_target`), and an app-scoped child stays
-  `app_scoped_caller`.
+  `app_scoped_caller`. A worker of the owner's Conductor while
+  `agent.session_control` is off is refused `session_control_disabled` first.
+The text is stored and shown exactly as any `session_send`: the
+`[sent by session <worker> via session_send]` line, then the body, and the usual
+`meta.relay` sender, so it lands tagged as sent by the worker and no screen
+changes. A busy creator queues it as any send. The reply to a plain send carries
+`toCreator: true`, so the `session_send` tool tells the worker it cannot read or
+check its creator instead of pointing it at `session_read_message`. Provenance
+beyond that sender line (a structured origin on each user row) is a separate
+change.
 
-A busy creator queues the message as any `session_send` does, and the row carries
-the usual `meta.relay` sender, so it lands tagged as sent by the worker.
-Pinned in `test/test_session_send_to_creator.py`.
+A `session_send` that would WAIT in the queue (the target is running or held by
+a pause) is refused 429 `queue_full` when that queue already holds
+`MAX_LIVE_QUEUE_ENTRIES` entries, the bound app messages and channel hand-offs
+obey; without it a session that keeps sending to a busy target would push that
+queue past the cap and lock those deliveries out. A send to an idle target is
+never refused: it starts the turn that drains the queue. Two paths queue text
+that was already accepted and stay unbounded: a steer's own requeue when its turn
+ends under it, and the orphaned-steer fallback, whose caller was told the outcome
+is unknown and not to send again, so a refusal there would lose the message. Pinned in `test/test_session_send_to_creator.py`, which also
+checks the source: only the send route asks for the opening, and every verb the
+gate is called with, directly or through a wrapper that passes its own
+`operation` on, is in its refused list.
 
 The one place an owner-rooted agent chain must be LET THROUGH is the
 private-member delegation gate in `create_session`: a conductor the owner started
