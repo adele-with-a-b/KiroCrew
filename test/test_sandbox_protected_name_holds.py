@@ -522,6 +522,12 @@ class TestLeafOnlyPopulationIsRecorded:
     #:   writable siblings, so leaf-only is the only hold, as for
     #:   ``credential_redaction.json``.
     #:
+    #: Fork (adele-with-a-b): ``extra_sensitive_paths.txt`` -- the owner's own
+    #: list of folders the file tools refuse (``security/operator_sensitive.py``),
+    #: sealed read-only so an agent cannot take a folder off it. A file at the
+    #: data-home root beside writable siblings, so leaf-only is the only hold, as
+    #: for ``credential_redaction.json``; three entries per tier.
+    #:
     #: ``import-staging`` adds three entries per tier. The gateway extracts and
     #: removes temporary trees INSIDE this masked directory, never replacing the
     #: directory itself. Its parent is the data-home root beside writable siblings,
@@ -594,6 +600,7 @@ class TestLeafOnlyPopulationIsRecorded:
         "<crew>/denied_commands.json": (3, "standard cc strict"),
         "<crew>/diag": (3, "standard cc strict"),
         "<crew>/engines": (3, "standard cc strict"),
+        "<crew>/extra_sensitive_paths.txt": (3, "standard cc strict"),
         "<crew>/gateway_id": (3, "standard cc strict"),
         "<crew>/host-exec-grants": (3, "standard cc strict"),
         "<crew>/import-staging": (3, "standard cc strict"),
