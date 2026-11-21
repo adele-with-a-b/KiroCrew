@@ -993,7 +993,7 @@ every other mirrored harness.
 | `hooks` | honoured | dropped from the wire projection; fired by Crew's turn loop | Crew's gate, renamed events |
 | `toolsSettings` | honoured | no wire slot; session-start notice | not read |
 | `toolAliases` | honoured | no wire slot; session-start notice unless Crew's Connections pass wrote every pair | not read |
-| `claudeCode` (adele-with-a-b fork) | not read | not read | user-scope specs only: `autoMemoryDirectory` (absolute) rides the flag tier, `env` is spread over the adapter's env, `strictMcpConfig: true` keeps the user's, project's and plugins' servers out, `tools` narrows the built-ins (`acp/claude_agent_options.py`) |
+| `claudeCode` (adele-with-a-b fork) | not read | not read | user-scope specs and a Bot's own file under `mates/agents/` (read for its DM thread and its workers; every Bot session also gets `strictMcpConfig`, and one whose file names no `autoMemoryDirectory` runs with auto-memory off, so no Bot reads the home folder's memory index or the user's own servers, `claude_agent_options.apply_crewmate_claude_options`): `autoMemoryDirectory` (absolute) rides the flag tier, `env` is spread over the adapter's env, `strictMcpConfig: true` keeps the user's, project's and plugins' servers out, `tools` narrows the built-ins (`acp/claude_agent_options.py`) |
 | `managedToolPolicy` | Crew-side, per session | Crew-side, per session | Crew-side, per session |
 | `welcomeMessage` | Crew-only (welcome page, chat transcript) | welcome page and chat transcript, and a wire field from the same capped reading | Crew-only (welcome page, chat transcript) |
 

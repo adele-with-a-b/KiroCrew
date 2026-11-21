@@ -23,6 +23,13 @@ spec never reaches this, so a repo cannot redirect memory writes or set the
 session's env. Nothing here loosens Crew's permission surface; Crew's own
 switches applied after this (the auto-memory off switch, the read-only Side
 Chat shape) still win.
+
+A Bot (a crewmate) runs Crew's stock conductor and worker specs, so the block is
+also read from the Bot's own file under ``<kiro home>/mates/agents/`` for both
+its DM thread and its workers (:func:`crewmate_claude_options`). Every Bot's
+session gets ``strictMcpConfig``, and one whose file names no
+``autoMemoryDirectory`` gets Claude Code's auto-memory turned off, so no Bot
+reads the home folder's memory index or the user's own MCP servers (fork only).
 """
 
 from __future__ import annotations
@@ -50,7 +57,27 @@ def spec_claude_options(agent: str | None) -> dict[str, Any]:
         return {}
     if path is None or path.suffix != ".json":
         return {}
-    spec = _read_spec_capped(path)
+    return _validated(_read_spec_capped(path), agent)
+
+
+def crewmate_claude_options(mate_id: str) -> dict[str, Any]:
+    """The validated ``claudeCode`` block of Bot *mate_id*'s own file, or ``{}``."""
+    if not mate_id:
+        return {}
+    from kiro_crew.agent import _read_spec_capped
+    from kiro_crew.mate_config import mate_config_path
+
+    try:
+        path = mate_config_path(mate_id)
+    except ValueError:
+        return {}
+    if not path.is_file():
+        return {}
+    return _validated(_read_spec_capped(path), "Bot " + mate_id)
+
+
+def _validated(spec: Any, agent: str) -> dict[str, Any]:
+    """The checked entries of *spec*'s ``claudeCode`` block; *agent* names it in a warning."""
     block = spec.get("claudeCode") if isinstance(spec, dict) else None
     if not isinstance(block, dict):
         return {}
@@ -89,7 +116,36 @@ def spec_claude_options(agent: str | None) -> dict[str, Any]:
 
 def apply_spec_claude_options(options: dict[str, Any], agent: str | None) -> None:
     """Merge *agent*'s ``claudeCode`` block into a claude session's ``options``."""
-    extra = spec_claude_options(agent)
+    _merge(options, spec_claude_options(agent))
+
+
+def apply_crewmate_claude_options(options: dict[str, Any], session_key: str | None) -> bool:
+    """Merge the Bot's own block into *options* when *session_key* is a Bot's session.
+
+    A Bot's DM thread or worker (``crewmate_harness.crewmate_for_session``) always
+    gets ``strictMcpConfig``. Returns True when the session is a Bot's and its
+    file names no ``autoMemoryDirectory``: the caller then turns auto-memory off,
+    as for an incognito session, so the Bot does not read the home folder's index.
+    """
+    if not session_key:
+        return False
+    try:
+        from kiro_crew.config.loader import KiroCrewConfig
+        from kiro_crew.crewmate_harness import crewmate_for_session
+
+        mate_id = crewmate_for_session(KiroCrewConfig.load(), session_key)
+    except Exception:  # noqa: BLE001 - an unreadable config names no Bot; the session still starts
+        logger.warning("could not tell whether session %r is a Bot's", session_key, exc_info=True)
+        return False
+    if not mate_id:
+        return False
+    extra = crewmate_claude_options(mate_id)
+    _merge(options, extra)
+    options["strictMcpConfig"] = True
+    return "autoMemoryDirectory" not in extra
+
+
+def _merge(options: dict[str, Any], extra: dict[str, Any]) -> None:
     if not extra:
         return
     if "env" in extra:
@@ -106,4 +162,9 @@ def apply_spec_claude_options(options: dict[str, Any], agent: str | None) -> Non
         options["tools"] = [t for t in current if t in keep] if isinstance(current, list) else keep
 
 
-__all__ = ["apply_spec_claude_options", "spec_claude_options"]
+__all__ = [
+    "apply_crewmate_claude_options",
+    "apply_spec_claude_options",
+    "crewmate_claude_options",
+    "spec_claude_options",
+]
