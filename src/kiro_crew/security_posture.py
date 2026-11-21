@@ -843,13 +843,14 @@ NON_EGRESS_REDACTION_MODULES: frozenset[str] = frozenset(
         # registered sink module, serves the route that returns the rows.
         "dashboard/file_api/grep.py",
         # The outbox routes, the Slack and channel uploads with their admission gate,
-        # and the file viewer's read, raw, write and diff routes, composed into
+        # and the file viewer's read, raw, write, diff and whole-page html routes, composed into
         # dashboard/handlers/files.py: they redact the file cards, upload gates and
         # viewer bodies that facade's registered sink rows already name, and open no
         # output path of their own.
         "dashboard/file_api/outbox.py",
         "dashboard/file_api/channel_upload.py",
         "dashboard/file_api/editor.py",
+        "dashboard/file_api/html_view.py",
         # Owner-driven components extracted from dashboard/state.py.  They
         # redact while staging or dispatching through the facade, but they do
         # not introduce new logical egress paths: the same DashboardState

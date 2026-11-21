@@ -172,6 +172,7 @@ _OWNER_MODULES = (
     "channel_upload",
     "desktop",
     "editor",
+    "html_view",
 )
 
 #: Each moved definition and the owner its responsibility puts it in.
@@ -249,6 +250,9 @@ _BASE_OWNERS: dict[str, tuple[str, ...]] = {
         _read_safe_end _resolve_diff_path api_file_diff api_file_raw api_file_read
         api_file_write
         """.split()),
+    "html_view": tuple("""
+        _html_raster_payload_spans _redact_html_page _serve_html_page api_file_html
+        """.split()),
 }
 
 #: The one module-level value an owner defines: ``_run_git_bounded`` reads it as a
@@ -266,13 +270,16 @@ _OWNER_CONSTANTS = {"git_panel": ("_GIT_PANEL_STDOUT_CAP",)}
 #: Recaptured when ``api_file_download`` began answering a ``web.StreamResponse``.
 #: Recaptured when ``_browse_files_sync`` gained its ``show_hidden`` flag.
 #: Recaptured when ``_run_git_bounded`` gained its ``stdin`` bytes.
-_BASE_SHAPE_DIGEST = "c71b740dec9e68852c61695001d80115e884ba25b503e028e4da060badba3757"
+_BASE_SHAPE_DIGEST = "3eb7bb1e8f0ed040305fb9229aec21834165b1c5f0498cb6c4fee57e2251789f"
 #: Definitions that stay in the facade file: the seams the owners share -- the SEL
 #: accessor, the file-send audit, the sub-agent session mapping and the request-body
 #: error code -- the search walk's clock, the file viewer's owner-view verdict, whose
 #: body-scope ``source_providers`` import is the sibling-gate idiom the handlers
 #: package's modules cite by this file's name, and the two directory-picker routes,
 #: whose skip sets hold a literal the internal content scan refuses on an added line.
+#: The whole-page route's redactor choice, CSP and streamed send stay here too: the
+#: first reads the owner-view pass the guard confines to this file, the others
+#: import the server.
 _FACADE_DEFS = (
     "_subagent_parent_session_key",
     "_sel",
@@ -280,6 +287,9 @@ _FACADE_DEFS = (
     "_body_err_code",
     "_walk_monotonic",
     "_owner_view_bypasses_credential_pass",
+    "_html_page_redactor",
+    "_html_page_csp",
+    "_html_page_send",
     "api_browse_dirs",
     "api_browse_files",
 )
@@ -391,6 +401,7 @@ _SERVED_HANDLERS = (
     "api_file_diff",
     "api_file_download",
     "api_file_grep",
+    "api_file_html",
     "api_file_kinds",
     "api_file_office_preview",
     "api_file_raw",
@@ -437,6 +448,7 @@ _PACKAGE_REEXPORTS = (
     "api_file_diff",
     "api_file_download",
     "api_file_grep",
+    "api_file_html",
     "api_file_kinds",
     "api_file_office_preview",
     "api_file_raw",
@@ -489,6 +501,7 @@ def test_the_routes_and_the_package_reach_the_facade_objects() -> None:
     assert [h.__name__ for h in inner if getattr(files, h.__name__) is not h] == []
     assert sorted({h.__name__ for h in served if hasattr(h, "__wrapped__")}) == [
         "api_file_diff",
+        "api_file_html",
         "api_file_raw",
         "api_file_read",
         "api_file_stream",

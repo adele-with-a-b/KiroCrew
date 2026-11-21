@@ -23,6 +23,8 @@ the map.
 from __future__ import annotations
 
 import asyncio
+import base64  # noqa: F401 - owner: html_view
+import concurrent.futures
 import contextlib  # noqa: F401
 import datetime as _dt  # noqa: F401
 import errno  # noqa: F401
@@ -109,6 +111,7 @@ from kiro_crew.dashboard.file_api import desktop as _owner_desktop
 from kiro_crew.dashboard.file_api import editor as _owner_editor
 from kiro_crew.dashboard.file_api import git_panel as _owner_git_panel
 from kiro_crew.dashboard.file_api import grep as _owner_grep
+from kiro_crew.dashboard.file_api import html_view as _owner_html_view
 from kiro_crew.dashboard.file_api import office_preview as _owner_office_preview
 from kiro_crew.dashboard.file_api import outbox as _owner_outbox
 from kiro_crew.dashboard.file_api import path_complete as _owner_path_complete
@@ -187,6 +190,12 @@ from kiro_crew.dashboard.file_api.grep import (  # noqa: F401
     _grep_sensitive_globs,
     _grep_xlsx_segments,
     api_file_grep,
+)
+from kiro_crew.dashboard.file_api.html_view import (  # noqa: F401
+    _html_raster_payload_spans,
+    _redact_html_page,
+    _serve_html_page,
+    api_file_html,
 )
 from kiro_crew.dashboard.file_api.office_preview import (  # noqa: F401
     _cap_slides,
@@ -949,6 +958,43 @@ _FILE_KINDS_MAX_PATHS = 100
 #: here would mis-set ``X-Truncated`` on multi-byte content.
 _FILE_READ_CAP = 512_000
 
+#: Largest .html file /api/file-html serves, in BYTES. Mock pages carry their
+#: images inline as base64 and run to 73 MB; the whole file is held in memory
+#: once, as file-raw holds an image.
+_HTML_VIEW_MAX_BYTES = 128 * 1024 * 1024
+
+#: Most text /api/file-html runs through the redactor, in BYTES: everything but
+#: the verified raster payloads. The mock pages measured hold 10 KB to 4.6 MB of
+#: it; the cap bounds one render's CPU, and a page over it answers 413.
+_HTML_VIEW_TEXT_MAX_BYTES = 8 * 1024 * 1024
+
+#: The threads /api/file-html renders on. Two, so pages the panel, the pop-out
+#: and a reload ask for at once queue here instead of each taking a CPU-bound
+#: thread from the shared default executor.
+_HTML_VIEW_RENDER_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="file-html"
+)
+
+#: Most /api/file-html requests in flight at once, from the read to the last
+#: byte written: each holds its whole page, so a burst of reloads of a large
+#: page answers 503 ``busy`` past this instead of queueing gigabytes. Taken
+#: without waiting, so it binds to no event loop.
+_HTML_VIEW_IN_FLIGHT = threading.BoundedSemaphore(4)
+
+#: A ``data:image/<type>;base64,`` payload in an HTML page. Group 1 is the
+#: payload; whether it is an image is decided by its decoded bytes, never by the
+#: declared type (:func:`_html_raster_payload_spans`).
+_HTML_DATA_IMAGE_RE = re.compile(rb"data:image/[A-Za-z0-9.+-]{1,32};base64,([A-Za-z0-9+/]+={0,2})")
+
+#: Extensions /api/file-html serves; anything else is refused before it is read.
+_HTML_VIEW_EXTS = (".html", ".htm")
+
+#: /api/file-html's stand-ins for a skipped payload while the rest of the page
+#: is redacted. None is a credential-class character, so the redactor reads each
+#: as a separator; the first one the page does not already hold is used.
+_PAYLOAD_MARKS = ("\ue000", "\ue001", "\ue002", "\ufdd0")
+
+
 #: One credential-class character (the streaming redactor's ``_CRED_CLASS``).
 #: Matched against the REVERSED read, so finding the trailing run is linear.
 _CRED_RUN_REVERSED_RE = re.compile("[" + "".join(re.escape(c) for c in sorted(_CRED_CLASS)) + "]*")
@@ -986,9 +1032,10 @@ async def _owner_view_bypasses_credential_pass(request: web.Request) -> bool:
     """Whether THIS request renders the owner's own view with the credential pass
     stood down: the requester is the dashboard owner AND the owner's switch is OFF.
 
-    The two handlers that feed the file viewer -- ``api_file_read`` (the buffer)
-    and ``api_file_diff`` (the ``original`` it is compared against) -- call this
-    with the same request, so both sides of one render carry the same verdict.
+    The handlers that feed the file viewer -- ``api_file_read`` (the buffer),
+    ``api_file_diff`` (the ``original`` it is compared against) and
+    ``api_file_html`` (an .html page's frame) -- call this with the same request,
+    so every side of one render carries the same verdict.
     A non-owner never bypasses; the verdict is read off the event loop per
     request, so it is never older than the response it shapes. The keystone is a
     fixed, trusted path (not caller-supplied), so the default executor is the
@@ -1002,6 +1049,70 @@ async def _owner_view_bypasses_credential_pass(request: web.Request) -> bool:
         return False
     switch = await asyncio.to_thread(redaction_switch.read_state)
     return not switch.enabled
+
+
+async def _html_page_redactor(request: web.Request) -> Callable[[str], str]:
+    """The credential pass ``/api/file-html`` runs: the owner's view when
+    :func:`_owner_view_bypasses_credential_pass` says so, else ``redact``, the
+    choice ``api_file_read`` makes for the same request."""
+    if await _owner_view_bypasses_credential_pass(request):
+        return redact_owner_view_via_context
+    return redact
+
+
+def _html_page_csp(request: web.Request) -> str:
+    """``/api/file-html``'s Content-Security-Policy: an empty sandbox.
+
+    ``sandbox`` with no allow flags is the viewer frame's own ``sandbox=""``, so
+    the page runs no script and is an opaque origin even opened top-level. Its
+    style, image, font and media sources are the dashboard's own (``_BASE_CSP``),
+    the policy a ``srcdoc`` frame inherits, so a page loads what it loaded there.
+    ``frame-ancestors`` is ``'self'`` plus what ``'self'`` cannot express (see
+    ``origin.frame_ancestors_value``), as on the sandboxed-document route.
+    """
+    # Lazy: ``server`` imports the handlers to register its routes.
+    from kiro_crew.dashboard.origin import frame_ancestors_value
+    from kiro_crew.dashboard.server import _BASE_CSP, _extra_frame_ancestors
+
+    kept = ("style-src ", "img-src ", "font-src ", "media-src ")
+    sources = [d.strip() for d in _BASE_CSP.split(";") if d.strip().startswith(kept)]
+    return (
+        "sandbox; default-src 'none'; "
+        + "; ".join(sources)
+        + "; base-uri 'none'; form-action 'none'; "
+        f"frame-ancestors {frame_ancestors_value(_extra_frame_ancestors(request, request.app))}"
+    )
+
+
+async def _html_page_send(
+    request: web.Request, chunks: list[bytes | memoryview]
+) -> web.StreamResponse:
+    """Write ``/api/file-html``'s page from *chunks*, with no joined copy of it.
+
+    A streamed head goes out on ``prepare()``, before ``no_cache_middleware``
+    sees the response, so the dashboard's security headers (``no-store``,
+    ``X-Frame-Options``, HSTS) are applied here first, as the settings export
+    does; the middleware's later pass is a no-op on them.
+    """
+    # Lazy: ``server`` imports the handlers to register its routes.
+    from kiro_crew.dashboard.server import _apply_security_headers
+
+    resp = web.StreamResponse(
+        headers={
+            "Content-Security-Policy": _html_page_csp(request),
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
+    resp.content_type = "text/html"
+    resp.charset = "utf-8"
+    resp.content_length = sum(len(c) for c in chunks)
+    _apply_security_headers(resp, request.app, request.path, request)
+    await resp.prepare(request)
+    for chunk in chunks:
+        await resp.write(chunk)
+    await resp.write_eof()
+    return resp
 
 
 # Extensions previewable via kiro_crew.doc_parser (OOXML docx/pptx). Legacy
@@ -1431,5 +1542,6 @@ _facade_compose(
         _owner_channel_upload,
         _owner_desktop,
         _owner_editor,
+        _owner_html_view,
     ),
 )

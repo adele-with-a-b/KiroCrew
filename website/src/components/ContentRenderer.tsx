@@ -57,15 +57,17 @@ export function langFor(ext: string): string {
  * (which passes only `content` for markdown/text/json/svg artifacts).
  *
  * Image and PDF rendering require a `filePath` because they fetch raw
- * bytes via `/api/file-raw?path=`. Markdown, csv, json, html, code, and
- * the Pierre editor work entirely from `content` and don't need a path.
+ * bytes via `/api/file-raw?path=`; html renders `content`, or loads the
+ * whole file from `/api/file-html` when `htmlWholeFileRevision` says the
+ * buffer is only part of it. Markdown, csv, json, code, and the Pierre editor
+ * work entirely from `content` and don't need a path.
  */
 export const ContentRenderer = memo(function ContentRenderer({
   isRichType, richSource = false, fileType, filePath, content, editing,
   lang, lineNums, wordWrap, onChange, onSave,
   previewRef, displayContent, isMarkdown,
   markdownClassName, previewStyle, flush, editorRef, diffBase, diffSplit, diffExpandUnchanged, onLiveDiffDegraded,
-  onFileOpen, onFolderOpen,
+  onFileOpen, onFolderOpen, htmlWholeFileRevision,
 }: {
   isRichType: boolean
   /** A text-backed rich type (json, csv, ...) shown as its source: the code
@@ -74,6 +76,9 @@ export const ContentRenderer = memo(function ContentRenderer({
   fileType: string
   /** Required for `image` / `pdf` (URL construction). Optional otherwise. */
   filePath?: string
+  /** Set only when `content` is a partial read of an html file: the panel's
+   *  count of the file's changes, which reloads the whole-file frame. */
+  htmlWholeFileRevision?: number
   /** Where a path chip in the markdown preview opens a file or folder. Absent, a
    *  chip falls back to revealing the path on the host. */
   onFileOpen?: (path: string, opts?: { line?: number; endLine?: number }) => void
@@ -180,7 +185,7 @@ export const ContentRenderer = memo(function ContentRenderer({
       {viewer && fileType === 'csv' && <CsvViewer content={content} filePath={filePath ?? ''} />}
       {viewer && fileType === 'json' && <JsonViewer content={content} />}
       {viewer && fileType === 'jsonl' && <JsonlViewer content={content} />}
-      {viewer && fileType === 'html' && <HtmlViewer content={content} />}
+      {viewer && fileType === 'html' && <HtmlViewer content={content} filePath={filePath} wholeFileRevision={htmlWholeFileRevision} />}
       {isRichType && fileType === 'pdf' && filePath && <PdfViewer filePath={filePath} />}
       {isRichType && fileType === 'sheet' && filePath && <SheetViewer filePath={filePath} />}
       {isRichType && fileType === 'office' && filePath && <OfficeViewer filePath={filePath} />}

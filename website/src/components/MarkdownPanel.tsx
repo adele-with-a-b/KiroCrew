@@ -432,7 +432,7 @@ export default memo(forwardRef<MarkdownPanelHandle, Props>(function MarkdownPane
   const displayContent = isMarkdown ? content : wrapCode(content, ext)
 
   const {
-    diskReadAbortRef, readFromDisk, setMissingOnDisk, partialCopy, partialCopyRef, bufferIsLastCopy,
+    diskReadAbortRef, readFromDisk, setMissingOnDisk, partialCopy, partialCopyRef, bufferIsLastCopy, wholeFileRevision, bumpWholeFile,
     lastCopy, downloadLastCopy, lastCopyCopied, copyLastCopy, evictFileRead, applyDiskRead, catchUpRef, adoptDisk,
     diskTickRef, diffStartTickRef, patchOwedTick,
   } = useMarkdownPanelDisk({ filePath, content, binary, partial, placeholder, liveWatch, editing, dirty, dirtyRef, active, qc, onDiskContent, onContentChange, reportActionError })
@@ -478,6 +478,10 @@ export default memo(forwardRef<MarkdownPanelHandle, Props>(function MarkdownPane
   const handleRefresh = useCallback(async () => {
     if (refreshing || dirty) return
     setRefreshing(true)
+    // A partial html buffer's frame loads the whole file itself; the re-read
+    // below cannot tell it whether the file changed past the cut, so a
+    // Refresh always reloads it.
+    bumpWholeFile()
     try {
       if (onRefresh) { await onRefresh(filePath) }
       else {
@@ -497,7 +501,7 @@ export default memo(forwardRef<MarkdownPanelHandle, Props>(function MarkdownPane
         applyDiskRead(disk)
       }
     } finally { setRefreshing(false) }
-  }, [filePath, onRefresh, refreshing, dirty, readFromDisk, applyDiskRead, reportActionError, setMissingOnDisk])
+  }, [filePath, onRefresh, refreshing, dirty, readFromDisk, applyDiskRead, reportActionError, setMissingOnDisk, bumpWholeFile])
 
   // Discard pending edits (matches the artifact detail page's Cancel button).
   // Re-reads the file from disk into the buffer, clearing dirty. Confirms first
@@ -1456,7 +1460,7 @@ export default memo(forwardRef<MarkdownPanelHandle, Props>(function MarkdownPane
             {!showBinaryCard && !zeroDiff && !diffUnavailable && !(diffChecking && diffData == null) && canTextDiff && (
               <DiffViewBlock flush sideBySide={diffSplit} diffMode={diffViewShown} fileName={fileName} originalContent={originalContent} content={comparedContent} gitPatch={gitPatch} lineNums={lineNums} wordWrap={wordWrap} collapseUnchanged={collapseUnchanged} autoLineByLine={active} />
             )}
-            {!showBinaryCard && !zeroDiff && (!diffUnavailable || editing) && !diffViewShown && <ImageCommentCtx.Provider value={imageCommentHost}><ContentRenderer flush isRichType={isRichType} richSource={canEditRich && editing} fileType={fileType} filePath={filePath} content={content} editing={editing} lang={lang} lineNums={lineNums} wordWrap={wordWrap} onChange={handleChange} onSave={handleSave}
+            {!showBinaryCard && !zeroDiff && (!diffUnavailable || editing) && !diffViewShown && <ImageCommentCtx.Provider value={imageCommentHost}><ContentRenderer flush isRichType={isRichType} richSource={canEditRich && editing} fileType={fileType} filePath={filePath} content={content} editing={editing} lang={lang} lineNums={lineNums} wordWrap={wordWrap} onChange={handleChange} onSave={handleSave} htmlWholeFileRevision={partialCopy ? wholeFileRevision : undefined}
               diffBase={diffMode && editing ? (originalContent || null) : undefined} diffSplit={diffSplit} diffExpandUnchanged={!collapseUnchanged} onLiveDiffDegraded={reportLiveDiffDegraded}
               previewRef={previewRef} displayContent={displayContent} isMarkdown={isMarkdown} onFileOpen={onFileOpen} onFolderOpen={onFolderOpen} markdownClassName="msg-content text-sm leading-relaxed" editorRef={setRevealEditor} /></ImageCommentCtx.Provider>}
           </div>
@@ -1553,7 +1557,7 @@ export default memo(forwardRef<MarkdownPanelHandle, Props>(function MarkdownPane
             )}
             {!showBinaryCard && diffNoBaselineText && !editing && <ZeroDiffNotice message={diffNoBaselineText} onExitDiff={readOnly ? undefined : toggleDiffMode} />}
             {!showBinaryCard && !zeroDiff && !diffUnavailable && !(diffChecking && diffData == null) && canTextDiff && <DiffViewBlock sideBySide={diffSplit} diffMode={diffViewShown} fileName={fileName} originalContent={originalContent} content={comparedContent} gitPatch={gitPatch} lineNums={lineNums} wordWrap={wordWrap} collapseUnchanged={collapseUnchanged} autoLineByLine={active} />}
-            {!showBinaryCard && !zeroDiff && (!diffUnavailable || editing) && !diffViewShown && <ImageCommentCtx.Provider value={imageCommentHost}><ContentRenderer isRichType={isRichType} richSource={canEditRich && editing} fileType={fileType} filePath={filePath} content={content} editing={editing} lang={lang} lineNums={lineNums} wordWrap={wordWrap} onChange={handleChange} onSave={handleSave}
+            {!showBinaryCard && !zeroDiff && (!diffUnavailable || editing) && !diffViewShown && <ImageCommentCtx.Provider value={imageCommentHost}><ContentRenderer isRichType={isRichType} richSource={canEditRich && editing} fileType={fileType} filePath={filePath} content={content} editing={editing} lang={lang} lineNums={lineNums} wordWrap={wordWrap} onChange={handleChange} onSave={handleSave} htmlWholeFileRevision={partialCopy ? wholeFileRevision : undefined}
               diffBase={diffMode && editing ? (originalContent || null) : undefined} diffSplit={diffSplit} diffExpandUnchanged={!collapseUnchanged} onLiveDiffDegraded={reportLiveDiffDegraded}
               previewRef={fullscreenPreviewRef} displayContent={displayContent} isMarkdown={isMarkdown} onFileOpen={fullscreenFileOpen} onFolderOpen={fullscreenFolderOpen} previewStyle={mdPreviewStyle} editorRef={setRevealEditor} /></ImageCommentCtx.Provider>}
           </div>
