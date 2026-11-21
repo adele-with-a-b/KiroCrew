@@ -71,7 +71,6 @@ from kiro_crew.hooks import (
 )
 from kiro_crew.mcp_oauth_projection import oauth_servers_in
 from kiro_crew.slack.outbound import PostedOptions
-from kiro_crew.steering_plan import entries_matching_a_file
 
 if TYPE_CHECKING:
     from kiro_crew.dashboard.chat_runner import (
@@ -85,6 +84,7 @@ if TYPE_CHECKING:
         agent_welcome_message,
         append_and_surface,
         capabilities_of,
+        entries_matching_a_file,
         expire_slack_options,
         logger,
         redact_credentials,
