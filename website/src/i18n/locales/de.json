@@ -338,7 +338,11 @@
     "tab_title_session": "{{session}} — {{panel}}",
     "release_notes_not_published_yet": "Die Versionshinweise für {{release}} sind noch nicht veröffentlicht. Stattdessen werden die Hinweise zu {{shown}} angezeigt.",
     "titlebar_menu_disabled_footer": "Einige Einträge sind hier nicht verfügbar. Die angezeigten Tastenkürzel funktionieren weiterhin.",
-    "titlebar_menu_refused_notice": "„{{item}}“ wurde nicht ausgeführt. Dieser Befehl ist hier derzeit nicht verfügbar."
+    "titlebar_menu_refused_notice": "„{{item}}“ wurde nicht ausgeführt. Dieser Befehl ist hier derzeit nicht verfügbar.",
+    "status_item_reading": "{{label}}: {{value}}",
+    "status_item_updated": "Aktualisiert {{ago}}",
+    "status_item_unknown_value": "?",
+    "status_item_failed": "{{label}} konnte nicht gelesen werden"
   },
   "appSdk": {
     "chatSession": {

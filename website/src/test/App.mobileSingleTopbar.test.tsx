@@ -155,7 +155,9 @@ describe('phone chat page: one top bar', () => {
       expect(cell).not.toHaveClass('tb-left')
       expect(cell).not.toHaveClass('tb-right')
     }
-    expect(flow[1]).toHaveAttribute('id', 'mobile-topbar-slot')
+    // The centre cell holds the page's slot, then the apps' status items in
+    // their own region beside it (AppStatusItems), never inside the slot.
+    expect(flow[1].firstElementChild).toHaveAttribute('id', 'mobile-topbar-slot')
   })
 
   it('hands the chat page a rail built from the nav registry, with Search pinned', async () => {

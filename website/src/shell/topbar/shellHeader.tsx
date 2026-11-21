@@ -3,6 +3,7 @@ import { TOPBAR_FOCUS_Z, TOPBAR_Z } from '../../lib/themeDecorLayer'
 import { kiroUsageSegment } from './kiroUsageReadout'
 import { metricsSegment, MetricsErrorNotice } from './metricsReadout'
 import { ResourcePostureChip } from './resourcePostureChip'
+import AppStatusItems from './AppStatusItems'
 import { Bell, Fullscreen, Loader2, Menu, Plug, Unplug } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { isWinElectron } from '../../lib/electron'
@@ -438,19 +439,27 @@ export function ShellHeader({ shell }: { shell: AppShell }) {
             glyph, so one icon never opens two different drawers. */}
         {isMobile && (mobileSingle
           ? (
-            <div id="mobile-topbar-slot" data-testid="mobile-topbar-slot" className="flex items-center gap-1 min-w-0 h-full">
-              {membersBarPending && (
-                <button
-                  type="button"
-                  className="mc-touch-hit p-2 rounded-md text-text hover:text-text-strong hover:bg-bg-hover cursor-pointer bg-transparent border-none shrink-0"
-                  onClick={toggleNav}
-                  aria-label={i18nT('app.open_menu')}
-                  aria-expanded={mobileNavOpen}
-                  data-testid="mobile-topbar-nav-toggle"
-                >
-                  <Menu size={18} />
-                </button>
-              )}
+            /* The page's slot, then the apps' status items in their own region
+               after it: the slot's title truncates first, and the items stay
+               out of the slot's two-control cell. */
+            <div className="flex items-center gap-1.5 min-w-0 h-full">
+              <div id="mobile-topbar-slot" data-testid="mobile-topbar-slot" className="flex flex-1 items-center gap-1 min-w-0 h-full">
+                {membersBarPending && (
+                  <button
+                    type="button"
+                    className="mc-touch-hit p-2 rounded-md text-text hover:text-text-strong hover:bg-bg-hover cursor-pointer bg-transparent border-none shrink-0"
+                    onClick={toggleNav}
+                    aria-label={i18nT('app.open_menu')}
+                    aria-expanded={mobileNavOpen}
+                    data-testid="mobile-topbar-nav-toggle"
+                  >
+                    <Menu size={18} />
+                  </button>
+                )}
+              </div>
+              <ErrorBoundary scope="app-status-items" fallback={null}>
+                <AppStatusItems size="sm" />
+              </ErrorBoundary>
             </div>
           )
           : <span aria-hidden="true" data-testid="topbar-centre-spacer" className="w-0" />
@@ -515,6 +524,14 @@ export function ShellHeader({ shell }: { shell: AppShell }) {
               (bell + the chat page's overflow menu) and a resource readout is
               not something a phone user acts on; the session-expired banner
               stays the offline signal there. */}
+          {/* App status items (`contributes.statusItems`): readouts an installed
+              app reports, left of the readout capsule they sit beside. One
+              control per app, and nothing at all while no app declares one. */}
+          {!isMobile && (
+            <ErrorBoundary scope="app-status-items" fallback={null}>
+              <AppStatusItems />
+            </ErrorBoundary>
+          )}
           {!isMobile && (() => {
             const offline = !connected && !gatewayConnecting
             // `gatewayStatusMsg` (useAppShell) is the announced cause; see its

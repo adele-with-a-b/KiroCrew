@@ -353,7 +353,11 @@
     "tab_title_session": "{{session}} — {{panel}}",
     "release_notes_not_published_yet": "Las notas de la versión {{release}} aún no se han publicado. Se muestran en su lugar las notas de {{shown}}.",
     "titlebar_menu_disabled_footer": "Algunos elementos no están disponibles aquí. Los atajos que se muestran siguen funcionando.",
-    "titlebar_menu_refused_notice": "\"{{item}}\" no se ejecutó. Este comando no está disponible aquí en este momento."
+    "titlebar_menu_refused_notice": "\"{{item}}\" no se ejecutó. Este comando no está disponible aquí en este momento.",
+    "status_item_reading": "{{label}}: {{value}}",
+    "status_item_updated": "Actualizado {{ago}}",
+    "status_item_unknown_value": "?",
+    "status_item_failed": "No se pudo leer {{label}}"
   },
   "appSdk": {
     "chatSession": {

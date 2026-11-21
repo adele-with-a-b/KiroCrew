@@ -368,7 +368,11 @@
     "tab_title_session": "{{session}} — {{panel}}",
     "release_notes_not_published_yet": "Заметки о выпуске {{release}} ещё не опубликованы. Вместо них показаны заметки о выпуске {{shown}}.",
     "titlebar_menu_disabled_footer": "Некоторые пункты здесь недоступны. Показанные сочетания клавиш по-прежнему работают.",
-    "titlebar_menu_refused_notice": "«{{item}}» не выполнено. Эта команда сейчас здесь недоступна."
+    "titlebar_menu_refused_notice": "«{{item}}» не выполнено. Эта команда сейчас здесь недоступна.",
+    "status_item_reading": "{{label}}: {{value}}",
+    "status_item_updated": "Обновлено {{ago}}",
+    "status_item_unknown_value": "?",
+    "status_item_failed": "Не удалось прочитать {{label}}"
   },
   "appSdk": {
     "chatSession": {

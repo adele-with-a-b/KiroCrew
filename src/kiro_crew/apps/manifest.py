@@ -930,6 +930,8 @@ class AppManifest:
             or self.contributes.linkOpen
             or self.contributes.composerActions
             or self.contributes.selectionActions
+            # A status item's `statusPath` decides which app route the top bar polls.
+            or self.contributes.statusItems
         ):
             # A contributed command's `prompt` is sent to an agent with tools as if
             # the reader typed it, and `autoSend` fires it without a further

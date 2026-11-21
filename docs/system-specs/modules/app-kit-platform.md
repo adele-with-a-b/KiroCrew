@@ -6016,6 +6016,48 @@ Writers: `apps/app_web_origin.py`, `apps/manifest_sections.py`, `apps/manifest.p
 `website/src/app-sdk/sdkLevel.ts`, `apps/app_sdk_level.py`.
 Tests: `test/test_app_web_origin.py`, `website/src/app-sdk/webOrigin.test.ts`.
 
+## 18l. `contributes.statusItems`: host-drawn readouts in the top bar
+
+An app may put a short live value in the top bar on every page: the desktop bar,
+left of the readout capsule, and the phone chat header, after the title. The host
+draws it; the app supplies only data.
+
+- **Manifest** (`StatusItemContribution` in `apps/manifest_status_items.py`, parsed
+  into `Contributes` and refused by its `validate`): at most 2 per app; `id`
+  kebab-case and unique, `label` (non-blank, at most 40 characters; the accessible
+  name and the card heading, never drawn on the pill), optional `icon` (a name from
+  the app icon set, `apps/appIcons.tsx`), and a required `statusPath`. A non-array
+  value or a non-object entry fails the install rather than vanishing. The id and
+  route grammar is shared with session controls in `apps/manifest_route_grammar.py`,
+  so the two cannot accept different routes; a `//host` prefix is refused, never
+  stripped. The block is in the signing payload, so repointing a signed app's
+  route breaks its signature.
+- **Poll** (`website/src/hooks/useAppStatusItems.ts`): items come from the shared
+  `['apps']` list (enabled apps only), are re-checked against the same allowlist
+  (`safeStatusPath`), sorted by `<appName>:<id>` in byte order and capped at 4
+  across all apps. Each is a React Query GET through `api.appSessionStatus` with no
+  parameters, at the host-built route base (`/apps/<app>/api/` for a
+  process-backed app, `/api/apps/<app>/` for hooks), every 60 seconds, never
+  retried. The answer `{text, tone, tooltip}` is untrusted: `text` and `tooltip`
+  lose the Unicode C category and line/paragraph separators and are cut by code
+  point (24 and 200); `tone` outside `ok|warn|danger|muted` is `muted`; an empty
+  `text` hides the pill.
+- **Draw** (`website/src/shell/topbar/AppStatusItems.tsx`): each app's items are
+  ONE button, so the bar gains one control per app; a click, tap or mouse hover
+  opens one card with each item's "label: text", its tooltip, and when it was
+  last read. The tone picks a theme token (`--ok-text`, `--warn`, `--danger`,
+  `--muted-strong`); no app colour, markup or glyph reaches the bar. On the phone
+  the items sit in their own region beside `#mobile-topbar-slot`, outside the
+  slot's two-control cell.
+- **Failure.** The app list failing draws nothing in the bar (that list's own
+  pages report it; a top bar on every page is not its error surface). An item
+  whose route fails keeps its pill, muted with `?`, and its card row renders the
+  failure through `ErrorNotice` with the hand-off.
+
+Writers: `apps/manifest_status_items.py`, `apps/manifest_route_grammar.py`,
+`apps/manifest_contributes.py`, `website/src/hooks/useAppStatusItems.ts`,
+`website/src/shell/topbar/AppStatusItems.tsx`, `website/src/shell/topbar/shellHeader.tsx`.
+
 ## 19. Spec Builder's backend is composed by lifecycle owner
 
 Spec Builder's backend carries more orchestration than a typical app: agent turns
