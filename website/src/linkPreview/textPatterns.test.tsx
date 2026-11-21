@@ -418,6 +418,19 @@ describe('textPatterns: rendering', () => {
     expect(spans(container)).toEqual([])
   })
 
+  it("carries each pattern's tone on its spans, and drops a tone that is not a theme token", async () => {
+    use([{ ...TICKET, tone: 'info' }, { ...PERSON, tone: '#ff0000' }])
+    const { container } = render(<MarkdownRenderer textPreviews content="ask alice@ about TK-1234" />)
+    await settle()
+    const tones = [...container.querySelectorAll('[data-link-preview-text]')].map((s) => [s.textContent, s.getAttribute('data-tone')])
+    expect(tones).toEqual([['alice@', null], ['TK-1234', 'info']])
+  })
+
+  it('a tone is cosmetic: an approved pattern stays approved whatever its tone', () => {
+    const granted = resolveLinkPreviews([{ ...app([{ ...TICKET, tone: 'warn' }]), linkPreviewGrant: { hosts: [], textPatterns: ['ticket::' + TICKET.pattern] } }])
+    expect(granted[0]?.textPatterns).toEqual([{ ...TICKET, tone: 'warn' }])
+  })
+
   it('re-renders an already painted message when patterns arrive', async () => {
     const { container } = render(<MarkdownRenderer textPreviews content="TK-1234" />)
     expect(spans(container)).toEqual([])

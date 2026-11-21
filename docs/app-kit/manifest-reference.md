@@ -1108,7 +1108,7 @@ open the app's card:
 
 ```json
 "textPatterns": [
-  { "id": "ticket", "pattern": "(?<![\\w-])(TK-\\d{4,})(?![\\w-])", "flags": "g" },
+  { "id": "ticket", "pattern": "(?<![\\w-])(TK-\\d{4,})(?![\\w-])", "flags": "g", "tone": "info" },
   { "id": "team", "pattern": "(?<![\\w.-])(team\\.[a-z0-9]+)", "flags": "gi", "defaultOff": true }
 ]
 ```
@@ -1119,11 +1119,16 @@ open the app's card:
 | `flags` | Optional. A subset of `giu`; `g` is implied |
 | `id` | Optional slug the module names in `ctx.setTextPatternsOff` |
 | `defaultOff` | Optional. Not drawn until the module reports it on |
+| `tone` | Optional. The span's colour, one of `accent`, `info`, `ok`, `warn`, `danger`, `muted`: the theme's token of that name |
 
 - In chat messages only, the host wraps each match in
   `<span class="link-preview-text" data-link-preview-text>`. It is never a link,
   and never drawn inside code, inline code, math, raw HTML or an existing link. A
   token an edition's autolink rule already linked stays that link.
+- A `tone` adds `data-tone="<tone>"` to the span, and the host colours it with that
+  theme token, so it follows the theme. An app supplies no CSS of its own. Changing
+  a tone is cosmetic: it is signed with the manifest but does not ask for consent
+  again, because what the pattern can reach is unchanged.
 - Hovering the span calls `show({ text, rect })` on the app whose pattern matches
   the span's whole text. The span carries no owner: the host re-derives it from the
   text, so a span written in raw message HTML reaches nothing a pattern would not.

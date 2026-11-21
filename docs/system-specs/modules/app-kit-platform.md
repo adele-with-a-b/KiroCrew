@@ -5264,6 +5264,10 @@ The boundary:
   dashboard thread only compiles a pattern, which runs nothing. No static regex
   check is made: shape analysis cannot be complete, so the runtime budget is the
   guarantee.
+  A pattern's optional `tone` (`TEXT_PATTERN_TONES`, one list in
+  `manifest_contributes.py` and `textPatterns.ts`) becomes the span's `data-tone`,
+  coloured from the theme token of that name in `chat-transcript.css`; it is left
+  out of the `pattern_grant` entry, so a tone change never stages re-consent.
 
 Writers: `apps/app_frame.py`, `apps/link_preview_grants.py`, `apps/app_hosts.py`,
 `apps/point_grants.py`, `apps/manager_records.py` (the staged families),
