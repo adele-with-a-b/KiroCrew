@@ -487,6 +487,55 @@ describe('textPatterns: hover', () => {
     expect(Object.values(show ?? {}).some((v) => v instanceof Node)).toBe(false)
   })
 
+  const touch = { pointerType: 'touch' }
+  /** A finger's tap on `el`, as a phone reports it: over, down, up, out. */
+  async function tap(el: HTMLElement) {
+    fireEvent.pointerOver(el, touch)
+    fireEvent.pointerDown(el, touch)
+    fireEvent.pointerUp(el, touch)
+    fireEvent.pointerOut(el, touch)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    for (const f of framesIn()) fromFrame(f, 'ready')
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+  }
+  async function spanFor(content: string) {
+    await mountLayer([app([PERSON])])
+    await waitFor(() => expect(hasTextPatterns()).toBe(true), { timeout: 5000 })
+    const { container } = render(<MarkdownRenderer textPreviews content={content} />)
+    await settle()
+    return container
+  }
+
+  it('on touch a tap opens the card at once, and lifting the finger does not close it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const container = await spanFor('ping alice@ now')
+    await tap(container.querySelector('[data-link-preview-text]') as HTMLElement)
+    const [frame] = framesIn()
+    expect(sentTo(frame).map((m) => m.type).filter((t) => t === 'show' || t === 'leave')).toEqual(['show'])
+    expect(sentTo(frame).find((m) => m.type === 'show')).toMatchObject({ text: 'alice@' })
+  })
+
+  it('on touch a second tap on the span, or a tap anywhere else, closes the card', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const container = await spanFor('ping alice@ now')
+    const span = container.querySelector('[data-link-preview-text]') as HTMLElement
+    await tap(span)
+    const [frame] = framesIn()
+    await tap(span)
+    expect(sentTo(frame).map((m) => m.type).filter((t) => t === 'show' || t === 'leave')).toEqual(['show', 'leave'])
+    await tap(span)
+    await tap(container.querySelector('[data-message-body]') as HTMLElement)
+    expect(sentTo(frame).map((m) => m.type).filter((t) => t === 'show' || t === 'leave')).toEqual(['show', 'leave', 'show', 'leave'])
+  })
+
+  it('on touch a hover alone never opens a card', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const container = await spanFor('ping alice@ now')
+    fireEvent.pointerOver(container.querySelector('[data-link-preview-text]') as HTMLElement, touch)
+    await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    expect(framesIn()).toEqual([])
+  })
+
   it('the span goes to the app whose pattern matched, even when another app claims the same host first', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     await mountLayer([

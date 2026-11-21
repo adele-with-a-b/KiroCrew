@@ -747,6 +747,18 @@ rewrapped transcript unpinned. The pinned prompt at the top (`usePinnedPrompt`) 
 its card until that place has settled (`slideSettling`): read mid-reflow, its prompt
 measured taller for one frame, failed the tall-prompt gate and the card blinked out.
 
+## A link-preview span opens on a tap
+
+A finger has no hover, and a tap's own `pointerout` (sent when the finger lifts)
+would end a hover before its delay ran out, so on touch `LinkPreviewLayer` ignores
+`pointerover` / `pointerout` / `pointermove` and listens for a touch `pointerup`
+instead. A tap on a plain-text span (`data-link-preview-text`) opens its card with
+no delay. The next tap closes it, on the span or anywhere else in this document
+(not in the card's own frame, which never reaches it). A tap on a link keeps its
+native meaning and follows it. A drag that scrolls ends in `pointercancel`, so it
+never opens or closes a card. It is `pointerup` and not `click` because iOS does
+not send a click to a non-clickable element through a document listener.
+
 ## A panel that gains a gesture must be bound LIVE to its offset
 
 A panel moved only by a tap may serialize its offset at render time —

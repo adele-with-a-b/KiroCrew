@@ -1135,7 +1135,9 @@ open the app's card:
   a tone is cosmetic: it is signed with the manifest but does not ask for consent
   again, because what the pattern can reach is unchanged.
 - Hovering the span calls `show({ text, rect })` on the app whose pattern matches
-  the span's whole text. The span carries no owner: the host re-derives it from the
+  the span's whole text. On touch, where nothing hovers, a tap on the span calls it
+  at once, and the card stays until the next tap (on the span again, or anywhere
+  else in the dashboard); a tap on a link still follows the link. The span carries no owner: the host re-derives it from the
   text, so a span written in raw message HTML reaches nothing a pattern would not.
 - `ctx.setTextPatternsOff(ids)` reports which ids the app's own settings turn off.
   The host remembers it across reloads, so the first paint after a reload already
