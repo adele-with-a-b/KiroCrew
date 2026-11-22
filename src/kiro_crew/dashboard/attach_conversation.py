@@ -90,26 +90,40 @@ async def api_chat_slot_attach_conversation(request: web.Request) -> web.Respons
     try:
         sid = str(uuid.UUID(str(raw)))
     except ValueError:
-        return web.json_response({"error": "session_id must be a UUID"}, status=400)
+        return web.json_response(
+            {"error": "session_id must be a UUID", "code": "invalid_session_id"}, status=400
+        )
     if str(raw).lower() != sid:
-        return web.json_response({"error": "session_id must be a UUID"}, status=400)
+        return web.json_response(
+            {"error": "session_id must be a UUID", "code": "invalid_session_id"}, status=400
+        )
     path, cwd_or_reason = find_transcript(sid)
     if path is None:
-        return web.json_response({"error": cwd_or_reason}, status=404)
+        return web.json_response(
+            {"error": cwd_or_reason, "code": "transcript_not_found"}, status=404
+        )
     if not await asyncio.to_thread(
         _slot_starts_on, effective_session_key(slot), ACP_BACKEND_CLAUDE
     ):
-        return web.json_response({"error": "this chat does not run on Claude Code"}, status=409)
+        return web.json_response(
+            {"error": "this chat does not run on Claude Code", "code": "not_claude_chat"},
+            status=409,
+        )
     sessions = getattr(state, "sessions", None)
     if sessions is None:
-        return web.json_response({"error": "no live session manager"}, status=503)
+        return web.json_response(
+            {"error": "no live session manager", "code": "no_session_manager"}, status=503
+        )
     async with slot._lock:
         if state._slots.get(name) is not slot:
             return slot_not_found()
         key = effective_session_key(slot)
         if sessions.mapped_sid(key):
             return web.json_response(
-                {"error": "this chat already has a conversation; attach to a new chat"},
+                {
+                    "error": "this chat already has a conversation; attach to a new chat",
+                    "code": "chat_has_conversation",
+                },
                 status=409,
             )
         sessions.seed_conversation(key, sid, provider=PROVIDER_LABEL_CLAUDE, cwd=cwd_or_reason)
