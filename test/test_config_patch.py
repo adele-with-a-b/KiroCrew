@@ -110,11 +110,16 @@ def _arm(app: web.Application, state: SimpleNamespace) -> None:
 
 def _live_state(**overrides) -> SimpleNamespace:
     """The slice of ``DashboardState`` the config appliers reach for."""
-    sessions = MagicMock(spec=["refresh_defaults", "reload_provider_factory"])
+    sessions = MagicMock(
+        spec=["refresh_defaults", "reload_provider_factory", "get_provider", "reset"]
+    )
     sessions.refresh_defaults = AsyncMock()
     sessions.reload_provider_factory = AsyncMock()
+    sessions.get_provider = MagicMock(return_value=None)
+    sessions.reset = AsyncMock()
     base = dict(
         sessions=sessions,
+        _background_tasks=set(),
         subagents=MagicMock(spec=["update_completion_keep"]),
         workflow_service=None,
         channel_manager=None,

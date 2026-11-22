@@ -500,11 +500,10 @@ def _dedupe_candidate(
 
 async def _dedupe_judge(self: HistoryConsolidator, prompt: str) -> str:
     """One cheap metadata-dedupe judge turn on the shared background session.
-    Runs on the background role model ``background_turn`` applies to every
-    turn on that session, never a model of its own: the ``BACKGROUND_KEY``
-    session is shared with other lightweight jobs and a switch of its own
-    would leak into later turns. Each judge ends on a fresh conversation.
-    Fail-open (returns "" on any error)."""
+    Runs on that session's existing model — no per-turn
+    ``set_model`` switch, because the ``BACKGROUND_KEY`` session is shared
+    with other lightweight jobs and a switch would leak into later
+    turns. Each judge ends on a fresh conversation. Fail-open (returns "" on any error)."""
     if not self._sessions:
         return ""
     try:

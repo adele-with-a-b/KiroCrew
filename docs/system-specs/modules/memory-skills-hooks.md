@@ -105,9 +105,9 @@ an edited or shortened prefix refuses acknowledgement. Receipts are not pruned.
   operations delegate to its admitted SQLite handle; V1 keeps its file layout.
 - `history_consolidation_pass.py` (`HistoryConsolidator._consolidate`, bound
   through the `history_consolidation.py` facade) publishes a member span
-  atomically and recovers its receipt. Its model turns run through
-  `background_turn` on the `kirocrew-lite` agent, so each one runs on
-  `agent.role_models.background` when that names a model
+  atomically and recovers its receipt. Its model turns run on the warm
+  `_consolidate` runtime of the `kirocrew-lite` agent, which a change of
+  `agent.role_models.background` restarts so the next turn runs on the new pin
   ([model-selection](../common/model-selection.md)). `context.py` and `member_essential_context.py` assemble manual context
   from the captured member, with an optional SQLite learned-rule component.
 - `member_memory_backup.py` and `memory_startup.py` coordinate ordinary backup,

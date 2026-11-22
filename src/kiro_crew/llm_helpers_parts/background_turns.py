@@ -544,6 +544,22 @@ async def _rewrite_lite_spec(sessions: Any) -> None:
         _lite_rewrites["running"] -= 1
 
 
+async def reset_after_background_model_change(sessions: Any) -> None:
+    """Reset ``_bg`` and ``_consolidate`` once ``agent.role_models.background`` changed.
+
+    Both runtimes outlive a turn and keep the model they started on: each fresh
+    conversation reopens on it, so a rebuilt ``kirocrew-lite`` spec never reached
+    them and a new pin only took effect at the next restart. A reset makes the next
+    turn start the runtime on the rebuilt spec's model, the way a spec repair does;
+    a turn running on one ends. One that cannot be reset stays in
+    ``_lite_resets_failed``, so its next turn resets it before running.
+    """
+    from kiro_crew.agent import reset_after_spec_repair
+    from kiro_crew.session import BACKGROUND_KEY, CONSOLIDATE_KEY  # circular import
+
+    await reset_after_spec_repair(sessions, (BACKGROUND_KEY, CONSOLIDATE_KEY), _lite_resets_failed)
+
+
 def _background_spawn_backend(sessions: Any) -> str | None:
     """The backend a background session on *sessions* starts under, or ``None``.
 
@@ -610,55 +626,6 @@ async def _lite_spec_unconfirmed(
     return confirmed is not True
 
 
-async def _background_role_pin() -> str:
-    """``agent.role_models.background`` when it names a model, else ``""``.
-
-    ``"auto"`` (the unpinned default) answers ``""``: the session keeps the model it
-    started on, as it did before the pin was read here. The live snapshot is read
-    when the process has a watcher, so a change applies on the next turn; otherwise
-    the file, off the loop. Never raises.
-    """
-    from kiro_crew.config.sections_defaults import DEFAULT_MODEL
-
-    try:
-        from kiro_crew.config import live
-
-        cfg = live.snapshot()
-        if cfg is None:
-            from kiro_crew.config.loader import KiroCrewConfig
-
-            cfg = await asyncio.to_thread(KiroCrewConfig.load)
-        model = str(cfg.agent.resolve_model("background") or "")
-    except Exception:
-        logger.debug("background role model unreadable", exc_info=True)
-        return ""
-    return "" if model == DEFAULT_MODEL else model
-
-
-async def _apply_background_role_model(client: Any, task: str) -> None:
-    """Switch the background session to the background role's pinned model.
-
-    A warm runtime (``_bg``, ``_consolidate``) keeps the model it was started on, and
-    each fresh conversation reopens on that model, so a pin set after the start never
-    reached it. The switch is best-effort: a model the backend refuses leaves the
-    turn on the session's current model, with a warning naming the task.
-    """
-    model = await _background_role_pin()
-    set_model = getattr(client, "set_model", None)
-    if not model or not callable(set_model):
-        return
-    try:
-        await set_model(model)
-    except Exception:
-        logger.warning(
-            "background turn task=%s: could not switch to the background role model %r; "
-            "the turn runs on the session's current model",
-            task,
-            model,
-            exc_info=True,
-        )
-
-
 @asynccontextmanager
 async def background_turn(
     sessions: Any,
@@ -684,10 +651,6 @@ async def background_turn(
     ``agent`` is forwarded to ``get_or_create`` ONLY when supplied: it decides
     what the session is created AS, so a default here would change that for
     callers that pass none. The recorded row still names the background agent.
-    A turn on the background agent first switches the session to
-    ``agent.role_models.background`` when that names a model
-    (:func:`_apply_background_role_model`), so a pin reaches a runtime started
-    before it was set.
 
     ``fresh_conversation`` ends the turn's conversation before the permit is
     released, so the next caller on the key starts from an empty context (see
@@ -853,9 +816,6 @@ async def background_turn(
     # so this is the only duration a background row can carry.
     turn_started = time.monotonic()
     try:
-        if resolved_agent == BACKGROUND_AGENT:
-            # Inside the try: a cancellation during the switch still releases.
-            await _apply_background_role_model(client, task)
         with trace_surfaces.root(trace_surfaces.TRIGGER_BACKGROUND):
             yield client
     finally:

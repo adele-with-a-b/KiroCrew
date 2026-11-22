@@ -131,6 +131,20 @@ def _register_config_watch(
                 "refused, or the existing spec could not be read)"
             )
         logger.info("agent.role_models.background changed -- background agent specs rebuilt")
+        # The warm background runtimes keep the model they started on, so the
+        # rebuilt spec reaches them only once they are started again. Off the
+        # watcher's cycle, like the provider switch: each reset may take longer
+        # than the applier bound, and a retried applier would reset twice.
+        from kiro_crew.llm_helpers_parts.background_turns import (
+            reset_after_background_model_change,
+        )
+
+        task = asyncio.create_task(
+            reset_after_background_model_change(state.sessions),
+            name="background-model-reset",
+        )
+        state._background_tasks.add(task)
+        task.add_done_callback(state._background_tasks.discard)
 
     default_model_failure_notified = False
 
