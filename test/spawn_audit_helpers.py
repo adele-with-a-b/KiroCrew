@@ -567,6 +567,14 @@ BENIGN_PACKAGE_SPAWNS: frozenset[str] = frozenset(
         # request but the page refused, no listening port, and its process group killed
         # at the end.
         "dashboard_verify.py::_spawn",
+        # The chat keeper. ``main`` is ``asyncio.run`` driving its own loop (no spawn),
+        # and ``start`` runs the argv the gateway's launch tail built and already
+        # wrapped in the OS sandbox (``acp.launch.launch`` puts the keeper in front of
+        # ``sandbox.wrap_argv_async``'s output), handed down on the keeper's own command
+        # line. It runs that argv unchanged, in the environment the launch scrubbed,
+        # and adds no argument of its own.
+        "chat_keeper/keeper.py::main",
+        "chat_keeper/keeper.py::start",
         "cli_knowledge.py::_consolidate_cmd",
         "cli.py::_ensure_node",
         "cli.py::_node_ok",
@@ -1254,7 +1262,7 @@ BENIGN_PACKAGE_SPAWNS: frozenset[str] = frozenset(
         "service/linux_install.py::_write_unit_via_sudo",
         "service/macos.py::_launchctl",
         "session_pid.py::kill_orphan_mcps",
-        "session_pid_orphan_scan.py::_our_orphan_pids",
+        "session_pid_orphan_scan.py::_reparented_pids",
         "session_pid_orphan_scan.py::find_orphan_mcp_candidates",
         # The abandoned-agent-scope reaper's two systemctl calls are gateway
         # maintenance against this install's own units, not agent work. The binary

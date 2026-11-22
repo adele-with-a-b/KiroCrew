@@ -10,6 +10,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from kiro_crew import resource_status
+from kiro_crew.acp.client_keeper import KeeperHeldElsewhere
 from kiro_crew.agent_capabilities import CapabilityError
 from kiro_crew.agent_sdk.tool_search import resume_takes_tool_search_replay
 from kiro_crew.config.loader import normalize_agent_model
@@ -1039,7 +1040,12 @@ async def _spawn_admitted_prefetch(
                 **_app_allocation_kwargs(slot),
                 **_slot_backend_allocation_kwargs(slot),
             )
-        except (SpeculativeResumeRefused, SessionClosingError, SessionEndingError):
+        except (
+            SpeculativeResumeRefused,
+            SessionClosingError,
+            SessionEndingError,
+            KeeperHeldElsewhere,
+        ):
             # A refusal, a gateway shutdown, or a key being ended: no agent
             # start was attempted and failed, so none of them is counted.
             raise
@@ -1070,6 +1076,10 @@ async def _spawn_admitted_prefetch(
         # before it reached its spawn door (``get_or_create``): that
         # message starts the agent itself.
         logger.info("Eager spawn: %s left to first turn (refused)", session_key)
+        return
+    except KeeperHeldElsewhere:
+        # Another start here is adopting the chat's kept turn: that start serves it.
+        logger.info("Eager spawn: %s left to the start adopting its chat keeper", session_key)
         return
     if is_new and not resumed and not slot.blocks_reads:
         # The first message's build reads every recent-history file (about 75 in a

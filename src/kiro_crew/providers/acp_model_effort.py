@@ -975,6 +975,11 @@ async def _apply_initial_effort(self: AcpProvider) -> None:
     """
     if not self.capabilities.effort_via_config_option:
         return
+    from kiro_crew.acp import client_keeper
+
+    if client_keeper.adopted(self._client):
+        # The kept session runs at the level its launching gateway set.
+        return
     level = self._resolve_effort()
     if not level:
         return

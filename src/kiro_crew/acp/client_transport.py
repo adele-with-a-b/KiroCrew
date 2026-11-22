@@ -33,6 +33,7 @@ from kiro_crew import kiro_sandbox_conflict
 from kiro_crew.acp import raw_sdk_tasks, transport_framing
 from kiro_crew.acp._dispatch import DRAIN_YIELD_AFTER_S, _loggable_request_id
 from kiro_crew.acp._frame_record import record_frame, record_sent_frame
+from kiro_crew.acp.client_keeper import ack_safe_point
 from kiro_crew.acp.client_spawn_env import _exit_origin
 from kiro_crew.acp.client_timeouts import (
     _DRAIN_DURATION,
@@ -700,6 +701,9 @@ def _agent_turn_pending(self: AcpClient) -> bool:
 
 def _maybe_start_idle_reader(self: AcpClient) -> None:
     """Read stdout while no turn or request does, so a turn the agent starts is seen."""
+    if not self._stdout_claims and self._turn_done.is_set():
+        # Nothing reads and nothing is held: a chat keeper may drop what was consumed.
+        ack_safe_point(self)
     if (
         self.on_agent_turn is None
         or self._stdout_claims
@@ -868,6 +872,12 @@ async def _read_message(
             error=data.get("error"),
             params=data.get("params"),
         )
+        # A chat keeper numbers each line; the frame keeps its number so a detach
+        # acks only below a frame still unhandled (``acp.client_keeper``). A plain
+        # pipe's reader has no ``last_consumed_line``.
+        keeper_seq = getattr(getattr(self._process, "stdout", None), "last_consumed_line", None)
+        if keeper_seq is not None:
+            msg._keeper_seq = keeper_seq  # type: ignore[attr-defined]
         if raw_sdk_tasks.take(self, msg):
             now = time.monotonic()
             if now >= deadline:

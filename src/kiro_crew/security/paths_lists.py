@@ -269,6 +269,9 @@ _CREW_SECRET_LEAVES: list[str] = [
     # spawned shell's `open()` never routes through this gate.
     "quarantined-clones",
     "vouched-executions",  # member-store vouches; also sandbox-masked
+    # Chat keepers' records, secrets and sockets (``kiro_crew.chat_keeper``): a key is
+    # what attaches to a keeper and drives its chat's adapter. Also sandbox-masked.
+    "chat-keepers",
     "browser-cookies.txt",
     "playwright-storage-state.json",
     # The refused-inbound spool (messaging/inbound_spool.py). Not a secret: it is

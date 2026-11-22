@@ -34,6 +34,7 @@ adapter module under :mod:`kiro_crew.acp.harness`; nothing here names one host.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import json
 import logging
@@ -973,6 +974,11 @@ class LaunchRequest:
     #: read it here. A driver whose harness verifies its config before the spawn
     #: passes the snapshot that verification used, so both see the same values.
     agent_env: Mapping[str, str] | None = None
+    #: A ``chat_keeper.spawn.KeeperSpawn``, or None. When set, the keeper is put in
+    #: front of the sandbox-wrapped argv (inside the cgroup scope) and the created
+    #: launcher is turned into the attached keeper the driver gets as its process
+    #: (runtime-ownership.md, "Chats that outlive the gateway").
+    keeper: Any = None
 
 
 @dataclass(frozen=True)
@@ -1156,6 +1162,19 @@ async def launch(host: LaunchHost, request: LaunchRequest, tools: LaunchTools) -
             tools.forward_ssh_auth_sock, request.sandbox_mode, tuple(request.extra_hidden_dirs)
         )
     forward_applied = [forward_ssh_auth_sock]
+    keeper_sandbox = ""
+    if request.keeper is not None:
+        # Read before the wrap: a floor raised in between leaves the record naming
+        # the looser sandbox, which the next gateway refuses rather than adopts.
+        from kiro_crew.chat_keeper.spawn import sandbox_fingerprint
+
+        keeper_sandbox = await asyncio.to_thread(
+            sandbox_fingerprint,
+            request.sandbox_mode,
+            tuple(request.extra_hidden_dirs),
+            tuple(request.extra_expose_files),
+            request.internal_sandbox,
+        )
     argv, host._sandbox_cleanup = await tools.wrap_argv_async(
         argv,
         mode=request.sandbox_mode,
@@ -1186,6 +1205,10 @@ async def launch(host: LaunchHost, request: LaunchRequest, tools: LaunchTools) -
     # is judged on it, not on a later config or floor.
     forward_ssh_auth_sock = forward_applied[-1]
     host._ssh_auth_sock_forwarded = forward_ssh_auth_sock
+    # A chat keeper goes in front of the sandbox-wrapped argv: it runs outside the
+    # sandbox (it binds its socket in a masked leaf) and inside the scope below.
+    if request.keeper is not None:
+        argv = request.keeper.wrap(argv)
     # cgroup v2 scope (OUTERMOST): bound this agent + all its MCP-server / tool
     # descendants with pids.max (fork bomb) + memory.max (RSS balloon). No-op +
     # loud warning where cgroup delegation is unavailable. --scope execs into the
@@ -1347,6 +1370,24 @@ async def launch(host: LaunchHost, request: LaunchRequest, tools: LaunchTools) -
         await host._discard_bound_workspace()
         host._discard_sandbox_cleanup()
         raise
+    if request.keeper is not None:
+        # The created process is the keeper's launcher; the driver's process is the
+        # keeper it attached to. A keeper that did not come up is ended by
+        # ``finish`` itself, and the launcher here.
+        from kiro_crew.chat_keeper.spawn import launch_state
+
+        # What this launch set on its client, so a gateway that adopts the keeper
+        # restores it, and the sandbox it ran under, so a changed one is not adopted.
+        request.keeper.launch = launch_state(host, keeper_sandbox)
+        try:
+            process = await request.keeper.finish(process)
+        except BaseException:
+            if process.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    process.kill()
+            await host._discard_bound_workspace()
+            host._discard_sandbox_cleanup()
+            raise
     # The live-agent confinement check trusts a namespace launcher only from this
     # record: the launcher stays in the host namespaces by design, so its command
     # line cannot be what proves Crew started it. The recorder checks the wrap's

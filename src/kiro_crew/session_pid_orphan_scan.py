@@ -224,7 +224,23 @@ def _our_orphan_pids() -> list[int]:
     POSIX-only: relies on ``os.getuid`` and either ``/proc`` (Linux) or ``ps``
     (macOS). On Windows there is no init/systemd concept and no ``os.getuid``;
     the orphan-sweep is inactive there and returns an empty list.
+
+    A live chat keeper is never one of them, though it is reparented to init by
+    design: it is known by its record (pid and start identity,
+    ``chat_keeper.records.live_keeper_pids``) and is ended only by its holder, its own
+    timer or the adopt pass (runtime-ownership.md, "Chats that outlive the gateway").
     """
+    found = _reparented_pids()
+    if not found:
+        return found
+    from kiro_crew.chat_keeper.records import live_keeper_pids
+
+    keepers = live_keeper_pids()
+    return [pid for pid in found if pid not in keepers] if keepers else found
+
+
+def _reparented_pids() -> list[int]:
+    """The reparented half of :func:`_our_orphan_pids`, before the keeper filter."""
     if platform_compat.IS_WINDOWS:
         return []
     my_uid = os.getuid()

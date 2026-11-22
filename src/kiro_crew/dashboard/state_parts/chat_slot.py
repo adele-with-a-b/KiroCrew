@@ -341,6 +341,7 @@ class _ChatSlot:
         "_turn_in_flight_generation",
         "_turn_in_flight_prompt",
         "_restored_turn_marker",
+        "_restart_interruption_owed",
         "_active_turn_session_key",
         "_responsive",
         "_side",
@@ -541,6 +542,9 @@ class _ChatSlot:
     # What a restore found in a marker that outlived its process, kept after the
     # marker itself is cleared (``slot_persistence.turn_marker``); None otherwise.
     _restored_turn_marker: dict[str, Any] | None
+    # The restore held back this chat's "interrupted" row for a kept turn
+    # (``slot_persistence.turn_marker``).
+    _restart_interruption_owed: bool
     _buffers: SlotBufferCoordinator
     _queue_repository: SlotQueueRepository
     _closing: int

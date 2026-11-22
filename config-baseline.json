@@ -80,6 +80,7 @@
           "deepseek": false
         },
         "agent_started_turns": true,
+        "chat_keeper": false,
         "max_subagents": 0,
         "max_stop_hook_nudges": 100,
         "spawn_min_memory_gb": 2.0,
@@ -1303,6 +1304,20 @@
       "hasChildren": false,
       "enumValues": null,
       "defaultValue": true
+    },
+    {
+      "path": "agent.chat_keeper",
+      "kind": "core",
+      "type": "boolean",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "label": "Chat Keeper",
+      "help": "Keep a claude chat running when the gateway restarts (an update, kirocrew restart, a crash): its reply in progress, background agents and background commands carry on, and the restarted gateway shows the chat live again. Each chat's agent runs under a small keeper process that outlives the gateway. Needs Agent-started Turns on. macOS and Linux only. Applies to chats started after the change.",
+      "hasChildren": false,
+      "enumValues": null,
+      "defaultValue": false
     },
     {
       "path": "agent.max_subagents",

@@ -1,0 +1,2 @@
++3
+The chat keepers directory joins the file-tool fence: each keeper key there attaches to a keeper and drives its chat's adapter, so no agent file tool may read or write it. It is sandbox-masked as well.

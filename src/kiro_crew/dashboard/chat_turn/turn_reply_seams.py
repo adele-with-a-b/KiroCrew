@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         save_slot_off_loop,
         session_directive,
     )
+    from kiro_crew.dashboard.chat_turn.agent_started import REPLY_CARRIES_ON_META_KEY
     from kiro_crew.dashboard.chat_turn.file_changes import _note_reply_row
     from kiro_crew.dashboard.chat_turn.segment_flush import (
         _cleared_segment_text,
@@ -49,6 +50,17 @@ if TYPE_CHECKING:
         _session_selected_auto,
         turn_stats_meta,
     )
+
+
+def _handed_to_a_chat_keeper(client: object) -> bool:
+    """Whether *client*'s process was handed to its chat keeper at a gateway exit.
+
+    Such a turn is not lost: it runs on under the keeper and the next gateway's
+    adopted turn finishes it (runtime-ownership.md, "Chats that outlive the gateway").
+    """
+    from kiro_crew.acp.client_keeper import is_detached
+
+    return is_detached(getattr(client, "_client", client))  # type: ignore[arg-type]
 
 
 async def _persist_partial_reply(turn, reason: str = "") -> None:
@@ -121,14 +133,12 @@ async def _persist_partial_reply(turn, reason: str = "") -> None:
         # gives: after this line only the placeholder exists, so an
         # interrupted reply would otherwise lose what it explains for good.
         _redacted, _redactions = _redact_segment(slot, turn.assistant_text)
+        _meta = _segment_row_meta(slot, _redactions, text=_redacted)
+        if _handed_to_a_chat_keeper(turn.client):
+            _meta = {**(_meta or {}), REPLY_CARRIES_ON_META_KEY: True}
         _note_reply_row(
             slot,
-            slot.append(
-                "assistant",
-                _redacted,
-                "msg msg-a",
-                meta=_segment_row_meta(slot, _redactions, text=_redacted),
-            ),
+            slot.append("assistant", _redacted, "msg msg-a", meta=_meta),
         )
         # Saved once per turn: a recovery arm saves it here, and a cancel
         # landing on the usage write below re-enters this helper.

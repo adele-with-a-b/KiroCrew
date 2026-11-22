@@ -179,6 +179,13 @@ _CREW_HIDDEN_LEAVES: tuple[str, ...] = (
     # unsandboxed gateway reads or writes it. Deliberately NOT under ``trust/``,
     # which stays read-write for the SEL log.
     "vouched-executions",
+    # Chat keepers (``kiro_crew.chat_keeper``): each keeper's record, its shared
+    # secret and its socket. A sandboxed writer that could read a key could attach to
+    # a keeper and drive another chat's adapter; one that could plant a socket or a
+    # record could stand in for a keeper. Only the unsandboxed gateway and the
+    # keepers themselves, which run outside the adapter's sandbox wrap, open it.
+    # Whole DIRECTORY: keys and records are written by atomic rename.
+    "chat-keepers",
     # Quarantine markers for auto-improvement clones whose provisional rollback AND
     # retirement both failed. Each marker is the only durable record that a clone still
     # carrying a REFUSED, unscanned commit must never be reused, and the process it has to

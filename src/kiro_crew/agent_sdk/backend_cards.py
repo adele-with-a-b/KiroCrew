@@ -934,6 +934,14 @@ OFF_CARD_SETS: Mapping[str, str] = {
         "choice made per start, invisible to a reader choosing a harness: the chat "
         "behaves the same on either process"
     ),
+    "ACP_BACKENDS_CHAT_KEEPER": (
+        "whether a dashboard chat's process may run under a chat keeper, so a gateway "
+        "restart leaves the chat running, behind the off-by-default agent.chat_keeper. "
+        "A harness that is out loses its running turn at a restart exactly as every "
+        "harness did before the keeper; a harness wrongly in would be adopted without "
+        "the stateless initialize and the session/status answer the adopt relies on, "
+        "which is a defect rather than a feature a card could mark"
+    ),
 }
 
 #: The set that is the membership floor rather than a capability.

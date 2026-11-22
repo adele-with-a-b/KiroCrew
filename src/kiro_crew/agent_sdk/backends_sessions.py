@@ -177,6 +177,18 @@ ACP_BACKENDS_SHARED_RUNTIME_ONLY_FOR_CHATS = frozenset(
     {ACP_BACKEND_CLAUDE, ACP_BACKEND_GOOSE, ACP_BACKEND_DEEPSEEK}
 )
 
+# Backends whose dashboard chat process may run under a chat keeper
+# (``kiro_crew.chat_keeper``, behind ``agent.chat_keeper``), so a gateway restart
+# leaves the chat running and the next gateway adopts it. A member runs one process
+# per chat on ``AcpClient``, answers a repeated ``initialize`` statelessly, answers
+# ``session/status`` with ``open`` for a session it holds, and is in
+# ``ACP_BACKENDS_AGENT_STARTED_TURNS``, which is the path an adopted in-flight turn
+# runs on. Design: runtime-ownership.md, "Chats that outlive the gateway". Both
+# answers are captured live from claude-agent-acp 0.109.0:
+# acp_frames/claude/chat-keeper-adopt-live.jsonl. kiro-cli and KAS are not members:
+# they run on the shared AcpRuntime, which a keeper does not cover.
+ACP_BACKENDS_CHAT_KEEPER = frozenset({ACP_BACKEND_CLAUDE})
+
 # One row per member of ``ACP_BACKENDS_CHAT_RUNTIME_SHARING``: the backend and the
 # default of its own switch under the preview (``agent.chat_runtime_sharing_harnesses``,
 # Settings > Developer > Feature previews > ACP runtime sharing). KAS defaults on:

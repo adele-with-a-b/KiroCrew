@@ -43,7 +43,7 @@ import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, TypeVar
 
 from kiro_crew import platform_compat, process_identity
-from kiro_crew.acp import raw_sdk_tasks, runtime_process_tree
+from kiro_crew.acp import client_keeper, raw_sdk_tasks, runtime_process_tree
 from kiro_crew.acp._dispatch import BackgroundLaunchRecord
 from kiro_crew.acp.client_spawn_env import KIRO_CLI_BIN
 from kiro_crew.acp.client_timeouts import (
@@ -485,6 +485,10 @@ async def _kill_process(self: AcpClient, *, force: bool = False, exit_grace: flo
         self._windows_tree_cleanup_failed = True
         await platform_compat.terminate_windows_asyncio_tree(self._process)
         self._windows_tree_cleanup_failed = False
+        return
+    if client_keeper.is_detached(self):
+        # Handed to the next gateway at a gateway exit (``acp.client_keeper``): the
+        # process is that gateway's to adopt or its keeper's to end, never this one's.
         return
     if not self._process or self._process.returncode is not None:
         return
@@ -976,6 +980,10 @@ async def _registration_throttle_line(self: AcpClient) -> str | None:
 
 async def shutdown(self: AcpClient) -> None:
     """Gracefully stop the ACP process."""
+    if client_keeper.is_detached(self):
+        # The process and its settings seed belong to the gateway that adopts it.
+        self._reset_state()
+        return
     self._process_tree_confirmed_dead = False
     # Tear down an in-flight entitlement probe first: its throwaway client
     # spawned its OWN kiro-cli (and whatever MCP servers that started), and
@@ -1027,6 +1035,7 @@ async def shutdown(self: AcpClient) -> None:
         else:
             await self._kill_process(force=True)
     finally:
+        await client_keeper.forget_if_ended(self)
         await self._discard_bound_workspace()
         # `finally` for the same reason the kill above has one: `_reset_state`
         # untracks the PIDs and must run even if the seed's await is cancelled.
