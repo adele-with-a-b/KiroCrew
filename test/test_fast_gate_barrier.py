@@ -237,6 +237,8 @@ def _simulate_pull_request(
     values = {
         "github.event_name": "pull_request",
         "github.ref": "refs/pull/1/merge",
+        # Fork only: pod-boot-windows runs only upstream, and this simulates an upstream run.
+        "github.repository": "kirodotdev/KiroCrew",
         **{f"needs.changes.outputs.{key}": value for key, value in surface.items()},
     }
     pending = list(jobs)
