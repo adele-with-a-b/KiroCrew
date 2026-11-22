@@ -34,12 +34,12 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from kiro_crew import __version__, acp_tool_gate, agent_scratch
 from kiro_crew import kiro_cli as kiro_cli_mod
 from kiro_crew import platform_compat
-from kiro_crew.acp import batch_guard
+from kiro_crew.acp import batch_guard, client_keeper
 from kiro_crew.acp import managed_agent_shadow as managed_shadow_mod
 from kiro_crew.acp import runtime_process_tree, scope_admission
 from kiro_crew.acp._dispatch import agent_version_from_init
@@ -61,7 +61,7 @@ from kiro_crew.acp.client_timeouts import (
 )
 from kiro_crew.acp.harness import process_adapter_for
 from kiro_crew.acp.harness.base import HarnessReadBack, SpawnContext, SpawnPlan
-from kiro_crew.acp.launch import LaunchRequest, launch
+from kiro_crew.acp.launch import LaunchedProcess, LaunchRequest, launch
 from kiro_crew.acp.no_model_provider import AcpNoModelProvider
 from kiro_crew.acp.pi_mcp_registration import verify_registration
 from kiro_crew.acp.scope_not_admitted import AcpScopeNotAdmitted
@@ -497,26 +497,49 @@ async def _spawn(self: AcpClient) -> None:
             return argv, ""
         return named_argv, scope_unit_name(instance, _CLIENT_SCOPE_UNIT_PREFIX) or ""
 
-    launched = await launch(
+    # A chat keeper the previous gateway left for this chat is adopted in place of a
+    # launch, and a new process starts under a keeper when the chat may outlive the
+    # gateway (``acp.client_keeper``; runtime-ownership.md, "Chats that outlive the
+    # gateway"). Neither applies with ``agent.chat_keeper`` off.
+    from kiro_crew.chat_keeper.spawn import sandbox_fingerprint
+
+    adopted = await client_keeper.adopt_for(
         self,
-        LaunchRequest(
-            argv=plan.argv,
-            backend=self.backend,
-            sandbox_mode=self._sandbox_mode,
-            extra_env=self._extra_env,
-            scratch_label=self._session_key or "session",
-            env_before_scrub=_env_before_scrub,
-            env_after_scrub=_env_after_scrub,
-            env_after_marker=_env_after_marker,
-            scope_argv=_name_scope,
-            agent_env=self._agent_env_snapshot,
-            extra_hidden_dirs=plan.extra_hidden_dirs,
-            extra_expose_files=plan.extra_expose_files,
-            internal_sandbox=self.backend in ACP_BACKENDS_INTERNAL_SANDBOX,
-            pod_home_remap=self.backend in ACP_BACKENDS_POD_HOME_REMAP,
+        functools.partial(
+            sandbox_fingerprint,
+            self._sandbox_mode,
+            tuple(plan.extra_hidden_dirs),
+            tuple(plan.extra_expose_files),
+            self.backend in ACP_BACKENDS_INTERNAL_SANDBOX,
         ),
-        _launch_tools(),
     )
+    if adopted is not None:
+        launched = LaunchedProcess(process=cast(Any, adopted))
+        await asyncio.to_thread(client_keeper.restore_launch_state, self, adopted.record)
+        record = adopted.record
+        instance = record.process_instance or record.instance  # pid-owner-ok: keeper launch id
+    else:
+        launched = await launch(
+            self,
+            LaunchRequest(
+                argv=plan.argv,
+                backend=self.backend,
+                sandbox_mode=self._sandbox_mode,
+                extra_env=self._extra_env,
+                scratch_label=self._session_key or "session",
+                env_before_scrub=_env_before_scrub,
+                env_after_scrub=_env_after_scrub,
+                env_after_marker=_env_after_marker,
+                scope_argv=_name_scope,
+                agent_env=self._agent_env_snapshot,
+                extra_hidden_dirs=plan.extra_hidden_dirs,
+                extra_expose_files=plan.extra_expose_files,
+                internal_sandbox=self.backend in ACP_BACKENDS_INTERNAL_SANDBOX,
+                pod_home_remap=self.backend in ACP_BACKENDS_POD_HOME_REMAP,
+                keeper=await client_keeper.keeper_spawn_for(self, instance),
+            ),
+            _launch_tools(),
+        )
     self._process = launched.process
     self._pid = self._process.pid
     self._kill_sent = None
@@ -824,6 +847,11 @@ async def _admit_scope(self: AcpClient) -> float:
 
 async def _initialize_session(self: AcpClient) -> None:
     """Handshake: initialize → session/load or session/new → set_mode → set_model."""
+    if client_keeper.adopting(self):
+        # The process is a chat keeper the previous gateway left, and the session
+        # in it is live: its own handshake, never a load (``acp.client_keeper``).
+        await client_keeper.adopt_session(self)
+        return
     # 1. Initialize, once systemd has admitted the spawn's scope. Inside the try, so
     # a start that ends at admission discards the launch MCP config as well.
     try:
@@ -1244,6 +1272,10 @@ async def ensure_ready(self: AcpClient) -> None:
     Re-creating the directory later could not repair a live child anyway:
     a process's cwd is bound to the inode, not the path.
     """
+    if client_keeper.is_detached(self):
+        # Handed to the next gateway at this one's exit (``acp.client_keeper``): its
+        # adapter, seed and keeper are the adopter's, so no prompt starts another.
+        raise AcpError("this chat was handed to its chat keeper for the next gateway")
     if (
         platform_compat.IS_WINDOWS
         and self._process
@@ -1344,6 +1376,14 @@ async def ensure_ready(self: AcpClient) -> None:
                 # Non-retryable for the same reason: a respawn reads the same
                 # missing provider. Before the generic handler, which would retry.
                 _startup_outcome = "auth_required"
+                await self._cleanup_failed_live_spawn()
+                self._reset_state()
+                raise
+            except client_keeper.KeeperHeldElsewhere:
+                # Another start here is adopting this chat's keeper; a retry would
+                # find it held again. Nothing was spawned, but the settings seed
+                # was written, so it is released as after any failed start.
+                _startup_outcome = "keeper_held_elsewhere"
                 await self._cleanup_failed_live_spawn()
                 self._reset_state()
                 raise

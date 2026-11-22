@@ -25,7 +25,7 @@ Writes: ``_acp_client``, ``_active_turn_session_key``, ``_approval_futures``,
 ``_question_pending``, ``_queue``, ``_queue_persist_inflight``, ``_queue_persist_owed``,
 ``_queue_persisted_sig``, ``_queue_repository``, ``_regenerate_target``,
 ``_rejection_reasons``, ``_responsive``, ``_side``,
-``_restored_turn_marker``, ``_run_started_at``, ``_run_started_turns``,
+``_restart_interruption_owed``, ``_restored_turn_marker``, ``_run_started_at``, ``_run_started_turns``,
 ``_stop_declined_at``, ``_stop_escalated_card_id``, ``_stop_event_id``,
 ``_stop_generation``, ``_stop_state_raw``, ``_subagent_delivery_pending``, ``_swap_in_flight``,
 ``_synthesis_recheck``, ``_task``, ``_task_started_at``, ``_trust``, ``_trust_reads``, ``_trust_scope``,
@@ -218,6 +218,10 @@ def init_turns_fields(self: _ChatSlot) -> None:
     # outlived its process (the dispatcher's own evidence that the restart cut
     # that turn), kept for readers that run after the restore clears the marker.
     self._restored_turn_marker = None
+    # The restore owes this chat its "interrupted" row: a chat keeper was running
+    # its turn, so the row waits for the adopt pass, which appends it when the
+    # turn does not come back (``turn_marker.append_restart_interruption``).
+    self._restart_interruption_owed = False
     self._buffers = SlotBufferCoordinator()
     self._queue_repository = SlotQueueRepository(
         id_provider=lambda: uuid.uuid4().hex[:12],

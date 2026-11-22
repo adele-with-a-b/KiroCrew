@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncContextManager
 
 from kiro_crew import _facade_mirror, model_scope  # noqa: F401
+from kiro_crew.acp import client_keeper as _client_keeper
 from kiro_crew.acp import relaunch_reload as _relaunch_reload
 from kiro_crew.acp.client import (  # noqa: F401
     DEFAULT_MODEL,
@@ -1327,9 +1328,15 @@ class AcpProvider(LLMProvider):
 
     @property
     def turn_survives_disconnect(self) -> bool:
+        if isinstance(self._client, AcpClient):  # a chat keeper's (acp.client_keeper)
+            return _client_keeper.detachable(self._client)
         return (
             isinstance(self._client, AcpSessionProvider) and self._client.turn_survives_disconnect
         )
+
+    async def detach_for_gateway_exit(self) -> bool:
+        """Hand this chat's keeper back at a gateway exit; True means do not shut down."""
+        return isinstance(self._client, AcpClient) and await _client_keeper.detach(self._client)
 
     def has_unfinished_turn(self) -> bool:
         """True if the client reports a native turn that has NOT reached its

@@ -87,7 +87,10 @@ if TYPE_CHECKING:
         _requeue_owed_completion,
     )
     from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn
-    from kiro_crew.dashboard.chat_turn.turn_reply_seams import _persist_partial_reply
+    from kiro_crew.dashboard.chat_turn.turn_reply_seams import (
+        _handed_to_a_chat_keeper,
+        _persist_partial_reply,
+    )
 
 
 async def _recover_posttoken_transient(
@@ -291,6 +294,12 @@ async def _on_process_died(turn: _ChatTurn, exc) -> None:
         # its prompt, so the teardown requeues each as possibly delivered.
         slot._steer_possibly_delivered.update(slot._pending_steers)
     await _persist_partial_reply(turn, "error: process died")
+    if _handed_to_a_chat_keeper(client):
+        # Detached at a gateway exit, not lost: the turn runs on under its chat keeper
+        # and the next gateway finishes it, so nothing is reset, retried, queued or
+        # announced (runtime-ownership.md, "Chats that outlive the gateway").
+        turn.needs_session_reset = False
+        return
     # WHOSE failure was this? A process this slot was sharing -- with a
     # sub-agent of its own, or with a co-tenant session -- died for reasons
     # this slot has no account of, and charging it to this slot's recovery
@@ -419,6 +428,12 @@ async def _on_acp_retryable(turn: _ChatTurn, exc) -> None:
     needs_session_reset = True  # checked in _turn_release_session (chat_turn/session_reset.py)
     turn.needs_session_reset = needs_session_reset
     await _persist_partial_reply(turn, "error: process died")
+    if _handed_to_a_chat_keeper(client):
+        # Detached at a gateway exit, not lost: the turn runs on under its chat keeper
+        # and the next gateway finishes it, so nothing is reset, retried, queued or
+        # announced (runtime-ownership.md, "Chats that outlive the gateway").
+        turn.needs_session_reset = False
+        return
     # Option Y: pipe-death ("process exited"/"not running") shares the
     # _acp_pipe_death_retries counter with the AcpProcessDied handler;
     # genuine "already in progress" busy uses _prompt_busy_retries.

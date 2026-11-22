@@ -1,0 +1,123 @@
+[
+  {
+    "agent_capabilities": {
+      "_meta": {
+        "authStatus": {},
+        "claudeCode": {
+          "promptQueueing": true
+        }
+      },
+      "auth": {
+        "logout": {},
+        "status": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "acp": true,
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "providers": {},
+      "sessionCapabilities": {
+        "additionalDirectories": {},
+        "close": {},
+        "delete": {},
+        "fork": {},
+        "list": {},
+        "options": {},
+        "resume": {},
+        "status": {},
+        "systemPrompt": {
+          "mode": {
+            "override": {}
+          }
+        },
+        "title": {}
+      }
+    },
+    "agent_version": "0.109.0",
+    "frame": "response",
+    "id": 0,
+    "protocol_version": 1
+  },
+  {
+    "frame": "response",
+    "id": 1,
+    "modes": {
+      "advertised": true,
+      "current": "bypassPermissions",
+      "ids": [
+        "default",
+        "acceptEdits",
+        "plan",
+        "auto",
+        "bypassPermissions"
+      ]
+    },
+    "session_id": "sess-1"
+  },
+  {
+    "agent_capabilities": {
+      "_meta": {
+        "authStatus": {},
+        "claudeCode": {
+          "promptQueueing": true
+        }
+      },
+      "auth": {
+        "logout": {},
+        "status": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "acp": true,
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "providers": {},
+      "sessionCapabilities": {
+        "additionalDirectories": {},
+        "close": {},
+        "delete": {},
+        "fork": {},
+        "list": {},
+        "options": {},
+        "resume": {},
+        "status": {},
+        "systemPrompt": {
+          "mode": {
+            "override": {}
+          }
+        },
+        "title": {}
+      }
+    },
+    "agent_version": "0.109.0",
+    "frame": "response",
+    "id": 2,
+    "protocol_version": 1
+  },
+  {
+    "frame": "response",
+    "id": 3
+  },
+  {
+    "error": {
+      "code": -32002,
+      "data": {
+        "sessionId": "sess-unknown"
+      },
+      "message": "Resource not found"
+    },
+    "frame": "response",
+    "id": 4
+  }
+]

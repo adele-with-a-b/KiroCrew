@@ -305,29 +305,45 @@ def _reconcile_local_turn_marker(
             broadcast=False,
             meta=dict(prompt_meta) if isinstance(prompt_meta, dict) and prompt_meta else None,
         )
+    # Lazy import, by the same contract as below: a chat keeper kept this chat's
+    # turn running across the restart, so it was not interrupted (the adopted turn
+    # finishes it).
+    from kiro_crew.dashboard.chat_keeper_adopt import kept_by_a_keeper
+
     if (
         not is_turn_interrupted(slot.messages)
         and not _latest_turn_was_deliberately_stopped(slot.messages)
         and not _latest_turn_settled_by_refused_model(slot.messages)
     ):
-        # Lazy import: the persistence facade's owner-import contract forbids a
-        # module-level import this facade does not already carry.
-        from kiro_crew.dashboard.gateway_notice import (
-            GATEWAY_NOTICE_TURN_INTERRUPTED_RESTART,
-            gateway_notice_meta,
-        )
-
-        slot.append(
-            "error",
-            _RESTART_INTERRUPTION_MSG,
-            "msg msg-err",
-            broadcast=False,
-            meta={
-                "kind": _RESTART_INTERRUPTION_KIND,
-                **gateway_notice_meta(GATEWAY_NOTICE_TURN_INTERRUPTED_RESTART),
-            },
-        )
+        if kept_by_a_keeper(slot):
+            # Owed, not dropped: the adopt pass appends it when the keeper's turn
+            # does not come back (``append_restart_interruption``).
+            slot._restart_interruption_owed = True
+        else:
+            append_restart_interruption(slot, broadcast=False)
     slot._turn_in_flight_generation = 0
     slot._turn_in_flight_prompt = None
     slot._dirty = True
     return True
+
+
+def append_restart_interruption(slot: _ChatSlot, *, broadcast: bool) -> None:
+    """Append the "interrupted when the app restarted" row to *slot*."""
+    # Lazy import: the persistence facade's owner-import contract forbids a
+    # module-level import this facade does not already carry.
+    from kiro_crew.dashboard.gateway_notice import (
+        GATEWAY_NOTICE_TURN_INTERRUPTED_RESTART,
+        gateway_notice_meta,
+    )
+
+    slot._restart_interruption_owed = False
+    slot.append(
+        "error",
+        _RESTART_INTERRUPTION_MSG,
+        "msg msg-err",
+        broadcast=broadcast,
+        meta={
+            "kind": _RESTART_INTERRUPTION_KIND,
+            **gateway_notice_meta(GATEWAY_NOTICE_TURN_INTERRUPTED_RESTART),
+        },
+    )

@@ -188,6 +188,35 @@ def kill_process_group(pgid: int, sig: int = SIGTERM) -> bool:
     return True
 
 
+def signal_own_process_group(sig: int) -> bool:
+    """Signal the CALLER's own process group, the caller included -- for a group leader only.
+
+    The one helper that may address the caller's group, which
+    :func:`kill_process_group` refuses by design. Its one caller is a chat keeper
+    (``kiro_crew.chat_keeper.keeper``): it leads a session and a group of its own
+    (it called ``setsid``), its adapter and the adapter's tree share that group,
+    and ending that group is how a keeper whose gateway never came back ends its
+    chat. The group is read at call time, never from the import-time
+    ``_OWN_PGID``, because the keeper calls ``setsid`` after it imports this
+    module. The caller must lead the group (``getpgrp() == getpid()``), so a
+    process that merely shares a gateway's or a shell's group can never broadcast
+    to it; anything else is refused with ``ValueError``. POSIX only (``OSError``).
+    Returns False when the group has already emptied.
+    """
+    if not IS_POSIX:
+        raise OSError("signal_own_process_group: no POSIX process groups on this platform")
+    pgid = os.getpgrp()
+    if pgid <= 1 or pgid != os.getpid():
+        raise ValueError(
+            f"signal_own_process_group: process {os.getpid()} does not lead group {pgid}"
+        )
+    try:
+        _killpg(pgid, sig)
+    except ProcessLookupError:
+        return False
+    return True
+
+
 def _killpg(pgid: int, sig: int) -> None:
     """``os.killpg``, reading macOS's EPERM for an all-zombie group as an emptied one.
 

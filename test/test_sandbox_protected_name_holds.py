@@ -440,6 +440,13 @@ class TestLeafOnlyPopulationIsRecorded:
     #:
     #: One more root-level directory, three entries per tier:
     #:
+    #: * ``chat-keepers`` -- every chat keeper's record, shared secret and socket
+    #:   (``kiro_crew.chat_keeper``). A key attaches to a keeper and drives its
+    #:   chat's adapter, so it is masked whole at the data-home root beside writable
+    #:   siblings, and leaf-only for the reason ``vouched-executions`` is.
+    #:
+    #: One more root-level directory, three entries per tier:
+    #:
     #: * ``released-sessions`` -- the gateway's pending deletes of released
     #:   engine records. An entry has the gateway delete the record it names, so
     #:   a forged one would delete a conversation. It sits at the root, masked,
@@ -577,6 +584,7 @@ class TestLeafOnlyPopulationIsRecorded:
         "<crew>/browser-mode-enabled": (3, "standard cc strict"),
         "<crew>/browser-profile": (3, "standard cc strict"),
         "<crew>/browser-recordings": (3, "standard cc strict"),
+        "<crew>/chat-keepers": (3, "standard cc strict"),
         "<crew>/chat_steering_off.json": (3, "standard cc strict"),
         "<crew>/cloud.json": (3, "standard cc strict"),
         "<crew>/cloud_launch_state.json": (3, "standard cc strict"),

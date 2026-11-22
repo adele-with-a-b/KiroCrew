@@ -38,6 +38,10 @@ if TYPE_CHECKING:
 AGENT_STARTED_ACTOR = "agent"
 #: The assistant row meta key that says who started the turn the row answers.
 AGENT_ORIGIN_META_KEY = "origin"
+#: The meta key of a partial reply a gateway exit cut while the chat keeper kept its
+#: turn running: the next gateway's adopted turn writes the rest, and the dashboard
+#: draws that rest in this row's bubble (``carriedOnReply.ts``), one reply, not two.
+REPLY_CARRIES_ON_META_KEY = "carries_on"
 
 
 def agent_origin_meta() -> dict[str, str]:

@@ -749,9 +749,7 @@ def _claude_session_meta(self: ClaudeAcpClient) -> dict[str, Any]:
     apply_spec_claude_options(options, getattr(self, "_agent", None))
     # A Bot's own block (its file under mates/agents), for its DM thread and its
     # workers; a Bot whose file names no memory folder has auto-memory off (fork only).
-    bot_without_memory = apply_crewmate_claude_options(
-        options, getattr(self, "_session_key", None)
-    )
+    bot_without_memory = apply_crewmate_claude_options(options, getattr(self, "_session_key", None))
     if (
         self.memory_mode != "persistent"
         or not getattr(self, "_include_memory", True)
@@ -1253,7 +1251,14 @@ def _note_harness_adapter_version(self: ClaudeAcpClient) -> None:
 
 async def _pin_starting_mode(self: ClaudeAcpClient, resp: dict) -> None:
     """Pin the asking mode on a session that started in one that approves on its own
-    (:meth:`_pin_claude_starting_mode`)."""
+    (:meth:`_pin_claude_starting_mode`).
+
+    Under a chat keeper the rules the session shipped go into its record first, so
+    the gateway that adopts it checks the project against them too.
+    """
+    from kiro_crew.acp import client_keeper
+
+    await client_keeper.record_session_restrictions(self)
     await self._pin_claude_starting_mode(resp)
 
 

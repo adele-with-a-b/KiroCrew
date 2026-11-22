@@ -94,6 +94,9 @@ with no row here.
    * - ``ACP_BACKENDS_SHARED_RUNTIME_ONLY_FOR_CHATS``
      - pre-session registry query (which chat-sharing members take the shared
        runtime only for a chat that shares, and keep their own process otherwise)
+   * - ``ACP_BACKENDS_CHAT_KEEPER``
+     - driver-internal (whether a dashboard chat's ``AcpClient`` process may run
+       under a chat keeper that outlives the gateway, behind ``agent.chat_keeper``)
    * - ``ACP_BACKENDS_MEMBER_CAPABILITIES``
      - pre-session registry query (whether enrolled members can load a full saved spec)
    * - ``ACP_BACKENDS_MEMBER_TOOL_LIMITS``
@@ -1474,6 +1477,7 @@ from kiro_crew.agent_sdk.backends_routing import (  # noqa: E402,F401 - re-expor
 from kiro_crew.agent_sdk.backends_sessions import (  # noqa: E402,F401 - re-exported vocabulary
     ACP_BACKENDS_ACP_CLIENT_SPAWNABLE,
     ACP_BACKENDS_ACP_RUNTIME,
+    ACP_BACKENDS_CHAT_KEEPER,
     ACP_BACKENDS_CHAT_RUNTIME_SHARING,
     ACP_BACKENDS_CLIENT_NEW_CONVERSATION,
     ACP_BACKENDS_CWD_BOUND_SESSIONS,

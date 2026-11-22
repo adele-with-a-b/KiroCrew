@@ -454,6 +454,10 @@ X_FEATURE_SETS: dict[str, frozenset[str] | None] = {
     "ACP_BACKENDS_SENT_IMAGE_RECORD": frozenset({"codex", "kas", "kiro"}),
     # The set above under the name of what it means; the same three captures.
     "ACP_BACKENDS_COMPACTION_REPORTED": frozenset({"codex", "kas", "kiro"}),
+    # claude-agent-acp 0.109.0: a second initialize on one process answers the same
+    # capabilities, and session/status answers open for the session it holds
+    # (acp_frames/claude/chat-keeper-adopt-live.jsonl).
+    "ACP_BACKENDS_CHAT_KEEPER": None,
 }
 
 # Coverage is opt-out: every ``ACP_BACKENDS_*`` set is in X_FEATURE_SETS, here, or
