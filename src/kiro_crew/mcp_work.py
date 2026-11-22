@@ -161,6 +161,8 @@ _RECORD_FIELDS: tuple[str, ...] = (
     "fails",
     "concurrency_cap",
     "new_goal",
+    "plan",
+    "release",
 )
 
 #: Fields ``work_ledger_read`` forwards as a query string. Same defence as
@@ -694,6 +696,8 @@ def _ledger_tool_definitions() -> list[dict[str, Any]]:
                             "close",
                             "goal",
                             "accept",
+                            "plan",
+                            "release",
                         ],
                         "description": "Which write to perform.",
                     },
@@ -772,6 +776,13 @@ def _ledger_tool_definitions() -> list[dict[str, Any]]:
                             "item count again. Needs `goal`. Rewording keeps the count."
                         ),
                     },
+                    # Names only: the goal-conductor skill teaches the plan, and the
+                    # store names the key it refuses. Every row pays for this text.
+                    "plan": {
+                        "type": "object",
+                        "description": "create/plan: level parent rank backlog step release tags",
+                    },
+                    "release": {"type": "object", "description": "{name, state, note}"},
                 },
                 "required": ["action"],
             },

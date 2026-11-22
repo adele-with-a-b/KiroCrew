@@ -702,6 +702,25 @@ TYPES: tuple[EntryType, ...] = (
                 ),
             ),
             Field(
+                "plan",
+                JSON_OBJECT,
+                note=(
+                    "Where the item sits in the board's plan, set by create, plan and a "
+                    "person's rank: level, parent, rank, backlog, step, release, tags, each "
+                    "optional, checked for shape by the fold. The whole committed plan rides "
+                    "every such entry, so an absent key is a cleared one."
+                ),
+            ),
+            Field(
+                "releases",
+                JSON_ARRAY,
+                item_type=JSON_OBJECT,
+                note=(
+                    "The board's whole release list after a release write, oldest first: "
+                    "each {name, state (planned or shipped), note, shipped_at}."
+                ),
+            ),
+            Field(
                 "board_round",
                 JSON_INT,
                 note="The board's committed round, carried by a baseline entry.",

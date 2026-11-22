@@ -17,8 +17,9 @@ from typing import Any, NotRequired, TypedDict
 #: there would otherwise make every read answer "no board" instead of failing.
 WORK_FOLD_NAME: str = "work"
 
-#: ``person`` is the dashboard owner steering a worker from a Crew Mode chat's side
-#: panel: it writes one ``steer`` event on the worker's item and sets no field.
+#: ``person`` is the dashboard owner: steering a worker from a Crew Mode chat's side
+#: panel writes one ``steer`` event and sets no field; dragging a backlog row writes
+#: a ``rank`` entry that moves the item's ``plan.rank`` and nothing else.
 WORK_ACTORS: tuple[str, ...] = ("conductor", "worker", "person")
 WORK_ACTIONS: tuple[str, ...] = (
     "create",
@@ -29,8 +30,11 @@ WORK_ACTIONS: tuple[str, ...] = (
     "close",
     "accept",
     "ask",
+    "plan",
+    "release",
     "report",
     "steer",
+    "rank",
     "retire",
     "destroy",
 )
@@ -102,6 +106,7 @@ WORK_EVENT_KINDS: tuple[str, ...] = (
     "retire",
     "destroy",
     "ask",
+    "plan",
 )
 #: Item records the ``work`` fold may hold for one board at once: a memory bound on
 #: the fold, not on the board's life. The fold holds the open items (at most 32) plus
@@ -130,13 +135,14 @@ WORK_MAX_DEPTH_SETTING: str = "work_ledger.max_depth"
 #: the committed item is what the fold applies to the rebuilt one; the two read
 #: this one table so they cannot drift apart. A worker's fields are fixed.
 WORK_CONDUCTOR_FIELDS: dict[str, tuple[str, ...]] = {
-    "create": ("title", "acceptance", "round"),
+    "create": ("title", "acceptance", "round", "plan"),
     "bind": ("worker_session_key", "worker_instance_id"),
     "decide": ("decision", "round"),
     "verdict": ("verdict", "fails"),
     "close": ("state", "decision"),
     "accept": ("acceptance",),
     "ask": ("ask",),
+    "plan": ("plan",),
     "retire": ("worker_session_key", "worker_instance_id", "retired_bindings"),
     "destroy": ("retired_bindings",),
 }
@@ -441,6 +447,9 @@ class WorkBoardItem(TypedDict):
     ask: NotRequired[dict[str, Any]]
     #: The worker's last ``discussion`` (:func:`coerce_discussion`); present only while set.
     discussion: NotRequired[dict[str, Any]]
+    #: Where the item sits in the board's plan (``work_plan_vocab.coerce_plan``);
+    #: present only while set.
+    plan: NotRequired[dict[str, Any]]
     events: list[WorkBoardEvent]
 
 
@@ -455,6 +464,9 @@ class WorkBoardConductor(TypedDict):
     depth: int
     parent_item: str | None
     created_at: str
+    #: The board's releases (``work_plan_vocab.coerce_releases``); present only while
+    #: the board has one, so a board that never planned reads as it always did.
+    releases: NotRequired[list[dict[str, Any]]]
     entries: int
     first_entry_at: str
     #: When the board's NEWEST accepted entry landed. Board metadata like

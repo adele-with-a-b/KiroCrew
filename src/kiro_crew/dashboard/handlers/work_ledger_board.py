@@ -59,6 +59,7 @@ from kiro_crew.dashboard.handlers.work_ledger import (
 )
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.platform.context import redact_via_context
+from kiro_crew.work_plan_vocab import next_pick
 from kiro_crew.work_vocab import waits_on_person
 
 logger = logging.getLogger(__name__)
@@ -83,9 +84,20 @@ _KEY_BEARING_EVENT_KINDS = frozenset({"bind"})
 #: this is the half that exists today.
 _ASKING_STATUS = "question"
 
-#: The two affordances Phase 4 names for an orphaned item, and the person's dismiss
-#: of an item that waits on them.
-_BOARD_ACTIONS = ("stop", "take_over", "dismiss")
+#: The two affordances Phase 4 names for an orphaned item, the person's dismiss
+#: of an item that waits on them, and the person's drag of a backlog row (``rank``).
+_BOARD_ACTIONS = ("stop", "take_over", "dismiss", "rank")
+
+#: How each store refusal of a person's rank answers the page.
+_RANK_STATUS = {
+    "crew_log_off": 409,
+    "no_crew_log_unit": 409,
+    "not_recorded": 409,
+    "item_too_large": 409,
+    "item_closed": 409,
+    "unknown_item": 404,
+    "invalid_value": 400,
+}
 
 #: The ``steer`` text a dismiss writes. Fixed words, so nothing from the page lands
 #: in the ledger.
@@ -806,7 +818,9 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     )
 
     payload = {
-        "conductor": record.to_dict(),
+        # ``next_pick``: the top of the backlog by the person's rank, which the
+        # board marks as what the conductor starts next (``work_plan_vocab``).
+        "conductor": dict(record.to_dict(), next_pick=next_pick(items)),
         "conductor_alive": "idle" if conductor_alive else "closed",
         "items": rows,
         "asks": asks,
@@ -876,12 +890,38 @@ async def _dismiss(
     return web.json_response({"ok": True, "action": "dismiss", "item_id": item_id})
 
 
-async def api_work_ledger_board_action(request: web.Request) -> web.Response:
-    """POST /api/crew-board/action — act on one orphaned item, or dismiss one ask.
+async def _rank(
+    state: DashboardState, caller: str, key: str, item_id: str, rank: Any
+) -> web.Response:
+    """The person drags *item_id* to *rank* on the board: only ``plan.rank`` moves.
 
-    Body: ``{"conductor": KEY, "item_id": "it_...", "action": "stop"|"take_over"|"dismiss"}``,
-    plus ``report_id`` for ``dismiss``. ``dismiss`` is :func:`_dismiss` and needs no
-    orphan; the rest of this applies to the two orphan actions.
+    One write per row whose rank a drop changes (``ranksForDrop`` on the page):
+    usually the dropped row alone, at the midpoint of its new neighbours. Only a
+    backlog row is ranked. The conductor's next pick follows the new order.
+    """
+    from kiro_crew.dashboard.handlers.crew_board_rank import record_person_rank
+
+    plan, code, message = await record_person_rank(state, key, item_id, rank)
+    if plan is None:
+        _audit(
+            caller,
+            "crew_board_action",
+            "denied",
+            resources=f"conductor={key} item={item_id}:rank:{code}",
+        )
+        return _refuse(code or "not_recorded", message, _RANK_STATUS.get(code, 409))
+    _audit(caller, "crew_board_action", "ok", resources=f"conductor={key} item={item_id}:rank")
+    return web.json_response({"ok": True, "action": "rank", "item_id": item_id, "plan": plan})
+
+
+async def api_work_ledger_board_action(request: web.Request) -> web.Response:
+    """POST /api/crew-board/action — act on one orphaned item, dismiss one ask, or rank one.
+
+    Body: ``{"conductor": KEY, "item_id": "it_...", "action":
+    "stop"|"take_over"|"dismiss"|"rank"}``, plus ``report_id`` for ``dismiss`` and a
+    number ``rank`` for ``rank``. ``dismiss`` is :func:`_dismiss` and ``rank`` is
+    :func:`_rank`; neither needs an orphan. The rest of this applies to the two
+    orphan actions.
 
     The worker session key is resolved HERE, from the store, and never leaves: it
     is not accepted from the body and not returned, which is what lets the page
@@ -974,6 +1014,8 @@ async def api_work_ledger_board_action(request: web.Request) -> web.Response:
         if not report_id:
             return _refuse("missing_report_id", "a dismiss names the report it sets aside", 400)
         return await _dismiss(state, caller, key, item_id, report_id)
+    if action == "rank":
+        return await _rank(state, caller, key, item_id, body.get("rank"))
 
     # Read after the item is known to exist, so the two refusals cannot be told
     # apart by timing on a guessed id any more than by their bodies.

@@ -307,6 +307,11 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
     from kiro_crew.work_ledger import (  # noqa: F401
         WorkLedgerError,
     )
+    from kiro_crew.work_plan_vocab import (  # noqa: F401
+        next_pick,
+        widest_plan,
+        widest_releases,
+    )
     from kiro_crew.work_vocab import (  # noqa: F401
         WORK_CONDUCTOR_FIELDS,
         WORK_MAX_ARTIFACT_VALUE_CHARS,

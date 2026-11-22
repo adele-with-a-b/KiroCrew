@@ -177,6 +177,7 @@ def _baseline_fields(item: Any, header: Any) -> dict[str, Any]:
         "pending_since": getattr(item, "pending_since", None) or None,
         "ask": getattr(item, "ask", None) or None,
         "discussion": getattr(item, "discussion", None) or None,
+        "plan": getattr(item, "plan", None) or None,
     }
 
 

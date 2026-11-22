@@ -307,6 +307,11 @@ async def open_unbound_item(board: str, item_id: str) -> work_ledger.WorkItem:
         raise err(409, work_ledger.CODE_ITEM_CLOSED, f"item {item.item_id} is {item.state}")
     if item.worker_session_key:
         raise err(409, "already_bound", f"item {item.item_id} is already bound")
+    try:
+        # Before the peer slot is spawned: the bind would refuse it after.
+        work_ledger.refuse_unbindable(item)
+    except work_ledger.WorkLedgerError as exc:
+        raise err(409, exc.code, str(exc)) from None
     if item.retired_bindings:
         record = await asyncio.to_thread(work_ledger.read_remote_state, board, item.item_id)
         if record is not None and record.binding is not None:

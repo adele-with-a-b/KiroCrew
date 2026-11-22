@@ -94,6 +94,13 @@ def test_the_fold_is_registered_as_a_slot_fold() -> None:
     assert "workstreams" in projection.EAGER_SLOT_FOLD_NAMES
 
 
+def test_a_release_write_is_a_header_write_and_omits_nothing() -> None:
+    """``release`` names no item, like ``goal``: it is not a task the fold dropped."""
+    value = _fold([_work("goal", goal="ship", round=1), _work("release", release={"name": "0.5"})])
+    assert value["omitted"] == 0
+    assert _board(value, "ship")["tasks"] == []
+
+
 def test_an_empty_fold_states_the_contract_shape() -> None:
     """Nothing folded is still the report's shape, with zeroes rather than gaps."""
     value = _fold([])

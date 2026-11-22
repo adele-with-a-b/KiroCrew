@@ -71,6 +71,7 @@ from kiro_crew.metrics import work as work_metrics
 from kiro_crew.tracing import work as trace_work
 from kiro_crew.validation import WORK_LEDGER_RECORD_SCHEMA, ValidationError, validate_tool_args
 from kiro_crew.work_ledger import WorkLedgerError
+from kiro_crew.work_plan_vocab import widest_plan, widest_releases
 from kiro_crew.work_vocab import (
     WORK_CONDUCTOR_FIELDS,
     WORK_MAX_ARTIFACT_VALUE_CHARS,
@@ -87,8 +88,14 @@ logger = logging.getLogger("kiro_crew.dashboard.handlers.work_ledger")
 #: ``pr`` into the item's ``acceptance`` and is served by
 #: :func:`work_ledger.apply_acceptance_update`, which is deliberately not a
 #: seventh member of that frozenset (see its docstring). ``ask`` records what an
-#: item needs from the person (:func:`work_ledger.apply_ask_record`).
-RECORD_ACTIONS: frozenset[str] = work_ledger.CONDUCTOR_ACTIONS | {"accept", "ask"}
+#: item needs from the person (:func:`work_ledger.apply_ask_record`). ``plan`` and
+#: ``release`` write the board's plan (:mod:`kiro_crew.work_ledger_plan`).
+RECORD_ACTIONS: frozenset[str] = work_ledger.CONDUCTOR_ACTIONS | {
+    "accept",
+    "ask",
+    "plan",
+    "release",
+}
 
 
 def _count_recorded(action: str, item: Any, header: Any) -> None:
@@ -230,6 +237,8 @@ async def _record_conductor_write(
             if action == "ask"
             else None
         ),
+        plan=widest_plan() if "plan" in WORK_CONDUCTOR_FIELDS.get(action, ()) else None,
+        releases=widest_releases() if action == "release" else None,
     )
     if invalid is not None:
         return invalid
@@ -403,6 +412,9 @@ async def _record_conductor_write(
                     getattr(item, "pending_since", None) if action == "verdict" else None
                 ),
                 ask=getattr(item, "ask", None) if "ask" in sets else None,
+                plan=getattr(item, "plan", None) if "plan" in sets else None,
+                # The whole list after the write, so the fold replaces rather than merges.
+                releases=getattr(header, "releases", None) if action == "release" else None,
             ),
         )
         if not landed:
@@ -1094,6 +1106,12 @@ def _write(key: str, action: str, cleaned: dict[str, Any]) -> dict[str, Any]:
             pick=cleaned.get("pick"),
             pick_why=cleaned.get("pick_why"),
         )
+    if action == "plan":
+        return work_ledger.apply_plan_write(
+            key, cleaned.get("item_id") or None, cleaned.get("plan")
+        )
+    if action == "release":
+        return work_ledger.apply_release_write(key, cleaned.get("release"))
     if action == "accept":
         return work_ledger.apply_acceptance_update(
             key,
@@ -1120,4 +1138,5 @@ def _write(key: str, action: str, cleaned: dict[str, Any]) -> dict[str, Any]:
         fails=cleaned.get("fails"),
         concurrency_cap=cleaned.get("concurrency_cap"),
         new_goal=cleaned.get("new_goal"),
+        plan=cleaned.get("plan"),
     )

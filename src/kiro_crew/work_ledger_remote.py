@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from kiro_crew.session_ledger import _store_name, resolved_within
+from kiro_crew.work_ledger_plan import refuse_unbindable
 from kiro_crew.work_ledger_records import (
     BLOCKED_REASONS,
     CODE_ALREADY_BOUND,
@@ -422,7 +423,8 @@ def apply_remote_bind(
 ) -> dict[str, Any]:
     """Bind *item_id* to a peer slot on a crew. Conductor-owned fields only.
 
-    Refuses as the local bind does: an unknown, closed or already bound item. Writes
+    Refuses as the local bind does: an unknown, closed or already bound item, or one
+    whose plan holds no seat (:func:`refuse_unbindable`). Writes
     no binding file, so no local session can resolve this item as its own.
     """
     checked_id = _require_item_id(item_id)
@@ -442,6 +444,7 @@ def apply_remote_bind(
                 code=CODE_ALREADY_BOUND,
                 field="worker_session_key",
             )
+        refuse_unbindable(item)
         item.worker_session_key = slot
         item.worker_instance_id = crew
         event = _commit_item_locked(slot_key, item, "bind", f"{slot} on crew {crew}")

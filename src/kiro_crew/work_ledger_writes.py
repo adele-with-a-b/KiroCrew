@@ -16,6 +16,7 @@ from typing import Any
 from kiro_crew import resource_status, work_preview
 from kiro_crew.atomic_write import atomic_write
 from kiro_crew.session_ledger import _store_name
+from kiro_crew.work_ledger_plan import check_parent, refuse_unbindable, require_plan_change
 from kiro_crew.work_ledger_records import (
     BLOCKED_REASONS,
     CODE_ALREADY_BOUND,
@@ -70,6 +71,7 @@ from kiro_crew.work_ledger_store import (
     _KEY_FILE,
     _commit_item_locked,
     _existing_conductor_lock,
+    _header_under_lock,
     _read_json_record,
     _read_text_or_none,
     _require_item_id,
@@ -88,6 +90,7 @@ from kiro_crew.work_ledger_store import (
     read_conductor,
     read_work_item,
 )
+from kiro_crew.work_plan_vocab import coerce_plan, counts_toward_concurrency
 from kiro_crew.work_vocab import (
     WORK_ASK_LABEL_CHARS,
     WORK_ASK_MAX_OPTIONS,
@@ -254,6 +257,7 @@ def apply_conductor_action(
     fails: Any = None,
     concurrency_cap: Any = None,
     new_goal: Any = None,
+    plan: Any = None,
 ) -> dict[str, Any]:
     """Write the fields the CONDUCTOR owns, and append the one event that explains it.
 
@@ -263,7 +267,8 @@ def apply_conductor_action(
 
     Actions and their fields:
 
-    ``create``  ``title``, ``acceptance``, optional ``round_number`` — mints an id.
+    ``create``  ``title``, ``acceptance``, optional ``round_number`` and ``plan`` —
+                mints an id; ``plan.backlog`` stores it in the backlog, unstarted.
     ``bind``    ``item_id``, ``worker_session_key`` — writes the binding file.
     ``decide``  ``item_id``, ``decision``, optional ``round_number``.
     ``verdict`` ``item_id``, ``verdict``, optional ``fails``.
@@ -301,7 +306,7 @@ def apply_conductor_action(
             "event": None,
         }
     if action == "create":
-        return _create_item(slot_key, record, title, acceptance, round_number)
+        return _create_item(slot_key, record, title, acceptance, round_number, plan)
     return _write_item_action(
         slot_key,
         record,
@@ -313,36 +318,6 @@ def apply_conductor_action(
         state=state,
         round_number=round_number,
         fails=fails,
-    )
-
-
-def _header_under_lock(slot_key: str, verb: str) -> ConductorRecord:
-    """The live header for a writer that holds the conductor lock, or a refusal.
-
-    Refuses with ``CODE_NO_LEDGER`` when the header file is ABSENT: the ledger was
-    purged while this writer waited, and writing the pre-lock snapshot back would
-    resurrect a header (with no breadcrumb a later purge could name).
-
-    Refuses with the same code when the header is PRESENT but unreadable: only it
-    holds :attr:`ConductorRecord.created_total`, and the pre-lock snapshot may hold
-    it low, which would admit creates past what the fold retains. The message says
-    which case it found; the remedy is :func:`rebuild_from_projection`.
-    """
-    live = read_conductor(slot_key, strict=True)
-    if live is not None:
-        return live
-    if not (conductor_dir(slot_key) / _CONDUCTOR_FILE).exists():
-        raise WorkLedgerError(
-            f"conductor ledger has no header file, so {verb} -- the store was purged "
-            "or is incomplete; ensure_conductor recreates the header",
-            code=CODE_NO_LEDGER,
-        )
-    raise WorkLedgerError(
-        f"conductor ledger header is present but unreadable, so {verb} -- it holds "
-        "the board's create count and a pre-lock snapshot of it cannot stand in; "
-        "rebuild the board from the crew log (rebuild_from_projection), which writes "
-        "the header from the record",
-        code=CODE_NO_LEDGER,
     )
 
 
@@ -423,6 +398,7 @@ def _create_item(
     title: Any,
     acceptance: Any,
     round_number: Any,
+    plan: Any = None,
 ) -> dict[str, Any]:
     """Mint one item under the conductor lock.
 
@@ -443,6 +419,7 @@ def _create_item(
     checked_title = _require_text(title, MAX_TITLE_CHARS, "title")
     checked_acceptance = _require_acceptance(acceptance)
     checked_round = None if round_number is None else _require_count(round_number, "round")
+    checked_plan = None if plan is None else coerce_plan(require_plan_change(plan))
     if not may_conduct(record.depth):
         raise WorkLedgerError(
             f"conductor is at depth {record.depth} and {depth_cap_hint()}; it may "
@@ -451,8 +428,10 @@ def _create_item(
             field="depth",
         )
     with _existing_conductor_lock(slot_key):
-        live = _admit_create_locked(slot_key)
+        live = _admit_create_locked(slot_key, seat=counts_toward_concurrency(checked_plan))
         _refuse_if_host_critical()
+        if checked_plan and (checked_plan.get("parent") or checked_plan.get("level")):
+            check_parent(slot_key, None, checked_plan)
         if checked_round is None:
             checked_round = live.round
         item_id = mint_item_id()
@@ -465,6 +444,7 @@ def _create_item(
             state="open",
             round=checked_round,
             created_at=_now_iso(),
+            plan=checked_plan,
         )
         # The last refusal, before the first write: ``_commit_item_locked`` measures
         # the item again, but by then the header below is on disk.
@@ -482,12 +462,14 @@ def _create_item(
         return {"conductor": live, "item": item, "event": event}
 
 
-def _admit_create_locked(slot_key: str) -> ConductorRecord:
+def _admit_create_locked(slot_key: str, *, seat: bool = True) -> ConductorRecord:
     """The live header for one more create, or the refusal. HOLD THE CONDUCTOR LOCK.
 
     Every bound a create is held to, shared by :func:`_create_item` and
     :func:`create_bound_item` so both count and refuse alike. Writes nothing; the
-    caller bumps ``created_total`` in the same hold.
+    caller bumps ``created_total`` in the same hold. *seat* is ``False`` for an item
+    that takes no sprint seat (a backlog item, an epic): the store's open bound
+    still counts it, the goal's ``concurrency_cap`` does not.
     """
     # Re-read inside the lock, so the default round sees a concurrent ``goal``
     # bump; a missing or torn header refuses (see ``_header_under_lock``).
@@ -512,9 +494,10 @@ def _admit_create_locked(slot_key: str) -> ConductorRecord:
         )
     # The goal's own fan-out bound, only on a board that recorded a goal (a queue
     # board never does). A bound below the store's is one the user set.
-    if live.goal_version > 0 and len(open_items) >= live.concurrency_cap:
+    seated = sum(1 for item in open_items if counts_toward_concurrency(item.plan))
+    if seat and live.goal_version > 0 and seated >= live.concurrency_cap:
         raise WorkLedgerError(
-            f"this goal holds {len(open_items)} open items and its concurrency cap "
+            f"this goal holds {seated} open items and its concurrency cap "
             f"is {live.concurrency_cap}. Dispatch nothing new until one lands: wait "
             "for a seat, do not ask to raise it. Only a bound the user sets changes "
             "it, with work_ledger_record action=goal concurrency_cap=<new cap> "
@@ -689,6 +672,7 @@ def _write_item_action(
                     code=CODE_ALREADY_BOUND,
                     field="worker_session_key",
                 )
+            refuse_unbindable(item)
             assert checked_worker is not None
             with binding_lock(checked_worker):
                 prior_binding = _read_binding_text(checked_worker)

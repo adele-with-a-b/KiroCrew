@@ -143,6 +143,7 @@ def test_a_facade_patch_of_every_scanned_name_reaches_every_module_holding_it() 
 #: The owner modules, one per line, so two changes that each add an owner edit
 #: different lines (testing-conventions.md § Merge-safe ratchets and counts).
 _OWNER_MODULES = (
+    "kiro_crew.work_ledger_plan",
     "kiro_crew.work_ledger_purge",
     "kiro_crew.work_ledger_records",
     "kiro_crew.work_ledger_remote",

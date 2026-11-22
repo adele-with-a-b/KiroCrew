@@ -44,6 +44,7 @@ from kiro_crew.work_ledger_records import (
     _finite_int,
     logger,
 )
+from kiro_crew.work_plan_vocab import counts_toward_concurrency
 from kiro_crew.work_vocab import (
     WORK_MAX_DEPTH_MAX,
     WORK_MAX_DEPTH_MIN,
@@ -400,6 +401,10 @@ def is_stale(
         # Waiting on the conductor, but the worker the answer goes back to is gone, so
         # no answer can be acted on. Flagged with or without a ``decide`` yet.
         return True
+    if not item.worker_session_key and not counts_toward_concurrency(item.plan):
+        # A backlog item, an epic or a sub-task is never bound, so no worker owes it
+        # a report: its silence is the plan, not a stall.
+        return False
     if not _worker_owns_next_move(item):
         return False
     if worker_looping and not worker_closed:

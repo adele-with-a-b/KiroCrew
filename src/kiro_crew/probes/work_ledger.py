@@ -44,6 +44,7 @@ import logging
 from typing import Callable
 
 from kiro_crew import irq, ledger_wake, work_ledger, work_preview
+from kiro_crew.work_plan_vocab import counts_toward_concurrency
 from kiro_crew.work_vocab import (
     WORK_BLOCKED_REASONS,
     WORK_REASON_STATUSES,
@@ -541,6 +542,22 @@ def person_wait_fingerprint(
         if stored > len(items):
             return None
         open_items = [item for item in items if not item.is_terminal]
+        if not open_items:
+            return None
+        # Only a seated item can wait on a person: an epic, a sub-task or a backlog
+        # item is never bound. A backlog story is the conductor's next move while a
+        # seat is free, so the patrol holds only when none is.
+        seated = [
+            i for i in open_items if i.worker_session_key or counts_toward_concurrency(i.plan)
+        ]
+        pullable = any(
+            (i.plan or {}).get("level") not in ("epic", "task") and (i.plan or {}).get("backlog")
+            for i in open_items
+            if not i.worker_session_key
+        )
+        if pullable and (record.goal_version <= 0 or len(seated) < record.concurrency_cap):
+            return None
+        open_items = seated
         if not open_items:
             return None
         if not all(
