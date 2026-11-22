@@ -436,6 +436,10 @@ each replaced field with its old and new value (a WARNING line ending in
 | `contributes.sessionControls[].label` | string | | Accessible name, and the chip's tooltip |
 | `contributes.sessionControls[].icon` | string | | Icon name. Only `Shield`, `Bot`, `Search`, `Tag`, `Users`, `Zap`, `Star`, `Package`, `Cat`, `AudioLines` and `Mic` are rendered; any other name falls back to `Package`. Use `AudioLines` for a control that starts a voice conversation and `Mic` only for voice input: the composer's own dictation button already draws `Mic`, so a conversation chip with that glyph reads as a second dictation button |
 | `contributes.sessionControls[].statusPath` | string | | Optional backend route reporting per-session chip state (see below) |
+| `contributes.statusItems[].id` | string | | Item id, kebab-case; addressed as `<appName>:<id>` |
+| `contributes.statusItems[].label` | string | | Accessible name and the detail card's row heading, at most 40 characters, with no control, format or separator character (the zero-width joiners are allowed); never drawn on the pill |
+| `contributes.statusItems[].icon` | string | | Icon name from the app icon set listed under `contributes.panelTabs`; any other name draws the generic panel glyph |
+| `contributes.statusItems[].statusPath` | string | | Required backend route answering `{text, tone, tooltip}` (see below) |
 
 ### `ui.loading` — Loading Placeholder Shape
 
@@ -766,6 +770,56 @@ prefixes are built by the host from the app name, so `statusPath` stays the only
 app-authored part of the URL. Declaring the wrong one is not possible: an app
 does not choose.
 
+### `contributes.statusItems` — A Readout in the Top Bar
+
+A status item is a small pill the dashboard draws on the desktop top bar, left of
+the readout capsule, and in the phone chat header after the chat title. It is for
+a value the operator wants in view on every page -- a countdown, a health word --
+not for a control: a tap or hover opens one card saying what each value means, and
+nothing else.
+
+```json
+{
+  "contributes": {
+    "statusItems": [
+      { "id": "disk", "label": "Disk free", "icon": "Database", "statusPath": "status/disk" },
+      { "id": "sync", "label": "Last sync", "icon": "Shield", "statusPath": "status/sync" }
+    ]
+  }
+}
+```
+
+**What the route answers.** The dashboard GETs `statusPath` under the app's own
+route base (the same derivation as a session control's `statusPath`, below: a
+process-backed app at `/apps/<app>/api/`, a hook app at `/api/apps/<app>/`) with no
+query parameters, about once a minute, and reads:
+
+```json
+{ "text": "54 GB", "tone": "ok", "tooltip": "54 GB free on the data volume." }
+```
+
+| Field | Meaning |
+|-------|---------|
+| `text` | Drawn on the pill. Cut to 24 characters after control, format, bidi, zero-width and line-separator characters are removed. An empty or missing `text` hides the pill: that is how an item says there is nothing to show |
+| `tone` | `ok`, `warn`, `danger` or `muted`; the pill tints with the theme's ok, warn or danger colour, or draws plain for `muted`. Any other value draws `muted` |
+| `tooltip` | The explanation line under the item in the card, cut to 200 characters |
+
+The host draws the pill: the icon comes from the fixed app icon set, the colour
+from one of the four tones and the accessible name from `label`. An app cannot put
+its own markup in the bar.
+
+**One control, and two caps.** Every app's items share ONE button, so the bar
+gains one control however many apps declare items; the card lists them all, a
+section per app. The backend allows at most **2** items per app. The dashboard
+draws at most **4** across all apps, in `<appName>:<id>` byte order, counting only
+items with something to show, and drops the rest.
+
+**Failure.** An unreachable app list draws no pills. An item whose route fails is
+drawn muted with `?`, and its row in the card says the read failed, with the
+error; it never keeps showing the last good value. A failed route is not retried
+until the next poll, but returning to the tab re-reads any value older than a
+minute.
+
 ### `contributes.fileMenuItems` — Rows in File / Tree / Folder Menus
 
 Declares rows an app adds to the file-editor overflow (⋮) menu, the workspace
@@ -932,7 +986,7 @@ icon; an unrecognised or absent name renders a generic panel glyph.
 
 `Activity`, `AudioLines`, `Bell`, `BookOpen`, `Bot`, `Boxes`, `Bug`, `Cloud`, `Code`,
 `Database`, `FileText`, `Files`, `Folder`, `FolderTree`, `GitBranch`, `Globe`,
-`Inbox`, `Layers`, `Link`, `ListTodo`, `Mic`, `MessageSquare`, `Package`, `PanelRight`,
+`Inbox`, `Key`, `Layers`, `Link`, `ListTodo`, `Mic`, `MessageSquare`, `Package`, `PanelRight`,
 `Pin`, `Search`, `Settings`, `Shield`, `Sparkles`, `Star`, `Table`, `Tag`,
 `Terminal`, `Users`, `Wrench`, `Zap`
 
@@ -2612,6 +2666,10 @@ before it runs your command, which is the same silent failure:
   whichever host installs the app.
 - `version` must start with `MAJOR.MINOR.PATCH`; a pre-release (`-`) or build
   (`+`) suffix may follow it
+- `contributes.statusItems`: at most 2 per app; `id` kebab-case and unique,
+  `label` non-blank and at most 40 characters, and `statusPath` required and a
+  relative backend route under the same grammar as a session control's
+  `statusPath`. A non-array value, or a non-object entry, fails the install
 - Paths in `agents`, `skills`, `sops`, `ui.entry`, `ui.pages[].entryPoint`,
   `contributes.sessionControls[].entryPoint`, `contributes.panelTabs[].entry`, the
   `entry` of every `linkPreviews`, `messageActions`, `linkOpen`, `composerActions` and

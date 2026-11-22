@@ -323,7 +323,11 @@
     "tab_title_session": "{{session}} — {{panel}}",
     "release_notes_not_published_yet": "{{release}} 的更新日志尚未发布，现改为显示 {{shown}} 的更新日志。",
     "titlebar_menu_disabled_footer": "部分项目在此处不可用。显示的快捷键仍然有效。",
-    "titlebar_menu_refused_notice": "“{{item}}”未执行。此命令目前在此处不可用。"
+    "titlebar_menu_refused_notice": "“{{item}}”未执行。此命令目前在此处不可用。",
+    "status_item_reading": "{{label}}：{{value}}",
+    "status_item_updated": "更新于{{ago}}",
+    "status_item_unknown_value": "未知",
+    "status_item_failed": "无法读取{{label}}"
   },
   "appSdk": {
     "chatSession": {

@@ -3,7 +3,7 @@
 Session controls in the composer, Command Bar commands and the one argument a command
 may collect, chat side-panel tabs, file-menu rows, link previews, message actions,
 link opening, composer actions and selection actions, plus ``Contributes``, which holds
-them. Every contribution is declarative data the host interprets -- no app code crosses
+them (and the top-bar status items :mod:`kiro_crew.apps.manifest_status_items` owns). Every contribution is declarative data the host interprets -- no app code crosses
 into a host surface -- and the dashboard reader mirrors the caps and grammars it relies on
 (``contributedCommands.ts``, ``panelTabRegistry.ts``, ``fileMenuContributions.tsx``), so
 a change to a mirrored one is a change to both sides.
@@ -21,40 +21,25 @@ from typing import Any
 from kiro_crew.apps.app_hosts import HOST_RE as _HOST_RE
 from kiro_crew.apps.app_hosts import host_list_errors, normalize_host
 
+# Re-exported under the session-control names `manifest.py` and the
+# session-control tests import from this module.
+from kiro_crew.apps.manifest_route_grammar import (  # noqa: F401
+    APP_ITEM_ID_RE as _SESSION_CONTROL_ID_RE,
+)
+from kiro_crew.apps.manifest_route_grammar import (  # noqa: F401
+    APP_STATUS_PATH_RE as _SESSION_CONTROL_STATUS_PATH_RE,
+)
+from kiro_crew.apps.manifest_route_grammar import normalize_status_path as _normalize_status_path
+from kiro_crew.apps.manifest_status_items import (
+    StatusItemContribution,
+    parse_status_items,
+    status_item_errors,
+)
+
 #: Hard cap on session controls per app. A control here renders inside the
 #: composer, on the path of every turn — an app must not be able to crowd the
 #: bar out. Apps needing more configuration have a page for it.
 MAX_SESSION_CONTROLS_PER_APP = 2
-
-#: Control ids are kebab-case like app names: they appear in a React key, in
-#: per-control persistence, and potentially in a URL, so the charset is bounded.
-_SESSION_CONTROL_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-
-#: A status route is a path *within* the app's own backend, so it is deliberately
-#: not a URL: no scheme, no host, no query. The dashboard appends the session
-#: identity itself, which stops an app from pointing the poll at another origin.
-_SESSION_CONTROL_STATUS_PATH_RE = re.compile(r"^[a-z0-9][a-z0-9/_-]{0,63}$")
-
-
-def _normalize_status_path(raw: Any) -> str:
-    """Normalize a declared ``statusPath`` without laundering a cross-origin URL.
-
-    A single leading slash is a harmless way to write a relative route, so it is
-    stripped. A ``//`` prefix is not: that is a protocol-relative URL naming
-    another host, and stripping its slashes would turn ``//evilhost/x`` into
-    ``evilhost/x`` — which satisfies the route allowlist and reads like an
-    ordinary relative path. Such a value is returned unchanged so that
-    validation refuses it and the install fails with the real reason, rather
-    than silently accepting a rewritten one.
-
-    A host containing a dot happened to be refused anyway, because ``.`` is
-    outside the allowlist. A dotless one was not, which is why the guard has to
-    be explicit rather than incidental.
-    """
-    text = str(raw)
-    if text.startswith("//"):
-        return text
-    return text.lstrip("/")
 
 
 @dataclass
@@ -1546,6 +1531,9 @@ class Contributes:
     #: as ``bad_commands``: coercing to ``[]`` reads as a deliberate empty list, so the
     #: declaration would install clean and then never render a chip. Not serialized.
     bad_session_controls: bool = False
+    #: Top-bar readouts (``manifest_status_items``), and whether the value was not a list.
+    statusItems: list[StatusItemContribution] = field(default_factory=list)  # noqa: N815
+    bad_status_items: bool = False
     #: Whether the source manifest's ``panelTabs`` was present but not a list, and how
     #: many entries of a well-formed array were not objects. Same reasoning as the two
     #: ``commands`` flags above, and the failure is if anything quieter here: a tab that
@@ -1595,6 +1583,8 @@ class Contributes:
             d["commands"] = kept
         if self.sessionControls:
             d["sessionControls"] = [c.to_dict() for c in self.sessionControls]
+        if self.statusItems:
+            d["statusItems"] = [i.to_dict() for i in self.statusItems]
         tabs = [t.to_dict() for t in self.panelTabs]
         kept_tabs = [t for t in tabs if t]
         if kept_tabs:
@@ -1659,7 +1649,10 @@ class Contributes:
         composer_entries = composer_raw if isinstance(composer_raw, list) else []
         opens_raw = data.get("linkOpen", [])
         open_entries = opens_raw if isinstance(opens_raw, list) else []
+        status_items, bad_status_items = parse_status_items(data)
         return cls(
+            statusItems=status_items,
+            bad_status_items=bad_status_items,
             messageActions=[
                 MessageActionConfig.from_dict(a) for a in action_entries if isinstance(a, dict)
             ],
@@ -1719,6 +1712,7 @@ class Contributes:
                 "passes as empty and then disappears from the serialized manifest, so "
                 "the app author sees neither an error nor any chip"
             )
+        errors.extend(status_item_errors(self.statusItems, self.bad_status_items))
         if self.dropped_commands:
             errors.append(
                 f"contributes.commands: {self.dropped_commands} entr"

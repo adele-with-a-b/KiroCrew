@@ -119,6 +119,7 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     MESSAGE_ACTION_ROLES,
     SELECTION_EFFECTS,
     SELECTION_SOURCES,
+    TEXT_PATTERN_TONES,
     CommandArgument,
     CommandContribution,
     ComposerActionConfig,
@@ -148,6 +149,11 @@ from kiro_crew.apps.manifest_names import (  # noqa: F401
     UNPORTABLE_APP_NAMES,
     app_name_error,
     is_reserved_app_name,
+)
+from kiro_crew.apps.manifest_route_grammar import (  # noqa: F401
+    APP_ITEM_ID_RE,
+    APP_STATUS_PATH_RE,
+    normalize_status_path,
 )
 from kiro_crew.apps.manifest_sections import (  # noqa: F401
     _CHANNEL_PRIORITIES,
@@ -193,6 +199,17 @@ from kiro_crew.apps.manifest_sections import (  # noqa: F401
     lifecycle_timeout_error,
     lifecycle_timeout_seconds,
     logger,
+)
+from kiro_crew.apps.manifest_status_items import (  # noqa: F401
+    _JOINERS,
+    _MAX_ICON_NAME,
+    MAX_STATUS_ITEM_LABEL,
+    MAX_STATUS_ITEMS_PER_APP,
+    StatusItemContribution,
+    _has_hidden_characters,
+    _str_field,
+    parse_status_items,
+    status_item_errors,
 )
 from kiro_crew.apps.store_links import sanitize_links
 from kiro_crew.atomic_write import read_bytes_with_retry
@@ -930,6 +947,8 @@ class AppManifest:
             or self.contributes.linkOpen
             or self.contributes.composerActions
             or self.contributes.selectionActions
+            # A status item's `statusPath` decides which app route the top bar polls.
+            or self.contributes.statusItems
         ):
             # A contributed command's `prompt` is sent to an agent with tools as if
             # the reader typed it, and `autoSend` fires it without a further
