@@ -553,8 +553,12 @@ def _record_queued_crew_steers(state: DashboardState, consumed: list[dict]) -> N
 
 
 def _slot_retired(state: DashboardState, slot: _ChatSlot) -> bool:
-    """Whether *slot* is being closed or is not the slot its key maps to in the table."""
-    return slot.is_closing or state._slots.get(slot.key) is not slot
+    """Whether *slot* is being closed or its key now maps to another slot.
+
+    A close keeps the fence up on the slot it popped, so a closed slot reads as
+    closing for good.
+    """
+    return slot.is_closing or state._slots.get(slot.key, slot) is not slot
 
 
 async def _start_next_queued_turn(
@@ -591,7 +595,7 @@ async def _start_next_queued_turn(
     if _gateway_shutdown_requested(state):
         return False
 
-    # Nothing starts on a slot being closed or already out of the table. A close
+    # Nothing starts on a slot being closed, or closed already. A close
     # cancels the running turn, and that turn's own tail ends here: draining then
     # would start the next queued entry on a slot nobody can see, whose session
     # the close tears down or already tore down, so each entry would start a new

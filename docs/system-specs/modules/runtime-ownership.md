@@ -432,7 +432,7 @@ left committed is one no tenant can claim for the life of the gateway.
 A close's teardown (`sessions.remove` on the chat's key) is the last word on that
 chat's runtime only if nothing asks for a session on the key afterwards. The close
 cancels the running turn, and that turn's tail drains the queue, so the drain
-refuses a slot that is closing or out of the table (`_start_next_queued_turn`,
+refuses a slot that is closing or replaced under its key (`_start_next_queued_turn`,
 [session](session.md) § A closed chat starts nothing). Without it each queued entry
 started a fresh runtime under no live slot, which `session_status` reported as
 closed while it ran.

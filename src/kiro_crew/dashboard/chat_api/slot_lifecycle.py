@@ -429,11 +429,25 @@ async def close_slot(
             await _close_slot(state, slot, name, pre_pop_check=pre_pop_check)
         finally:
             if state.get_slot(name) is slot:
-                slot.cancel_close()
+                release_close_fence(state, slot)
     if hand_back and state.get_slot(name) is not slot:
         from kiro_crew.dashboard.session_control import hand_back_on_close
 
         await _timed_close_stage(name, "hand-back", hand_back_on_close(state, slot))
+
+
+def release_close_fence(state: DashboardState, slot: "_ChatSlot") -> None:
+    """Release one close's fence on *slot*, which is live under its key again.
+
+    A turn that ended while the close held the fence had its queue drain refused
+    (``_slot_retired``), so once the last close lets go, the idle drain is started
+    again: without it a queued entry waits for an unrelated send.
+    """
+    slot.cancel_close()
+    if slot._queue and not slot.is_closing and state.get_slot(slot.key) is slot:
+        from kiro_crew.dashboard.queue_edit_hold import spawn_drain_if_idle
+
+        spawn_drain_if_idle(state, slot)
 
 
 async def _timed_close_stage(name: str, stage: str, step: Awaitable[_T]) -> _T:
@@ -1579,7 +1593,7 @@ async def api_chat_slots_cleanup(request: web.Request) -> web.Response:
                     # The slot is live under its own name again, so its close is
                     # over: release the admission fence or the restored tab refuses
                     # every regenerate, edit-resend and rewind for good.
-                    removed.cancel_close()
+                    release_close_fence(state, removed)
                 else:
                     # The restore is what this arm's own comment relies on to keep the
                     # flushed notes reachable ("restores the slot with its notes still
@@ -1676,7 +1690,7 @@ async def api_chat_slots_cleanup(request: web.Request) -> web.Response:
                         if _slot_still_ours(state, name, removed):
                             state._slots[name] = removed
                             _emit_archived_rows(removed, removed.total_messages - rows_before)
-                            removed.cancel_close()
+                            release_close_fence(state, removed)
                         _resettle_restricted_key(state, name)
                         failed.append(name)
                         continue
@@ -1724,7 +1738,7 @@ async def api_chat_slots_cleanup(request: web.Request) -> web.Response:
                         _emit_archived_rows(removed, removed.total_messages - rows_before)
                         # Live under its own name again, so its close is over:
                         # release the admission fence, as the raised arm does.
-                        removed.cancel_close()
+                        release_close_fence(state, removed)
                     else:
                         await _persist_handover_tail(
                             state,

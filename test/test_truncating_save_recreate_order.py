@@ -694,7 +694,7 @@ def test_a_restored_slot_gets_its_fence_back() -> None:
     )
     following = lines[restore_at : restore_at + 6]
     assert any(
-        "removed.cancel_close()" in line for line in following
+        "release_close_fence(state, removed)" in line for line in following
     ), "the restore must release the fence it left up"
 
 

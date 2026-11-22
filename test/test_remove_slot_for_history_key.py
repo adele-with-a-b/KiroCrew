@@ -297,6 +297,17 @@ class TestRemoveSlotForHistoryKey:
         state.sessions.destroy.assert_awaited_once_with("dashboard:chat-1-100")
 
     @pytest.mark.asyncio
+    async def test_a_deleted_busy_slot_is_fenced_before_its_turn_is_cancelled(self):
+        """Its cancelled turn's tail reads the fence and starts no queued entry."""
+        slot = _make_slot("dashboard_chat-1-100", running=True)
+        state = _make_state({"dashboard_chat-1-100": slot})
+        fenced_while_running: list[bool] = []
+        slot.begin_close.side_effect = lambda: fenced_while_running.append(not slot.task.done())
+        await _remove_slot_for_history_key(state, "dashboard_chat-1-100")
+        assert fenced_while_running == [True]
+        assert slot.task.cancelled()
+
+    @pytest.mark.asyncio
     async def test_pending_question_cancelled_before_running_task(self):
         """History deletion must not leave a DashboardState-owned question
         future alive after its slot task and provider have been destroyed."""

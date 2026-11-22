@@ -45,12 +45,15 @@ def _queued_state(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("how", ["closing", "popped"])
+@pytest.mark.parametrize("how", ["closing", "closed", "replaced"])
 async def test_no_queued_turn_starts_on_a_slot_being_closed(tmp_path, monkeypatch, how):
     state, slot = _queued_state(tmp_path, monkeypatch)
-    if how == "closing":
-        slot.begin_close()
+    if how == "replaced":
+        state._slots[NAME] = handlers._ChatSlot(NAME)
     else:
+        slot.begin_close()
+    if how == "closed":
+        # What a close that went through leaves: popped, its fence still up.
         state._slots.pop(NAME)
     spawn = MagicMock()
     with patch.object(chat_runner, "spawn_guarded_turn", spawn):
@@ -97,6 +100,34 @@ async def test_closing_a_busy_chat_does_not_start_its_queued_message(tmp_path, m
     assert NAME not in state._slots
     assert drained == [False]
     spawn.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("other_close", [False, True], ids=["last-close", "another-close-holds"])
+async def test_a_refused_close_starts_the_queue_it_held_back(tmp_path, monkeypatch, other_close):
+    """A turn that ended inside a refused close had its drain refused; the release restarts it."""
+    state, slot = _queued_state(tmp_path, monkeypatch)
+    if other_close:
+        slot.begin_close()
+
+    def _refuse() -> None:
+        raise handlers.SlotCloseError("refused for the test", code="test_refused", status=409)
+
+    spawn = MagicMock()
+    with (
+        patch("kiro_crew.dashboard.queue_edit_hold.spawn_drain_if_idle", spawn),
+        pytest.raises(handlers.SlotCloseError),
+    ):
+        await handlers.close_slot(state, slot, NAME, pre_pop_check=_refuse)
+
+    assert state._slots.get(NAME) is slot
+    assert [e["content"] for e in slot._queue] == ["the next thing"]
+    if other_close:
+        assert slot.is_closing
+        spawn.assert_not_called()
+    else:
+        assert not slot.is_closing
+        spawn.assert_called_once_with(state, slot)
 
 
 # ── A worker brought back keeps its creator's posture ────────────────────────

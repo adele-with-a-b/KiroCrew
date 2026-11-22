@@ -96,7 +96,8 @@ async def drain_if_idle(state: Any, slot: Any) -> None:
         state.push_slots_update()
 
 
-def _spawn_drain(state: Any, slot: Any) -> None:
+def spawn_drain_if_idle(state: Any, slot: Any) -> None:
+    """Run :func:`drain_if_idle` for *slot* as a tracked background task."""
     task = asyncio.get_running_loop().create_task(drain_if_idle(state, slot))
     state._background_tasks.add(task)
     task.add_done_callback(state._background_tasks.discard)
@@ -111,7 +112,7 @@ def _arm_expiry(
         if item.get(EDIT_HOLD_KEY) != until:
             return
         item.pop(EDIT_HOLD_KEY, None)
-        _spawn_drain(state, slot)
+        spawn_drain_if_idle(state, slot)
 
     asyncio.get_running_loop().call_later(delay, _expire)
 
@@ -130,7 +131,7 @@ def release_and_drain(state: Any, slot: Any, item: dict[str, Any] | None) -> Non
         # A cancelled entry has left the queue: nothing can reopen it, so the
         # entries it held may run now.
         item.pop(EDIT_HOLD_KEY, None)
-        _spawn_drain(state, slot)
+        spawn_drain_if_idle(state, slot)
         return
     until = _clock() + RELEASE_GRACE_SECONDS
     item[EDIT_HOLD_KEY] = until

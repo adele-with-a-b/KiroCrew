@@ -174,8 +174,9 @@ async def rebind_resumed(slot: Any, archived_tab: str) -> None:
                         UNVERIFIED_CREATOR,
                     )
 
-                    # A History reopen does not restore the creator, and a blank one
-                    # reads as a person's tab: the manager would get back a session
+                    # A History reopen restores the creator only when the crew log
+                    # confirms it, and a blank one reads as a person's tab: the
+                    # manager would get back a session
                     # that runs unfenced. Fence it before the manager regains reach.
                     slot._created_by = UNVERIFIED_CREATOR
                 await asyncio.to_thread(write, {key: (manager, tab)})

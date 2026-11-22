@@ -67,6 +67,10 @@ async def _remove_slot_for_history_key(
             popped = state._slots.pop(claim.registry_key, None)
             if popped is claim.slot:
                 slot = claim.slot
+                # Fenced before the cancel below, as a close is: the cancelled
+                # turn's tail then drains nothing onto the deleted chat
+                # (``queue_drain._slot_retired``).
+                slot.begin_close()
         else:
             logger.info(
                 "History delete: slot %s was replaced, rerouted, or reclaimed; preserving it",

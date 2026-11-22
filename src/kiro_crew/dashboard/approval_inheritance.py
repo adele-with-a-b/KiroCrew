@@ -110,10 +110,13 @@ def reapply_creator_posture(state: Any, slot: Any) -> None:
     a revive, a rehydrate for a queued send or a wake) rebuild it asking for
     every tool. This hands it again what ``session_create`` handed it at birth,
     read off the creator as it is now: a creator that dropped its Trust hands
-    down less, and a creator that is not open hands down nothing. The same rules
-    as a raise from :func:`plan_descendant_postures`: a gateway-authored creation
-    edge, the only slot on its session, and never a crewmate's own worker or a
-    slot holding a mode a person set on it.
+    down less, and a creator that is not open hands down nothing. It needs a
+    gateway-authored creation edge and the only slot on its session, and never
+    touches a crewmate's own worker or a slot whose restore did not mark it as
+    following its creator. It hands what ``session_create`` hands, so a creator's
+    Trust reaches the worker whoever set it, unlike the live walk in
+    :func:`plan_descendant_postures`; only the rebuilt slot is raised, never its
+    own workers.
     """
     creator_key = str(getattr(slot, "_created_by", "") or "")
     if not creator_key or is_profile_worker(slot):

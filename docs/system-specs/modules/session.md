@@ -574,12 +574,17 @@ releases only the captured identity, preserving any replacement session carrier.
 
 **A closed chat starts nothing.** A close cancels the running turn, and that
 turn's own tail hands the queue on (`_start_next_queued_turn`). The drain refuses
-a slot that is closing (`is_closing`) or no longer holds its key in the table, at
-its top and again after its last await, so no queued entry starts a turn on a slot
+a slot that is closing (`is_closing`, which a close and a History delete leave
+up on the slot they popped) or whose key now maps to another slot, at its top and again after its last
+await, so no queued entry starts a turn on a slot
 nobody can see and the runtime the close tore down is not started again. The
 queue itself is kept: the archive saves it, and a resume hands it back as restored
 cards, which run only on a click. Without the guard each queued entry started a
-new runtime that `session_status` reported as closed.
+new runtime that `session_status` reported as closed. A close that is refused or
+rolled back leaves the tab open, so the last close to release its fence
+(`slot_lifecycle.release_close_fence`) starts the idle drain again: a turn that
+ended inside the close had its drain refused, and its queue would otherwise wait
+for an unrelated send.
 
 **Conductor mode** has no field of its own. It is a chat on a conductor template
 (`kiro_crew/crew_mode.py`): a chat is in conductor mode exactly when it is a root
