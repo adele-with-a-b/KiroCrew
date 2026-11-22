@@ -1887,6 +1887,15 @@ async def _resume_slot_from_history_noted(
         from kiro_crew.dashboard.transcript_binding import bind_transcript
 
         bind_transcript(state, slot)
+    # Past every refusal, before the first frame: a worker its creator made comes
+    # back under that creator, with the posture it hands it (``approval_inheritance``).
+    from kiro_crew.dashboard.approval_inheritance import reapply_creator_posture
+    from kiro_crew.dashboard.session_control_parts.session_revive import (
+        restore_confirmed_creator,
+    )
+
+    restore_confirmed_creator(slot)
+    reapply_creator_posture(state, slot)
     # The slot was registered throughout hydration (so a concurrent same-key
     # resume resolved it and hit the idempotency guard) but hidden from the
     # payload while under construction. End construction and push once: this is

@@ -890,6 +890,11 @@ async def _rehydrate_slot_from_history_noted(
         # read from disk there, its flags are already in memory, and messaging's
         # cache hit would pay a spool scan per lookup.
         _reconcile_mcp_app_claims(_restored, _claims)
+        # A worker brought back for a queued send or a wake runs its tools with
+        # the posture its creator hands it, as a resume does.
+        from kiro_crew.dashboard.approval_inheritance import reapply_creator_posture
+
+        reapply_creator_posture(state, _restored)
     return _restored
 
 

@@ -572,6 +572,15 @@ cleanup does not read durable session metadata. Tab close retires its nudge loop
 before other asynchronous work. After the last consumer and provider stop, cleanup
 releases only the captured identity, preserving any replacement session carrier.
 
+**A closed chat starts nothing.** A close cancels the running turn, and that
+turn's own tail hands the queue on (`_start_next_queued_turn`). The drain refuses
+a slot that is closing (`is_closing`) or no longer holds its key in the table, at
+its top and again after its last await, so no queued entry starts a turn on a slot
+nobody can see and the runtime the close tore down is not started again. The
+queue itself is kept: the archive saves it, and a resume hands it back as restored
+cards, which run only on a click. Without the guard each queued entry started a
+new runtime that `session_status` reported as closed.
+
 **Conductor mode** has no field of its own. It is a chat on a conductor template
 (`kiro_crew/crew_mode.py`): a chat is in conductor mode exactly when it is a root
 session on a conductor template, in the `template` namespace. Every conductor is Crew
@@ -703,6 +712,19 @@ approval's slot row carries `trust_grantable` (the slot approve route's own proo
 that Trust may be offered) and, for a coordinator request such as a spawn,
 `request_instance` (names THIS record, since the id can recur), so a card that
 relays the decision can pin it.
+
+**A worker brought back takes its creator's posture again.** A close drops the
+slot and its in-memory posture, so every path that rebuilds a worker from history
+(the History tab's resume, `session_revive` by anyone, a rehydrate for a queued send
+or a wake) hands it what its live creator carries now
+(`approval_inheritance.reapply_creator_posture`), as `session_create` did at birth.
+The rules are a raise's: a creation edge the crew log records, the only slot on its
+session, a slot still following its creator (`_posture_inherited`), never a
+crewmate's own worker, and a creator that is not open hands down nothing. A resume
+first restores `_created_by` from the line's claim when the crew log's creation
+records name the same creator (`session_revive.restore_confirmed_creator`), the rule a
+revive and a restart already apply; an unconfirmed claim leaves the slot unowned, as
+before. A person's Trust click on the worker itself still lives in memory only.
 
 **A restart ends a chat's Trust or Read mode, and says so**
 (`dashboard/chat_trust_restart.py`). Without a notice, a loop or task left in a

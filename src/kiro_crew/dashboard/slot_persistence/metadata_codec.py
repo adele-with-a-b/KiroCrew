@@ -1189,8 +1189,9 @@ FIELDS: tuple[Field, ...] = (
         read=_read_created_by,
         why=(
             "RESUME does not restore it from the line: it is agent-editable and the "
-            "ownership fence reads it, so a session-control revive restores it after "
-            "the build only when gateway lineage corroborates the claim. RESTORE and "
+            "ownership fence reads it, so the resume core and a session-control revive "
+            "restore it after the build only when gateway lineage corroborates the "
+            "claim (``session_revive.restore_confirmed_creator``). RESTORE and "
             "RECENT keep it only when the crew log's creation records do, and an "
             "unconfirmed claim is written back as read"
         ),

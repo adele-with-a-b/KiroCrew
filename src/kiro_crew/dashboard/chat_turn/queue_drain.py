@@ -552,6 +552,11 @@ def _record_queued_crew_steers(state: DashboardState, consumed: list[dict]) -> N
             logger.warning("crew steer: a queued steer was not recorded", exc_info=True)
 
 
+def _slot_retired(state: DashboardState, slot: _ChatSlot) -> bool:
+    """Whether *slot* is being closed or is not the slot its key maps to in the table."""
+    return slot.is_closing or state._slots.get(slot.key) is not slot
+
+
 async def _start_next_queued_turn(
     state: DashboardState,
     slot: _ChatSlot,
@@ -584,6 +589,15 @@ async def _start_next_queued_turn(
     # show the recovery's row, not the cut reply. The queue stays as it is, so the
     # history save keeps it for the next start, as the parked drain already does.
     if _gateway_shutdown_requested(state):
+        return False
+
+    # Nothing starts on a slot being closed or already out of the table. A close
+    # cancels the running turn, and that turn's own tail ends here: draining then
+    # would start the next queued entry on a slot nobody can see, whose session
+    # the close tears down or already tore down, so each entry would start a new
+    # runtime that ``session_status`` reports as closed. The queue is left as it
+    # is: the archive keeps it as restored cards, which never run without a click.
+    if _slot_retired(state, slot):
         return False
 
     # A conductor mode "Pause all" holds the root and every member it stopped: the
@@ -719,8 +733,11 @@ async def _start_next_queued_turn(
         return False
 
     # Asked again after the parked-work probes above: a Pause all published
-    # during them holds this drain too, with the queue left as it is.
+    # during them holds this drain too, with the queue left as it is, and so does
+    # a close that began during them.
     if slot._queue and crew_pause.holds_slot(slot):
+        return False
+    if _slot_retired(state, slot):
         return False
 
     try:

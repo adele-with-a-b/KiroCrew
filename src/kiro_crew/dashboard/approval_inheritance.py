@@ -103,6 +103,35 @@ def is_profile_worker(slot: Any) -> bool:
     return str(getattr(slot, "agent", "") or "") == MATE_WORKER_AGENT
 
 
+def reapply_creator_posture(state: Any, slot: Any) -> None:
+    """Give a slot just rebuilt from history the posture its live creator carries.
+
+    A worker's posture lives in memory, so a close and a resume (the History tab,
+    a revive, a rehydrate for a queued send or a wake) rebuild it asking for
+    every tool. This hands it again what ``session_create`` handed it at birth,
+    read off the creator as it is now: a creator that dropped its Trust hands
+    down less, and a creator that is not open hands down nothing. The same rules
+    as a raise from :func:`plan_descendant_postures`: a gateway-authored creation
+    edge, the only slot on its session, and never a crewmate's own worker or a
+    slot holding a mode a person set on it.
+    """
+    creator_key = str(getattr(slot, "_created_by", "") or "")
+    if not creator_key or is_profile_worker(slot):
+        return
+    if not getattr(slot, "_posture_inherited", False):
+        return
+    slots = getattr(state, "_slots", {})
+    creator = slots.get(creator_key)
+    if creator is None or creator is slot or not _verified_child(slot, creator_key):
+        return
+    from kiro_crew.dashboard.chat_utils_slots import effective_session_key
+
+    session = effective_session_key(slot)
+    if any(s is not slot and effective_session_key(s) == session for s in slots.values()):
+        return
+    inherit_posture(slot, creator)
+
+
 def plan_descendant_postures(
     slots: Iterable[Any], root: Any, *, may_raise: bool
 ) -> list[PostureChange]:

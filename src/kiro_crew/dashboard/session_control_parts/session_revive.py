@@ -59,6 +59,25 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger("kiro_crew.dashboard.session_control")
 
 
+def restore_confirmed_creator(slot: "_ChatSlot") -> None:
+    """Give a resumed *slot* the creator its saved line names, when the crew log agrees.
+
+    A resume rebuilds the slot without ``_created_by``: the line is agent-editable,
+    so its claim alone grants nothing. The crew log's creation records cannot be
+    written from a sandbox, so a claim they confirm is restored, as a restart and a
+    revive restore it, and the worker follows its creator's mode again. An
+    unconfirmed claim leaves the slot as it was.
+    """
+    claimed = str(getattr(slot, "_saved_created_by", "") or "")
+    if getattr(slot, "_created_by", "") or not claimed or claimed == UNVERIFIED_CREATOR:
+        return
+    if _creation_parent(str(slot.key)) == claimed:
+        from kiro_crew.dashboard.approval_inheritance import is_profile_worker
+
+        slot._created_by = claimed
+        slot._posture_inherited = not is_profile_worker(slot)
+
+
 def _fold_slot_key(key: str) -> str:
     """Fold a transcript stem or session key to the slot key it names.
 
@@ -610,6 +629,11 @@ async def revive_session(
             # caller matches, rather than blank, which would read as a person's tab.
             if _creation_parent(slot_key) == claimed_creator:
                 built._created_by = claimed_creator
+                # Follows its creator's mode again, as a restart's restore does; a
+                # crewmate's own worker follows its Profile instead.
+                from kiro_crew.dashboard.approval_inheritance import is_profile_worker
+
+                built._posture_inherited = not is_profile_worker(built)
             else:
                 built._created_by = UNVERIFIED_CREATOR
         # Charge the reviver for this slot under the per-caller cap (see

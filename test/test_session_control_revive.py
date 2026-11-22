@@ -141,27 +141,34 @@ def test_revive_does_not_transfer_ownership_to_the_reviver(tmp_path, monkeypatch
     assert state._slots[key]._created_by == "chat-9"
 
 
+@pytest.mark.parametrize("creator_trusted", [True, False], ids=["creator-trusted", "creator-asks"])
 @pytest.mark.parametrize("creator_is_reviver", [True, False], ids=["creator", "other-reviver"])
-def test_a_revived_worker_takes_its_creators_posture_only_from_its_creator(
-    tmp_path, monkeypatch, creator_is_reviver
+def test_a_revived_worker_takes_its_creators_posture_whoever_revives_it(
+    tmp_path, monkeypatch, creator_is_reviver, creator_trusted
 ):
-    """A conductor that brings back its own worker hands it its posture, as create
-    does at birth; a session that merely revives someone else's worker hands none."""
+    """A revived worker gets the posture its creator carries, as create hands it at
+    birth, whoever brings it back; a trusted reviver that did not create it hands
+    it nothing of its own."""
     state = _make_state(tmp_path)
     conductor = _slot(state, "chat-1")
-    conductor._trust = True
+    conductor._trust = creator_trusted
     reviver = conductor if creator_is_reviver else _slot(state, "chat-3")
-    reviver._trust = True
+    if not creator_is_reviver:
+        reviver._trust = True
     peer = _slot(state, "chat-2")
     peer._created_by = conductor.key
     key = _archive(state, conductor, peer)
     _lineage(monkeypatch, {key: conductor.key})
+    monkeypatch.setattr(
+        "kiro_crew.crew_log.session_tree_projection.creator_of",
+        lambda slot_key: conductor.key if slot_key == key else "",
+    )
 
     _revive(state, reviver, key)
 
     revived = state._slots[key]
-    assert revived._trust is creator_is_reviver
-    assert revived._posture_inherited is creator_is_reviver
+    assert revived._trust is creator_trusted
+    assert revived._posture_inherited is True
 
 
 def test_a_revived_crewmate_worker_is_left_to_its_profile(tmp_path, monkeypatch):
