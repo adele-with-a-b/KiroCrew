@@ -136,6 +136,17 @@ async def api_work_brief(request: web.Request) -> web.Response:
 #: A route refusal rather than a store code: the store never sees the report.
 _CODE_DONE_WITHOUT_EVIDENCE = "done_without_evidence"
 
+#: The artifact key that marks a report the gateway filed for a worker that stopped
+#: on the person (``work_ledger_waits``), valued with where it waits.
+WAIT_ARTIFACT = "waits_in_chat"
+#: The artifact key that carries the tool calls a safety policy blocked in the turn
+#: that ended on the question, as the chat showed them (already redacted there): a
+#: hard block puts up no approval, so this is the only place the conductor sees it.
+REFUSED_ARTIFACT = "refused_calls"
+#: The keys only the gateway writes. A worker's own report drops them, so it cannot
+#: pass itself off as the gateway's, and a brief it echoes back still lands.
+GATEWAY_ARTIFACT_KEYS: frozenset[str] = frozenset({WAIT_ARTIFACT, REFUSED_ARTIFACT})
+
 
 async def api_work_report(request: web.Request) -> web.Response:
     """POST /api/work-ledger/report — this worker's status against its own item.
@@ -165,8 +176,8 @@ async def api_work_report(request: web.Request) -> web.Response:
     if urefusal is not None:
         return urefusal
     assert unit is not None
-    # The closure below reads these; a nested function does not inherit the
-    # ``is not None`` narrowing, so it takes them as ``str`` bindings.
+    # ``_record_report`` takes these as ``str``: the ``is not None`` narrowing
+    # above does not travel with a name passed on.
     caller: str = key
     acting_unit: str = unit
     # The worker's OWN unit, or "" when the record fell back to the board's unit. Only
@@ -190,6 +201,10 @@ async def api_work_report(request: web.Request) -> web.Response:
         cleaned = crew_log_emit.safe_work_fields(cleaned)
     except crew_log_emit.WorkFieldError as exc:
         return _refuse_400(work_ledger.CODE_INVALID_VALUE, str(exc))
+    if isinstance(cleaned.get("artifacts"), dict):
+        cleaned["artifacts"] = {
+            k: v for k, v in cleaned["artifacts"].items() if k not in GATEWAY_ARTIFACT_KEYS
+        }
     # Checked here as well as in the store, so a bad part is refused by name before
     # the fit probe, and the probe measures the complete object the store keeps.
     try:
@@ -216,6 +231,32 @@ async def api_work_report(request: web.Request) -> web.Response:
             field="artifacts",
         )
 
+    return await _record_report(
+        state, caller, conductor_key, item_id, acting_unit, own_unit, cleaned, discussion
+    )
+
+
+async def _record_report(
+    state: Any,
+    caller: str,
+    conductor_key: str,
+    item_id: str,
+    acting_unit: str,
+    own_unit: str,
+    cleaned: dict[str, Any],
+    discussion: Any,
+    *,
+    operation: str = "work_report",
+    only_while: Callable[[work_ledger.WorkItem, list[dict[str, Any]]], bool] | None = None,
+) -> web.Response:
+    """Probe, commit and record one worker report on *item_id* of *conductor_key*.
+
+    The one report transaction. ``POST /api/work-ledger/report`` calls it with the
+    worker's validated fields; the gateway calls it for a worker that stopped on the
+    person without reporting (``work_ledger_waits``), with *operation* naming that
+    writer in the audit and *only_while* asked under the board lock with the item
+    and its event tail: ``False`` writes nothing and answers 409 ``not_waiting``.
+    """
     # The record is refused BEFORE the cache commits: the widest entry this report
     # can produce (the committed `pr` may be an earlier report's) must fit a line.
     # It is built the way the entry is -- over the baseline an unstamped item is
@@ -274,8 +315,8 @@ async def api_work_report(request: web.Request) -> web.Response:
             board_copy=True,
             mirror=True,
         ):
-            return _refuse_item_too_large(key, "work_report", item_id)
-        _audit(key, "work_report", "denied", resources=item_id, error="work_entry_too_large")
+            return _refuse_item_too_large(caller, operation, item_id)
+        _audit(caller, operation, "denied", resources=item_id, error="work_entry_too_large")
         return _refuse_400(
             "work_entry_too_large",
             "the report's crew-log record does not fit one log line; shorten it",
@@ -285,9 +326,18 @@ async def api_work_report(request: web.Request) -> web.Response:
         # Re-checked under the lock: a write ahead of this one may have marked the
         # cache dirty (its undo failed) after this one's early check passed, and a
         # commit over that would build on the damage.
-        dirty = await _refuse_if_dirty(conductor_key, caller, "work_report")
+        dirty = await _refuse_if_dirty(conductor_key, caller, operation)
         if dirty is not None:
             return dirty
+        if only_while is not None:
+            # Judged under the lock a worker's own report also takes, so a report
+            # filed after the caller looked is never overwritten by this one.
+            now_item, _board = await asyncio.to_thread(
+                _current_item_and_board, conductor_key, item_id
+            )
+            events = await asyncio.to_thread(work_ledger.read_events, conductor_key, item_id)
+            if now_item is None or not only_while(now_item, [e.to_dict() for e in events]):
+                return web.json_response({"ok": False, "code": "not_waiting"}, status=409)
         snapshot = await asyncio.to_thread(
             functools.partial(work_ledger.snapshot_for_write, conductor_key, item_id=item_id)
         )
@@ -307,7 +357,7 @@ async def api_work_report(request: web.Request) -> web.Response:
                     discussion,
                 )
             except WorkLedgerError as exc:
-                _audit(caller, "work_report", "denied", resources=item_id, error=exc.code)
+                _audit(caller, operation, "denied", resources=item_id, error=exc.code)
                 return _refuse_store_error(exc)
             except OSError:
                 logger.warning("work ledger report failed for %s", item_id, exc_info=True)
@@ -318,7 +368,7 @@ async def api_work_report(request: web.Request) -> web.Response:
             established, board = await _board_header(conductor_key, board)
             if not established:
                 return await _refuse_unrecorded(
-                    caller, "work_report", item.item_id, conductor_key, snapshot
+                    caller, operation, item.item_id, conductor_key, snapshot
                 )
             # The entry carries what the COMMIT holds, not what the request said: an
             # omitted `artifacts` clears the map, and the fold reads an absent field as
@@ -397,7 +447,7 @@ async def api_work_report(request: web.Request) -> web.Response:
                     )
             if not landed:
                 return await _refuse_unrecorded(
-                    caller, "work_report", item.item_id, conductor_key, snapshot
+                    caller, operation, item.item_id, conductor_key, snapshot
                 )
             await asyncio.to_thread(_mark_recorded, conductor_key, item.item_id)
             # Counted from the COMMITTED item, after its record landed: a refused
@@ -438,8 +488,10 @@ async def api_work_report(request: web.Request) -> web.Response:
                     },
                     cite_unit=own_unit,
                 )
-            _audit(caller, "work_report", "ok", resources=f"{item_id} status={item.status}")
-            await asyncio.to_thread(work_ledger.clear_undelivered, caller)
+            _audit(caller, operation, "ok", resources=f"{item_id} status={item.status}")
+            if operation == "work_report":
+                # Only the worker's own call proves its tool reaches the ledger again.
+                await asyncio.to_thread(work_ledger.clear_undelivered, caller)
             return web.json_response(
                 {"ok": True, "item_id": item.item_id, "status": item.status, "round": item.round}
             )
