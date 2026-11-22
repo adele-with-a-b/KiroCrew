@@ -160,8 +160,9 @@ export default function LinkPreviewLayer() {
       onOpenPanelTab: (appName, tab, payload, scope) => {
         if (scope.slot) sendLinkPreviewNav({ kind: 'openPanelTab', slot: scope.slot, appName, tab, payload })
       },
+      // The chat scrolls away under the card, so a card that is not pinned goes.
       onJump: (_appName, target, scope) => {
-        if (scope.slot) sendLinkPreviewNav({ kind: 'jump', slot: scope.slot, target, from: scope.origin })
+        if (scope.slot && sendLinkPreviewNav({ kind: 'jump', slot: scope.slot, target, from: scope.origin })) hideAllRef.current('scroll')
       },
     })
     hostRef.current = host
@@ -218,6 +219,13 @@ export default function LinkPreviewLayer() {
     // not end it, so the pointer can reach its buttons. Escape, a click or tap
     // outside it, or another on its link closes it.
     let stuck = false
+    // That clicked card is still up, or still loading. Pinned (it left the hover),
+    // it no longer holds hover back, and a click on its link shows it anew; one
+    // the app closed is let go by `onClosed`.
+    const stuckUp = () => stuck && current !== null && host.hasHoverFrame(current.key)
+    // A click on its own link closes it, unless it is an overlay drawing nothing
+    // (the app closed its window): that click shows it again.
+    const stuckDrawn = () => stuckUp() && current !== null && !host.drawsNoRegions(current.key)
 
     const linkOf = (e: Event) => {
       const path = e.composedPath()
@@ -254,7 +262,7 @@ export default function LinkPreviewLayer() {
 
     const onOver = (e: PointerEvent) => {
       // A finger has no hover: a tap opens the card instead (`onTap`).
-      if (e.pointerType === 'touch' || stuck) return
+      if (e.pointerType === 'touch' || stuckUp()) return
       if (kept && current) {
         // A link the scroll slid under a still pointer is not a hover. A real
         // move off the kept link is a leave first, so its card gets `leave`.
@@ -331,7 +339,9 @@ export default function LinkPreviewLayer() {
       // The failure card is this document's: its Retry is a tap on the card.
       if (e.target instanceof Node && cardRef.current?.contains(e.target)) return
       const hit = linkOf(e)
-      if (hit && hit.url === undefined && hit.a !== current?.a) { begin(hit, e, 0, 'tap'); return }
+      // Its own span's card is shown anew when it is no longer up (closed by the
+      // app, pinned away).
+      if (hit && hit.url === undefined && (hit.a !== current?.a || !stuckDrawn())) { begin(hit, e, 0, 'tap', true); return }
       if (current) closeStuck()
     }
     // Mouse: a click on a matched span opens its card now, without the hover
@@ -341,15 +351,20 @@ export default function LinkPreviewLayer() {
     let downType = ''
     const onDown = (e: PointerEvent) => { downType = e.pointerType }
     const onClick = (e: MouseEvent) => {
-      if (downType === 'touch' || e.button !== 0) return
+      // The second click of a double-click (selecting the label) neither closes
+      // the card the first opened nor opens it again.
+      if (downType === 'touch' || e.button !== 0 || e.detail > 1) return
       if (e.target instanceof Node && cardRef.current?.contains(e.target)) return
       const hit = linkOf(e)
       // A click on a clicked card's link again, or anywhere outside the card (a
-      // click inside its frame never reaches this document), closes it.
+      // click inside its frame never reaches this document), closes it. A card
+      // that is not up (pinned away, an overlay drawing nothing) is shown again instead.
       if (stuck && current) {
         const again = e.composedPath().includes(current.a)
-        closeStuck()
-        if (again) return
+        if (!again || stuckDrawn()) {
+          closeStuck()
+          if (again) return
+        }
       }
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
       if (!hit || hit.url !== undefined) return

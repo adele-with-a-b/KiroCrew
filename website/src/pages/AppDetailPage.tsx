@@ -69,7 +69,7 @@ import { memoryAccessLabel, memoryRequested } from '../components/appstore/memor
 import { managerLabel, originLabel } from './appDetailPageLabels'
 import { ChatSlotsBox, DesktopCapabilitiesBox, DesktopCapabilitiesStaged, HiddenSessionsBox, UserSessionReachBox, UserSessionReachStaged, WebhookSourceBox, WorkerAutoApproveBox, WorkerAutoApproveStaged, knownDesktopCapabilities, reachVerbs } from './AppDetailGrantBoxes'
 import { trustGrants } from '../components/appstore/trustGrants'
-import { stagedGrantsOf } from './appDetailPageStagedGrants'
+import { SESSION_KEY_GRANT, stagedGrantsOf } from './appDetailPageStagedGrants'
 // The page's parts live in sibling owners that never import this module:
 // `AppDetailPageArt.tsx` (the hero banner and the screenshot gallery, each with
 // its local-art second chance), `appDetailPageTypes.ts` (the page's view
@@ -1252,7 +1252,7 @@ export default function AppDetailPage() {
                     linkPreviewHosts: stagedLinkHosts,
                     linkPreviewTextPatterns: stagedLinkPatterns,
                     linkPreviewFullUrl: stagedFullUrl ? ['fullUrl'] : [],
-                    linkPreviewSessionKey: stagedSessionKey ? ['sessionKey'] : [],
+                    linkPreviewSessionKey: stagedSessionKey ? [SESSION_KEY_GRANT] : [],
                     messageActions: stagedMessageActions,
                     linkOpenHosts: stagedOpenHosts,
                     linkOpenFullUrl: stagedOpenFullUrl ? ['fullUrl'] : [],

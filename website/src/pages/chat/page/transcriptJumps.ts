@@ -19,6 +19,9 @@ export interface BackSpot {
   down: boolean
 }
 
+/** Keys that scroll the transcript by hand. */
+const SCROLL_KEYS = new Set(['ArrowDown', 'PageDown', 'End', ' '])
+
 /** The index of `ref` in `messages`: by `mid` when it has one, else by `ts`. */
 function indexOf(messages: ChatMessage[], ref: MessageRef): number {
   return ref.id
@@ -48,6 +51,8 @@ interface TranscriptJumpsOptions {
   scrollerRef: MutableRefObject<HTMLElement | null>
   /** The transcript rests at its bottom: back there by hand, the Back pill goes. */
   isAtBottom?: boolean
+  /** Split view draws other panes instead of this transcript: a card's jump is not taken. */
+  splitView?: boolean
 }
 
 /**
@@ -72,6 +77,7 @@ export function useTranscriptJumps({
   handleJumpToPinnedMessage,
   scrollerRef,
   isAtBottom = false,
+  splitView = false,
 }: TranscriptJumpsOptions) {
   // Track the timestamp of the previous search-nav step so we can tell "user is
   // holding Enter through many matches" apart from "user landed on one match".
@@ -192,23 +198,41 @@ export function useTranscriptJumps({
 
   // A link-preview card's "jump to it": only in the chat on screen. The spot it
   // leaves from is kept, so the Back pill can return there; a newer jump
-  // replaces it, another chat drops it, and so does scrolling back to the bottom
-  // by hand once the jump has left it.
+  // replaces it, another chat drops it, and so does scrolling to the bottom by
+  // hand.
   const messagesRef = useRef(messages)
   messagesRef.current = messages
   const moreRef = useRef(slotHasMore && cursorIsForActiveSlot)
   moreRef.current = slotHasMore && cursorIsForActiveSlot
   const [backSpot, setBackSpot] = useState<BackSpot | null>(null)
   useEffect(() => { setBackSpot(null) }, [activeSlot])
-  const leftBottomRef = useRef(false)
-  useEffect(() => { leftBottomRef.current = false }, [backSpot])
+  // Only the person's own scroll counts: a jump that lands in the last screenful
+  // reaches the bottom too, and keeps its pill.
+  const byHandRef = useRef(false)
   useEffect(() => {
-    if (!backSpot) return
-    if (!isAtBottom) leftBottomRef.current = true
-    else if (leftBottomRef.current) setBackSpot(null)
+    byHandRef.current = false
+    const sc = scrollerRef.current
+    if (!backSpot || !sc) return
+    const mark = () => { byHandRef.current = true }
+    const onKey = (e: KeyboardEvent) => { if (SCROLL_KEYS.has(e.key)) mark() }
+    sc.addEventListener('wheel', mark, { passive: true })
+    sc.addEventListener('touchmove', mark, { passive: true })
+    sc.addEventListener('pointerdown', mark)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      sc.removeEventListener('wheel', mark)
+      sc.removeEventListener('touchmove', mark)
+      sc.removeEventListener('pointerdown', mark)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [backSpot, scrollerRef])
+  useEffect(() => {
+    if (backSpot && isAtBottom && byHandRef.current) setBackSpot(null)
   }, [backSpot, isAtBottom])
+  const splitRef = useRef(splitView)
+  splitRef.current = splitView
   useEffect(() => onLinkPreviewNav((req) => {
-    if (req.kind !== 'jump' || !activeSlot || req.slot !== activeSlot) return false
+    if (req.kind !== 'jump' || !activeSlot || req.slot !== activeSlot || splitRef.current) return false
     const list = messagesRef.current
     const from = req.from
     const fromIdx = from ? indexOf(list, from) : -1

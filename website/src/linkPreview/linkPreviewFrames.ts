@@ -250,6 +250,19 @@ export class FrameHost {
     }
   }
 
+  /** The provider still has a hover frame, loading or shown: it was not pinned away or destroyed. */
+  hasHoverFrame(key: string): boolean {
+    return this.hover.has(key)
+  }
+
+  /** The provider's hover frame is an overlay drawing nothing. `regions` names no
+   *  show, so this may answer an earlier one: it says nothing is drawn, not that the
+   *  latest show ended. */
+  drawsNoRegions(key: string): boolean {
+    const frame = this.hover.get(key)
+    return Boolean(frame?.overlay && !frame.regions.length)
+  }
+
   /** The provider's card-mode hover card is on screen. */
   isShown(key: string): boolean {
     const frame = this.hover.get(key)

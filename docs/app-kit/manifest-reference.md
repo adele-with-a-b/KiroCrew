@@ -974,7 +974,9 @@ No app code runs until a link on one of the provider's `hosts` is hovered.
 or `sessionKey` on waits on the app's page until
 the owner approves it, and
 until then the app previews only what was approved before. An update that only
-removes entries needs nothing. When no host and no pattern is approved, the
+removes entries needs nothing. A `sessionKey` approved before cards learned the
+message and gained `openPanelTab` / `jumpTo` covered only the chat, so it waits for
+the owner's approval once more. When no host and no pattern is approved, the
 provider is off: no frame is made, and a live frame's capability stops renewing and
 its fetches are refused.
 
@@ -1093,10 +1095,11 @@ passes to the card (focus is then not in the frame):
 - `card.jumpTo({ ts, id? })` scrolls to that message in the same chat (paging back
   for one not loaded yet, as a `?msg=` link does) and lights it. Any `ts` or `id` of
   that chat may be named (each at most 128 characters); one that is not there shows
-  the "message unavailable" notice. While the chat stays on, a pill above the
-  composer offers "Back to where you were" and returns to the message the card's
-  link or text sat in; a newer jump replaces it, and switching chats or scrolling
-  back to the bottom drops it.
+  the "message unavailable" notice. A card that is not pinned gets `hide('scroll')`
+  once the chat takes the jump. In split view the jump is not taken. While the chat
+  stays on, a pill above the composer offers "Back to where you were" and returns
+  to the message the card's link or text sat in; a newer jump replaces it, and
+  switching chats or scrolling back to the bottom by hand drops it.
 
 Feature-detect both (`'jumpTo' in link.card`) and the hook (`usePanelTabRequest` in
 the SDK's exports): a dashboard older than these has neither.
@@ -1181,8 +1184,10 @@ open the app's card:
   modifier key, or a drag that selects text across the span, does not. A clicked
   card stays when the pointer leaves the span and the card (no `leave`), so its
   buttons can be reached: Escape, a click outside the card, or a second click on
-  the span closes it: `hide('escape')`, or `leave` then `hide('click')`. A hover card
-  behaves as before. On touch, where nothing hovers, a tap on the span calls it
+  the span closes it: `hide('escape')`, or `leave` then `hide('click')`. The second
+  click of a double-click does neither. Once the app closed or pinned the card, a
+  click on the span shows it again and other spans hover as usual; while an overlay
+  reports no regions, a click on its span shows it again. A hover card behaves as before. On touch, where nothing hovers, a tap on the span calls it
   at once, and the card stays until the next tap (on the span again, or anywhere
   else in the dashboard), which closes it the same way; a tap on a link
   still follows the link. The span carries no owner: the host re-derives it from the

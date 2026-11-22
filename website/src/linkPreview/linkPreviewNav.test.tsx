@@ -237,6 +237,16 @@ describe('link-preview cards: open the app tab, jump to a message', () => {
     const frame = await shown([app(true)])
     ask(frame, 'jump', { ts: '2026-11-21T19:00:00.000Z', id: 'm_1' })
     expect(heard).toEqual([{ kind: 'jump', slot: SLOT, target: { ts: '2026-11-21T19:00:00.000Z', id: 'm_1' }, from: { ts: TS, id: MID } }])
+    // The chat scrolls away under the card, so the card goes.
+    expect(sentTo(frame).filter((m) => m.type === 'hide').map((m) => m.reason)).toEqual(['scroll'])
+  })
+
+  it('a jump no chat takes leaves the card up', async () => {
+    unsub()
+    unsub = onLinkPreviewNav(() => false)
+    const frame = await shown([app(true)])
+    ask(frame, 'jump', { ts: TS })
+    expect(sentTo(frame).filter((m) => m.type === 'hide')).toEqual([])
   })
 
   it('a jump from an app not approved for sessionKey is refused', async () => {
@@ -293,8 +303,28 @@ describe('link-preview cards: a clicked or tapped card stays until it is closed'
     fireEvent.pointerDown(span, { pointerType: 'mouse' })
     fireEvent.click(span)
     const frame = await ready()
+    fromFrame(frame, 'open')
     return { span, frame }
   }
+  const click = (el: HTMLElement, init: MouseEventInit = {}) => {
+    fireEvent.pointerDown(el, { pointerType: 'mouse' })
+    fireEvent.click(el, init)
+  }
+
+  it('a clicked card still loading is not dropped by a hover over another span', async () => {
+    const span = await mount([app(true)])
+    const { container } = render(<MarkdownRenderer textPreviews content="and [R5] too" previewSlot={SLOT} messageTs={TS} previewMid={MID} />)
+    await settle()
+    const other = container.querySelector('[data-link-preview-text]') as HTMLElement
+    click(span)
+    const frame = await ready()
+    // No `open` yet: the card is not on screen when the pointer crosses [R5].
+    fireEvent.pointerOut(span, { relatedTarget: other })
+    fireEvent.pointerOver(other)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(closes(frame)).toEqual([])
+    expect(shows(frame).map((m) => m.text)).toEqual(['[R4]'])
+  })
 
   it('leaving the span, and hovering another, does not close a clicked card', async () => {
     const { span, frame } = await clicked()
@@ -328,9 +358,59 @@ describe('link-preview cards: a clicked or tapped card stays until it is closed'
     expect(shows(frame)).toHaveLength(1)
   })
 
+  it('a double-click on the span, selecting the label, leaves the card it opened', async () => {
+    const { span, frame } = await clicked()
+    click(span, { detail: 2 })
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+    expect(closes(frame)).toEqual([])
+    expect(shows(frame)).toHaveLength(1)
+  })
+
+  it('a clicked card the app pinned no longer holds the span: the next click shows a new card, and hover works', async () => {
+    const { span, frame } = await clicked()
+    ask(frame, 'pin', { pinned: true })
+    click(span)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    for (const f of framesIn()) if (f !== frame) fromFrame(f, 'ready')
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+    const fresh = framesIn().find((f) => f !== frame)
+    expect(fresh && shows(fresh).map((m) => m.trigger)).toEqual(['click'])
+    expect(closes(frame)).toEqual([])
+    // The fresh card is a clicked one too; once it is gone, hover shows one again.
+    if (fresh) ask(fresh, 'close', {})
+    fireEvent.pointerOver(span)
+    await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    expect(fresh && shows(fresh).map((m) => m.trigger)).toEqual(['click', 'hover'])
+  })
+
+  it('an overlay that reports no regions has closed: the next click on the span opens it again', async () => {
+    const { span, frame } = await clicked()
+    fromFrame(frame, 'regions', { rects: [{ left: 0, top: 0, width: 100, height: 100 }] })
+    fromFrame(frame, 'regions', { rects: [] })
+    click(span)
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+    expect(shows(frame).map((m) => m.trigger)).toEqual(['click', 'click'])
+    expect(closes(frame)).toEqual([])
+  })
+
+  it("an overlay's late empty regions, after a click moved to another span, leave that span's card closable", async () => {
+    const { frame } = await clicked()
+    const { container } = render(<MarkdownRenderer textPreviews content="and [R5] too" previewSlot={SLOT} messageTs={TS} previewMid={MID} />)
+    await settle()
+    const other = container.querySelector('[data-link-preview-text]') as HTMLElement
+    fromFrame(frame, 'regions', { rects: [{ left: 0, top: 0, width: 100, height: 100 }] })
+    click(other)
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+    expect(closes(frame)).toEqual(['leave', 'hide:click'])
+    // The app closes [R4]'s window after [R5]'s click was already shown.
+    fromFrame(frame, 'regions', { rects: [] })
+    fireEvent.pointerDown(document.body, { pointerType: 'mouse' })
+    fireEvent.click(document.body)
+    expect(closes(frame)).toEqual(['leave', 'hide:click', 'leave', 'hide:click'])
+  })
+
   it('a clicked card the app closed itself opens again on the next click, and hover works again', async () => {
     const { span, frame } = await clicked()
-    fromFrame(frame, 'open')
     ask(frame, 'close', {})
     fireEvent.pointerDown(span, { pointerType: 'mouse' })
     fireEvent.click(span)
@@ -356,6 +436,7 @@ describe('link-preview cards: a clicked or tapped card stays until it is closed'
     fireEvent.pointerDown(span, touch)
     fireEvent.pointerUp(span, touch)
     const frame = await ready()
+    fromFrame(frame, 'open')
     expect(shows(frame).map((m) => m.trigger)).toEqual(['tap'])
     fireEvent.pointerOut(span, touch)
     expect(closes(frame)).toEqual([])

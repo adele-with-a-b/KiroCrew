@@ -1020,6 +1020,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     handleJumpToPinnedMessage,
     scrollerRef,
     isAtBottom,
+    splitView: splitMode && splitFeatureEnabled,
   })
   const {
     activeSlotTitle, renderMessage, renderTurnItem, renderFarmItem,

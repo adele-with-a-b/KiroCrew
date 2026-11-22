@@ -222,12 +222,36 @@ describe("a link-preview card's jump", () => {
   })
 
   it('scrolling back to the bottom by hand after the jump drops the pill', () => {
-    const { opts, hook } = harness({ scrollerRef: { current: scroller() }, isAtBottom: true })
+    const sc = scroller()
+    const { opts, hook } = harness({ scrollerRef: { current: sc }, isAtBottom: true })
     act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't2' } }) })
     expect(hook.result.current.backSpot).not.toBeNull()
     hook.rerender({ ...opts, isAtBottom: false })
     expect(hook.result.current.backSpot).not.toBeNull()
+    act(() => { sc.dispatchEvent(new Event('wheel')) })
     hook.rerender({ ...opts, isAtBottom: true })
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('a jump that lands at the bottom keeps the pill until the person scrolls', () => {
+    const sc = scroller()
+    const { opts, hook } = harness({ scrollerRef: { current: sc }, isAtBottom: false })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't2' }, from: { ts: 't0' } }) })
+    // The target sat in the last screenful: arriving there is not a scroll by hand.
+    hook.rerender({ ...opts, isAtBottom: true })
+    expect(hook.result.current.backSpot).not.toBeNull()
+    hook.rerender({ ...opts, isAtBottom: false })
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' })) })
+    hook.rerender({ ...opts, isAtBottom: true })
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('in split view a jump is not taken: the transcript it would move is not drawn', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller() }, splitView: true })
+    let taken = true
+    act(() => { taken = sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't2' } }) })
+    expect(taken).toBe(false)
+    expect(opts.handleJumpToPinnedMessage).not.toHaveBeenCalled()
     expect(hook.result.current.backSpot).toBeNull()
   })
 

@@ -26,6 +26,7 @@ from kiro_crew.dashboard.token_auth_paths import (
     SPA_FALLBACK_EXCLUDED_PREFIXES,
     is_csrf_exempt,
 )
+from kiro_crew.testing.wait import FALLBACK_TIMEOUT_SECS
 
 APP = "cards-app"
 PID = "cards"
@@ -274,7 +275,7 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=60,
+        timeout=FALLBACK_TIMEOUT_SECS,
         check=True,
     )
     result = json.loads(out.stdout.strip().splitlines()[-1])
