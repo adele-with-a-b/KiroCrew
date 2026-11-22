@@ -37,6 +37,8 @@ import { RadioChipGroup, radioChip } from '../../../components/RadioChipGroup'
 import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
 import { conductorModeRunState, type ConductorModeRunState } from '../../../lib/conductorModeRun'
+import ConductorBacklogView from './ConductorBacklogView'
+import { levelOf } from '../../../lib/crewPlan'
 
 export interface ConductorModeCounts { total: number; done: number; running: number; approvals: number; questions: number }
 
@@ -360,6 +362,12 @@ const STATE_ICON: Record<MilestoneState, JSX.Element> = {
 
 /** A text that wraps, a long word (a SHA, a path) included, instead of being cut. */
 const WRAP = 'min-w-0 [overflow-wrap:anywhere]'
+
+const VIEW_LABEL = {
+  status: 'components.crewMode.conductor_mode_view_status',
+  backlog: 'components.crewMode.conductor_mode_view_backlog',
+  list: 'components.crewMode.conductor_mode_view_list',
+} as const
 
 function MilestoneRow({ item, state, waitingOn, now, onOpen }: { item: WorkBoardItem; state: MilestoneState; waitingOn: string; now: number; onOpen?: () => void }) {
   let sub: JSX.Element | string = ''
@@ -700,7 +708,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       onToggle={searching ? undefined : () => toggleRow(n, pathToViewing.has(n.w.key))} onOpen={n.w.remote_crew ? undefined : () => open(n.w)}
       pausedIn={pause?.stopped.includes(n.w.key) ? root : undefined} />
   )
-  const [view, setView] = useState<'status' | 'list'>('status')
+  const [view, setView] = useState<'status' | 'backlog' | 'list'>('status')
   const [doneOpen, setDoneOpen] = useState(false)
   // The work ledger through the Crew page's own read (GET /api/crew-board), same key and cadence.
   const boardInterval = usePollRule(`crew-board:${root}`, CREW_BOARD_POLL_MS, active, crewBoardQueryKey(root))
@@ -730,7 +738,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // composer on screen, and a reply belongs in the main chat's.
   const replyInto = !viewing || viewing === root ? onAct : undefined
   const crewBack = useCrewBack(root)
-  const milestones = items.map(item => {
+  // An epic is the plan's container for its stories, never an outcome of its own.
+  const milestones = items.filter(item => levelOf(item) !== 'epic').map(item => {
     const state = milestoneState(item, approvalByItem.has(item.item_id))
     const waitingOn = approvalByItem.get(item.item_id) || firstSentence(item.summary) || i18nT('components.crewMode.conductor_mode_needs_you')
     return { item, state, waitingOn }
@@ -767,8 +776,41 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   }
   const recap = summaryRecap(summary.data, items.map(i => i.title))
     || (items.length
-      ? milestoneSentence(msDone, items.length, milestones.filter(m => m.state === 'needs_you').map(m => m.item.title), milestones.filter(m => m.state === 'running').map(m => m.item.title), milestones.filter(m => m.state === 'stuck').map(m => m.item.title), milestones.filter(m => m.state === 'quiet').map(m => m.item.title))
+      ? milestoneSentence(msDone, milestones.length, milestones.filter(m => m.state === 'needs_you').map(m => m.item.title), milestones.filter(m => m.state === 'running').map(m => m.item.title), milestones.filter(m => m.state === 'stuck').map(m => m.item.title), milestones.filter(m => m.state === 'quiet').map(m => m.item.title))
       : conductorModeRecap(c, waitingNames, questionCount > 0))
+
+  // (2) Needs your input, shown by Status and Backlog alike: the chat's own
+  // ask_question card and the crew's approval cards, both compact.
+  const needsYouSection = (
+    <section data-testid="conductor-mode-needs-you" className="space-y-1.5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{`${i18nT('components.crewMode.conductor_mode_needs_input')} · ${needCount}`}</h3>
+      {/* A milestone that needs the person without an approval card, or one
+          that is stuck or quiet, is not counted here, but the line does not claim
+          nothing is wrong: it points at the rows below. */}
+      {(needCount === 0 || needsYouRows.length > 0) && <p className="text-[12px] text-muted" data-testid="conductor-mode-needs-you-none">{needsYouRows.length
+        ? i18nT(needsYouRows.length === 1 ? 'components.crewMode.conductor_mode_needs_you_rows_one' : 'components.crewMode.conductor_mode_needs_you_rows_many', { names: joinNames(needsYouRows) })
+        : i18nT(stuck || quiet ? 'components.crewMode.conductor_mode_needs_you_none_stuck' : 'components.crewMode.conductor_mode_needs_you_none')}</p>}
+      {pendingQuestion?.questions?.length ? (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated/40 px-2.5 py-2" data-testid="conductor-mode-main-question">
+          <span className="flex-1 min-w-0 text-[13px] text-text truncate" title={pendingQuestion.questions[0].question}>{pendingQuestion.questions[0].question}</span>
+          <button type="button" onClick={answerInChat} data-testid="conductor-mode-answer-in-chat"
+            className="shrink-0 inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium conductor-mode-accent hover:bg-bg-hover">
+            {i18nT('components.crewMode.conductor_mode_answer_in_chat')}<ArrowDown size={12} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+      {forYou.map(item => <PersonAskRow key={item.item_id} root={root} item={item} options={board.data?.asks?.[item.item_id] ?? []} onAct={replyInto} back={crewBack} />)}
+      <CrewApprovalCards root={root} compact />
+    </section>
+  )
+  const backlogRow = (itemId: string) => {
+    const m = milestones.find(x => x.item.item_id === itemId)
+    if (!m) return undefined
+    // A plan row quotes the worker's ask itself: the plan's rows sit far below the
+    // Needs-you card, where "the answer above" points at nothing.
+    const asked = forYou.some(i => i.item_id === itemId) ? firstSentence(m.item.summary) : ''
+    return { needsYou: m.state === 'needs_you', waitingOn: asked || m.waitingOn }
+  }
 
   return (
     <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={view}>
@@ -779,10 +821,10 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       {listed.isError && !crewRouteNotServed(listed.error) && <div className="shrink-0 px-3 pt-3"><ErrorNotice variant="inline" message={i18nT(live.length ? 'commandCenter.workers_error_live' : 'commandCenter.workers_error')} askAgent /></div>}
       <div className="shrink-0 px-3 pt-3">
         <RadioChipGroup ariaLabel={i18nT('commandCenter.workers_view_label')} className="flex gap-1 rounded-lg border border-border bg-bg-hover/40 p-0.5" data-testid="conductor-mode-view-switch">
-          {(['status', 'list'] as const).map(v => (
+          {(['status', 'backlog', 'list'] as const).map(v => (
             <button key={v} type="button" {...radioChip(view === v)} data-testid={`conductor-mode-view-${v}`} onClick={() => setView(v)}
               className={`flex-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors ${view === v ? 'bg-bg-elevated text-text shadow-sm' : 'text-muted hover:text-text'}`}>
-              {i18nT(v === 'status' ? 'components.crewMode.conductor_mode_view_status' : 'components.crewMode.conductor_mode_view_list')}
+              {i18nT(VIEW_LABEL[v])}
             </button>
           ))}
         </RadioChipGroup>
@@ -803,32 +845,11 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
               ? i18nT('components.crewMode.conductor_mode_changed_when', { when: fmtRelative(Math.min(changed.at, now)), what: changed.text })
               : i18nT('components.crewMode.conductor_mode_changed', { what: changed.text })}</p>}
           </section>
-          {/* (2) Needs your input: the chat's own ask_question card and the crew's
-              approval cards, both compact. */}
-          <section data-testid="conductor-mode-needs-you" className="space-y-1.5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{`${i18nT('components.crewMode.conductor_mode_needs_input')} · ${needCount}`}</h3>
-            {/* A milestone that needs the person without an approval card, or one
-                that is stuck or quiet, is not counted here, but the line does not claim
-                nothing is wrong: it points at the rows below. */}
-            {(needCount === 0 || needsYouRows.length > 0) && <p className="text-[12px] text-muted" data-testid="conductor-mode-needs-you-none">{needsYouRows.length
-              ? i18nT(needsYouRows.length === 1 ? 'components.crewMode.conductor_mode_needs_you_rows_one' : 'components.crewMode.conductor_mode_needs_you_rows_many', { names: joinNames(needsYouRows) })
-              : i18nT(stuck || quiet ? 'components.crewMode.conductor_mode_needs_you_none_stuck' : 'components.crewMode.conductor_mode_needs_you_none')}</p>}
-            {pendingQuestion?.questions?.length ? (
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated/40 px-2.5 py-2" data-testid="conductor-mode-main-question">
-                <span className="flex-1 min-w-0 text-[13px] text-text truncate" title={pendingQuestion.questions[0].question}>{pendingQuestion.questions[0].question}</span>
-                <button type="button" onClick={answerInChat} data-testid="conductor-mode-answer-in-chat"
-                  className="shrink-0 inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium conductor-mode-accent hover:bg-bg-hover">
-                  {i18nT('components.crewMode.conductor_mode_answer_in_chat')}<ArrowDown size={12} aria-hidden="true" />
-                </button>
-              </div>
-            ) : null}
-            {forYou.map(item => <PersonAskRow key={item.item_id} root={root} item={item} options={board.data?.asks?.[item.item_id] ?? []} onAct={replyInto} back={crewBack} />)}
-            <CrewApprovalCards root={root} compact />
-          </section>
+          {needsYouSection}
           {/* (3) Milestones: one row per ledger item, as outcomes. */}
           <section data-testid="conductor-mode-milestones">
             <div className="flex items-center gap-2">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{i18nT('components.crewMode.conductor_mode_milestones', { done: msDone, total: items.length })}</h3>
+              <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{i18nT('components.crewMode.conductor_mode_milestones', { done: msDone, total: milestones.length })}</h3>
               {(stuck || quiet || (moving && lastReport)) && (
                 <span className={`ml-auto text-[11px] inline-flex items-center gap-1 ${stuck || quiet ? 'text-muted' : 'crew-tone-ok'}`} data-testid="conductor-mode-pulse">
                   <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-current" />
@@ -839,7 +860,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
             {/* A ledger the root never opened (404) is the empty state; any
                 other failure says so and offers the agent hand-off. */}
             {board.isError && !isNotFoundError(board.error) && <div className="mt-1"><ErrorNotice variant="inline" message={errMessage(board.error) || i18nT('pages.crewBoard.error_title')} askAgent /></div>}
-            {board.isError && !isNotFoundError(board.error) ? null : items.length === 0
+            {board.isError && !isNotFoundError(board.error) ? null : milestones.length === 0
               ? <p className="text-[12px] text-muted mt-1">{i18nT('components.crewMode.conductor_mode_milestones_none')}</p>
               : <>
                 {/* Finished milestones fold into one row, so what is open stays on screen. */}
@@ -866,6 +887,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
             {summary.isError && !isNotFoundError(summary.error) && <ErrorNotice variant="inline" message={errMessage(summary.error) || i18nT('components.errorBoundary.something_went_wrong')} askAgent />}
           </section>
         </div>
+      ) : view === 'backlog' ? (
+        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={needCount} />
       ) : (
         <div className="relative flex-1 min-h-0 flex flex-col">
         {showSearch && <CrewWorkerSearch query={query} onChange={setQuery} />}

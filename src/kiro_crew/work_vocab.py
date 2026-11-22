@@ -464,8 +464,9 @@ class WorkBoardConductor(TypedDict):
     depth: int
     parent_item: str | None
     created_at: str
-    #: The board's releases (``work_plan_vocab.coerce_releases``); present only while
-    #: the board has one, so a board that never planned reads as it always did.
+    #: The board's releases (``work_plan_vocab.coerce_releases``). The fold always
+    #: renders the key, empty on a board that never planned; the store's header and
+    #: the board read carry it only while the board has one.
     releases: NotRequired[list[dict[str, Any]]]
     entries: int
     first_entry_at: str

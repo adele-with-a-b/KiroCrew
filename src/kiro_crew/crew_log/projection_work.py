@@ -851,6 +851,11 @@ def _work_render(state: dict[str, Any]) -> WorkBoardView:
             # key is present on every state that reaches here.
             "last_entry_at": state["last_entry_at"],
             "generation": state["generation"],
+            # Always present, empty on a board that never planned, so a page bound to
+            # it renders an empty list rather than a blank cell. The store writes no
+            # ``releases`` key for an empty list, so a rebuild from this view keeps an
+            # unplanned header byte-identical.
+            "releases": list(state["releases"]),
         },
         "items": items,
         "omitted": state["omitted"] + sum(len(p) for p in state["parked"].values()),
@@ -865,6 +870,4 @@ def _work_render(state: dict[str, Any]) -> WorkBoardView:
             ),
         ),
     }
-    if state["releases"]:
-        view["conductor"]["releases"] = list(state["releases"])
     return view
