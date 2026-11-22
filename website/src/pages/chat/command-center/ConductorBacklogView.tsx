@@ -39,14 +39,15 @@ const STEP_KEY: Record<PlanStep, string> = {
   released: 'components.crewMode.plan_step_released',
 }
 
-/** The step tag: its word, and on an open step a dot per step filled to it. */
+/** The step tag: its word in its step's own colour (`.plan-step`), and on an
+ *  open step a dot per step filled to it. */
 function StepTag({ step }: { step: PlanStep | undefined }) {
   if (!step) return null
   const at = stepIndex(step)
   const done = step === 'merged' || step === 'released'
   return (
     <span data-testid="plan-step" data-step={step}
-      className={`inline-flex items-center gap-1 h-[18px] px-1.5 rounded-full border text-[11px] font-medium ${done ? 'crew-tone-ok border-current' : step === 'todo' ? 'text-muted border-border' : 'conductor-mode-accent border-current'}`}>
+      className="plan-step inline-flex items-center gap-1 h-[18px] px-1.5 rounded-full border text-[11px] font-medium">
       {i18nT(STEP_KEY[step])}
       {!done && step !== 'todo' && (
         <span aria-hidden="true" className="inline-flex gap-[2px]">
