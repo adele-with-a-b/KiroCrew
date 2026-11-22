@@ -8,10 +8,13 @@ on:
   # Internal Content Scan Gate carry the same filter, and pr-readiness.yml
   # counts these lanes on a release base only when that branch's own copy of
   # this line lists it.
+  # Fork only (adele-with-a-b/KiroCrew): `local/**` is the fork's working
+  # branch, so its PRs and pushes get the same lanes on hosted runners.
+  # Fast Gate carries the same addition. Drop it when rebasing for upstream.
   push:
-    branches: [main, "release/**"]
+    branches: [main, "release/**", "local/**"]
   pull_request:
-    branches: [main, "release/**"]
+    branches: [main, "release/**", "local/**"]
   # The merge queue tests each PR against the main it will actually land on.
   # A merge_group run is what makes "every PR was green" imply "main is green".
   merge_group:
