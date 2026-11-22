@@ -9,32 +9,38 @@ operator added for a backend (:func:`with_extra_models`).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from kiro_crew import model_registry
+from kiro_crew.config.picker_extra_models import extra_ids_for  # noqa: F401 - used via model_rows
 
 
-def with_extra_models(rows: list[dict], dashboard: Any, backend: str) -> list[dict]:
-    """Return *rows* with ``dashboard.model_picker_extra_models[backend]`` appended.
+def with_extra_models(
+    rows: list[dict], extras: list[str], key_of: Callable[[str], str]
+) -> list[dict]:
+    """Return *rows* with the operator's added ids *extras* appended.
 
-    The ids the operator named for a model *backend* runs but does not advertise
-    (:mod:`kiro_crew.config.picker_extra_models`). An id already in *rows* keeps its
-    advertised row; each new one is appended under its own id, after every advertised
-    row, so the backend's own list keeps its order.
+    The ids come from :func:`kiro_crew.config.picker_extra_models.extra_ids_for`.
+    An id already on a row, or one *key_of* (the facade's ``_normalize_model_key``)
+    folds to ``auto``, adds nothing. Otherwise the operator's own spelling is kept:
+    folding by key would merge a bare family alias with the versioned model it
+    names, which :func:`merge_advertised_rows` keeps apart. Each new id is appended
+    under its own id, after every advertised row.
     """
-    extras = (getattr(dashboard, "model_picker_extra_models", None) or {}).get(backend) or []
-    seen = {str(r.get("model_name", "")) for r in rows}
-    added = [
-        {
-            "model_name": model,
-            "display_name": model,
-            "description": "Added in settings (dashboard.model_picker_extra_models)",
-            "context_window": model_registry.model_window(model)
-            or model_registry.REFERENCE_WINDOW_TOKENS,
-        }
-        for model in dict.fromkeys(extras)
-        if model not in seen
-    ]
+    names = {str(r.get("model_name", "")) for r in rows}
+    added: list[dict] = []
+    for model in extras:
+        if model in names or key_of(model) in ("", "auto"):
+            continue
+        names.add(model)
+        added.append(
+            {
+                "model_name": model,
+                "display_name": model,
+                "description": "Added in settings (dashboard.model_picker_extra_models)",
+                "context_window": model_registry.model_window(model)
+                or model_registry.REFERENCE_WINDOW_TOKENS,
+            }
+        )
     return [*rows, *added]
 
 

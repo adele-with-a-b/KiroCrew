@@ -1,13 +1,23 @@
 """Read ``dashboard.model_picker_extra_models``: model ids a backend runs but does not list.
 
-A backend's advertised list can leave out a model it runs (claude-agent-acp, for one,
-passes an unlisted id to Claude Code on a live pick). The operator names such ids per
-backend id, and the model picker offers them beside what the backend advertised.
+claude-agent-acp advertises only the rows in the user's Claude settings, yet passes an
+unlisted id to Claude Code on a live pick. The operator names such ids per backend id;
+only the claude backend reads them (:data:`READING_BACKENDS`), where the model picker
+offers them beside the advertised rows.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
+from kiro_crew.agent_sdk.backends import ACP_BACKEND_CLAUDE
 from kiro_crew.validation import MODEL_PICKER_HIDDEN_MODEL_ID_RE, MODEL_PICKER_HIDDEN_MODELS_MAX
+
+# Backends whose picker offers the added ids. Claude Code runs a model per chat
+# process, so a pick reaches the adapter's own ``set_config_option``; a backend on
+# the shared runtime checks a pick against its advertised list first and would
+# refuse an added row.
+READING_BACKENDS = frozenset({ACP_BACKEND_CLAUDE})
 
 
 def coerce_picker_extra_models(raw: object) -> dict[str, list[str]]:
@@ -38,3 +48,12 @@ def coerce_picker_extra_models(raw: object) -> dict[str, list[str]]:
         if kept:
             out[backend] = kept
     return out
+
+
+def extra_ids_for(cfg: Any, backend: str) -> list[str]:
+    """The added ids *backend* offers under *cfg*; ``[]`` off :data:`READING_BACKENDS`."""
+    if backend not in READING_BACKENDS:
+        return []
+    dashboard = getattr(cfg, "dashboard", None)
+    extras = getattr(dashboard, "model_picker_extra_models", None) or {}
+    return list(extras.get(backend) or ())

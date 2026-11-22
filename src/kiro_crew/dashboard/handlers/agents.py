@@ -1431,14 +1431,16 @@ async def api_models(request: web.Request) -> web.Response:
     backend, bundle_route = route
     if backend == ACP_BACKEND_CLAUDE:
         rows = _cc_models(request, configured_default=_scoped_default(cfg, backend))
-        return web.json_response(model_rows.with_extra_models(rows, cfg.dashboard, backend))
+        extras = model_rows.extra_ids_for(cfg, backend)
+        return web.json_response(model_rows.with_extra_models(rows, extras, _normalize_model_key))
     if capabilities_for(backend).resolves_model_from_advertised_list or (
         backend in ACP_BACKENDS_MODEL_AT_LAUNCH
     ):
-        rows = _advertised_backend_models(
-            request, backend, configured_default=_scoped_default(cfg, backend)
+        return web.json_response(
+            _advertised_backend_models(
+                request, backend, configured_default=_scoped_default(cfg, backend)
+            )
         )
-        return web.json_response(model_rows.with_extra_models(rows, cfg.dashboard, backend))
     # KAS from Crew's own engine bundle: no kiro-cli to list models with, so the
     # readiness gate, the ``--list-models`` spawn and the ``_entitled_kiro_models``
     # narrowing below never apply (the engine's select is already the signed-in

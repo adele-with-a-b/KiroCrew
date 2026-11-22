@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from dashboard_owner_helpers import as_owner
 
 from kiro_crew.config.loader import KiroCrewConfig
+from kiro_crew.config.picker_extra_models import extra_ids_for
 from kiro_crew.dashboard.handlers.agents_cc_model_rows import with_extra_models
 
 _EXTRA = "vendor.model-unlisted-9[1m]"
@@ -54,19 +55,45 @@ def test_loader_ignores_a_non_object(cfg_file):
     assert KiroCrewConfig.load().dashboard.model_picker_extra_models == {}
 
 
+def _key(model: str) -> str:
+    from kiro_crew.dashboard.handlers.agents import _normalize_model_key
+
+    return _normalize_model_key(model)
+
+
 def test_extra_ids_append_after_the_advertised_rows_once():
     rows = [{"model_name": "auto"}, {"model_name": "opus"}]
-    dashboard = SimpleNamespace(model_picker_extra_models={"claude": ["opus", _EXTRA]})
-    out = with_extra_models(rows, dashboard, "claude")
+    out = with_extra_models(rows, ["opus", _EXTRA, _EXTRA], _key)
     assert [r["model_name"] for r in out] == ["auto", "opus", _EXTRA]
     assert out[-1]["display_name"] == _EXTRA
     assert out[-1]["context_window"] > 0
 
 
-def test_another_backends_extras_are_not_added():
+def test_an_auto_spelling_adds_nothing():
     rows = [{"model_name": "auto"}]
-    dashboard = SimpleNamespace(model_picker_extra_models={"codex": [_EXTRA]})
-    assert with_extra_models(rows, dashboard, "claude") == rows
+    assert with_extra_models(rows, ["default", "Auto"], _key) == rows
+
+
+def test_an_alias_and_its_versioned_model_both_keep_a_row_in_any_order():
+    versioned = "global.anthropic.claude-opus-4-8[1m]"
+    assert _key(versioned) == _key("opus")
+    for rows, extras in (
+        ([{"model_name": "opus"}], [versioned]),
+        ([{"model_name": versioned}], ["opus"]),
+        ([], ["opus", versioned]),
+        ([], [versioned, "opus"]),
+    ):
+        names = [r["model_name"] for r in with_extra_models(rows, extras, _key)]
+        assert sorted(names) == sorted(["opus", versioned])
+
+
+def test_only_the_claude_backend_reads_its_extras():
+    cfg = SimpleNamespace(
+        dashboard=SimpleNamespace(model_picker_extra_models={"claude": [_EXTRA], "codex": [_EXTRA]})
+    )
+    assert extra_ids_for(cfg, "claude") == [_EXTRA]
+    assert extra_ids_for(cfg, "codex") == []
+    assert extra_ids_for(SimpleNamespace(agent=None), "claude") == []
 
 
 @pytest.mark.asyncio
