@@ -784,7 +784,14 @@ its own once the cache refreshes with a list that carries it.
   `agent.role_models.<role>` (`background`, `subagent`), read by
   `AgentConfig.resolve_model(role)` in `config/sections_agent.py`. Roles default to
   `"auto"` and deliberately do NOT inherit `agent.model`, so a user's chat model
-  does not silently become the price of every background task. The sessions a
+  does not silently become the price of every background task. The `background`
+  pin is baked into the `kirocrew-lite` and `kirocrew-heartbeat` specs, so its
+  live applier (`_apply_background_model`, `dashboard/server_runtime/config_watch.py`)
+  rebuilds them and then resets the warm `_bg` and `_consolidate` runtimes
+  (`reset_after_background_model_change`, off the watcher's cycle): each keeps the
+  model it started on, and a fresh conversation reopens on it, so without the reset
+  a new pin, or a return to `"auto"`, reached history consolidation only at the
+  next restart. The sessions a
   Bot dispatches with `session_create` are the one decided exception
   ([rfc-worker-model-inheritance](../../request-for-change/rfc-worker-model-inheritance.md)):
   they take a copy, made at creation, of the BOT profile's explicit model

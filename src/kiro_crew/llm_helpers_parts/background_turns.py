@@ -544,6 +544,22 @@ async def _rewrite_lite_spec(sessions: Any) -> None:
         _lite_rewrites["running"] -= 1
 
 
+async def reset_after_background_model_change(sessions: Any) -> None:
+    """Reset ``_bg`` and ``_consolidate`` once ``agent.role_models.background`` changed.
+
+    Both runtimes outlive a turn and keep the model they started on: each fresh
+    conversation reopens on it, so a rebuilt ``kirocrew-lite`` spec never reached
+    them and a new pin only took effect at the next restart. A reset makes the next
+    turn start the runtime on the rebuilt spec's model, the way a spec repair does;
+    a turn running on one ends. One that cannot be reset stays in
+    ``_lite_resets_failed``, so its next turn resets it before running.
+    """
+    from kiro_crew.agent import reset_after_spec_repair
+    from kiro_crew.session import BACKGROUND_KEY, CONSOLIDATE_KEY  # circular import
+
+    await reset_after_spec_repair(sessions, (BACKGROUND_KEY, CONSOLIDATE_KEY), _lite_resets_failed)
+
+
 def _background_spawn_backend(sessions: Any) -> str | None:
     """The backend a background session on *sessions* starts under, or ``None``.
 

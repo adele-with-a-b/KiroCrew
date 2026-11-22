@@ -277,6 +277,58 @@ class TestServerAppliers:
         rebuild.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_a_background_model_change_restarts_the_warm_background_runtimes(
+        self,
+    ) -> None:
+        """The warm ``_bg`` and ``_consolidate`` runtimes keep the model they started
+        on, and each fresh conversation reopens on it: a rebuilt spec alone left every
+        ``bg:consolidation`` turn on ``model: default`` after the user pinned the
+        background role (11-22). The applier resets both, off its own cycle."""
+        from kiro_crew.llm_helpers_parts import background_turns
+
+        old_bg, old_consolidate = object(), object()
+        providers = {"_bg": old_bg, "_consolidate": old_consolidate}
+        sessions = SimpleNamespace(
+            get_provider=lambda key: providers.get(key),
+            reset=AsyncMock(side_effect=lambda key: providers.pop(key, None)),
+        )
+        state = SimpleNamespace(
+            workflow_service=None, channel_manager=None, sessions=sessions, _background_tasks=set()
+        )
+        apply = self._register(state)["agent.role_models.background"].callback()
+        spec = Path("/home/x/.kiro/agents/kirocrew.json")
+        with patch("kiro_crew.agent.rebuild_agent_config_reporting", return_value=(spec, True)):
+            await apply(
+                ConfigChange(
+                    old=KiroCrewConfig(),
+                    new=KiroCrewConfig(),
+                    changed=frozenset({"agent.role_models.background"}),
+                )
+            )
+            assert len(state._background_tasks) == 1, "the reset is a tracked task"
+            await asyncio.gather(*state._background_tasks)
+        assert sessions.reset.await_args_list == [call("_bg"), call("_consolidate")]
+        assert background_turns._lite_resets_failed.get("_bg") is not old_bg
+        assert background_turns._lite_resets_failed.get("_consolidate") is not old_consolidate
+
+    @pytest.mark.asyncio
+    async def test_a_runtime_that_could_not_be_reset_is_reset_by_its_next_turn(self) -> None:
+        """A reset that fails leaves the old provider marked, so the next background
+        turn on it resets it rather than run on the old model."""
+        from kiro_crew.llm_helpers_parts import background_turns
+
+        stale = object()
+        sessions = SimpleNamespace(
+            get_provider=lambda key: stale if key == "_consolidate" else None,
+            reset=AsyncMock(side_effect=RuntimeError("busy")),
+        )
+        try:
+            await background_turns.reset_after_background_model_change(sessions)
+            assert background_turns._lite_resets_failed.get("_consolidate") is stale
+        finally:
+            background_turns._lite_resets_failed.pop("_consolidate", None)
+
+    @pytest.mark.asyncio
     async def test_successful_retry_notifies_that_the_saved_model_is_active(self) -> None:
         """Recovery must resolve the operator-visible failure state."""
         state = SimpleNamespace(
