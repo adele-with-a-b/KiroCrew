@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from kiro_crew import session_map_links as _links
+from kiro_crew import session_map_sid_history as _sid_history
 from kiro_crew import session_map_store as _store
 from kiro_crew._facade_bindings import own_methods as _own_methods
 from kiro_crew.acp.types import PROVIDER_LABEL_DEFAULT
@@ -397,6 +398,7 @@ def _stash_and_clear_sid(entry: dict) -> bool:
     sid = entry.get("sid")
     if not sid:
         return fork_dropped or mode_dropped
+    _sid_history.record_departure(entry, sid)
     entry["discarded_sid"] = sid
     entry["sid"] = ""
     return True
@@ -933,6 +935,8 @@ class SessionMap:
                 existing.pop(UNLANDED_SID_FIELD, None)
             if existing.get(HEAD_SID_FIELD) not in (None, sid):
                 existing.pop(HEAD_SID_FIELD, None)
+            if existing.get("sid") != sid:
+                _sid_history.record_departure(existing, existing.get("sid"))
             existing["sid"] = sid
             existing.pop(NATIVE_FORK_FIELD, None)
             if provider:
@@ -1560,11 +1564,20 @@ class SessionMap:
     get_link = _links.get_link
     set_link = _links.set_link
 
+    # A row's past native session ids: ``kiro_crew.session_map_sid_history``.
+    sid_record = _sid_history.sid_record
+    sid_history = _sid_history.sid_history
+    conversation_sids = _sid_history.conversation_sids
+
 
 #: The modules whose ``self``-first functions :class:`SessionMap` binds, lowest layer first:
 #: each imports only the ones before it, and none imports this module at run time.
 #: ``test/test_session_map_bindings.py`` pins the bindings and that direction.
-_OWNERS: tuple[str, ...] = ("kiro_crew.session_map_store", "kiro_crew.session_map_links")
+_OWNERS: tuple[str, ...] = (
+    "kiro_crew.session_map_store",
+    "kiro_crew.session_map_links",
+    "kiro_crew.session_map_sid_history",
+)
 
 
 _own_methods(SessionMap, frozenset(_OWNERS), module=__name__)

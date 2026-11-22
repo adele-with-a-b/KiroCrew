@@ -3581,6 +3581,36 @@ or writes an entry read out of them, must call `_save()` or `_touch()`, apart fr
 and the helpers `_evict_rival_claimants` and `_rebuild_thread_index`, whose callers save or
 touch after them.
 
+### Past session ids (`sid_history`)
+
+A row's `sid` names only its current native session and `discarded_sid` only the
+last one emptied in place, so a chat that moved (a context-cap trim, a reset, a
+provider switch, a poisoned discard, a stale repair) loses the ids it ran on
+before. `sid_history` keeps them, oldest first, each `{"sid", "provider",
+"until"}`: the id, the row's provider while it was current, and the UTC time it
+stopped being current. One entry is pushed whenever a non-empty `sid` leaves the
+field, whether `set()` replaces it with a different id or `_stash_and_clear_sid`
+empties it, so a reset's id stays in the list. The writer is
+`session_map_sid_history.record_departure`, called before the field changes. An
+id already listed keeps its first place and is not added again; an id that fails
+`bounded_session_id` is not recorded. The current `sid` is never listed, even
+when a row returns to an older id. Past `SID_HISTORY_CAP` (32) the oldest entry
+is dropped and `sid_history_full: true` is set on the row. The list lives and
+dies with its row.
+
+`discarded_sid` keeps its meaning and writer, and its readers are unchanged. A
+row written before the field existed reads its `discarded_sid` as its one past
+id, with an empty provider and time; nothing is rewritten on load, and the first
+push folds it into the stored list. An older build ignores the field.
+
+`SessionMap.sid_record(key)` reads `{sid, provider, history, cap, full}` under
+the map lock as one unit, alias-folded like `mapped_sid`. `sid_history(key)` is
+its `history`; `conversation_sids(key)` is every id oldest first, the current one
+last. Apps read it through `GET /api/chat/slots/{slot}/sids`
+(`dashboard/handlers/slot_sids.py`), which adds the slot's session `key` and its
+sidebar `title` (`display_title`); who may call it is the `SLOT_SCOPE` row of
+`SLOT_ROUTE_POLICIES` ([app-kit-platform](app-kit-platform.md)).
+
 ### Asking for a fresh conversation on a slot that stays open
 
 `POST /api/chat/slots/{slot}/reset-conversation` drops one slot's resume pointer

@@ -143,6 +143,7 @@ class TestEveryPerSlotRouteIsDecided:
         assert {k: v[0] for k, v in SLOT_ROUTE_POLICIES.items()} == {
             ("POST", "/api/chat/slots/{slot}/approve"): SlotRoutePolicy.SESSION_GRANT,
             ("POST", "/api/chat/slots/{slot}/resume"): SlotRoutePolicy.HANDLER,
+            ("GET", "/api/chat/slots/{slot}/sids"): SlotRoutePolicy.SLOT_SCOPE,
         }
 
     def test_the_checkpoint_sits_inner_to_token_auth_in_both_server_chains(self) -> None:

@@ -875,6 +875,18 @@ def _slot_visible(
     return False
 
 
+def app_sees_slot(
+    slot: _ChatSlot, app: str, allowed_events: frozenset[str], state: DashboardState
+) -> bool:
+    """Whether *app* may see *slot* at all: the rule the slot list and ``slots`` frame use.
+
+    For a per-slot read that must answer exactly the slots the app's list shows it
+    (``slot_ownership.SlotRoutePolicy.SLOT_SCOPE``). *allowed_events* comes from
+    :func:`load_declared_events_for_connect`; a disabled app is refused before this.
+    """
+    return _slot_visible(slot, app, allowed_events, state)
+
+
 def persisted_replay_denial_reason(state: Any, slot_key: str, record: dict) -> str:
     """``""`` when a persisted run may be replayed into *slot_key*, else the reason.
 

@@ -3238,6 +3238,14 @@ this checkpoint. It applies whether or not a handler carries a check of its own.
   after the body upload, and so does `/api/chat/mode`.
 - `POST .../resume` is `HANDLER`, because it opens a persisted transcript that
   usually has no live slot (see below).
+- `GET .../sids` is `SLOT_SCOPE`: any live slot the app's approved slot scope
+  shows it, by the same rule as the slot list and the `/api/ws` slots frame
+  (`ws_event_scope.app_sees_slot`): its own slots, `slots:user` for a person's
+  chats, `slots:all`, `slots:app:<x>` with x's opt-in. A disabled app reads none.
+  The declarations are read once, off the loop, before the slot is looked up
+  (`_declared_slot_scope`). The route answers the chat's title, which that list
+  already shows the app, and its native session ids, which carry no content
+  ([session](session.md#past-session-ids-sid_history)). It loads no rows.
 
 The question routes (`GET .../question`, `POST .../question/answer`,
 `POST .../question/steer`, `POST .../question/dismiss`)

@@ -1262,6 +1262,31 @@ applies to both HTTP requests and WebSocket handshakes created by `create_ws()`.
 | `getSlotHistory(slotId, limit?)` | `{messages, total}` | Get slot message history |
 | `sendMessage(slotId, message)` | `—` (no body) | Send a message (validates length, auto-flushes pending context) |
 
+#### A chat's session ids (`GET /api/chat/slots/{slot}/sids`)
+
+A chat moves to a new native session on a context trim, a reset or a provider
+switch. Data your app keyed on a session id stays the chat's if you read the
+chat's whole list. Call it with your app token from your backend:
+
+```json
+{"key": "dashboard:chat-23", "title": "Blick",
+ "sid": "<current, or empty>", "provider": "claude_code",
+ "history": [{"sid": "...", "provider": "claude_code", "until": "2026-11-21T21:42:07Z"}],
+ "cap": 32, "full": false}
+```
+
+`history` is oldest first and never holds `sid`. A reset's id stays in it. Past
+`cap` the oldest is dropped and `full` reads `true`. A row from before this field
+lists its one older id with an empty `provider` and `until`. `title` is the
+sidebar's title, `New Session…` while untitled; a rename is not pushed, so read
+it again.
+
+Grants: `permissions.api` covering `/api/chat/slots`, and a slot scope that shows
+the chat, as the slot list does: your own chats, `"events": ["slots:user"]` for
+the person's chats, `slots:all`, or `slots:app:<x>` with x's opt-in. The person
+approves an added scope on update. Any other chat, a closed one included, is
+`404 slot_not_found`.
+
 ### WebSocket Events
 
 | Method | Returns | Description |
