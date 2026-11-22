@@ -248,6 +248,21 @@ naming what moved (truncated at `MAX_WAKE_BRIEF_CHARS`, 4000) and then one
 `work_ledger_read(compact=true)` for the board. The conductor reads the ledger
 itself, through its own identity-gated, audited and containment-judged route.
 
+A wake holding a stall brief (`ledger_wake.STALL_MARK`, `reason=stall`) also
+carries one `STALL_POINTER` line between the briefs and the read pointer, once per
+wake however many items went quiet. The brief's `last_status` is the worker's last
+report, most often `progress`, and every conductor rule says to ignore that, so a
+stall wake that carried only the brief read as nothing to do: the conductor read
+the worker's last "build running" and called it on track while nothing ran. The
+line says what `work_ledger.is_stale` already proved (the worker is not running and
+the next move is its own) and the action: check `session_status` and the pull
+request, `session_send` the next step and record `action=decide`, or re-dispatch or
+close the item. The mark is read before the brief list is cut, so a stall past
+`MAX_WAKE_BRIEF_CHARS` still gets the line. The goal-conductor skill and the
+conductor prompt (`agent_parts/spec_prompts.py`, `patrol_watch` and
+`act_by_status`) say the same: a stale item is not `progress`, and it wakes the
+patrol once per silence, never while its worker runs.
+
 The wake used to carry the compact board inline, built at delivery by
 `compact_wake_snapshot` and bounded by `WAKE_SNAPSHOT_BUDGET_CHARS` (24000). That
 made the cost of one item moving proportional to the whole goal -- on a twenty-item

@@ -664,6 +664,11 @@ def wake_brief(*, item_id: str, status: str) -> str:
     return f"[work-ledger wake] item={item_id} status={status or '(unset)'}"
 
 
+#: What marks a brief as a SILENCE wake. :func:`stall_brief` writes it and
+#: :func:`wake_turn_text` looks for it, so the two cannot drift apart.
+STALL_MARK = "reason=stall"
+
+
 def stall_brief(*, item_id: str, status: str | None) -> str:
     """Text for a SILENCE wake, marked as such.
 
@@ -674,7 +679,7 @@ def stall_brief(*, item_id: str, status: str | None) -> str:
 
     Structural only, for the reason :func:`wake_brief` gives.
     """
-    return f"[work-ledger wake] item={item_id} reason=stall last_status={status or '(none yet)'}"
+    return f"[work-ledger wake] item={item_id} {STALL_MARK} last_status={status or '(none yet)'}"
 
 
 def undelivered_wake_brief(*, item_id: str, tool: str) -> str:
@@ -721,6 +726,27 @@ WAKE_READ_POINTER = (
 )
 
 
+#: What a SILENCE wake asks of the conductor, said once per wake that holds one.
+#:
+#: The brief alone names an item and its ``last_status``, and that status is
+#: usually ``progress``, which every conductor rule maps to "do nothing". Read by
+#: those rules a stall wake asks for nothing, so a conductor told only the brief
+#: reads the worker's last "build running" and reports it on track while nothing
+#: runs. This line says what the flag behind the wake already proved -- not
+#: running, and the move is the worker's -- and what to do about it. Once per wake
+#: rather than once per brief: one tick can find many quiet items, and the
+#: instruction is the same for each.
+STALL_POINTER = (
+    f"[work-ledger] {STALL_MARK} is not a report, so the rule for its last_status "
+    "does not apply (a stalled progress is not one to ignore): that item's worker "
+    "is not running and its last report left the next move with it. Check the "
+    "worker with session_status and its pull request; if it is idle, session_send "
+    "it the next step now and record work_ledger_record action=decide, or "
+    're-dispatch or close the item. "On track" is never the answer to a stall. '
+    "An item no worker is bound to was never dispatched: dispatch it or leave it."
+)
+
+
 def wake_turn_text(briefs: str) -> str:
     """The text a work-ledger wake delivers: which items moved, then where to read.
 
@@ -739,10 +765,17 @@ def wake_turn_text(briefs: str) -> str:
 
     The briefs are TRUNCATED rather than dropped at :data:`MAX_WAKE_BRIEF_CHARS`, so
     an over-long body costs the tail of the list and never the pointer beneath it.
+
+    A wake that holds a silence brief also carries :data:`STALL_POINTER`, between
+    the briefs and the read pointer.
     """
     head = (briefs or "").strip()
     if not head:
         return ""
+    # Read before the cut, so a stall named past it still gets its instruction.
+    stalled = STALL_MARK in head
     if len(head) > MAX_WAKE_BRIEF_CHARS:
         head = head[:MAX_WAKE_BRIEF_CHARS].rstrip() + "\n(brief list truncated)"
+    if stalled:
+        head = f"{head}\n{STALL_POINTER}"
     return f"{head}\n{WAKE_READ_POINTER}"
