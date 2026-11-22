@@ -179,6 +179,7 @@ _OWNER_MODULES = (
     "kiro_crew.dashboard.handlers.work_ledger_read",
     "kiro_crew.dashboard.handlers.work_ledger_recording",
     "kiro_crew.dashboard.handlers.work_ledger_refusals",
+    "kiro_crew.dashboard.handlers.work_ledger_waits",
     "kiro_crew.dashboard.handlers.work_ledger_worker",
 )
 

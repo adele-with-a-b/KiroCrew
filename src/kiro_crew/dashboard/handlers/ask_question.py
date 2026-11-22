@@ -822,6 +822,11 @@ async def api_agent_ask_open(request: web.Request) -> web.Response:
             status=429,
         )
     if clients:
+        # A bound crew worker's card waits in a chat nobody watches: its item says
+        # so on the ledger, which wakes its conductor (no-op for any other session).
+        from kiro_crew.dashboard.handlers import work_ledger
+
+        work_ledger.note_question_card(state, slot_key, questions)
         # The open card, as a note a chat app can carry (behind the
         # bridge_approvals preview); scheduled, never awaited.
         from kiro_crew.notifications.bridge_question_note import schedule_pending_question
@@ -853,6 +858,11 @@ async def api_agent_ask_wait(request: web.Request) -> web.Response:
     ask_id = request.match_info["ask_id"]
     ask = state._agent_asks.get(ask_id)
     outcome = await state.wait_agent_ask(ask_id, session_key, ASK_WAIT_SLICE_SECS)
+    if outcome is not None and outcome.get("status") == "answered" and ask is not None:
+        # The person's answer clears the "needs you" the card put on a worker's item.
+        from kiro_crew.dashboard.handlers import work_ledger
+
+        work_ledger.note_question_card_answered(state, str(ask.get("slot") or ""))
     if outcome is None:
         if ask is not None and ask["session_key"] != session_key:
             message = "no such ask for this session"

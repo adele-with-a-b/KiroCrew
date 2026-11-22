@@ -618,6 +618,11 @@ async def _on_permission_prompt(
                 crew_log_session=_crew_log_sid,
                 turn=_crew_log_turn_no,
             )
+            # A bound crew worker parked here waits in a chat nobody watches: its
+            # item says so on the ledger, which wakes its conductor. Scheduled.
+            from kiro_crew.dashboard.handlers import work_ledger as _work_ledger
+
+            _work_ledger.note_approval_waiting(state, slot.key)
             outcome = await asyncio.wait_for(fut, timeout=_approval_window)
     except asyncio.TimeoutError:
         outcome = "rejected"

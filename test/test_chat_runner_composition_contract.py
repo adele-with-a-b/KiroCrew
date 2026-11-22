@@ -103,6 +103,7 @@ _OWNER_MODULES = frozenset(
         "turn_reply_seams",
         "turn_spec_hooks",
         "turn_stats",
+        "worker_wait",
     }
 )
 

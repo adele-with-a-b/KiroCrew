@@ -4732,6 +4732,36 @@ mount and grants are held by `test/test_mate_work_ledger_mount.py`. The ask core
 part of these rules: both workers append them after the coding rules (Ask cases
 and reroute).
 
+**A question the worker did not report is reported for it.** A rule in the
+worker prompt is not a mechanism, and a bound worker can stop on the person with
+its item still at `progress`: a reply that ends on a Q-label line or an
+`[OPTIONS: ...]` line, a tool approval it is parked on (up to its approval
+window), or an `ask_question` card. None of those wakes the conductor's
+`work-ledger` watch, and a patrol reading the chat's last rows can scroll past
+it. The gateway files the missing `question` report through the worker's own
+report transaction (`dashboard/handlers/work_ledger_waits.py`, which calls
+`work_ledger_worker._record_report` with operation `work_report.gateway`): reason
+`approval` for an approval, `needs_human` otherwise, a summary that starts
+`Gateway:` and quotes the question, and the artifact `waits_in_chat` naming where
+it waits. A tool call a safety policy blocked in that turn puts up no approval,
+so its redacted title and reason ride along as the artifact `refused_calls`.
+The item's own artifacts (within `MAX_ARTIFACT_KEYS`) and discussion are kept, and
+a worker's own report drops both keys (`GATEWAY_ARTIFACT_KEYS`), so a worker's
+report never reads as the gateway's. Hooks: `chat_turn/worker_wait._note_worker_question` after the turn's
+ending chain, `permission_prompt` when an approval starts waiting, and
+`ask_question.api_agent_ask_open` when a card opens. Nothing is filed for an
+unbound session, for a turn a person typed in that chat, while a `question`,
+`blocked` or `done` the worker filed is unanswered (`work_ledger_waits._workers_move`:
+a `done` is filed over only when a `fail` verdict came after it, and a `reply`,
+which waits on nobody, always is), or for the same wait the
+gateway already filed. The person's answer clears it: an approval through
+`record_approval_answered`, a card through `record_question_card_answered`.
+Text counts as a question by the Ref Links finder's Q-label rule
+(`ref_labels.DEF` / `HEAD`, Q labels only) and the chip bar's `[OPTIONS:]`
+reader, so the two agree. `test/test_work_ledger_worker_waits.py` pins it. Known
+limit: a wait written as plain prose with neither marker is not detected; the
+stale flag stays its backstop.
+
 **A stale worker is released, not capped.** A Bot opens as many workers as
 its work needs; memory is bounded by the cgroup `max_memory_mb`. A worker idle
 past `session.timeout_secs` is stopped by the idle sweep like any session, its
