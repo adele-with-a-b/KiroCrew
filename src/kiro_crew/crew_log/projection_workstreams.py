@@ -471,6 +471,9 @@ def _workstreams_work(state: dict[str, Any], entry: Entry) -> None:
         board["goal"] = _work_text("goal", data.get("goal"))
         board["round"] = max(board["round"], _as_int(data.get("round")))
         return
+    if action == "release":
+        # A board header write, like ``goal``: no task to draw, and nothing omitted.
+        return
     item_id = _as_id(data.get("item_id"))
     if not item_id:
         state["omitted"] += 1

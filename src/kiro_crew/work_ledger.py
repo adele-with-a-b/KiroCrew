@@ -980,6 +980,21 @@ import sys as _sys  # noqa: E402
 from typing import TYPE_CHECKING  # noqa: E402
 
 from kiro_crew import _facade_mirror  # noqa: E402
+from kiro_crew.work_ledger_plan import (  # noqa: E402, F401
+    _A,
+    _LEVEL_ABOVE,
+    _level,
+    _open_item,
+    _plan_event_text,
+    apply_person_rank,
+    apply_plan_write,
+    apply_release_write,
+    check_parent,
+    refuse_if_no_seat,
+    refuse_unbindable,
+    require_plan_change,
+    seated_open_items,
+)
 from kiro_crew.work_ledger_purge import (  # noqa: E402, F401
     _IDENTITY_FILES,
     ItemCensus,
@@ -1155,6 +1170,7 @@ from kiro_crew.work_ledger_store import (  # noqa: E402, F401
     _commit_item_locked,
     _copy_item,
     _existing_conductor_lock,
+    _header_under_lock,
     _item_from_record,
     _item_lock_path,
     _json_copy,
@@ -1213,7 +1229,6 @@ from kiro_crew.work_ledger_undelivered import (  # noqa: E402, F401
 from kiro_crew.work_ledger_writes import (  # noqa: E402, F401
     _admit_create_locked,
     _create_item,
-    _header_under_lock,
     _read_binding_text,
     _refuse_if_host_critical,
     _refuse_if_worker_holds_open_item,
@@ -1239,6 +1254,7 @@ _OWNERS = (
     "kiro_crew.work_ledger_records",
     "kiro_crew.work_ledger_store",
     "kiro_crew.work_ledger_rules",
+    "kiro_crew.work_ledger_plan",
     "kiro_crew.work_ledger_writes",
     "kiro_crew.work_ledger_purge",
     "kiro_crew.work_ledger_undelivered",
@@ -1270,6 +1286,17 @@ if TYPE_CHECKING:  # the project names this module imported that only its owners
         require_lock_inode,
         resolved_within,
         unlink_lock_in_hold,
+    )
+    from kiro_crew.work_plan_vocab import (  # noqa: F401
+        MAX_RELEASES,
+        coerce_plan,
+        coerce_releases,
+        counts_toward_concurrency,
+        merge_plan,
+        plan_problem,
+        rank_value,
+        release_problem,
+        upsert_release,
     )
     from kiro_crew.work_vocab import (  # noqa: F401
         WORK_ASK_LABEL_CHARS,

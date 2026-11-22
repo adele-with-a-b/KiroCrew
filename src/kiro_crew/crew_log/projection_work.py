@@ -14,6 +14,7 @@ from kiro_crew.crew_log.projection_session_log import open_session_log
 from kiro_crew.crew_log.projection_values import TEXT_LIMIT, _as_id, _as_int, _as_str
 from kiro_crew.crew_log.schema import Entry
 from kiro_crew.crew_log.store import session_units_by_slot
+from kiro_crew.work_plan_vocab import coerce_plan, coerce_releases
 from kiro_crew.work_vocab import (
     WORK_BLOCKED_REASONS,
     WORK_CLOSED_WINDOW,
@@ -129,6 +130,7 @@ _WORK_BASELINE_FIELDS: Final[tuple[str, ...]] = (
     "pr",
     "ask",
     "discussion",
+    "plan",
 )
 
 
@@ -158,6 +160,7 @@ def _work_start() -> dict[str, Any]:
         "depth": 0,
         "parent_item": None,
         "created_at": "",
+        "releases": [],
         "items": {},
         "order": [],
         "parked": {},
@@ -347,6 +350,11 @@ def _work_step(state: dict[str, Any], entry: Entry) -> None:
     if action == "goal":
         _work_apply_header(state, data)
         return
+    if action == "release":
+        # A header write like goal: the entry carries the whole list after it.
+        state["releases"] = coerce_releases(data.get("releases"))
+        _work_apply_header(state, data)
+        return
     item_id = _as_id(data.get("item_id"))
     if not item_id:
         state["omitted"] += 1
@@ -396,7 +404,7 @@ def _work_step(state: dict[str, Any], entry: Entry) -> None:
         for name in _WORK_BASELINE_FIELDS:
             if name in data:
                 item[name] = _work_field(name, data[name])
-        for held in ("ask", "discussion"):
+        for held in ("ask", "discussion", "plan"):
             if item.get(held) is None:
                 # Held only while set, as the store's record holds it.
                 item.pop(held, None)
@@ -561,8 +569,11 @@ def _work_apply(item: dict[str, Any], data: Mapping[str, Any], stamp_ms: int) ->
     action = _as_str(data.get("action"))
     actor = _as_str(data.get("actor"))
     if actor == "person":
-        # A person's steer moves no field; it is only the event line below.
-        if action != "steer":
+        # A person's steer moves no field; a person's rank moves only the plan (the
+        # entry carries the whole committed plan, of which the person set the rank).
+        if action == "rank":
+            _work_set_plan(item, data.get("plan"))
+        elif action != "steer":
             return
     elif actor == "worker":
         if action != "report" or data.get("mirror") is True:
@@ -595,6 +606,9 @@ def _work_apply(item: dict[str, Any], data: Mapping[str, Any], stamp_ms: int) ->
         for name in allowed:
             if name in data:
                 item[name] = _work_field(name, data[name])
+        if action == "plan" or action == "create":
+            # The whole committed plan rides the entry, so an absent one is cleared.
+            _work_set_plan(item, data.get("plan"))
         if action == "decide":
             # The decide forward lands as a decision event between two peer
             # reports, so the peer keeps its next progress apart from the last.
@@ -705,6 +719,15 @@ def _work_reason(value: Any) -> str | None:
     return value if isinstance(value, str) and value in WORK_BLOCKED_REASONS else None
 
 
+def _work_set_plan(item: dict[str, Any], raw: Any) -> None:
+    """Hold the entry's committed plan on *item*, or drop the key when it has none."""
+    plan = coerce_plan(raw)
+    if plan is None:
+        item.pop("plan", None)
+    else:
+        item["plan"] = plan
+
+
 def _work_field(name: str, value: Any) -> Any:
     """*value* in the shape the record holds for *name*; the fold's own shape gate."""
     if name in ("acceptance", "artifacts"):
@@ -721,6 +744,8 @@ def _work_field(name: str, value: Any) -> Any:
         return coerce_ask(value)
     if name == "discussion":
         return coerce_discussion(value)
+    if name == "plan":
+        return coerce_plan(value)
     if name == "reason":
         return _work_reason(value)
     if name == "wake_at":
@@ -807,7 +832,7 @@ def _work_render(state: dict[str, Any]) -> WorkBoardView:
             {key: value for key, value in event.items() if key != "_t"} for event in item["events"]
         ]
         items.append(cast("WorkBoardItem", rendered))
-    return {
+    view: WorkBoardView = {
         "conductor": {
             "schema": 1,
             "slot_key": state["slot"],
@@ -826,6 +851,11 @@ def _work_render(state: dict[str, Any]) -> WorkBoardView:
             # key is present on every state that reaches here.
             "last_entry_at": state["last_entry_at"],
             "generation": state["generation"],
+            # Always present, empty on a board that never planned, so a page bound to
+            # it renders an empty list rather than a blank cell. The store writes no
+            # ``releases`` key for an empty list, so a rebuild from this view keeps an
+            # unplanned header byte-identical.
+            "releases": list(state["releases"]),
         },
         "items": items,
         "omitted": state["omitted"] + sum(len(p) for p in state["parked"].values()),
@@ -840,3 +870,4 @@ def _work_render(state: dict[str, Any]) -> WorkBoardView:
             ),
         ),
     }
+    return view

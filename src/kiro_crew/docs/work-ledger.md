@@ -53,9 +53,11 @@ An item is the unit of dispatch. It holds:
 | `artifacts` | worker | pointers to what it produced |
 | `pr` | worker | a pull-request number it produced |
 | `discussion` | worker | only when it hosts a discussion: where it stands, shown on the goal board as a discussing row |
+| `plan` | conductor (`rank` also the person) | where the item sits on the board's plan; see [The board plan](#the-board-plan) |
 
 The conductor writes its half with `work_ledger_record` (one action per call:
-`goal`, `create`, `bind`, `decide`, `verdict`, `accept`, `close`) and reads the
+`goal`, `create`, `bind`, `decide`, `verdict`, `accept`, `close`, `plan`,
+`release`) and reads the
 ledger back with `work_ledger_read`. When it relays an item's question to the
 person, it records what the item needs, why, each option with what it leads to,
 and its pick with `work_ask_record`, a deferred tool it loads first; the
@@ -75,6 +77,52 @@ and is refused when the crew log is off.
 The two sets are disjoint, and that is enforced by the tools rather than by a
 rule: the reporting tool takes no parameter that names a conductor field, so a
 worker cannot write a verdict, a state, or its own acceptance condition.
+
+## The board plan
+
+A conductor can plan its board the way a scrum team does. Every key is optional,
+and an item with no `plan` is stored and read exactly as before.
+
+| `plan` key | What it is |
+|---|---|
+| `level` | `epic`, `story` or `task`; no level reads as a story. An epic is never dispatched: its stories are, and a sub-task is done by its story's worker |
+| `parent` | the `it_` id of its epic (for a story) or its story (for a task, which needs one); an epic takes none. Every link goes exactly one level down, and a level change that would strand an item under it is refused |
+| `backlog` | `true` while the item is stored but not started. Absent means it is in the sprint |
+| `rank` | a finite number, lower is sooner: the backlog's order. The person's drag on the board writes it |
+| `step` | `todo`, `mocks`, `build`, `review`, `merged` or `released` |
+| `release` | the name of the release the item ships in |
+| `tags` | up to 8 free labels, each up to 32 chars |
+
+The sprint is the item's `round`: an item not in the backlog is in the sprint of
+its round. The board header holds the release list, `releases`: up to 16, each
+`{name, state, note?, shipped_at?}`, with `state` `planned` or `shipped`. A 17th
+name is refused: update a release instead of adding one.
+
+- `create` with `plan={"backlog": true, "rank": 3}` stores an item before you
+  dispatch it. A backlog item, an epic and a sub-task (`level: "task"`, done by
+  its story's worker) take no seat in the goal's `concurrency_cap` (the store's
+  own open bound still counts them), and none of them can be bound, locally or on
+  another crew; a plan write that would make a bound item one of them is refused.
+  None of them is flagged stale or holds the patrol's person-wait hold open: no
+  worker owes it a report. A backlog story is the conductor's next move while a
+  seat is free, so the patrol holds only once every seat is taken.
+- `plan` with `item_id` and `plan` lays the given keys over the item's plan: a
+  key given replaces, a key given as `null` clears, a key left out keeps.
+  `{"backlog": false}` (or `null`) pulls the item into the sprint, which takes a
+  seat and is refused with `goal_concurrency_cap_reached` when none is free.
+- `release` with `release={name, state?, note?}` adds a release or updates the
+  one it names. Shipping it stamps `shipped_at` once.
+- `work_ledger_read`'s `conductor.next_pick` is the item to pull and dispatch
+  next when a seat frees: the lowest-ranked open backlog story (never an epic or
+  a sub-task), unranked ones after ranked ones, oldest first. It is derived on every
+  read and never stored. A compact read carries each planned row's `plan`.
+
+The person's drag on the Crew board writes only `plan.rank`, and only on a backlog
+row, as a `rank` entry
+with actor `person` (`dashboard/handlers/crew_board_rank.py`, through
+`POST /api/crew-board/action` with `action: "rank"`). The rest of the plan stays
+the conductor's. Every plan write lands as a `plan` event on the item, and the
+whole committed plan rides its crew-log entry, so a rebuild restores it.
 
 ## The crew log must be on
 

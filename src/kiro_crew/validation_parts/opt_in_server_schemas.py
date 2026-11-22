@@ -217,7 +217,7 @@ _WORK_ITEM_STATES = frozenset(WORK_ITEM_STATES)
 #: claimed ``pr`` into ``acceptance`` and is served by its own store function.
 #: ``ask`` records what an item needs from the person, why, and the options.
 _WORK_RECORD_ACTIONS = frozenset(
-    {"create", "bind", "decide", "verdict", "close", "goal", "accept", "ask"}
+    {"create", "bind", "decide", "verdict", "close", "goal", "accept", "ask", "plan", "release"}
 )
 
 WORK_BRIEF_SCHEMA = ToolSchema(tool_name="work_brief")
@@ -320,6 +320,10 @@ WORK_LEDGER_RECORD_SCHEMA: ToolSchema = ToolSchema(
         ),
         FieldSpec("pick", str, max_len=WORK_ASK_LABEL_CHARS),
         FieldSpec("pick_why", str, max_len=WORK_ASK_OUTCOME_CHARS),
+        # ``create`` and ``plan``: the store checks every key (``work_plan_vocab``).
+        FieldSpec("plan", dict),
+        # ``release``: {name, state, note}; the store checks it.
+        FieldSpec("release", dict),
     ],
 )
 

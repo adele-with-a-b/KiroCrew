@@ -54,11 +54,13 @@ def test_worker_statuses_are_exactly_four_and_separate_blocked_from_question():
     assert set(worker_statuses(False)) == {"progress", "done", "blocked", "question"}
 
 
-def test_event_kinds_are_exactly_ten():
+def test_event_kinds_are_exactly_eleven():
     # ``retire`` and ``destroy`` are the hub's own remote-dispatch writes (wave 8);
-    # ``ask`` is the conductor's record of what an item needs from the person.
+    # ``ask`` is the conductor's record of what an item needs from the person;
+    # ``plan`` is a move on the board's plan, by the conductor or a person's drag.
     assert wl.EVENT_KINDS == {
         "ask",
+        "plan",
         "create",
         "bind",
         "report",
@@ -1670,6 +1672,12 @@ _PERMITTED_STORE_IMPORTERS = frozenset(
         # open crew-bound item (``boards_with_open_remote``) and hands each to
         # ``remote_ingest.ingest_board``, which files exactly as on a read.
         "dashboard/handlers/remote_puller.py",
+        # The Crew board's rank write (Board A): a person's drag on a backlog row. It
+        # resolves no supplied identity (the board route already resolved the key and
+        # checked the caller owns it, as for ``dismiss``), and writes one key only,
+        # ``plan.rank``, through ``apply_person_rank`` and the same record path every
+        # ledger write takes.
+        "dashboard/handlers/crew_board_rank.py",
         # ``conductor_wake.py`` was listed here while it resolved a worker slot to its
         # conductor's binding for the close and turn-end triggers. Both triggers are
         # gone and the one that remains is a crew-log bus subscription whose event

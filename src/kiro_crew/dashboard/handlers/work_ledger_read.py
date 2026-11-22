@@ -36,6 +36,7 @@ from kiro_crew.dashboard.handlers.work_ledger_refusals import (
 )
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.validation import WORK_LEDGER_READ_SCHEMA, ValidationError, validate_tool_args
+from kiro_crew.work_plan_vocab import next_pick
 
 logger = logging.getLogger("kiro_crew.dashboard.handlers.work_ledger")
 
@@ -141,6 +142,9 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
             row.update(await asyncio.to_thread(_remote_row_fields, key, item))
         if compact:
             compact_row = {name: row[name] for name in _COMPACT_ROW_FIELDS}
+            if item.plan:
+                # The board's plan is how a patrol picks what to pull next.
+                compact_row["plan"] = row["plan"]
             if item.worker_instance_id or item.retired_bindings:
                 from kiro_crew.dashboard.handlers.remote_ingest import (
                     REMOTE_ROW_FIELDS,
@@ -188,10 +192,14 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     # so a conductor can see how many levels may still dispatch below its own.
     # Read off the loop: it consults the config file.
     depth_cap = await asyncio.to_thread(work_ledger.max_depth)
+    # ``next_pick`` is derived, never stored: the top of the backlog by rank, over
+    # the whole board (never the filtered rows), which is the item to dispatch
+    # next when a seat frees (``work_plan_vocab.next_pick``).
     conductor = dict(
         record.to_dict(),
         goal_items_used=record.goal_items_used,
         max_depth=depth_cap,
+        next_pick=next_pick(items),
     )
     payload: dict[str, Any] = {"conductor": conductor, "items": rows}
     if compact:

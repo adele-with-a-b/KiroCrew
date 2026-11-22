@@ -996,3 +996,33 @@ def _commit_item_locked(
         _restore_text(events_path, log_before)
         raise
     return event
+
+
+def _header_under_lock(slot_key: str, verb: str) -> ConductorRecord:
+    """The live header for a writer that holds the conductor lock, or a refusal.
+
+    Refuses with ``CODE_NO_LEDGER`` when the header file is ABSENT: the ledger was
+    purged while this writer waited, and writing the pre-lock snapshot back would
+    resurrect a header (with no breadcrumb a later purge could name).
+
+    Refuses with the same code when the header is PRESENT but unreadable: only it
+    holds :attr:`ConductorRecord.created_total`, and the pre-lock snapshot may hold
+    it low, which would admit creates past what the fold retains. The message says
+    which case it found; the remedy is :func:`rebuild_from_projection`.
+    """
+    live = read_conductor(slot_key, strict=True)
+    if live is not None:
+        return live
+    if not (conductor_dir(slot_key) / _CONDUCTOR_FILE).exists():
+        raise WorkLedgerError(
+            f"conductor ledger has no header file, so {verb} -- the store was purged "
+            "or is incomplete; ensure_conductor recreates the header",
+            code=CODE_NO_LEDGER,
+        )
+    raise WorkLedgerError(
+        f"conductor ledger header is present but unreadable, so {verb} -- it holds "
+        "the board's create count and a pre-lock snapshot of it cannot stand in; "
+        "rebuild the board from the crew log (rebuild_from_projection), which writes "
+        "the header from the record",
+        code=CODE_NO_LEDGER,
+    )

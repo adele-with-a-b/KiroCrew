@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any
 
 # Read by no code here; the ``work_ledger`` facade serves it from this module.
+from kiro_crew.work_plan_vocab import coerce_plan, coerce_releases
 from kiro_crew.work_vocab import WORK_STORED_ITEM_LIMIT  # noqa: F401
 from kiro_crew.work_vocab import (
     WORK_BLOCKED_REASONS,
@@ -119,6 +120,7 @@ EVENT_KINDS: frozenset[str] = frozenset(
         "retire",
         "destroy",
         "ask",
+        "plan",
     }
 )
 
@@ -301,6 +303,11 @@ class ConductorRecord:
     #: changes the round or starts a new goal. The tracer rolls a round's trace over
     #: by its age. Rides no crew-log entry: a rebuild keeps the cache's.
     round_started_at: str = ""
+    #: The board's releases, oldest first (``work_plan_vocab.coerce_releases``):
+    #: each ``{name, state, note?, shipped_at?}``. Written by the ``release``
+    #: action; an item names the one it ships in with ``plan.release``. Serialized
+    #: only when non-empty, so a board with no release is stored as before.
+    releases: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def goal_items_used(self) -> int:
@@ -310,6 +317,12 @@ class ConductorRecord:
         return max(0, self.created_total - self.goal_items_base)
 
     def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        if self.releases:
+            out["releases"] = [dict(r) for r in self.releases]
+        return out
+
+    def _base_dict(self) -> dict[str, Any]:
         return {
             "schema": self.schema,
             "slot_key": self.slot_key,
@@ -358,6 +371,7 @@ class ConductorRecord:
             ),
             goal_id=_as_str(raw.get("goal_id")),
             round_started_at=_as_str(raw.get("round_started_at")),
+            releases=coerce_releases(raw.get("releases")),
         )
 
 
@@ -394,7 +408,8 @@ class WorkItem:
     """One dispatched work item. Two writers, one per-item lock, disjoint fields.
 
     Conductor-owned: ``title``, ``acceptance``, ``state``, ``verdict``, ``decision``,
-    ``worker_session_key``, ``round``, ``fails``, ``ask``.
+    ``worker_session_key``, ``round``, ``fails``, ``ask``, ``plan`` (whose ``rank``
+    a person's drag also writes).
     Worker-owned: ``status``, ``reason``, ``wake_at``, ``summary``, ``artifacts``,
     ``pr``, ``discussion``, ``last_report_at``.
     Server-owned: ``item_id``, ``created_at``, ``closed_at``, ``decided_at``,
@@ -457,6 +472,12 @@ class WorkItem:
     #: (:func:`~kiro_crew.work_vocab.coerce_discussion`), or ``None``. Every report
     #: replaces it, so one without it clears it. Serialized only when set.
     discussion: dict[str, Any] | None = None
+    #: Where the item sits in the board's plan (``work_plan_vocab.coerce_plan``):
+    #: ``level``, ``parent``, ``rank``, ``backlog``, ``step``, ``release``, ``tags``,
+    #: each optional, or ``None``. Conductor-owned, written by ``create`` and
+    #: ``plan``; a person's drag moves only ``rank``. Serialized only when set, so
+    #: an item that was never planned is stored exactly as before.
+    plan: dict[str, Any] | None = None
     schema: int = SCHEMA_VERSION
     #: When the crew log first held this item whole (its recorded create, or the
     #: baseline its first recorded mutation carried). Empty until then: the write
@@ -479,6 +500,8 @@ class WorkItem:
             out["ask"] = dict(self.ask)
         if self.discussion:
             out["discussion"] = dict(self.discussion)
+        if self.plan:
+            out["plan"] = dict(self.plan)
         return out
 
     def _base_dict(self) -> dict[str, Any]:
@@ -546,6 +569,7 @@ class WorkItem:
             pending_since=_as_opt_str(raw.get("pending_since")),
             ask=coerce_ask(raw.get("ask")),
             discussion=coerce_discussion(raw.get("discussion")),
+            plan=coerce_plan(raw.get("plan")),
             recorded_at=_as_str(raw.get("recorded_at")),
             schema=_as_int(raw.get("schema"), SCHEMA_VERSION),
         )

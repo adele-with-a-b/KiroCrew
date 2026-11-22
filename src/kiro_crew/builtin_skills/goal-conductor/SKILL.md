@@ -265,6 +265,28 @@ and that is how an item gets dispatched twice. A Bot's ledger is one level on
 one machine and its `[Worker report]` turns carry each worker's state, so this
 rule is for a conductor-mode conductor.
 
+### Plan the board: backlog, sprint, releases
+
+The Crew panel shows your board in Jira shape: epics split into stories and
+tasks, a ranked backlog, the sprint (your round), and releases. Write it with
+`work_ledger_record` (docs/work-ledger.md, "The board plan"):
+
+- Store work you are not starting yet with `action=create` and
+  `plan={"backlog": true, "level": "story", "parent": "<epic it_ id>"}`. An
+  epic is `plan={"level": "epic"}` and is never dispatched; its stories are.
+  A sub-task is `plan={"level": "task", "parent": "<story it_ id>"}`: the
+  story's worker does it, and you move its step as that worker reports. None
+  of these takes a seat in your concurrency cap, and none can be bound.
+- Move each item through `plan={"step": ...}` as it goes: `todo`, `mocks`,
+  `build`, `review`, `merged`, `released`. Name its release with
+  `plan={"release": "0.5"}`, and record the release itself with
+  `action=release release={"name": "0.5"}`; `state: "shipped"` once it ships.
+- **The person's drag sets the backlog order, and it outranks yours.** When a
+  seat frees, pull `conductor.next_pick` from your `work_ledger_read`: never
+  another backlog item. Pull it with `action=plan plan={"backlog": false}`,
+  then `session_create`, `bind` and seed as the separate steps below
+  (`work_dispatch` always creates a new item).
+
 ### Dispatch a round
 
 For each item in the round, call `work_dispatch` with the item's `title`, its

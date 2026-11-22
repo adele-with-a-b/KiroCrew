@@ -57,6 +57,15 @@
     .nest .nh { font-size: 10.5px; color: var(--muted, #9aa); }
     .nest .row { margin-top: 5px; }
     .nest .row .rt { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; color: var(--text-strong, #fff); overflow-wrap: anywhere; }
+    .plan { margin-top: 9px; display: flex; flex-direction: column; gap: 5px; }
+    .plan .rel { border: 1px solid var(--border, #333); border-radius: 8px; padding: 5px 8px; }
+    .plan .rel.next { border-color: var(--ok, #00d492); }
+    .plan .rh { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; color: var(--muted, #9aa); font-size: 10.5px; }
+    .plan .rh b { color: var(--text-strong, #fff); font-size: 12px; }
+    .plan .rh .note { margin-left: auto; overflow-wrap: anywhere; }
+    .plan .pick { border: 1px solid var(--ok, #00d492); border-radius: 8px; padding: 5px 8px; background: color-mix(in srgb, var(--ok, #00d492) 8%, transparent); }
+    .plan .pick .k { color: var(--ok, #00d492); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
+    .plan .pick b { color: var(--text-strong, #fff); overflow-wrap: anywhere; }
     @keyframes gb-pop { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: none; } }
     @keyframes gb-grow { from { transform: scaleX(0); } to { transform: none; } }
     @keyframes gb-shimmer { to { transform: translateX(100%); } }
@@ -86,6 +95,8 @@
   <div class="states" id="states"></div>
   <div class="tally" id="tally"></div>
 
+  <div class="plan" id="plan"></div>
+
   <div id="items"></div>
 
   <div class="sub" style="margin-top: 7px;">
@@ -94,6 +105,7 @@
     <span data-dashboard-field="asks" hidden></span>
     <span data-dashboard-field="forgotten" hidden></span>
     <span data-dashboard-field="workstreams" hidden></span>
+    <span data-dashboard-field="releases" hidden></span>
   </div>
 
   <script>
@@ -133,6 +145,13 @@
           sub_board: 'Sub-tasks', sub_goal: 'goal', sub_more: '{n} more not shown',
           state_discussing: '\ud83d\udcac discussing',
           talk_counts: '{a} agreed \u00b7 {d} disputed \u00b7 {c} checking \u00b7 {q} for you',
+          plan_release_next: 'Release {n} \u00b7 next \u00b7 merged: {d} of {t}',
+          plan_release_shipped: 'Release {n} \u00b7 shipped {w} \u00b7 stories: {t}',
+          plan_picks_next: 'Conductor picks next', plan_backlog: 'backlog: {n} \u00b7 starts when a slot frees',
+          plan_level_epic: 'epic', plan_level_task: 'sub-task', plan_backlog_rank: 'backlog #{n}',
+          plan_release: 'release {n}',
+          plan_step_todo: 'To do', plan_step_mocks: 'Mocks', plan_step_build: 'Build',
+          plan_step_review: 'Review', plan_step_merged: 'Merged', plan_step_released: 'Released',
           talk_meta: '{p} \u00b7 round {r} \u00b7 {m} min', phase_talking: 'talking',
           phase_checking: 'checking facts', phase_asking: 'asking you', phase_done: 'wrapped up',
           talk_show: 'Show the discussion', talk_hide: 'Hide the discussion', talk_direction: 'Direction',
@@ -838,19 +857,112 @@
       var itemSignatures = {};
       var emptyNode = null;
 
+      // THE BOARD PLAN. An item may carry `plan` (level, parent, rank, backlog, step,
+      // release, tags) and the conductor a `releases` list; a board that never
+      // planned has neither and this block draws nothing. The next pick is the
+      // store's `next_pick` rule: the lowest-ranked open backlog story (never an epic
+      // or a sub-task, which are never bound), the unranked after the ranked, oldest
+      // first.
+      function planOf(it) { return it && it.plan && typeof it.plan === 'object' ? it.plan : {}; }
+      function releases() {
+        var r = ((window.kirocrew || {}).fields || {}).releases;
+        return Array.isArray(r) ? r.filter(function (x) { return x && typeof x === 'object' && text(x.name); }) : [];
+      }
+      function backlogOf(list) {
+        return list.filter(function (it) {
+          var p = planOf(it);
+          return it.state === 'open' && p.backlog === true && p.level !== 'epic' && p.level !== 'task';
+        }).sort(function (a, b) {
+          var ra = num(planOf(a).rank), rb = num(planOf(b).rank);
+          if ((ra === null) !== (rb === null)) return ra === null ? 1 : -1;
+          if (ra !== null && ra !== rb) return ra - rb;
+          var ca = String(a.created_at || ''), cb = String(b.created_at || '');
+          return ca < cb ? -1 : ca > cb ? 1 : 0;
+        });
+      }
+      function merged(it) {
+        var st = planOf(it).step;
+        return it.state === 'accepted' || st === 'merged' || st === 'released';
+      }
+      var planSignature = null;
+      function drawPlan(list) {
+        var host = document.getElementById('plan');
+        if (!host) return;
+        var rel = releases();
+        var backlog = backlogOf(list);
+        var signature = JSON.stringify([locale(), rel, backlog.map(function (it) { return [it.item_id, it.title]; }),
+          list.map(function (it) { return [planOf(it).release, merged(it)]; })]);
+        if (signature === planSignature) return;
+        planSignature = signature;
+        while (host.firstChild) host.removeChild(host.firstChild);
+        for (var r = rel.length - 1; r >= 0; r--) {
+          var name = text(rel[r].name);
+          var mine = list.filter(function (it) { return planOf(it).release === name && planOf(it).level !== 'epic'; });
+          var shipped = rel[r].state === 'shipped';
+          var box = document.createElement('div');
+          box.className = 'rel' + (shipped ? '' : ' next');
+          var head = document.createElement('div');
+          head.className = 'rh';
+          var b = document.createElement('b');
+          b.textContent = shipped
+            ? i18n('plan_release_shipped', { n: name, w: text(rel[r].shipped_at) ? String(rel[r].shipped_at).slice(0, 10) : DASH, t: mine.length })
+            : i18n('plan_release_next', { n: name, d: mine.filter(merged).length, t: mine.length });
+          head.appendChild(b);
+          if (text(rel[r].note)) {
+            var note = document.createElement('span');
+            note.className = 'note';
+            note.textContent = text(rel[r].note);
+            head.appendChild(note);
+          }
+          box.appendChild(head);
+          host.appendChild(box);
+        }
+        if (backlog.length) {
+          var pick = document.createElement('div');
+          pick.className = 'pick';
+          var k = document.createElement('span');
+          k.className = 'k';
+          k.textContent = i18n('plan_picks_next');
+          var t = document.createElement('b');
+          t.textContent = text(backlog[0].title) || text(backlog[0].item_id) || DASH;
+          var sub = document.createElement('div');
+          sub.className = 'sub';
+          sub.textContent = i18n('plan_backlog', { n: backlog.length });
+          pick.appendChild(k);
+          pick.appendChild(t);
+          pick.appendChild(sub);
+          host.appendChild(pick);
+        }
+      }
+      // The item's place on the plan as chips: its level when not a story, its
+      // step, its rank while in the backlog, its release, and its own tags.
+      function planChips(chips, it, backlog) {
+        var p = planOf(it);
+        if (p.level === 'epic' || p.level === 'task') chips.appendChild(chip(i18n('plan_level_' + p.level), 'var(--info, #6aa9ff)'));
+        if (typeof p.step === 'string' && has('plan_step_' + p.step)) {
+          chips.appendChild(chip(i18n('plan_step_' + p.step), p.step === 'merged' || p.step === 'released' ? 'var(--ok, #00d492)' : 'var(--accent, #00d492)'));
+        }
+        var at = backlog.indexOf(it);
+        if (at >= 0) chips.appendChild(chip(i18n('plan_backlog_rank', { n: at + 1 }), null));
+        if (text(p.release)) chips.appendChild(chip(i18n('plan_release', { n: text(p.release) }), null));
+        var tags = Array.isArray(p.tags) ? p.tags : [];
+        for (var g = 0; g < tags.length && g < 8; g++) if (text(tags[g])) chips.appendChild(chip(text(tags[g]), null));
+      }
+
       function drawItems(list) {
         var host = document.getElementById('items');
         if (!host) return;
         if (list.length && emptyNode) { emptyNode.remove(); emptyNode = null; }
         var all = boards();
         var own = ownBoardId(list, all);
+        var backlog = backlogOf(list);
         var keep = {};
         for (var i = 0; i < list.length; i++) {
           var it = list[i];
           var id = text(it.item_id) || String(i);
           if (keep[id]) id += '#' + i;
           keep[id] = true;
-          var signature = JSON.stringify([locale(), it, reach(all, own, text(it.item_id), 1, own ? [own] : [], [])]);
+          var signature = JSON.stringify([locale(), it, backlog.indexOf(it), reach(all, own, text(it.item_id), 1, own ? [own] : [], [])]);
           var card = itemNodes[id];
           if (card && itemSignatures[id] === signature) {
             // Unchanged: the same node stays, moved only when the order changed.
@@ -915,6 +1027,7 @@
             lb.addEventListener('click', function (u) { return function () { openLink(u); }; }(links[l][1]));
             chips.appendChild(lb);
           }
+          planChips(chips, it, backlog);
           card.appendChild(chips);
 
           var decision = text(it.decision);
@@ -955,6 +1068,7 @@
         }
         drawLoop(list);
         drawStates(list);
+        drawPlan(list);
         drawItems(list);
         // The bound element for the array gets a count: the host binds by textContent,
         // so left alone this cell reads as dumped JSON.

@@ -46,7 +46,9 @@ class TestActionableEvents:
         """It advances the revision instead, so chatter stays free."""
         assert not lw.is_actionable_event("report", "progress")
 
-    @pytest.mark.parametrize("kind", ["create", "bind", "decision", "verdict", "close", "ask"])
+    @pytest.mark.parametrize(
+        "kind", ["create", "bind", "decision", "verdict", "close", "ask", "plan"]
+    )
     def test_the_conductors_own_writes_never_wake_it(self, kind):
         """A gate woken by its owner's writes never sleeps.
 
@@ -70,10 +72,14 @@ class TestActionableEvents:
             "retire",
             "destroy",
             "ask",
+            "plan",
         }
         assert not lw.is_actionable_event("steer", "done")
         # ``retire`` is written during the conductor's own read, which shows it.
         assert not lw.is_actionable_event("retire", "done")
+        # ``plan`` is the conductor's own board write or the person's drag; the
+        # conductor reads the new rank as ``next_pick`` when a seat frees.
+        assert not lw.is_actionable_event("plan", "done")
 
     def test_the_waking_set_is_a_subset_of_the_stores_worker_statuses(self):
         """A status the store refuses could never reach the gate."""

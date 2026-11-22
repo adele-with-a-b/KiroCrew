@@ -863,11 +863,12 @@ async def test_a_done_item_waiting_on_the_conductor_is_not_stale():
 
 @pytest.mark.asyncio
 async def test_accept_is_a_route_action_not_a_store_action():
-    """The store's six are pinned by Phase 1, so accept and ask live one layer up."""
-    assert "accept" not in wl.CONDUCTOR_ACTIONS
-    assert "ask" not in wl.CONDUCTOR_ACTIONS
-    assert "accept" in routes.RECORD_ACTIONS
-    assert routes.RECORD_ACTIONS == wl.CONDUCTOR_ACTIONS | {"accept", "ask"}
+    """The store's six are pinned by Phase 1, so accept, ask, plan and release live
+    one layer up."""
+    for action in ("accept", "ask", "plan", "release"):
+        assert action not in wl.CONDUCTOR_ACTIONS
+        assert action in routes.RECORD_ACTIONS
+    assert routes.RECORD_ACTIONS == wl.CONDUCTOR_ACTIONS | {"accept", "ask", "plan", "release"}
     assert routes.RECORD_ACTIONS == validation._WORK_RECORD_ACTIONS
 
 

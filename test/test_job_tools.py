@@ -46,13 +46,16 @@ JOB_TOOL_BUDGETS: dict[str, int] = {
     "kirocrew": 4_950,
     "kirocrew-worker": 1_200,
     "kirocrew-mate-worker": 1_200,
-    # 7,653 with ``mcp_server_wait`` (63 tokens, on every row): the next 50 up.
-    "kirocrew-pipeline-conductor": 7_700,
-    "kirocrew-security-conductor": 7_700,
-    # 7,808 with it: the next 50 up.
-    "kirocrew-conductor": 7_850,
-    "kirocrew-ledger-conductor": 7_850,
-    "kirocrew-team-lead": 7_850,
+    # 7,768: 7,723 for the row with ``mcp_server_wait`` (63 tokens, on every row),
+    # plus 45 for ``work_ledger_record``'s board plan (its ``plan`` and ``release``
+    # arguments and actions; their how-to lives in the goal-conductor skill). The
+    # next 50 up.
+    "kirocrew-pipeline-conductor": 7_800,
+    "kirocrew-security-conductor": 7_800,
+    # 7,923: 7,878 for the row, plus the same 45 for the board plan. The next 50 up.
+    "kirocrew-conductor": 7_950,
+    "kirocrew-ledger-conductor": 7_950,
+    "kirocrew-team-lead": 7_950,
 }
 
 

@@ -36,7 +36,7 @@ export interface WorkBoardEvent {
   id: string
   ts: string
   item_id: string
-  kind: 'create' | 'bind' | 'report' | 'decision' | 'steer' | 'verdict' | 'close'
+  kind: 'create' | 'bind' | 'report' | 'decision' | 'steer' | 'verdict' | 'close' | 'plan'
   /** Present on a `report` line: the status the worker reported. */
   status: WorkReportStatus
   /** Blanked by the server on a `bind` line, whose text is a session key. */
@@ -90,7 +90,39 @@ export interface WorkBoardItem {
   awaits_person?: boolean
   terminal: boolean
   alive: AliveState
+  /** Where the item sits on the board's plan. Absent on an item never planned
+   *  and on an older gateway. */
+  plan?: WorkItemPlan
   events: WorkBoardEvent[]
+}
+
+/** An item's size on the plan. No level reads as a story. */
+export type PlanLevel = 'epic' | 'story' | 'task'
+/** Where the item is in the process, in order. */
+export type PlanStep = 'todo' | 'mocks' | 'build' | 'review' | 'merged' | 'released'
+export const PLAN_STEPS: readonly PlanStep[] = ['todo', 'mocks', 'build', 'review', 'merged', 'released']
+
+/** `work_plan_vocab.coerce_plan`'s shape: every key optional. */
+export interface WorkItemPlan {
+  level?: PlanLevel
+  /** The `it_` id of its epic (a story) or its story (a task). */
+  parent?: string
+  /** Lower is sooner. The person's drag writes it. */
+  rank?: number
+  /** Stored, not started: in the backlog, not the sprint. */
+  backlog?: boolean
+  step?: PlanStep
+  /** The release it ships in, by name. */
+  release?: string
+  tags?: string[]
+}
+
+/** One entry of the board's release list. */
+export interface WorkBoardRelease {
+  name: string
+  state: 'planned' | 'shipped'
+  note?: string
+  shipped_at?: string
 }
 
 /** The conductor's own record. No `worker_session_key` anywhere in it. */
@@ -102,6 +134,13 @@ export interface WorkBoardConductor {
   depth: number
   parent_item: string | null
   created_at: string
+  /** The goal's cap on items working at once. Absent on an older gateway. */
+  concurrency_cap?: number
+  /** The board's releases, oldest first. Absent when it has none. */
+  releases?: WorkBoardRelease[]
+  /** The backlog item the conductor dispatches next: the lowest rank. Derived
+   *  server-side on every read; absent on an older gateway. */
+  next_pick?: string | null
 }
 
 export interface WorkBoardResponse {
@@ -145,9 +184,10 @@ export interface CrewPrFacts {
   reads: { warm_brief?: CrewPrRead }
 }
 
-/** The two affordances Phase 4 names for an orphaned item, and the person's
- *  dismiss of an ask that waits on them (until a newer report asks again). */
-export type CrewBoardAction = 'stop' | 'take_over' | 'dismiss'
+/** The two affordances Phase 4 names for an orphaned item, the person's
+ *  dismiss of an ask that waits on them (until a newer report asks again), and
+ *  the person's drag of a backlog row (`rank`, which moves only `plan.rank`). */
+export type CrewBoardAction = 'stop' | 'take_over' | 'dismiss' | 'rank'
 
 /**
  * What an action answers. Deliberately narrow: the server allow-lists its reply

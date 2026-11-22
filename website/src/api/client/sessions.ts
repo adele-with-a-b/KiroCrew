@@ -171,9 +171,10 @@ export function createSessionsEndpoints({ get, post, del, j, jfetch: fetch, send
      * item answers 409, so a click made from a stale poll is refused rather than
      * quietly doing nothing. A `dismiss` names the report it sets aside
      * (`reportId`), so a newer ask filed since the last poll is refused, not hidden.
+     * A `rank` carries the dragged row's new `plan.rank` (`rank`).
      */
-    crewBoardAction: (conductor: string, itemId: string, action: CrewBoardAction, reportId?: string) =>
-      post('/api/crew-board/action', { conductor, item_id: itemId, action, ...(reportId ? { report_id: reportId } : {}) })
+    crewBoardAction: (conductor: string, itemId: string, action: CrewBoardAction, reportId?: string, rank?: number) =>
+      post('/api/crew-board/action', { conductor, item_id: itemId, action, ...(reportId ? { report_id: reportId } : {}), ...(rank !== undefined ? { rank } : {}) })
         .then(j) as Promise<CrewBoardActionResult>,
   }
 
