@@ -955,6 +955,28 @@ session's messages, the cron list or the subagent list through `useAppApi()`
 A built-in page gets every member as the dashboard has it; outside an app every member
 refuses.
 
+## Panel Tab Requests
+
+`usePanelTabRequest()` reads what this app's own link-preview card opened its side-panel
+tab with (`link.card.openPanelTab(tab, payload)`, see
+[`contributes.linkPreviews`](manifest-reference.md#contributeslinkpreviews--hover-cards-for-links)):
+`{ seq, payload }` for the latest open in this chat, kept until the tab is closed (a body
+mounted again reads the same one, so act on a `seq` you have not handled), or `null` before
+any and outside a side-panel tab. `seq` grows with every open, so the same payload sent
+twice still reads as new. A tab only ever reads requests sent to itself, in its own chat. Read it off a namespace
+import, since an older host does not have it:
+
+```tsx
+import * as sdk from '@kirocrew/app-sdk'
+
+const usePanelTabRequest = (sdk as Record<string, unknown>).usePanelTabRequest as
+  (() => { seq: number; payload: unknown } | null) | undefined
+
+// Inside the tab body (call it only when it is there):
+const req = usePanelTabRequest?.()
+useEffect(() => { if (req) focusQuestion(req.payload) }, [req?.seq])
+```
+
 ## Chat Marker Protocol
 
 An agent encodes UI affordances inline in the prose it streams. A surface that renders a transcript

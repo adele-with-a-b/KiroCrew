@@ -1003,7 +1003,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     renderedDisplayItems, renderedTranscript, insertIntoComposer: insertDashboardReply,
   })
   // Search steps and clicks, the approval bar's "Show in chat", and ?msg= deep links.
-  const { jumpToSearchResult } = useTranscriptJumps({
+  const { jumpToSearchResult, backSpot, goBack } = useTranscriptJumps({
     search,
     messages,
     messageToDisplayIdx,
@@ -1018,6 +1018,8 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     initialSidRef,
     setHighlightTs,
     handleJumpToPinnedMessage,
+    scrollerRef,
+    isAtBottom,
   })
   const {
     activeSlotTitle, renderMessage, renderTurnItem, renderFarmItem,
@@ -1245,7 +1247,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
               anchorAgentBtn={anchorAgentBtn} projectPickerOpen={projectPickerOpen} setProjectPickerOpen={setProjectPickerOpen} anchorProjectBtn={anchorProjectBtn} projectBtnRect={projectBtnRect}
               pendingDirs={pendingDirs} composerRef={composerRef} composerVoiceOptions={composerVoiceOptions} isMac={isMac} cancelUpload={cancelUpload} composerUploadFiles={composerUploadFiles}
               dropTargetProps={dropTargetProps} handleCapture={handleCapture} handleFileOpen={handleFileOpen} handleOptimizeResult={handleOptimizeResult} search={search} tabsCtl={tabsCtl}
-              uploadCount={uploadCount} sendHeld={sendHeld} composerBandRef={composerBandRef} scrollBottom={scrollBottom} handleResumeSession={handleResumeSession}
+              uploadCount={uploadCount} sendHeld={sendHeld} composerBandRef={composerBandRef} scrollBottom={scrollBottom} backSpot={backSpot} onBack={goBack} handleResumeSession={handleResumeSession}
               composerRootChange={composerRootChange} composerUserEdit={composerUserEdit} followUpMulti={followUpMulti} followUpOptions={followUpOptions} followUpPicked={followUpPicked}
               followUpPickedRef={followUpPickedRef} followUpSourceKey={followUpSourceKey} toggleFollowUpOption={toggleFollowUpOption} dashCfg={dashCfg} jevAutoConsented={jevAutoConsented}
               refusedPress={refusedPress} setRefusedPress={setRefusedPress} send={send} pickModel={pickModel} setProject={setProject} projectSwitching={projectSwitching} switchAgent={switchAgent} currentSlot={currentSlot}

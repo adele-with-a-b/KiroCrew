@@ -3,6 +3,7 @@ import type { Artifact } from '../types'
 import type { PartialCause } from '../utils/fileReadQuery'
 import { i18nT } from '../i18n/t'
 import { safeSetItem } from '../utils/safeStorage'
+import { clearPanelTabRequests } from '../app-sdk/panelTabRequest'
 import { secureRandomId } from '../utils/secureId'
 import { createTerminalHydrateRuling } from '../utils/terminalHydrateRuling'
 import {
@@ -1316,6 +1317,9 @@ export function usePanelTabs(
     update(b => {
       const i = b.tabs.findIndex(t => t.id === id)
       if (i === -1) return b
+      // An app tab's open request goes with it (`app-sdk/panelTabRequest.ts`).
+      const closing = b.tabs[i]
+      if (closing.appName) clearPanelTabRequests(closing.slot ?? slotKey ?? '', closing.kind)
       const next = b.tabs.filter(t => t.id !== id)
       if (b.activeId !== id) return { tabs: next, activeId: b.activeId }
       // Closing the focused tab returns to the tab viewed before it, which may
@@ -1328,9 +1332,12 @@ export function usePanelTabs(
       const neighbour = next.length === 0 ? null : (next[i - 1] ?? next[i] ?? next[next.length - 1]).id
       return { tabs: next, activeId: back ?? defaultLeadingId ?? neighbour }
     })
-  }, [update, leadingIds, defaultLeadingId, prunedIds])
+  }, [update, leadingIds, defaultLeadingId, prunedIds, slotKey])
 
-  const closeAll = useCallback(() => { update(() => ({ tabs: [], activeId: null })) }, [update])
+  const closeAll = useCallback(() => {
+    if (slotKey) clearPanelTabRequests(slotKey)
+    update(() => ({ tabs: [], activeId: null }))
+  }, [update, slotKey])
 
   /** Focus a tab. Focusing an app tab stamps `appActiveAt` so the warm-set cap
    *  evicts by least-recent USE rather than by open order. Other kinds take the

@@ -26,11 +26,14 @@ import { i18nT } from '../i18n/t'
 import { resolveLinkPreviews, providerFor, setServedLinkPreviews, type ResolvedLinkPreview } from './linkPreviewRegistry'
 import { withoutQuery } from '../appFrame/hosts'
 import { currentTheme } from '../appFrame/sandboxFrame'
-import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions } from './linkPreviewFrames'
+import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions, type ShowScope } from './linkPreviewFrames'
 import { resolveTextPreview, setLinkPreviewTextPatterns, setTextPatternsOff } from './textPatterns'
-import type { PreviewLink } from './linkPreviewProtocol'
+import { readMessageRef, type PreviewLink, type ShowTrigger } from './linkPreviewProtocol'
+import { sendLinkPreviewNav } from './linkPreviewNav'
 
 const HOVER_DELAY_MS = 300
+/** The scope attribute's session key is `dashboard:<slot>` (`MarkdownRenderer`). */
+const SESSION_PREFIX = 'dashboard:'
 /** A provider whose frame failed to load or activate is tried again on a hover this long after. */
 export const RETRY_AFTER_MS = 30_000
 /** The failure card's height, for placing it above the link when it does not fit below. */
@@ -127,9 +130,11 @@ export default function LinkPreviewLayer() {
   const [frameRefs, setFrameRefs] = useState<RefObject<HTMLIFrameElement | null>[]>([])
   const hostRef = useRef<FrameHost | null>(null)
   const hideAllRef = useRef<(reason: string) => void>(() => {})
+  // Set by the hover effect: a card closed itself.
+  const closedRef = useRef<(key: string) => void>(() => {})
   // The hover in progress and its provider: a frame's failure is shown only under
   // its own hover, and nothing is shown once the user has left it.
-  const anchorRef = useRef<{ el: HTMLElement; key: string; appName: string; link: PreviewLink } | null>(null)
+  const anchorRef = useRef<{ el: HTMLElement; key: string; appName: string; link: PreviewLink; scope: ShowScope } | null>(null)
 
   const chip = useFrameLinkBridge(frameRefs)
 
@@ -148,7 +153,16 @@ export default function LinkPreviewLayer() {
       },
       onTextPatternsOff: (app, ids) => setTextPatternsOff(app, ids),
       onEscape: () => hideAllRef.current('escape'),
+      onClosed: (key) => closedRef.current(key),
       onFramesChanged: (els) => setFrameRefs(els.map((el) => ({ current: el }))),
+      // A card's asks reach only the chat its show sat in (`scope.slot`); the chat
+      // page acts only when that chat is the one on screen.
+      onOpenPanelTab: (appName, tab, payload, scope) => {
+        if (scope.slot) sendLinkPreviewNav({ kind: 'openPanelTab', slot: scope.slot, appName, tab, payload })
+      },
+      onJump: (_appName, target, scope) => {
+        if (scope.slot) sendLinkPreviewNav({ kind: 'jump', slot: scope.slot, target, from: scope.origin })
+      },
     })
     hostRef.current = host
     const themeWatch = new MutationObserver(() => host.setTheme(currentTheme()))
@@ -200,6 +214,10 @@ export default function LinkPreviewLayer() {
     // pointer has not moved since. The pointer-out the browser fires for that
     // scroll is not the user leaving; the next real move outside the link is.
     let kept = false
+    // The card on screen was opened by a click or a tap: leaving its link does
+    // not end it, so the pointer can reach its buttons. Escape, a click or tap
+    // outside it, or another on its link closes it.
+    let stuck = false
 
     const linkOf = (e: Event) => {
       const path = e.composedPath()
@@ -207,14 +225,20 @@ export default function LinkPreviewLayer() {
       // OAuth approval, Settings) never reaches an app.
       const scope = path.find((n): n is HTMLElement => n instanceof HTMLElement && n.hasAttribute('data-link-preview-scope'))
       if (!scope) return null
-      // Which chat the message is in, for an app the owner approved for it.
+      // Which chat and message the text is in: told to an app the owner approved
+      // for it, and always the bound of what any card may ask of the chat.
       const session = scope.getAttribute('data-link-preview-session') || undefined
+      const where = {
+        session,
+        slot: session?.startsWith(SESSION_PREFIX) ? session.slice(SESSION_PREFIX.length) || undefined : undefined,
+        message: readMessageRef(scope.getAttribute('data-link-preview-ts'), scope.getAttribute('data-link-preview-mid')) ?? undefined,
+      }
       // composedPath, so a link inside an open shadow root (a rendered widget)
       // is seen, not only its retargeted host.
       const el = path.find((n): n is HTMLAnchorElement => n instanceof HTMLAnchorElement && Boolean(n.href))
       if (el) {
         const p = providerFor(el.href, providersRef.current)
-        return p ? { a: el as HTMLElement, url: (p.fullUrl ? el.href : withoutQuery(el.href)) as string | undefined, text: undefined as string | undefined, p, session } : null
+        return p ? { a: el as HTMLElement, url: (p.fullUrl ? el.href : withoutQuery(el.href)) as string | undefined, text: undefined as string | undefined, p, ...where } : null
       }
       // A plain-text match: the owner is re-derived from the span's own text, and
       // the provider gets that text and nothing else.
@@ -223,14 +247,14 @@ export default function LinkPreviewLayer() {
       const text = sp.textContent ?? ''
       const hit = resolveTextPreview(text)
       const p = hit ? providersRef.current.find((x) => x.key === hit.owner) : undefined
-      return p ? { a: sp, url: undefined as string | undefined, text: text as string | undefined, p, session } : null
+      return p ? { a: sp, url: undefined as string | undefined, text: text as string | undefined, p, ...where } : null
     }
 
     const moved = (e: PointerEvent) => Math.abs(e.clientX - pointer.x) >= 1 || Math.abs(e.clientY - pointer.y) >= 1
 
     const onOver = (e: PointerEvent) => {
       // A finger has no hover: a tap opens the card instead (`onTap`).
-      if (e.pointerType === 'touch') return
+      if (e.pointerType === 'touch' || stuck) return
       if (kept && current) {
         // A link the scroll slid under a still pointer is not a hover. A real
         // move off the kept link is a leave first, so its card gets `leave`.
@@ -240,25 +264,31 @@ export default function LinkPreviewLayer() {
       }
       const hit = linkOf(e)
       if (!hit) return
-      begin(hit, e, HOVER_DELAY_MS)
+      begin(hit, e, HOVER_DELAY_MS, 'hover')
     }
-    /** Start showing `hit`'s card after `delay`: a hover's short wait, or none for a tap. */
-    const begin = (hit: NonNullable<ReturnType<typeof linkOf>>, e: PointerEvent, delay: number) => {
+    /** Start showing `hit`'s card after `delay`: a hover's short wait, or none for a
+     *  tap or click. `again`: show it even when this span's card is already up, so
+     *  a click on a hovered span still reaches the app as a click. */
+    const begin = (hit: NonNullable<ReturnType<typeof linkOf>>, e: MouseEvent, delay: number, trigger: ShowTrigger, again = false) => {
       // Back on a link (its own or another): a close pending from leaving goes.
       cancelGraceOf(graceRef)
-      if (hit.a === current?.a) return
+      if (hit.a === current?.a && !again) return
       const key = hit.p.key
       const lastFailed = failedAt.current.get(key)
+      const approved = Boolean(hit.p.sessionKey && hit.session)
       const link: PreviewLink = {
         ...(hit.url ? { url: hit.url } : { text: hit.text }),
-        ...(hit.p.sessionKey && hit.session ? { sessionKey: hit.session } : {}),
+        ...(approved ? { sessionKey: hit.session } : {}),
+        ...(approved && hit.message ? { message: hit.message } : {}),
       }
+      const scope: ShowScope = { slot: hit.slot, origin: hit.message, messages: approved }
       // A different link ends the earlier hover here, whether or not its own
       // pointerout ended it (the failure card's leave grace defers that): its
       // pending show, a Retry's included, is dropped and its app told `leave`.
-      if (current) host.leave(current.key)
+      if (current && current.a !== hit.a) host.leave(current.key)
       current = { a: hit.a, key }
-      anchorRef.current = { el: hit.a, key, appName: hit.p.appName, link }
+      stuck = trigger !== 'hover'
+      anchorRef.current = { el: hit.a, key, appName: hit.p.appName, link, scope }
       kept = false
       // No move seen yet (a link slid under a still pointer): this hover's own
       // spot is the baseline, so a later move still counts.
@@ -287,7 +317,7 @@ export default function LinkPreviewLayer() {
         if (current?.a !== a || !a.isConnected) return
         host.hideUnpinned('other-provider', key)
         const r = a.getBoundingClientRect()
-        void host.show(frame, link, { left: r.left, top: r.top, width: r.width, height: r.height }, modifiers).then((ok) => {
+        void host.show(frame, link, { left: r.left, top: r.top, width: r.width, height: r.height }, modifiers, { trigger, scope }).then((ok) => {
           if (ok) failedAt.current.delete(key)
         })
       }, delay)
@@ -301,14 +331,38 @@ export default function LinkPreviewLayer() {
       // The failure card is this document's: its Retry is a tap on the card.
       if (e.target instanceof Node && cardRef.current?.contains(e.target)) return
       const hit = linkOf(e)
-      if (hit && hit.url === undefined && hit.a !== current?.a) { begin(hit, e, 0); return }
-      if (current) endHover()
+      if (hit && hit.url === undefined && hit.a !== current?.a) { begin(hit, e, 0, 'tap'); return }
+      if (current) closeStuck()
+    }
+    // Mouse: a click on a matched span opens its card now, without the hover
+    // wait; hover itself is unchanged. A link keeps its own click. A drag that
+    // selected text across the span is a selection, not a click on it. A touch
+    // tap's own click is `onTap`'s.
+    let downType = ''
+    const onDown = (e: PointerEvent) => { downType = e.pointerType }
+    const onClick = (e: MouseEvent) => {
+      if (downType === 'touch' || e.button !== 0) return
+      if (e.target instanceof Node && cardRef.current?.contains(e.target)) return
+      const hit = linkOf(e)
+      // A click on a clicked card's link again, or anywhere outside the card (a
+      // click inside its frame never reaches this document), closes it.
+      if (stuck && current) {
+        const again = e.composedPath().includes(current.a)
+        closeStuck()
+        if (again) return
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      if (!hit || hit.url !== undefined) return
+      const sel = window.getSelection?.()
+      if (sel && !sel.isCollapsed && sel.containsNode(hit.a, true)) return
+      begin(hit, e, 0, 'click', true)
     }
     const endHover = () => {
       setNotice(null)
       window.clearTimeout(timer)
       pending = false
       kept = false
+      stuck = false
       if (!current) return
       const key = current.key
       current = null
@@ -316,7 +370,7 @@ export default function LinkPreviewLayer() {
       host.leave(key)
     }
     const onOut = (e: PointerEvent) => {
-      if (e.pointerType === 'touch' || !current || kept) return
+      if (e.pointerType === 'touch' || !current || kept || stuck) return
       const to = e.relatedTarget instanceof Element ? e.relatedTarget.closest('a[href], [data-link-preview-text]') : null
       if (to === current.a) return
       // Into the failure card: the hover goes on, so its Retry can be pressed.
@@ -327,7 +381,7 @@ export default function LinkPreviewLayer() {
       else endHover()
     }
     leaveCardRef.current = (to) => {
-      if (current && to instanceof Node && current.a.contains(to)) return
+      if (stuck || (current && to instanceof Node && current.a.contains(to))) return
       closeAfterGraceOf(graceRef, endHover)
     }
     closeCardRef.current = () => {
@@ -342,7 +396,7 @@ export default function LinkPreviewLayer() {
       // scroll kept it, so many tiny moves still add up to a real one.
       if (kept && current && !moved(e)) return
       pointer = { x: e.clientX, y: e.clientY }
-      if (!kept || !current) return
+      if (!kept || !current || stuck) return
       if (e.composedPath().includes(current.a)) { kept = false; return }
       endHover()
       // The pointer may be resting on a link whose hover was skipped above.
@@ -353,12 +407,31 @@ export default function LinkPreviewLayer() {
       window.clearTimeout(timer)
       pending = false
       kept = false
+      stuck = false
       current = null
       anchorRef.current = null
       watched = null
       host.hideUnpinned(reason)
     }
     hideAllRef.current = hideAll
+    // A clicked card the app closed itself is over: the next click on its span
+    // opens it again, and other links hover again.
+    closedRef.current = (key) => {
+      if (!stuck || current?.key !== key) return
+      window.clearTimeout(timer)
+      pending = false
+      kept = false
+      stuck = false
+      current = null
+      anchorRef.current = null
+    }
+    // A clicked or tapped card closed by a click or tap: the app hears `leave`
+    // as for any card, then the dashboard hides it, so it closes whatever the
+    // app does with `leave`.
+    const closeStuck = () => {
+      endHover()
+      hideAll('click')
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { hideAll('escape'); return }
       // A card's own shortcuts (pin, copy): only a plain key, only while the
@@ -402,6 +475,8 @@ export default function LinkPreviewLayer() {
     doc.addEventListener('pointerout', onOut, true)
     doc.addEventListener('pointermove', onMove, true)
     doc.addEventListener('pointerup', onTap, true)
+    doc.addEventListener('pointerdown', onDown, true)
+    doc.addEventListener('click', onClick, true)
     doc.addEventListener('keydown', onKey)
     window.addEventListener('scroll', onScroll, true)
     window.addEventListener('blur', onBlur)
@@ -415,12 +490,15 @@ export default function LinkPreviewLayer() {
       anchorRef.current = null
       setNotice(null)
       hideAllRef.current = () => {}
+      closedRef.current = () => {}
       leaveCardRef.current = () => setNotice(null)
       closeCardRef.current = () => setNotice(null)
       doc.removeEventListener('pointerover', onOver, true)
       doc.removeEventListener('pointerout', onOut, true)
       doc.removeEventListener('pointermove', onMove, true)
       doc.removeEventListener('pointerup', onTap, true)
+      doc.removeEventListener('pointerdown', onDown, true)
+      doc.removeEventListener('click', onClick, true)
       doc.removeEventListener('keydown', onKey)
       window.removeEventListener('scroll', onScroll, true)
       window.removeEventListener('blur', onBlur)
@@ -509,7 +587,7 @@ export default function LinkPreviewLayer() {
     host.hideUnpinned('other-provider', n.key)
     const frame = host.retryFrame(n.key, a.appName)
     const r = a.el.getBoundingClientRect()
-    void host.show(frame, a.link, { left: r.left, top: r.top, width: r.width, height: r.height }).then((ok) => {
+    void host.show(frame, a.link, { left: r.left, top: r.top, width: r.width, height: r.height }, undefined, { scope: a.scope }).then((ok) => {
       if (!ok) {
         // Dropped (a newer hover, a provider refresh): Retry can be pressed again.
         setNotice((cur) => (cur?.key === n.key && cur.retrying ? { ...cur, retrying: false } : cur))

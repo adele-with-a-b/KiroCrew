@@ -233,6 +233,66 @@ def test_card_controls_keep_the_invocation_of_their_own_show() -> None:
         assert f"\n  {name}: " not in lp._BOOTSTRAP.split("const ctx = {", 1)[1].split("};", 1)[0]
 
 
+_NAV_DRIVER = r"""
+const deliver = (data) => (listeners.message || []).forEach((f) => f({ source: parent, data: { 'kirocrew-app-frame': 1, ...data } }));
+deliver({ type: 'init', capability: 'c' });
+for (let i = 0; i < 50 && !posted.some((m) => m.type === 'ready'); i++) await new Promise((r) => setTimeout(r, 10));
+const rect = { left: 0, top: 0, width: 1, height: 1 };
+deliver({ type: 'show', invocation: 4, text: '[R4]', rect, theme: 'light', trigger: 'click',
+  sessionKey: 'dashboard:s', message: { ts: 't', id: 'm', extra: 1 } });
+deliver({ type: 'show', invocation: 5, text: '[R5]', rect, theme: 'light', trigger: 'nudge', message: { ts: 7 } });
+const [a, b] = shows;
+a.card.openPanelTab('questions', { label: '[R4]', at: new Date(0) });
+a.card.openPanelTab('questions', () => 1);
+a.card.openPanelTab('questions');
+a.card.jumpTo(a.message);
+a.card.jumpTo({ ts: 't2', id: 9 });
+a.card.jumpTo(null);
+console.log(JSON.stringify({
+  a: { trigger: a.trigger, message: a.message }, b: { trigger: b.trigger ?? null, message: b.message ?? null },
+  sent: posted.filter((m) => ['openPanelTab', 'jump'].includes(m.type)).map(({ type, invocation, tab, payload, ts, id }) => ({ type, invocation, tab, payload, ts, id })),
+}));
+"""
+
+
+def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown() -> None:
+    """``trigger`` and ``message`` reach the provider read field by field, and
+    ``card.openPanelTab`` / ``card.jumpTo`` post JSON for this show only.
+
+    The dashboard checks the tab, the chat and the grant (``linkPreviewFrames.ts``);
+    the frame only shapes what it sends.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    out = subprocess.run(
+        [node, "--input-type=module", "-e", _BOOTSTRAP_HARNESS + lp._BOOTSTRAP + _NAV_DRIVER],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=True,
+    )
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    assert result["a"] == {"trigger": "click", "message": {"ts": "t", "id": "m"}}
+    assert result["b"] == {"trigger": None, "message": None}
+    assert result["sent"] == [
+        {
+            "type": "openPanelTab",
+            "invocation": 4,
+            "tab": "questions",
+            "payload": {"label": "[R4]", "at": "1970-01-01T00:00:00.000Z"},
+        },
+        {"type": "openPanelTab", "invocation": 4, "tab": "questions", "payload": None},
+        {"type": "jump", "invocation": 4, "ts": "t", "id": "m"},
+        {"type": "jump", "invocation": 4, "ts": "t2"},
+    ]
+
+
 def test_the_frame_embeds_the_installed_name_not_the_request_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

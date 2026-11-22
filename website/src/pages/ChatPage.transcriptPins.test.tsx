@@ -132,6 +132,32 @@ describe('a target outside the loaded rows', () => {
     expect(result.current.pinError).toBeNull()
   })
 
+  it("a link-preview card's jump pages older history for its target and lands on it", async () => {
+    const dispatch = pagingDispatch(async () => ({}))
+    const navToDisplayIndex = vi.fn()
+    const base = { slotHasMore: true, slotOldestIndex: 40, dispatch: dispatch as never, navToDisplayIndex }
+    const { result, rerender } = renderHook((over: Partial<Props>) => useTranscriptPins(props({ ...base, ...over })), {
+      initialProps: {} as Partial<Props>, wrapper: withQueryClient(),
+    })
+    act(() => { result.current.handleJumpToPinnedMessage('old', 'm_old', { origin: 'link' }) })
+    await waitFor(() => expect(dispatch.mock.calls.some(([a]) => typeof a === 'function')).toBe(true))
+    expect(navToDisplayIndex).not.toHaveBeenCalled()
+    rerender({ messages: [msg('assistant', 'old', 'm_old'), msg('user', 't1', 'm1'), msg('assistant', 't2', 'm2')] })
+    await waitFor(() => expect(navToDisplayIndex).toHaveBeenCalledWith(0, expect.anything()))
+    expect(result.current.pinStatus).toBeNull()
+  })
+
+  it("a link-preview card's jump to a message that is not there says so in the chat", async () => {
+    const p = props({ slotHasMore: false })
+    const { result } = renderHook(() => useTranscriptPins(p), { wrapper: withQueryClient() })
+    act(() => { result.current.handleJumpToPinnedMessage('gone', 'gone', { origin: 'link' }) })
+    expect(result.current.pinStatus).toBe(i18nT('pages.chat.deepLink.message_unavailable'))
+    const more = props({ slotHasMore: true, slotOldestIndex: 40, dispatch: pagingDispatch(async () => null) as never })
+    const paged = renderHook(() => useTranscriptPins(more), { wrapper: withQueryClient() })
+    act(() => { paged.result.current.handleJumpToPinnedMessage('gone', 'gone', { origin: 'link' }) })
+    await waitFor(() => expect(paged.result.current.pinStatus).toBe(i18nT('pages.chat.deepLink.message_unavailable')))
+  })
+
   it('reports a failed page as a load error for the earlier-messages entry point, never as not-found', async () => {
     const p = props({ slotHasMore: true, slotOldestIndex: 40, dispatch: pagingDispatch(async () => { throw new Error('502') }) as never })
     const { result } = renderHook(() => useTranscriptPins(p), { wrapper: withQueryClient() })

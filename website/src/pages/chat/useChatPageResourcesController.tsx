@@ -15,7 +15,7 @@ import { makeRelative } from '../../components/FilePickerMenu'
 import { PREVIEW_SNIP_EVENT } from '../../components/WebPreviewPanel'
 import { PREVIEW_ANNOTATE_EVENT, type PreviewAnnotateDetail } from '../../utils/browserAnnotations'
 import { useMessageSearch } from '../../hooks/useMessageSearch'
-import { usePanelTabDescriptors } from '../../hooks/panelTabRegistry'
+import { usePanelTabDescriptors, type PanelTabDescriptor } from '../../hooks/panelTabRegistry'
 import { useAnyLiveAppTab, usePanelTabs } from '../../hooks/usePanelTabs'
 import {
   captureScreen,
@@ -58,6 +58,7 @@ import {
 import type { ResizeInfo } from '../../utils/resizeImage'
 import { errMessage } from '../../utils/thunkError'
 import { usePanelDocumentActions } from '../../hooks/usePanelDocumentActions'
+import { useLinkPreviewPanelTabs } from './linkPreviewPanelTabs'
 import { fetchDashboardConfig } from '../../api/dashboardConfigQuery'
 import { isUnansweredRead } from '../../api/queryClient'
 import {
@@ -621,6 +622,15 @@ export function useChatPageResourcesController({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- same as handleFileOpen above: `search.close` is a useCallback([]) and the enclosing `search` object is a fresh literal every render, so listing it would churn the onFolderOpen prop on every transcript row
   }, [tabsCtl, dispatch, search.close])
 
+
+  // A link-preview card opening its own app's side-panel tab, revealed like a folder open.
+  const revealPanelTab = useCallback((d: PanelTabDescriptor) => {
+    tabsCtl.openPanelTab(d)
+    dispatch(openActivityPanel())
+    search.close()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- same as handleFolderOpen: `search.close` is stable and its enclosing object is rebuilt every render
+  }, [tabsCtl.openPanelTab, dispatch, search.close])
+  useLinkPreviewPanelTabs(activeSlotRef, panelTabDescriptors, revealPanelTab)
 
   /** Reveal the Crew (Workers) tab from the Crew Mode dispatch-notice button.
    *

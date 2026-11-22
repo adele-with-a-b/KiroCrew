@@ -489,6 +489,8 @@ function FileAttachmentCard({ fullPath, label, onFileOpen }: { fullPath: string;
  *  Images keep their inline `![image](path)` markdown and are excluded here. */
 function renderFileSegment(opts: FileSegmentOpts) {
   const { content, meta, onFileOpen, keyBase = 'seg', dirMap, onFolderOpen, linkPreviews, onSessionOpen, sessions, activeSession, messageTs, previewSlot } = opts
+  // The row's own id, for the same link-preview app (`MarkdownRenderer`'s `previewMid`).
+  const previewMid = typeof meta?.mid === 'string' ? meta.mid : undefined
   const parsedFiles = parseFiles(content, meta)
   const dirKeys = dirMap ? [...dirMap.keys()].filter(k => tokenPresent(content, k)).slice(0, 20) : []
 
@@ -508,7 +510,7 @@ function renderFileSegment(opts: FileSegmentOpts) {
   // inline-widget seam; a folder-referencing prompt with block markdown is
   // the uncommon combination.
   if (!parsedFiles.length && !dirKeys.length) {
-    return <MarkdownRenderer content={content} softBreaks compactImages linkPreviews={linkPreviews} textPreviews onSessionOpen={onSessionOpen} sessions={sessions} activeSession={activeSession} messageTs={messageTs} previewSlot={previewSlot} />
+    return <MarkdownRenderer content={content} softBreaks compactImages linkPreviews={linkPreviews} textPreviews onSessionOpen={onSessionOpen} sessions={sessions} activeSession={activeSession} messageTs={messageTs} previewSlot={previewSlot} previewMid={previewMid} />
   }
 
   // Pass the ORIGINAL ordered list (images included) so [attached_file N] token
@@ -572,7 +574,7 @@ function renderFileSegment(opts: FileSegmentOpts) {
   // then the cards.
   if (!mentionMap.size && !dirKeys.length) {
     const caption = display.trim()
-    return <>{caption ? <MarkdownRenderer key={`${keyBase}-cap`} content={caption} softBreaks compactImages linkPreviews={linkPreviews} textPreviews onSessionOpen={onSessionOpen} sessions={sessions} activeSession={activeSession} messageTs={messageTs} previewSlot={previewSlot} /> : null}{cards}</>
+    return <>{caption ? <MarkdownRenderer key={`${keyBase}-cap`} content={caption} softBreaks compactImages linkPreviews={linkPreviews} textPreviews onSessionOpen={onSessionOpen} sessions={sessions} activeSession={activeSession} messageTs={messageTs} previewSlot={previewSlot} previewMid={previewMid} /> : null}{cards}</>
   }
 
   // Inline-mention path: render the split computed above.

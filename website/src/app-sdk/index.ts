@@ -640,5 +640,9 @@ export { activeLocale, fmtNumber, fmtCurrency, fmtDate, fmtTime, fmtDateTime, fm
 export type { NumberOptions, DateStyleOptions, RelativeStyle } from '../i18n/format'
 // An app's own origin on the dashboard's port, for a backend that frames its own pages (level 8).
 export { appWebOrigin } from './webOrigin'
+// What this app's side-panel tab was opened with by its own link-preview card
+// (`card.openPanelTab`). Feature-detected by name: an older host has no export.
+export { usePanelTabRequest } from './panelTabRequest'
+export type { PanelTabRequest } from './panelTabRequest'
 // The App Kit seam level; an app feature-detects the seams above by it.
 export { APP_SDK_LEVEL } from './sdkLevel'

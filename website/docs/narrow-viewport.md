@@ -759,6 +759,13 @@ native meaning and follows it. A drag that scrolls ends in `pointercancel`, so i
 never opens or closes a card. It is `pointerup` and not `click` because iOS does
 not send a click to a non-clickable element through a document listener.
 
+A mouse click on the same span opens its card at once too (`trigger: 'click'`), but
+`LinkPreviewLayer` skips the click a touch tap synthesises (it remembers the
+`pointerType` of the last `pointerdown`), so a tap still opens and closes through
+`pointerup` alone. After a card's "jump to it", the Back pill above the composer
+(`BackToSpotPill`) names only the time on a phone ("Back to where you were · 15:40"),
+since the full "the 15:40 reply" wording does not fit beside the dock.
+
 ## A panel that gains a gesture must be bound LIVE to its offset
 
 A panel moved only by a tap may serialize its offset at render time —

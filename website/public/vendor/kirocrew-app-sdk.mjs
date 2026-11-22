@@ -23,6 +23,8 @@ export const {
   ProjectPicker,
   // The dashboard's live session list and session acts behind the app's declared chat paths (level 8).
   useHostSessions,
+  // What this app's side-panel tab was opened with by its own link-preview card.
+  usePanelTabRequest,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.

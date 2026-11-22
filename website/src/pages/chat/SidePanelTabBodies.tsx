@@ -27,6 +27,7 @@ import { usePanelTerminalsPending } from '../../hooks/usePanelTabs'
 import { usePanelTabDescriptors, useInstalledApps, panelTabDescriptor } from '../../hooks/panelTabRegistry'
 import { isPermissionRefusal } from '../../api/apiError'
 import AppHost from '../../components/AppHost'
+import { PanelTabRequestScope } from '../../app-sdk/panelTabRequest'
 import { scrollMemoryKeyFor } from '../../hooks/useScrollMemory'
 import { usePersistedBool } from '../../hooks/usePersistedBool'
 import { ContentSkeleton } from '../../components/ui'
@@ -73,7 +74,12 @@ function AppPanelTabBody({ kind, active, slot }: { kind: string; active: boolean
   if (!d || !app) return null
   // The OWNING slot, not the active one: with cross-slot hosting this body may belong
   // to another chat, and the identity its requests carry has to be that chat's.
-  return <AppHost app={app} entry={d.entry} active={active} sessionKey={`dashboard:${slot}`} />
+  // The scope `usePanelTabRequest` reads: this chat's request for this tab only.
+  return (
+    <PanelTabRequestScope slot={slot} kind={d.kind}>
+      <AppHost app={app} entry={d.entry} active={active} sessionKey={`dashboard:${slot}`} />
+    </PanelTabRequestScope>
+  )
 }
 
 /**

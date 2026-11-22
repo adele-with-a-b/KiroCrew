@@ -10,8 +10,11 @@
  *
  * - `init { capability, theme }` once the frame has loaded
  * - `capability { capability }` a renewed capability for `ctx.fetch`
- * - `show { invocation, url? | text?, rect, theme, modifiers }` the hovered link or
- *   text, where it is, and the modifier keys held when the hover began.
+ * - `show { invocation, url? | text?, rect, theme, modifiers, trigger, sessionKey?, message? }`
+ *   the hovered link or text, where it is, the modifier keys held when the hover
+ *   began, and how the card was asked for (`hover`, a mouse `click`, a touch `tap`).
+ *   For an app the owner approved for `sessionKey`: the chat and the message
+ *   (`{ ts, id? }`) the link or text sits in.
  *   `invocation` numbers the shows of one frame; a card message (`open`, `close`,
  *   `resize`, `pin`, `drag`, `dock`) carries the one it answers, and one for an
  *   older show is dropped.
@@ -29,6 +32,14 @@
  * - `drag { dx, dy }` move the card by this much
  * - `dock { edge }` stick the card to the left or right edge, or `null` to undock
  * - `textPatternsOff { ids }`, `escape`, `capabilityExpired`
+ * - `openPanelTab { invocation, tab, payload }` open this app's own side-panel tab
+ *   `tab` (a `contributes.panelTabs[].id`) in the chat that show came from, and hand
+ *   the tab `payload` (`usePanelTabRequest`). Only for an app approved for
+ *   `sessionKey` (the tab is told its chat), while that chat is on screen, right
+ *   after the person's click in the card.
+ * - `jump { invocation, ts, id? }` scroll the chat that show came from to one of its
+ *   messages and light it, with a Back pill. Only for an app approved for
+ *   `sessionKey`, while that chat is on screen, right after a click in the card.
  * - `regions { rects }` overlay mode, for a provider that manages several windows
  *   of its own (pinned cards, a dock, dialogs): the frame covers the viewport and
  *   is clipped to these rects, so everywhere else the page stays clickable. Its
@@ -40,7 +51,7 @@
  *
  * The dashboard positions and sizes the frame. Nothing the frame says reaches the
  * dashboard's DOM: a message only moves, sizes, clips, shows or hides that one
- * iframe.
+ * iframe, opens that app's own tab, or scrolls the chat its show came from.
  *
  * @module linkPreview/linkPreviewProtocol
  */
@@ -63,18 +74,29 @@ export interface Modifiers {
   meta: boolean
 }
 
+/** One chat message: its `ts`, and its `mid` (`id`) when it has one. */
+export interface MessageRef {
+  ts: string
+  id?: string
+}
+
+/** How a card was asked for: the hover delay ran out, a mouse click, a touch tap. */
+export type ShowTrigger = 'hover' | 'click' | 'tap'
+
 /** What one hover shows: a link's URL or a pattern's matched text, and, for an app
- *  the owner approved for it, the session key of the chat the message is in. */
+ *  the owner approved for it, the session key of the chat the message is in and
+ *  that message. */
 export type PreviewLink = {
   url?: string
   text?: string
   sessionKey?: string
+  message?: MessageRef
 }
 
 export type ToFrame =
   | { type: 'init'; capability: string | null; theme: 'dark' | 'light' }
   | { type: 'capability'; capability: string | null }
-  | ({ type: 'show'; invocation: number; rect: AnchorRect; theme: 'dark' | 'light'; modifiers?: Modifiers } & PreviewLink)
+  | ({ type: 'show'; invocation: number; rect: AnchorRect; theme: 'dark' | 'light'; modifiers?: Modifiers; trigger?: ShowTrigger } & PreviewLink)
   | { type: 'leave' }
   | { type: 'hide'; reason: string }
   | { type: 'theme'; theme: 'dark' | 'light' }
@@ -94,6 +116,29 @@ export type FromFrame =
   | { type: 'escape' }
   | { type: 'capabilityExpired' }
   | { type: 'regions'; rects: AnchorRect[] }
+  | { type: 'openPanelTab'; invocation: number; tab: string; payload: unknown }
+  | { type: 'jump'; invocation: number; target: MessageRef }
+
+/** A `panelTabs[].id`: the slug the manifest allows (`_PANEL_TAB_ID_RE`). */
+const TAB_ID = /^[a-z][a-z0-9_-]{0,63}$/
+/** Longest message `ts` or `mid` a frame may name. */
+const MAX_ID_CHARS = 128
+
+/** A frame's `{ ts, id? }`, or null when `ts` is not a short string. */
+export function readMessageRef(ts: unknown, id: unknown): MessageRef | null {
+  if (typeof ts !== 'string' || !ts || ts.length > MAX_ID_CHARS) return null
+  return typeof id === 'string' && id && id.length <= MAX_ID_CHARS ? { ts, id } : { ts }
+}
+
+/** A JSON copy of `value`, or undefined when it is not plain JSON. */
+function jsonCopy(value: unknown): unknown {
+  if (value === undefined) return null
+  try {
+    return JSON.parse(JSON.stringify(value)) as unknown
+  } catch {
+    return undefined
+  }
+}
 
 /** At most this many rects in one `regions` message; the rest are dropped. */
 export const MAX_REGIONS = 32
@@ -137,6 +182,15 @@ export function readFrameMessage(data: unknown): FromFrame | null {
         if (rect.width > 0 && rect.height > 0) rects.push(rect)
       }
       return { type: 'regions', rects }
+    }
+    case 'openPanelTab': {
+      if (typeof m.tab !== 'string' || !TAB_ID.test(m.tab)) return null
+      const payload = jsonCopy(m.payload)
+      return payload === undefined ? null : { type: 'openPanelTab', invocation, tab: m.tab, payload }
+    }
+    case 'jump': {
+      const target = readMessageRef(m.ts, m.id)
+      return target ? { type: 'jump', invocation, target } : null
     }
     default:
       return null
