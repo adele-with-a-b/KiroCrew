@@ -1074,6 +1074,29 @@ def _not_creator_reason(
         return "an agent-created session can only control sessions it created itself"
 
 
+#: The refusal a fenced caller gets on its own creator for anything but a plain
+#: ``session_send``: the one verb :func:`authorize_target`'s ``creator_message``
+#: admits there.
+CREATOR_MESSAGE_ONLY = (
+    "a session can only send the session that created it a message "
+    "(session_send without steer); every other verb on it is refused"
+)
+
+
+def _is_callers_creator(caller_slot: "_ChatSlot", slot: "_ChatSlot") -> bool:
+    """Whether *slot* is the session the CALLING slot records as its creator.
+
+    Read off the caller's own slot, which the gate resolved from its attested key,
+    never from a value in the request. ``_created_by`` is a slot key, the space
+    ``slot.key`` lives in. A blank stamp (a person's own tab, an ownerless
+    rehydrate), the ``unverified:creator`` sentinel and a cron's ``cron:<job>``
+    stamp match no live slot key, so they admit nothing. A handoff never rewrites
+    the stamp, so it never changes the answer.
+    """
+    creator = str(getattr(caller_slot, "_created_by", "") or "")
+    return bool(creator) and creator == slot.key
+
+
 def authorize_target(
     state: "DashboardState",
     *,
@@ -1083,6 +1106,7 @@ def authorize_target(
     skip_enabled_check: bool = False,
     precomputed_ownership_fenced: bool | None = None,
     allow_self: bool = False,
+    creator_message: bool = False,
 ) -> "_ChatSlot":
     """Resolve *target* and decide whether *caller* may act on it.
 
@@ -1131,6 +1155,15 @@ def authorize_target(
     itself acts on nothing but its own sidebar label. It waives nothing else -- an ephemeral, app-scoped or
     channel-linked caller is still refused, and a target that is not the caller is
     still judged by every rule above.
+
+    ``creator_message`` lifts the ownership fence for one target: the session the
+    caller's own slot records as its creator (:func:`_is_callers_creator`). Only
+    ``send_to_target`` passes it, for a ``session_send`` without ``steer``, so a
+    worker can report to whoever started it, and it is honoured for the ``send``
+    operation alone. Every other verb on the creator, a steer, a broadcast, a
+    workflow send and a create's seed keep the refusal, worded
+    :data:`CREATOR_MESSAGE_ONLY`. It waives nothing else: the caller-side and
+    target-side containment and the workspace compare still run.
     """
 
     deny = _deny_factory(caller_session_key=caller_session_key, operation=operation, target=target)
@@ -1222,6 +1255,10 @@ def authorize_target(
         # rather than a class it cannot see; the cron prefix is still readable
         # without config, and the inline path keeps the three-way wording since
         # it is already reading config anyway.
+        if _is_callers_creator(caller_slot, slot):
+            if creator_message and operation == "send":
+                return slot
+            raise deny(CREATOR_MESSAGE_ONLY, "not_creator")
         fence_reason = _not_creator_reason(
             state, caller_key, caller_slot, precomputed_ownership_fenced
         )

@@ -1042,6 +1042,8 @@ async def api_session_control_send(request: web.Request) -> web.Response:
             message=message,
             steer=steer,
             caller_fenced=_carried_fence(request),
+            # The one caller that may reach the session that created the caller.
+            creator_message=True,
         )
     except sc.SessionControlError as exc:
         return _refusal(exc)

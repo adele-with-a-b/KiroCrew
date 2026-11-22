@@ -40,6 +40,7 @@ from kiro_crew.dashboard.session_control_parts.delivery_containment import (
 from kiro_crew.dashboard.session_control_parts.target_authorization import (
     _broadcast_resolution_slots,
     _deny_factory,
+    _is_callers_creator,
     _resolve_slot,
     authorize_target,
     load_target_window,
@@ -241,9 +242,15 @@ async def send_to_target(
     steer: bool = False,
     caller_fenced: bool | None = None,
     via: str = "session_send",
+    creator_message: bool = False,
     _delivery_progress: "_DeliveryProgress | None" = None,
 ) -> dict[str, Any]:
     """Deliver *message* to *target* as its next agent turn.
+
+    ``creator_message`` lets the send reach the session that created the caller
+    (:func:`authorize_target`). Only the ``session_send`` route passes it, so a
+    broadcast, a create's seed, a workflow send and any later caller keep the
+    creator fence unless they ask; a steer never gets it.
 
     ``via`` names the VERB in the provenance envelope the target reads. It exists
     because :func:`broadcast_to_targets` delivers through this function, and a
@@ -293,8 +300,10 @@ async def send_to_target(
       ``user_origin=False``, so a peer's steer does not inherit the composer's
       exemption from the drain's LINKED drop.
 
-    A steer that cannot be injected falls back to the queue — never dropped, and
-    the caller is told it queued rather than steered.
+    A steer that cannot be injected falls back to the queue, and the caller is
+    told it queued rather than steered. In this frame that fallback obeys the
+    queue bound like any new send (429 ``queue_full``, so the caller knows it was
+    not delivered); once the frame is gone the orphaned fallback is unbounded.
 
     The turn is NOT charged against the background-turn cap, and deliberately so:
     that cap bounds an app's own automation on unattended (app-owned) slots. The
@@ -338,6 +347,20 @@ async def send_to_target(
         target=target,
         operation="send",
         precomputed_ownership_fenced=caller_fenced,
+        # A plain session_send may reach the session that created the caller; a
+        # steer may not. The steer re-gates below are only reached with ``steer``
+        # set, so they never pass it.
+        creator_message=creator_message and not steer,
+    )
+    caller_slot = state.get_slot(caller_slot_key(state, caller_session_key))
+    # Only the plain send the opening is for: a caller that reaches its creator by
+    # another road (a handoff made it the creator's manager) may steer it, and a
+    # steer is not answered as a report.
+    to_creator = (
+        creator_message
+        and not steer
+        and caller_slot is not None
+        and _is_callers_creator(caller_slot, slot)
     )
 
     # A relay archive is read-only: the delivery below would run the crew's old
@@ -524,6 +547,9 @@ async def send_to_target(
                     slot.key,
                 )
                 return
+            # Not bounded by the queue cap below: this text was already accepted, and
+            # its caller was told the outcome is unknown and not to send again, so a
+            # refusal here would lose it (the steer's own requeue is unbounded too).
             await session_deliver.deliver(
                 state,
                 slot,
@@ -712,6 +738,23 @@ async def send_to_target(
         # below does not have: a turn that gave up waiting for a permit would leave
         # the slot's queue stranded behind it. The composer's own queued path does
         # the same (`server.py` passes `_run_chat` directly).
+        # Imported here, not at module level, so the facade serves no new name.
+        from kiro_crew import crew_pause
+        from kiro_crew.dashboard.slot_queue_repository import MAX_LIVE_QUEUE_ENTRIES
+
+        # A new send that would WAIT (the same test `enqueue_or_run_prompt` makes)
+        # obeys the bound app messages and channel hand-offs obey. Without it a
+        # session that keeps sending to a busy one grows that queue past the cap,
+        # and from then on those deliveries are refused queue-full. An idle target
+        # runs it, which is what drains the queue, so it is never refused.
+        if (slot.running or crew_pause.holds_slot(slot)) and len(
+            slot._queue
+        ) >= MAX_LIVE_QUEUE_ENTRIES:
+            raise SessionControlError(
+                "that session's queue is full; send again after it drains",
+                code="queue_full",
+                status=429,
+            )
         # No suspension inside: the non-steer peer arm is the synchronous
         # queue-or-run call, so no cancellation can enter this await.
         started = (
@@ -764,7 +807,12 @@ async def send_to_target(
             **({"steer_containment_stop_failed": True} if steer_containment_stop_failed else {}),
         },
     )
-    return {"ok": True, "target": slot.key, "started": started, "steered": steered}
+    result = {"ok": True, "target": slot.key, "started": started, "steered": steered}
+    if to_creator:
+        # The caller cannot read or queue-check its creator, so the tool reply
+        # must not tell it to (``mcp_dashboard_session_runs``).
+        result["toCreator"] = True
+    return result
 
 
 #: The two broadcast modes, named rather than a boolean. ``queue`` waits for each
