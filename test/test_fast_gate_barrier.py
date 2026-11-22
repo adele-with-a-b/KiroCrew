@@ -237,6 +237,8 @@ def _simulate_pull_request(
     values = {
         "github.event_name": "pull_request",
         "github.ref": "refs/pull/1/merge",
+        # Fork only: pod-boot-windows runs only upstream, and this simulates an upstream run.
+        "github.repository": "kirodotdev/KiroCrew",
         **{f"needs.changes.outputs.{key}": value for key, value in surface.items()},
     }
     pending = list(jobs)
@@ -590,8 +592,8 @@ class TestTheGatesLiveInTheGateWorkflow:
         ci_on = dict(ci.get("on", ci.get(True)))
         fg_on = dict(fast_gate.get("on", fast_gate.get(True)))
         expected = {
-            "push": {"branches": ["main", "release/**"]},
-            "pull_request": {"branches": ["main", "release/**"]},
+            "push": {"branches": ["main", "release/**", "local/**"]},
+            "pull_request": {"branches": ["main", "release/**", "local/**"]},
             "merge_group": {"types": ["checks_requested"]},
         }
         assert ci_on == expected
@@ -892,7 +894,7 @@ class TestOnlyThePushOnlyCancelJobCanWrite:
         # `refs/heads/main` test is what keeps this job off a release push.
         # PyYAML reads the bare key `on` as boolean True.
         triggers = ci.get(True) or ci.get("on") or {}
-        assert triggers["push"] == {"branches": ["main", "release/**"]}
+        assert triggers["push"] == {"branches": ["main", "release/**", "local/**"]}
         assert "github.ref == 'refs/heads/main'" in guard
 
     def test_the_cancel_job_runs_beside_the_barrier_and_gates_nothing(self, ci: dict) -> None:
