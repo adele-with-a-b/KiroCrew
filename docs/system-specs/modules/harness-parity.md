@@ -395,6 +395,17 @@ Where new work goes:
 - A new owner is also listed in `VOCABULARY_PATHS` and imported at the foot of
   `agent_sdk/backends.py`; `test_harness_parity.py` pins the two lists equal.
 
+### Chat keeper membership
+
+`ACP_BACKENDS_CHAT_KEEPER` (`agent_sdk/backends_sessions.py`) names the harnesses
+whose chat process may outlive the gateway under a chat keeper. Its only member is
+claude. A member must run one process per chat on `AcpClient`, answer a repeated
+`initialize` statelessly, and answer `session/status` with `open` for a session it
+holds. It must also be in `ACP_BACKENDS_AGENT_STARTED_TURNS`, because an adopted
+in-flight turn runs as an agent-started turn. Every other harness keeps the
+gateway-owned process it had. Design:
+[runtime-ownership § Chats that outlive the gateway](runtime-ownership.md#chats-that-outlive-the-gateway-the-chat-keeper).
+
 ### pi: what its own channels can and cannot carry
 
 pi-acp drops the `session/new` MCP array, so pi joins
