@@ -308,6 +308,7 @@ from kiro_crew.dashboard.chat_utils import (  # noqa: F401
     run_config_write,
 )
 from kiro_crew.dashboard.conditional_get import conditional_response, strong_content_etag
+from kiro_crew.dashboard.handlers import agents_cc_model_rows as model_rows
 from kiro_crew.dashboard.handlers import models_cold_probe
 from kiro_crew.dashboard.handlers._shared import (  # noqa: F401
     MAX_AGENT_SKILLS,
@@ -331,7 +332,6 @@ from kiro_crew.dashboard.handlers.agent_templates import (  # noqa: F401
     read_only_reason_for_path,
     validate_definition_patch,
 )
-from kiro_crew.dashboard.handlers.agents_cc_model_rows import merge_advertised_rows
 from kiro_crew.dashboard.handlers.agents_effort_levels import api_effort_levels  # noqa: F401
 from kiro_crew.dashboard.handlers.agents_session_commands import (
     menu_backend,
@@ -823,7 +823,7 @@ def _cc_models(request: web.Request, configured_default: str = "") -> list[dict]
             or _normalize_model_key(e.get("model_name", "")) == "auto"
         ]
 
-    merged = merge_advertised_rows(registry_rows, advertised, _normalize_model_key)
+    merged = model_rows.merge_advertised_rows(registry_rows, advertised, _normalize_model_key)
     # "auto" leads. It may be absent entirely if a future registry drops the row,
     # so synthesize it rather than assuming the filter above preserved one.
     merged = [e for e in merged if _normalize_model_key(e.get("model_name", "")) == "auto"] + [
@@ -1430,9 +1430,9 @@ async def api_models(request: web.Request) -> web.Response:
         )
     backend, bundle_route = route
     if backend == ACP_BACKEND_CLAUDE:
-        return web.json_response(
-            _cc_models(request, configured_default=_scoped_default(cfg, backend))
-        )
+        rows = _cc_models(request, configured_default=_scoped_default(cfg, backend))
+        extras = model_rows.extra_ids_for(cfg, backend)
+        return web.json_response(model_rows.with_extra_models(rows, extras, _normalize_model_key))
     if capabilities_for(backend).resolves_model_from_advertised_list or (
         backend in ACP_BACKENDS_MODEL_AT_LAUNCH
     ):

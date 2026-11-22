@@ -2,7 +2,8 @@
 
 :func:`kiro_crew.dashboard.handlers.agents._cc_models` keeps the entitlement filter,
 the ``auto`` row and the configured default; this module decides which row each
-advertised id lands on and which label that row shows.
+advertised id lands on and which label that row shows, and appends the ids the
+operator added for a backend (:func:`with_extra_models`).
 """
 
 from __future__ import annotations
@@ -10,6 +11,37 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from kiro_crew import model_registry
+from kiro_crew.config.picker_extra_models import extra_ids_for  # noqa: F401 - used via model_rows
+
+
+def with_extra_models(
+    rows: list[dict], extras: list[str], key_of: Callable[[str], str]
+) -> list[dict]:
+    """Return *rows* with the operator's added ids *extras* appended.
+
+    The ids come from :func:`kiro_crew.config.picker_extra_models.extra_ids_for`.
+    An id already on a row, or one *key_of* (the facade's ``_normalize_model_key``)
+    folds to ``auto``, adds nothing. Otherwise the operator's own spelling is kept:
+    folding by key would merge a bare family alias with the versioned model it
+    names, which :func:`merge_advertised_rows` keeps apart. Each new id is appended
+    under its own id, after every advertised row.
+    """
+    names = {str(r.get("model_name", "")) for r in rows}
+    added: list[dict] = []
+    for model in extras:
+        if model in names or key_of(model) in ("", "auto"):
+            continue
+        names.add(model)
+        added.append(
+            {
+                "model_name": model,
+                "display_name": model,
+                "description": "Added in settings (dashboard.model_picker_extra_models)",
+                "context_window": model_registry.model_window(model)
+                or model_registry.REFERENCE_WINDOW_TOKENS,
+            }
+        )
+    return [*rows, *added]
 
 
 def merge_advertised_rows(

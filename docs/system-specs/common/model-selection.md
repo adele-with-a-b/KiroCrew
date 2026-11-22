@@ -544,6 +544,25 @@ its own once the cache refreshes with a list that carries it.
 - **Pickers** MUST list options from `GET /api/models`, the advertised set, never a
   static in-code list. A hand-maintained list offers models the account cannot run and
   hides the ones it can.
+- **`dashboard.model_picker_extra_models`** is the operator's one addition to that set:
+  `{backend id: [model id, ...]}`, for a model the backend runs but leaves out of its
+  advertised list. Only the claude backend reads it
+  (`config/picker_extra_models.READING_BACKENDS`): claude-agent-acp advertises just
+  the rows in the user's Claude settings, yet passes an unlisted id to Claude Code on
+  a live pick, and once a chat runs it the adapter advertises it, so the chat's pin
+  survives a chat or gateway restart like any advertised id. A backend on the shared
+  runtime checks a pick against its advertised list first, so it does not read the
+  key. `GET /api/models` appends each id after the advertised rows, under its own id,
+  skipping one already listed or one whose `_normalize_model_key` is `auto`; any other
+  spelling is kept as written. The key is for ids the backend does NOT advertise: an
+  added spelling of an advertised model, or a bare alias beside its versioned id, shows
+  a second row that may send the same wire id, and is the operator's to remove. The pin
+  save gate is the one exception to the next rule: an added id must also fit the pin
+  grammar (`_MODEL_PIN_PATTERN`, 64 characters), and `_validate_role_model` judges it
+  against the newest live claude session's advertised list, so it is refused while
+  that list lacks it and accepted with no live session. Nothing is added in code. It
+  is set in `config.json` (no Settings control); the server reads it per request, and
+  an open dashboard's cached list shows a change after a reload or the next chat spawn.
 - **A pin's save gate accepts every id its picker offers.** The config PATCH gives
   every validated model pin (`agent.role_models.*`, `agent.fallback_model`,
   `agent.refusal_fallback_model`, the per-app `apps.<name>.model` and the

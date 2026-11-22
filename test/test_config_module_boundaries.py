@@ -373,6 +373,7 @@ _OWNER_CONFIG_IMPORTS = {
     "kiro_crew.config.loader_builders": {
         "kiro_crew.config.loader_document",
         "kiro_crew.config.loader_locations",
+        "kiro_crew.config.picker_extra_models",
         "kiro_crew.config.sections",
     },
     "kiro_crew.config.loader_snapshots": {
