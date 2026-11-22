@@ -8,6 +8,9 @@
 import type { AppInfo } from './appDetailPageTypes'
 import { knownDesktopCapabilities } from '../components/appstore/desktopCapabilities'
 
+/** The one `linkPreviewSessionKey` entry the owner approves (`SESSION_KEY_ENTRY` in `apps/link_preview_grants.py`). */
+export const SESSION_KEY_GRANT = 'sessionKey:nav'
+
 export function stagedGrantsOf(app: AppInfo | null) {
   // Declared api/events entries outside the approved set (`approvedGrants`) are
   // held back: the app runs without them until the owner approves them here.

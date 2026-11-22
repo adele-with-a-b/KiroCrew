@@ -11,7 +11,9 @@
  *  - stepping (Enter/Arrow) centres each match and leaves the glide-vs-snap
  *    choice to `pickSearchScrollBehavior`;
  *  - the approval bar's "Show in chat" scrolls to the tool row by call id;
- *  - a row that is not in the display map is never scrolled to.
+ *  - a row that is not in the display map is never scrolled to;
+ *  - a link-preview card's jump acts only in the chat on screen, and keeps the
+ *    spot it left from for the Back pill.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
@@ -29,6 +31,7 @@ import { useTranscriptJumps } from '../pages/chat/page/transcriptJumps'
 import { openActivityToTool } from '../store/chatSlice'
 import type { ChatMessage } from '../types'
 import { createTestStore } from './helpers'
+import { sendLinkPreviewNav } from '../linkPreview/linkPreviewNav'
 
 type Opts = Parameters<typeof useTranscriptJumps>[0]
 type Search = Opts['search']
@@ -47,9 +50,9 @@ function harness(over: Partial<Opts> = {}) {
   const store = createTestStore()
   const map = new Map<number, number>([[0, 10], [2, 12], [3, 13]])
   const messages = [
-    { role: 'user', content: 'a' },
-    { role: 'assistant', content: 'b' },
-    { role: 'assistant', content: 'c' },
+    { role: 'user', content: 'a', ts: 't0', meta: { mid: 'm0' } },
+    { role: 'assistant', content: 'b', ts: 't1' },
+    { role: 'assistant', content: 'c', ts: 't2', meta: { mid: 'm2' } },
     { role: 'tool', content: 'd', meta: { tool_call_id: 'call-9' } },
   ] as ChatMessage[]
   const opts: Opts = {
@@ -67,6 +70,7 @@ function harness(over: Partial<Opts> = {}) {
     initialSidRef: { current: null },
     setHighlightTs: vi.fn(),
     handleJumpToPinnedMessage: vi.fn(),
+    scrollerRef: { current: null },
     ...over,
   }
   const wrapper = ({ children }: { children: ReactNode }) => <Provider store={store}>{children}</Provider>
@@ -153,5 +157,108 @@ describe('"Show in chat" from the approval bar', () => {
     const { opts, store } = harness({ messageToDisplayIdx: new Map([[0, 10]]) })
     act(() => { store.dispatch(openActivityToTool('call-9')) })
     expect(opts.navToDisplayIndex).not.toHaveBeenCalled()
+  })
+})
+
+describe("a link-preview card's jump", () => {
+  /** A scroller at y=100 holding the rows of display index 10 (y=40) and 12 (y=340). */
+  function scroller() {
+    const sc = document.createElement('div')
+    sc.getBoundingClientRect = () => ({ top: 100 }) as DOMRect
+    for (const [di, top] of [[10, 40], [12, 340]]) {
+      const row = document.createElement('div')
+      row.setAttribute('data-display-index', String(di))
+      row.getBoundingClientRect = () => ({ top }) as DOMRect
+      sc.append(row)
+    }
+    return sc
+  }
+
+  it('jumps in the chat on screen and keeps where it left from; Back returns there and the pill goes', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller() } })
+    let taken = false
+    act(() => { taken = sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0', id: 'm0' }, from: { ts: 't2', id: 'm2' } }) })
+    expect(taken).toBe(true)
+    expect(opts.handleJumpToPinnedMessage).toHaveBeenCalledWith('t0', 'm0', { origin: 'link' })
+    // The reply at t2 sat 240px below the scroller's top; the target is above it, so Back goes down.
+    expect(hook.result.current.backSpot).toEqual({ from: { ts: 't2', id: 'm2' }, offset: 240, down: true })
+    act(() => { hook.result.current.goBack() })
+    expect(opts.navToDisplayIndex).toHaveBeenCalledWith(12, { behavior: 'smooth', align: 'start', offset: -240 })
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('a jump down the transcript gives a Back that goes up; a row matched by ts alone', () => {
+    const { hook } = harness({ scrollerRef: { current: scroller() } })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't2' }, from: { ts: 't0' } }) })
+    expect(hook.result.current.backSpot).toEqual({ from: { ts: 't0' }, offset: -60, down: false })
+  })
+
+  it('a jump for another chat is not taken', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller() } })
+    let taken = true
+    act(() => { taken = sendLinkPreviewNav({ kind: 'jump', slot: 'slot-b', target: { ts: 't0' }, from: { ts: 't2' } }) })
+    expect(taken).toBe(false)
+    expect(opts.handleJumpToPinnedMessage).not.toHaveBeenCalled()
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('switching chats drops the Back pill', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller() } })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't2' } }) })
+    expect(hook.result.current.backSpot).not.toBeNull()
+    hook.rerender({ ...opts, activeSlot: 'slot-b' })
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('a target neither loaded nor older than the window jumps (to say so) with no Back pill', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller() } })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 'gone' }, from: { ts: 't2' } }) })
+    expect(opts.handleJumpToPinnedMessage).toHaveBeenCalledWith('gone', undefined, { origin: 'link' })
+    expect(hook.result.current.backSpot).toBeNull()
+    // With older history still to page in, it may be there: the pill is offered.
+    const more = harness({ scrollerRef: { current: scroller() }, slotHasMore: true, slotOldestIndex: 5 })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 'gone' }, from: { ts: 't2' } }) })
+    expect(more.hook.result.current.backSpot).toMatchObject({ down: true })
+  })
+
+  it('scrolling back to the bottom by hand after the jump drops the pill', () => {
+    const sc = scroller()
+    const { opts, hook } = harness({ scrollerRef: { current: sc }, isAtBottom: true })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't2' } }) })
+    expect(hook.result.current.backSpot).not.toBeNull()
+    hook.rerender({ ...opts, isAtBottom: false })
+    expect(hook.result.current.backSpot).not.toBeNull()
+    act(() => { sc.dispatchEvent(new Event('wheel')) })
+    hook.rerender({ ...opts, isAtBottom: true })
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('a jump that lands at the bottom keeps the pill until the person scrolls', () => {
+    const sc = scroller()
+    const { opts, hook } = harness({ scrollerRef: { current: sc }, isAtBottom: false })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't2' }, from: { ts: 't0' } }) })
+    // The target sat in the last screenful: arriving there is not a scroll by hand.
+    hook.rerender({ ...opts, isAtBottom: true })
+    expect(hook.result.current.backSpot).not.toBeNull()
+    hook.rerender({ ...opts, isAtBottom: false })
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' })) })
+    hook.rerender({ ...opts, isAtBottom: true })
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('in split view a jump is not taken: the transcript it would move is not drawn', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller() }, splitView: true })
+    let taken = true
+    act(() => { taken = sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't2' } }) })
+    expect(taken).toBe(false)
+    expect(opts.handleJumpToPinnedMessage).not.toHaveBeenCalled()
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('a jump whose origin row is not drawn still jumps, with no Back pill', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller() } })
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't1' } }) })
+    expect(opts.handleJumpToPinnedMessage).toHaveBeenCalledWith('t0', undefined, { origin: 'link' })
+    expect(hook.result.current.backSpot).toBeNull()
   })
 })

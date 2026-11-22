@@ -945,6 +945,17 @@ function cardControls(invocation) {
     pin: (pinned) => send('pin', { invocation, pinned: pinned === true }),
     dragBy: (dx, dy) => send('drag', { invocation, dx: clampNum(dx), dy: clampNum(dy) }),
     dock: (edge) => send('dock', { invocation, edge: edge === 'left' || edge === 'right' ? edge : null }),
+    // This app's own side-panel tab, in the chat this show sat in; `payload` must be JSON.
+    openPanelTab: (tab, payload) => {
+      let copy;
+      try { copy = JSON.parse(JSON.stringify(payload === undefined ? null : payload)); } catch (_) { return; }
+      send('openPanelTab', { invocation, tab: String(tab), payload: copy });
+    },
+    // Scroll this show's chat to one of its messages (`link.message`'s shape).
+    jumpTo: (message) => {
+      if (!message || typeof message.ts !== 'string') return;
+      send('jump', { invocation, ts: message.ts, id: typeof message.id === 'string' ? message.id : undefined });
+    },
   });
 }
 const ctx = {
@@ -971,6 +982,11 @@ const POINT = {
         if (typeof m.url === 'string') link.url = m.url;
         if (typeof m.text === 'string') link.text = m.text;
         if (typeof m.sessionKey === 'string') link.sessionKey = m.sessionKey;
+        if (m.message && typeof m.message.ts === 'string') {
+          link.message = { ts: m.message.ts };
+          if (typeof m.message.id === 'string') link.message.id = m.message.id;
+        }
+        if (m.trigger === 'hover' || m.trigger === 'click' || m.trigger === 'tap') link.trigger = m.trigger;
         if (m.modifiers && typeof m.modifiers === 'object') {
           const k = m.modifiers;
           link.modifiers = { alt: k.alt === true, shift: k.shift === true, ctrl: k.ctrl === true, meta: k.meta === true };

@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { usePanelTabs, openPanelView, __resetPanelTabs, useAnyLiveAppTab, useAllAppTabs, evictDocumentBodies, purgeDocumentBodiesForRedactionChange, documentBodyEpochNow, takePlainPanelShow, notePanelStoppedShowing, notePanelShown, MAX_TERMINALS_PER_CHAT } from '../hooks/usePanelTabs'
 import * as panelTabsModule from '../hooks/usePanelTabs'
+import { peekPanelTabRequestForTest, putPanelTabRequest } from '../app-sdk/panelTabRequest'
 import { shouldMountSidePanel, isSidePanelHidden } from '../pages/chat/sidePanelMount'
 
 // App-contributed tab descriptors are an ARGUMENT to `usePanelTabs`, not something
@@ -981,6 +982,19 @@ describe('openPanelView', () => {
   })
 
   describe('app-contributed panel tabs', () => {
+    it("closing an app tab, or every tab, forgets what a link-preview card opened it with", () => {
+      mock.descriptors = [demoTab]
+      const { result } = renderHook(() => usePanelTabs('req-slot', mock.descriptors))
+      const read = () => peekPanelTabRequestForTest('req-slot', demoTab.kind)
+      act(() => { putPanelTabRequest('req-slot', demoTab.kind, { n: 1 }); result.current.openPanelTab(demoTab) })
+      expect(read()).toMatchObject({ payload: { n: 1 } })
+      act(() => result.current.closeTab(demoTab.kind))
+      expect(read()).toBeNull()
+      act(() => { putPanelTabRequest('req-slot', demoTab.kind, { n: 2 }); result.current.openPanelTab(demoTab) })
+      act(() => result.current.closeAll())
+      expect(read()).toBeNull()
+    })
+
     it('openPanelTab opens one instance per kind, then focuses on reopen', () => {
       mock.descriptors = [demoTab]
       const { result } = renderHook(() => usePanelTabs(null, mock.descriptors))

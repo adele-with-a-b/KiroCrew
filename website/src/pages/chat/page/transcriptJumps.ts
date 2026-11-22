@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 
 import type { useMessageSearch } from '../../../hooks/useMessageSearch'
 import { store, useAppSelector } from '../../../store'
@@ -6,6 +6,28 @@ import type { ChatMessage } from '../../../types'
 import { pickSearchScrollBehavior, scrollCurrentMatchIntoView } from '../../../utils/searchScroll'
 import { resolveMsgIndex } from '../../../utils/shareUrl'
 import { drawnSuccessorIdx } from './transcriptPins'
+import { onLinkPreviewNav } from '../../../linkPreview/linkPreviewNav'
+import type { MessageRef } from '../../../linkPreview/linkPreviewProtocol'
+
+/** Where a link-preview card's jump left from, for the Back pill. */
+export interface BackSpot {
+  /** The message the card's label sat in; the pill names its time. */
+  from: MessageRef
+  /** That message's row top, from the scroller's top, before the jump. */
+  offset: number
+  /** The jump went up the transcript, so Back goes down. */
+  down: boolean
+}
+
+/** Keys that scroll the transcript by hand. */
+const SCROLL_KEYS = new Set(['ArrowDown', 'PageDown', 'End', ' '])
+
+/** The index of `ref` in `messages`: by `mid` when it has one, else by `ts`. */
+function indexOf(messages: ChatMessage[], ref: MessageRef): number {
+  return ref.id
+    ? messages.findIndex(m => (m.meta as Record<string, unknown> | undefined)?.mid === ref.id)
+    : messages.findIndex(m => m.ts === ref.ts)
+}
 
 interface TranscriptJumpsOptions {
   search: ReturnType<typeof useMessageSearch>
@@ -25,6 +47,12 @@ interface TranscriptJumpsOptions {
   setHighlightTs: (ts: string | null) => void
   /** The pins' jump, which pages back for a message not yet loaded. */
   handleJumpToPinnedMessage: (messageTs: string, mid: string | undefined, opts: { origin: 'link' }) => void
+  /** The transcript scroller, for where a card's jump left from. */
+  scrollerRef: MutableRefObject<HTMLElement | null>
+  /** The transcript rests at its bottom: back there by hand, the Back pill goes. */
+  isAtBottom?: boolean
+  /** Split view draws other panes instead of this transcript: a card's jump is not taken. */
+  splitView?: boolean
 }
 
 /**
@@ -47,6 +75,9 @@ export function useTranscriptJumps({
   initialSidRef,
   setHighlightTs,
   handleJumpToPinnedMessage,
+  scrollerRef,
+  isAtBottom = false,
+  splitView = false,
 }: TranscriptJumpsOptions) {
   // Track the timestamp of the previous search-nav step so we can tell "user is
   // holding Enter through many matches" apart from "user landed on one match".
@@ -164,5 +195,74 @@ export function useTranscriptJumps({
       setTimeout(() => setHighlightTs(null), 3000)
     }, 500)
   }, [messages, messageToDisplayIdx, slotHasMore, slotOldestIndex, handleJumpToPinnedMessage, activeSlot, cursorIsForActiveSlot]) // eslint-disable-line react-hooks/exhaustive-deps
-  return { jumpToSearchResult }
+
+  // A link-preview card's "jump to it": only in the chat on screen. The spot it
+  // leaves from is kept, so the Back pill can return there; a newer jump
+  // replaces it, another chat drops it, and so does scrolling to the bottom by
+  // hand.
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const moreRef = useRef(slotHasMore && cursorIsForActiveSlot)
+  moreRef.current = slotHasMore && cursorIsForActiveSlot
+  const [backSpot, setBackSpot] = useState<BackSpot | null>(null)
+  useEffect(() => { setBackSpot(null) }, [activeSlot])
+  // Only the person's own scroll counts: a jump that lands in the last screenful
+  // reaches the bottom too, and keeps its pill.
+  const byHandRef = useRef(false)
+  useEffect(() => {
+    byHandRef.current = false
+    const sc = scrollerRef.current
+    if (!backSpot || !sc) return
+    const mark = () => { byHandRef.current = true }
+    const onKey = (e: KeyboardEvent) => { if (SCROLL_KEYS.has(e.key)) mark() }
+    sc.addEventListener('wheel', mark, { passive: true })
+    sc.addEventListener('touchmove', mark, { passive: true })
+    sc.addEventListener('pointerdown', mark)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      sc.removeEventListener('wheel', mark)
+      sc.removeEventListener('touchmove', mark)
+      sc.removeEventListener('pointerdown', mark)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [backSpot, scrollerRef])
+  useEffect(() => {
+    if (backSpot && isAtBottom && byHandRef.current) setBackSpot(null)
+  }, [backSpot, isAtBottom])
+  const splitRef = useRef(splitView)
+  splitRef.current = splitView
+  useEffect(() => onLinkPreviewNav((req) => {
+    if (req.kind !== 'jump' || !activeSlot || req.slot !== activeSlot || splitRef.current) return false
+    const list = messagesRef.current
+    const from = req.from
+    const fromIdx = from ? indexOf(list, from) : -1
+    const di = fromIdx < 0 ? undefined : messageToDisplayIdxRef.current.get(fromIdx)
+    const sc = scrollerRef.current
+    const row = di === undefined ? null : sc?.querySelector<HTMLElement>(`[data-display-index="${di}"]`)
+    const toIdx = indexOf(list, req.target)
+    // A target neither loaded nor older than the window is not there: the jump
+    // only says so, and leaves no way back to offer.
+    if (from && sc && row && (toIdx >= 0 || moreRef.current)) {
+      setBackSpot({
+        from,
+        offset: row.getBoundingClientRect().top - sc.getBoundingClientRect().top,
+        // A target not loaded yet is older than the whole window.
+        down: toIdx < 0 || toIdx < fromIdx,
+      })
+    } else {
+      setBackSpot(null)
+    }
+    handleJumpToPinnedMessage(req.target.ts, req.target.id, { origin: 'link' })
+    return true
+  }), [activeSlot, handleJumpToPinnedMessage, messageToDisplayIdxRef, scrollerRef])
+  /** Back to where the chat was before the card's jump; the pill goes. */
+  const goBack = useCallback(() => {
+    const spot = backSpot
+    setBackSpot(null)
+    if (!spot) return
+    const idx = indexOf(messagesRef.current, spot.from)
+    const di = idx < 0 ? undefined : messageToDisplayIdxRef.current.get(idx)
+    if (di !== undefined) navToDisplayIndex(di, { behavior: 'smooth', align: 'start', offset: -spot.offset })
+  }, [backSpot, messageToDisplayIdxRef, navToDisplayIndex])
+  return { jumpToSearchResult, backSpot, goBack }
 }

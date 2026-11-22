@@ -68,6 +68,8 @@ import TaskProgressBar from '../TaskProgressBar'
 import type { ChatConfig } from '../ChatSettings'
 import { KnowledgePicker } from '../KnowledgePicker'
 import { JumpToBottomButton } from '../../../app-sdk/ChatScrollChrome'
+import BackToSpotPill from './BackToSpotPill'
+import type { BackSpot } from './transcriptJumps'
 import WorkflowProgressBar from '../WorkflowProgressBar'
 import { tryQuickSend } from '../../../lib/quickSend'
 import { i18nT } from '../../../i18n/t'
@@ -197,6 +199,9 @@ interface ComposerDockViewProps {
   sendHeld: boolean
   composerBandRef: (el: HTMLDivElement | null) => void
   scrollBottom: (instant?: boolean) => void
+  /** Where a link-preview card's jump left from: the Back pill shows instead of jump-to-bottom. */
+  backSpot?: BackSpot | null
+  onBack?: () => void
   handleResumeSession: (key: string, title: string) => Promise<void>
   composerRootChange: (v: string) => void
   composerUserEdit: (v: string) => void
@@ -342,7 +347,7 @@ export default function ComposerDockView({
   setModelFilter, onAgentListKeyDown, onModelListKeyDown, anchorModelBtn, modelBtnRect, messageQuote, onJumpToQuote, applyAutomationChange, automation, automationCreationReady, automationOpen,
   automationSnapshotFailed, setAutomationOpen, prefillHint, setPrefillHint, pasteSlice, pendingFiles, pendingSessions, resizedInfo, unstageSessionRef, uploading, agentBtnRect, anchorAgentBtn,
   projectPickerOpen, setProjectPickerOpen, anchorProjectBtn, projectBtnRect, pendingDirs, composerRef, composerVoiceOptions, isMac, cancelUpload, composerUploadFiles, dropTargetProps, handleCapture,
-  handleFileOpen, handleOptimizeResult, search, tabsCtl, uploadCount, sendHeld, composerBandRef, scrollBottom, handleResumeSession, composerRootChange, composerUserEdit, followUpMulti,
+  handleFileOpen, handleOptimizeResult, search, tabsCtl, uploadCount, sendHeld, composerBandRef, scrollBottom, backSpot, onBack, handleResumeSession, composerRootChange, composerUserEdit, followUpMulti,
   followUpOptions, followUpPicked, followUpPickedRef, followUpSourceKey, toggleFollowUpOption, dashCfg, jevAutoConsented, refusedPress, setRefusedPress, send, pickModel, setProject, projectSwitching, switchAgent,
   currentSlot, activeFolderName, anchorSessionControl, openSessionControl, refreshSessionControlStatuses, sessionControlKey, sessionControlRect, sessionControls, setOpenSessionControl,
   activeAgentName, attachmentAnnouncement, clampOutOfTokens, handleAddToContext, mentionKeyEdit, optimizerMentionGuard, mentionEditRange, removeDirChip, removeFileChip, selectPickedFile, followupAddToSession,
@@ -412,7 +417,9 @@ export default function ComposerDockView({
                 transcript underneath, as the strip beside an iOS toolbar does.
                 `right: dockGutter` keeps the scrollbar column clear (above). */}
             <div ref={dockRef} className="absolute left-0 bottom-0 pointer-events-none" style={{ right: dockGutter }} data-testid="composer-dock-root" {...{ [SELECTION_INERT_ATTR]: '' }} data-scroll-peek-stop="">
-              <JumpToBottomButton visible={!isAtBottom && messages.length > 0} onClick={() => scrollBottom(true)} />
+              {backSpot && onBack
+                ? <BackToSpotPill spot={backSpot} short={isMobile} onBack={onBack} />
+                : <JumpToBottomButton visible={!isAtBottom && messages.length > 0} onClick={() => scrollBottom(true)} />}
               {/* Status chrome never claims more than half the pane. The dock
                   is anchored to the pane's bottom edge and grows upward, so an
                   opening keyboard — which shrinks the layout viewport — would

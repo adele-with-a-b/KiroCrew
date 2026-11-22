@@ -966,7 +966,7 @@ No app code runs until a link on one of the provider's `hosts` is hovered.
 | `hosts` | string[] | Up to 64 hostnames, at least one unless `textPatterns` is set (a text-only provider lists none); a leading dot means the domain and every subdomain. Only `https:` links match. Stored lowercased, in IDNA (punycode) form and without a trailing dot. A public suffix (`co.uk`, `.github.io`) or a bare TLD (`com`) is refused |
 | `textPatterns` | object[] | Optional. Plain text in chat messages that also opens a card; see below |
 | `fullUrl` | boolean | Optional. `show` gets the URL without its query and fragment unless this is `true` and the owner approved it |
-| `sessionKey` | boolean | Optional. `show` also gets the session key of the chat the hovered link or text is in (`dashboard:<slot>`) when this is `true` and the owner approved it |
+| `sessionKey` | boolean | Optional. `show` also gets the session key of the chat the hovered link or text is in (`dashboard:<slot>`) and that message (`{ ts, id? }`) when this is `true` and the owner approved it; the card may then also `card.openPanelTab` and `card.jumpTo` |
 
 **Approval.** The hosts, the text patterns (id, flags and source), `fullUrl` and
 `sessionKey` are part of what the owner approves for the app, like
@@ -974,7 +974,9 @@ No app code runs until a link on one of the provider's `hosts` is hovered.
 or `sessionKey` on waits on the app's page until
 the owner approves it, and
 until then the app previews only what was approved before. An update that only
-removes entries needs nothing. When no host and no pattern is approved, the
+removes entries needs nothing. A `sessionKey` approved before cards learned the
+message and gained `openPanelTab` / `jumpTo` covered only the chat, so it waits for
+the owner's approval once more. When no host and no pattern is approved, the
 provider is off: no frame is made, and a live frame's capability stops renewing and
 its fetches are refused.
 
@@ -993,8 +995,9 @@ network on the gateway only, images from any `https:` host, no workers, frames,
 objects, forms or `<base>`), and it sends no referrer. A frame that navigates itself
 away is removed. The frame imports `entry` and calls
 `activate(ctx)` once. The dashboard sends it only the hovered URL or text, the
-anchor's rect, the theme and the modifier keys (and, with an approved `sessionKey`,
-the chat's session key), over `postMessage`, and it
+anchor's rect, the theme, the modifier keys and how the card was asked for (and,
+with an approved `sessionKey`, the chat's session key and the message), over
+`postMessage`, and it
 positions and sizes the frame itself.
 
 ```ts
@@ -1009,10 +1012,16 @@ export function activate(ctx: {
   setRegions(rects: { left: number; top: number; width: number; height: number }[]): void
 }): {
   // A link: `url`. A `textPatterns` match: `text`. `rect` is where it is on screen.
-  // `sessionKey`: the chat the message is in, only with an approved `sessionKey`,
-  // and only in the dashboard's own chats (absent in another gateway's rows).
+  // `sessionKey` and `message`: the chat and the message the link or text is in,
+  // only with an approved `sessionKey`, and only in the dashboard's own chats
+  // (absent in another gateway's rows). `message.id` is the message's id; an
+  // older message has only `ts`.
   show(link: {
     url?: string; text?: string; sessionKey?: string; theme: 'dark' | 'light'
+    message?: { ts: string; id?: string }
+    // 'hover': the hover delay ran out; 'click': a mouse click on a text span;
+    // 'tap': a touch tap on a text span.
+    trigger?: 'hover' | 'click' | 'tap'
     rect: { left: number; top: number; width: number; height: number }
     modifiers?: { alt: boolean; shift: boolean; ctrl: boolean; meta: boolean }
     // Card mode: the controls for THIS show's card, placed next to its link.
@@ -1023,10 +1032,16 @@ export function activate(ctx: {
       pin(pinned: boolean): void          // a pinned card stays on leave and chat scroll
       dragBy(dx: number, dy: number): void
       dock(edge: 'left' | 'right' | null): void
+      // Open this app's own side-panel tab (a `contributes.panelTabs[].id`) in
+      // the chat this show came from, handing it `payload` (JSON).
+      openPanelTab(tab: string, payload?: unknown): void
+      // Scroll the chat this show came from to one of its messages and light it
+      // (an approved `sessionKey` only); a Back pill returns to where it was.
+      jumpTo(message: { ts: string; id?: string }): void
     }
   }): void
   leave(): void              // the pointer left the link; the card may hold itself open
-  hide(reason: string): void // 'scroll' | 'escape' | 'blur' | 'other-provider' | 'disabled'
+  hide(reason: string): void // 'scroll' | 'escape' | 'blur' | 'click' | 'other-provider' | 'disabled'
   theme?(theme: 'dark' | 'light'): void
   dispose?(): void           // the app was disabled
 }
@@ -1059,6 +1074,35 @@ Every `show` starts a new invocation, and its `link.card` is bound to it. Keep t
 example from a slow fetch that finished after the user moved to another link, is
 dropped. A message over 8 KB, or
 past a burst of 120 messages refilled at 60 a second, is dropped unread.
+
+**Reaching into the chat.** Two card calls act outside the frame, and only on the
+chat the show came from, while that chat is the one on screen and the card is
+showing (in card mode, for the latest show only), and only for an app the owner
+approved for `sessionKey`. Each also needs the person's own click in the card a
+moment before: the dashboard has a live user activation and its focus is in the
+card's frame. So call them from a button's click handler. A call on hover, or with
+no click in the card, is dropped, and so is one made from a key the dashboard
+passes to the card (focus is then not in the frame):
+
+- `card.openPanelTab(tab, payload)` opens `tab`, one of this app's own
+  `contributes.panelTabs`, in that chat's side panel. Another app's tab, or a tab the
+  app does not declare, is refused. It needs `sessionKey` because a tab body is told
+  its chat: opening one from a card says which chat the card's text was in. The tab
+  reads the payload with the SDK's `usePanelTabRequest()`: `{ seq, payload }` for
+  the latest open (`seq` grows with each one, so the same payload twice still reads
+  as new), until the tab is closed; `null` before any or outside a side-panel tab.
+  A payload that is not JSON is dropped.
+- `card.jumpTo({ ts, id? })` scrolls to that message in the same chat (paging back
+  for one not loaded yet, as a `?msg=` link does) and lights it. Any `ts` or `id` of
+  that chat may be named (each at most 128 characters); one that is not there shows
+  the "message unavailable" notice. A card that is not pinned gets `hide('scroll')`
+  once the chat takes the jump. In split view the jump is not taken. While the chat
+  stays on, a pill above the composer offers "Back to where you were" and returns
+  to the message the card's link or text sat in; a newer jump replaces it, and
+  switching chats or scrolling back to the bottom by hand drops it.
+
+Feature-detect both (`'jumpTo' in link.card`) and the hook (`usePanelTabRequest` in
+the SDK's exports): a dashboard older than these has neither.
 
 Links in a card open through the dashboard's link bridge, only right after a click
 in the card. A plain key pressed in the dashboard while a card shows is passed to
@@ -1135,9 +1179,18 @@ open the app's card:
   a tone is cosmetic: it is signed with the manifest but does not ask for consent
   again, because what the pattern can reach is unchanged.
 - Hovering the span calls `show({ text, rect })` on the app whose pattern matches
-  the span's whole text. On touch, where nothing hovers, a tap on the span calls it
+  the span's whole text. A mouse click on the span calls it at once, with
+  `trigger: 'click'`, even when its hover card is already up; a click with a
+  modifier key, or a drag that selects text across the span, does not. A clicked
+  card stays when the pointer leaves the span and the card (no `leave`), so its
+  buttons can be reached: Escape, a click outside the card, or a second click on
+  the span closes it: `hide('escape')`, or `leave` then `hide('click')`. The second
+  click of a double-click does neither. Once the app closed or pinned the card, a
+  click on the span shows it again and other spans hover as usual; while an overlay
+  reports no regions, a click on its span shows it again. A hover card behaves as before. On touch, where nothing hovers, a tap on the span calls it
   at once, and the card stays until the next tap (on the span again, or anywhere
-  else in the dashboard); a tap on a link still follows the link. The span carries no owner: the host re-derives it from the
+  else in the dashboard), which closes it the same way; a tap on a link
+  still follows the link. The span carries no owner: the host re-derives it from the
   text, so a span written in raw message HTML reaches nothing a pattern would not.
 - `ctx.setTextPatternsOff(ids)` reports which ids the app's own settings turn off.
   The host remembers it across reloads, so the first paint after a reload already

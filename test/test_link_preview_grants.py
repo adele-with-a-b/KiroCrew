@@ -176,6 +176,39 @@ def test_turning_an_opt_in_flag_on_is_held_back(
     assert not any(_held_back_entries(back, old).values())
 
 
+def test_a_session_key_approval_from_before_message_navigation_is_asked_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stored bare ``sessionKey`` entry granted only the chat. ``sessionKey:nav``
+    also grants the message, the tab and the jump, so it is held back until the
+    owner approves it, on the page and on an update."""
+    assert g.SESSION_KEY_ENTRY == "sessionKey:nav"
+    manifest = _with_flag(_manifest(["a.example.com"]), "sessionKey", True)
+    src = pg.grant_source(manifest)
+    assert src is not None
+    stored = {**_declared_grant_entries(src), "linkPreviewSessionKey": ["sessionKey"]}
+    assert _held_back_entries(stored, src)["linkPreviewSessionKey"] == ["sessionKey:nav"]
+    after_update = _approved_grants_after_manifest_change(
+        existing_approved=stored, old_permissions=src, new_permissions=src
+    )
+    assert after_update["linkPreviewSessionKey"] == []
+
+    def staged(name: str, fam: str, read: Any) -> list[str]:
+        return [e for e in read() if e in stored[fam]]
+
+    monkeypatch.setattr("kiro_crew.apps.manager_records.staged_app_grants", staged)
+    row = g.link_preview_grant_row("cards-app", manifest)["linkPreviewGrant"]
+    assert row["sessionKey"] is False
+    assert row["stagedSessionKey"] is True
+
+
+def test_the_dashboard_approves_the_session_key_entry_the_backend_declares() -> None:
+    ts = (ROOT / "website/src/pages/appDetailPageStagedGrants.ts").read_text(encoding="utf-8")
+    mirrored = re.search(r"SESSION_KEY_GRANT = '([^']+)'", ts)
+    assert mirrored is not None
+    assert mirrored.group(1) == g.SESSION_KEY_ENTRY
+
+
 def test_a_narrowing_update_needs_nothing() -> None:
     old = pg.grant_source(_manifest(["a.example.com", "b.example.com"]))
     new = pg.grant_source(_manifest(["a.example.com"]))

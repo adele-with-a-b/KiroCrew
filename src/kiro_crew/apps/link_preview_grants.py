@@ -23,8 +23,8 @@ Four grant families:
     where a signed link carries its credential), else empty. Turning it on is a
     widening like any other.
 ``linkPreviewSessionKey``
-    ``["sessionKey"]`` when the provider asks to be told which chat a hovered link
-    or text sits in, else empty. A widening the same way.
+    ``["sessionKey:nav"]`` when the provider asks to be told which chat and
+    message a hovered link or text sits in, else empty. A widening the same way.
 
 Hosts follow the one rule every point shares (``apps/app_hosts.py``): normalized,
 and never a public suffix or a bare TLD. The families are registered with the other
@@ -55,8 +55,12 @@ LINK_PREVIEW_GRANT_FAMILIES = (
 )
 #: The one entry of ``linkPreviewFullUrl``.
 FULL_URL_ENTRY = "fullUrl"
-#: The one entry of ``linkPreviewSessionKey``.
-SESSION_KEY_ENTRY = "sessionKey"
+#: The one entry of ``linkPreviewSessionKey``. It grants the chat, the message
+#: the text sits in, and the card's ``openPanelTab`` / ``jumpTo``; a stored bare
+#: ``sessionKey`` entry granted the chat alone, so it does not cover this one and
+#: the owner approves it again. Mirrored by
+#: ``SESSION_KEY_GRANT`` in ``website/src/pages/appDetailPageStagedGrants.ts``.
+SESSION_KEY_ENTRY = "sessionKey:nav"
 
 
 def pattern_grant(tp: dict[str, Any], index: int) -> str:

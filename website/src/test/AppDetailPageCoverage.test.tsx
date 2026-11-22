@@ -915,7 +915,7 @@ describe('AppDetailPage — uncovered surfaces', () => {
     await loaded()
     expect(screen.getByText(/Which chat: the app's hover cards are told which conversation/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
-    await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ linkPreviewSessionKey: ['sessionKey'], linkPreviewFullUrl: [] })))
+    await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ linkPreviewSessionKey: ['sessionKey:nav'], linkPreviewFullUrl: [] })))
   })
 
   it('lists a held-back worker auto-approve grant and approves its one entry', async () => {

@@ -11,6 +11,7 @@
  * @module linkPreview/linkPreviewFrames
  */
 import { freshRate, isRelayMessage, takeMessage, type RateState } from '../appFrame/frameProtocol'
+import { hasGesture } from '../hooks/useFrameOpenLink'
 import {
   createSandboxedFrame,
   loadMintedFrame,
@@ -25,8 +26,10 @@ import {
   readFrameMessage,
   type AnchorRect,
   type FromFrame,
+  type MessageRef,
   type Modifiers,
   type PreviewLink,
+  type ShowTrigger,
   type ToFrame,
 } from './linkPreviewProtocol'
 
@@ -35,11 +38,24 @@ export { FRAME_SANDBOX, type Minted } from '../appFrame/sandboxFrame'
 export const READY_TIMEOUT_MS = 10_000
 /** At most this many pinned cards at once; pinning one more closes the oldest. */
 export const MAX_PINNED = 8
+/** An overlay frame keeps the scope of this many latest shows: its windows outlive the hover. */
+const MAX_SCOPES = 16
 const MARGIN = 8
 const GAP = 6
 const DEFAULT_SIZE = { width: 360, height: 200 }
 const MIN_SIZE = { width: 40, height: 24 }
 const MAX_SIZE = { width: 720, height: 800 }
+
+/** Where one show's link or text sits, known to the dashboard only. A frame's
+ *  `openPanelTab` and `jump` act on this chat and nothing else. */
+export interface ShowScope {
+  /** The LOCAL slot of the chat the message is in; absent in another gateway's rows. */
+  slot?: string
+  /** The message the link or text sits in. */
+  origin?: MessageRef
+  /** The owner approved this app for `sessionKey`, so it may name a message. */
+  messages: boolean
+}
 
 /** Why a frame failed: no `ready` in time, the app said `failed`, or no frame
  *  could be minted for it (disabled, not approved, gone). */
@@ -67,6 +83,8 @@ export interface PreviewFrame {
   regions: AnchorRect[]
   /** The latest show's number; a card message for an older one is dropped. */
   invocation: number
+  /** Where each recent show sat, by invocation (the latest only, in card mode). */
+  scopes: Map<number, ShowScope>
   /** Burst allowance left, and when it was last refilled. */
   rate: RateState
 }
@@ -84,6 +102,12 @@ export interface FrameHostOptions {
   onEscape(): void
   /** The set of live frames changed (the link bridge listens to them). */
   onFramesChanged(frames: HTMLIFrameElement[]): void
+  /** A shown card of an app approved for `sessionKey` asked to open its app's own side-panel tab `tab` in the chat `scope` is in. */
+  onOpenPanelTab?(appName: string, tab: string, payload: unknown, scope: ShowScope): void
+  /** A shown card of an app approved for `sessionKey` asked to jump to `target` in the chat `scope` is in. */
+  onJump?(appName: string, target: MessageRef, scope: ShowScope): void
+  /** The provider's card-mode hover card closed itself (`card.close`). */
+  onClosed?(key: string): void
 }
 
 export function mintFrame(appName: string, frameId?: string, providerId = ''): Promise<Minted> {
@@ -165,6 +189,7 @@ export class FrameHost {
     link: PreviewLink,
     anchor: AnchorRect,
     modifiers?: Modifiers,
+    extra?: { trigger?: ShowTrigger; scope?: ShowScope },
   ): Promise<boolean> {
     const token = this.cancelShow(frame)
     const ok = await frame.ready
@@ -176,7 +201,15 @@ export class FrameHost {
       this.place(frame)
     }
     frame.invocation += 1
-    this.post(frame, { type: 'show', invocation: frame.invocation, ...link, rect: anchor, theme: this.opts.theme(), ...(modifiers ? { modifiers } : {}) })
+    if (extra?.scope) {
+      frame.scopes.set(frame.invocation, extra.scope)
+      for (const k of frame.scopes.keys()) {
+        if (frame.scopes.size <= MAX_SCOPES) break
+        frame.scopes.delete(k)
+      }
+    }
+    const trigger = extra?.trigger ? { trigger: extra.trigger } : {}
+    this.post(frame, { type: 'show', invocation: frame.invocation, ...link, rect: anchor, theme: this.opts.theme(), ...(modifiers ? { modifiers } : {}), ...trigger })
     return true
   }
 
@@ -215,6 +248,19 @@ export class FrameHost {
       this.post(frame, { type: 'hide', reason })
       this.destroy(frame)
     }
+  }
+
+  /** The provider still has a hover frame, loading or shown: it was not pinned away or destroyed. */
+  hasHoverFrame(key: string): boolean {
+    return this.hover.has(key)
+  }
+
+  /** The provider's hover frame is an overlay drawing nothing. `regions` names no
+   *  show, so this may answer an earlier one: it says nothing is drawn, not that the
+   *  latest show ended. */
+  drawsNoRegions(key: string): boolean {
+    const frame = this.hover.get(key)
+    return Boolean(frame?.overlay && !frame.regions.length)
   }
 
   /** The provider's card-mode hover card is on screen. */
@@ -276,7 +322,7 @@ export class FrameHost {
     const frame: PreviewFrame = {
       key, appName, el, state: 'loading', ready, visible: false, pinned: false, moved: false, dock: null,
       left: 0, top: 0, width: DEFAULT_SIZE.width, height: DEFAULT_SIZE.height, anchor: null,
-      overlay: false, regions: [], invocation: 0, rate: freshRate(),
+      overlay: false, regions: [], invocation: 0, scopes: new Map(), rate: freshRate(),
     }
     const fail = (why: string, cause: FailureCause) => {
       if (frame.state !== 'loading') return
@@ -431,6 +477,17 @@ export class FrameHost {
     if (msg) this.handle(frame, msg)
   }
 
+  /** The scope of the show `invocation` answers, while its card is on screen and
+   *  right after the person's own click or key in it (`hasGesture`: so a card can
+   *  never open a tab or move the chat on its own): in card mode the latest show of
+   *  a visible frame only; in overlay mode any of the recent shows, since the
+   *  provider's own windows outlive their hover. */
+  private scopeOf(frame: PreviewFrame, invocation: number): ShowScope | undefined {
+    if (!frame.visible || !hasGesture(frame.el)) return undefined
+    if (!frame.overlay && invocation !== frame.invocation) return undefined
+    return frame.scopes.get(invocation)
+  }
+
   /** Act on one message from `frame`. Public for tests. */
   handle(frame: PreviewFrame, msg: FromFrame): void {
     switch (msg.type) {
@@ -441,7 +498,19 @@ export class FrameHost {
       case 'escape': this.opts.onEscape(); return
     }
     if (frame.state !== 'ready') return
+    if (msg.type === 'openPanelTab' || msg.type === 'jump') {
+      // Both need the owner's `sessionKey` approval: a tab body is told its chat,
+      // so opening one from a card says which chat the card's text was in.
+      const scope = this.scopeOf(frame, msg.invocation)
+      if (!scope?.slot || !scope.messages) return
+      if (msg.type === 'openPanelTab') this.opts.onOpenPanelTab?.(frame.appName, msg.tab, msg.payload, scope)
+      else this.opts.onJump?.(frame.appName, msg.target, scope)
+      return
+    }
     if (msg.type === 'regions') {
+      // A card turning itself into an overlay keeps no earlier show's scope: only
+      // shows made while it is an overlay can ask.
+      if (!frame.overlay) frame.scopes.clear()
       frame.overlay = true
       frame.regions = msg.rects
       this.layoutOverlay(frame)
@@ -458,7 +527,10 @@ export class FrameHost {
         return
       case 'close':
         if (this.detached.includes(frame)) this.destroy(frame)
-        else this.setVisible(frame, false)
+        else {
+          this.setVisible(frame, false)
+          this.opts.onClosed?.(frame.key)
+        }
         return
       case 'resize':
         frame.width = msg.width
