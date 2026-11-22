@@ -325,6 +325,7 @@ from kiro_crew.dashboard.chat_turn.turn_stats import (  # noqa: F401
     _turn_context_usage,
     turn_stats_meta,
 )
+from kiro_crew.dashboard.chat_turn.worker_wait import _note_worker_question
 from kiro_crew.dashboard.chat_utils import (  # noqa: F401
     _BLOCKED_SLASH_COMMANDS,
     _MAX_TOOL_PURPOSE,
@@ -501,6 +502,7 @@ from kiro_crew.slack.code_channels.worker_approvals import finish as finish_work
 from kiro_crew.slack.code_channels.worker_approvals import start as start_worker_approval_relay
 from kiro_crew.slack.handler import post_linked_approval
 from kiro_crew.start_priority import StartPriority
+from kiro_crew.steering_plan import entries_matching_a_file
 from kiro_crew.tracing import turns as trace_turns
 from kiro_crew.trust_patterns import (  # noqa: F401 -- compatibility re-export
     _mask_quoted_separators,
@@ -1325,6 +1327,7 @@ async def _run_chat(
         _finish_harness_notices(turn)
 
         await _turn_ending_chain(turn)
+        _note_worker_question(turn)
         await _turn_persist_and_settle(turn)
         await _turn_context_usage(turn)
         await _turn_stop_hook(turn)

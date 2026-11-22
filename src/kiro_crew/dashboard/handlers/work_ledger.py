@@ -56,6 +56,7 @@ from kiro_crew import _facade_mirror
 #   ``work_ledger_caller`` -- the entry gate: who the caller is and which ledger it reaches
 #   ``work_ledger_recording`` -- the fit probe, entry, board lock and undo of a recorded write
 #   ``work_ledger_worker`` -- the worker's brief and report
+#   ``work_ledger_waits`` -- the report the gateway files for a worker stopped on the person
 #   ``work_ledger_read`` -- the conductor's read of its board and the flags a row derives
 #   ``work_ledger_conductor`` -- the conductor's record and rebuild writes
 #   ``work_ledger_handback`` -- the hand-back a delivered ``session_send`` stamps
@@ -65,6 +66,7 @@ _OWNERS = (
     "kiro_crew.dashboard.handlers.work_ledger_caller",
     "kiro_crew.dashboard.handlers.work_ledger_recording",
     "kiro_crew.dashboard.handlers.work_ledger_worker",
+    "kiro_crew.dashboard.handlers.work_ledger_waits",
     "kiro_crew.dashboard.handlers.work_ledger_read",
     "kiro_crew.dashboard.handlers.work_ledger_conductor",
     "kiro_crew.dashboard.handlers.work_ledger_handback",
@@ -193,10 +195,43 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _sel,
         _validation_code,
     )
+    from kiro_crew.dashboard.handlers.work_ledger_waits import (  # noqa: F401
+        _APPROVAL_SUMMARY,
+        _FENCE,
+        _Q_HEAD,
+        _Q_LINE,
+        _SUMMARY_PREFIX,
+        CARD_ANSWERED_TEXT,
+        WAIT_IN_TEXT,
+        WAIT_ON_APPROVAL,
+        WAIT_ON_CARD,
+        WAIT_OPERATION,
+        _bound_item_of,
+        _failed_since_report,
+        _own_artifacts,
+        _read_item,
+        _refused_text,
+        _report_seen,
+        _schedule,
+        _stopped_unreported,
+        _summary,
+        _waits_on_card,
+        _with_gateway_keys,
+        _workers_move,
+        asked_in_text,
+        note_approval_waiting,
+        note_question_card,
+        note_question_card_answered,
+        note_turn_end_question,
+        record_question_card_answered,
+        record_worker_wait,
+    )
     from kiro_crew.dashboard.handlers.work_ledger_worker import (  # noqa: F401
         _CODE_DONE_WITHOUT_EVIDENCE,
         _WORKER_REPORT_FIELDS,
         APPROVAL_ANSWERED_TEXT,
+        GATEWAY_ARTIFACT_KEYS,
+        REFUSED_ARTIFACT,
         STEER_CREW_LOG_OFF,
         STEER_ITEM_CLOSED,
         STEER_ITEM_TOO_LARGE,
@@ -204,8 +239,10 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         STEER_NO_UNIT,
         STEER_NOT_RECORDED,
         STEER_NOT_WAITING,
+        WAIT_ARTIFACT,
         _approval_ask_of,
         _last_report_id,
+        _record_report,
         _report,
         _steer_unit,
         _waits_on_approval,

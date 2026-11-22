@@ -1553,6 +1553,11 @@ _PERMITTED_STORE_IMPORTERS = frozenset(
         "dashboard/handlers/work_ledger_recording.py",
         "dashboard/handlers/work_ledger_refusals.py",
         "dashboard/handlers/work_ledger_worker.py",
+        # The report the gateway files for a worker that stopped on the person: an
+        # owner of the same facade. The item comes from the worker slot's own
+        # binding, never from a request, and the write is the worker's own report
+        # transaction (``work_ledger_worker._record_report``).
+        "dashboard/handlers/work_ledger_waits.py",
         # The crew-log relay reads ONE thing, the binding of the session whose closer
         # just landed, to know which board's log to copy the charge into. The worker
         # named there is the unit's own header slot, never a caller-supplied value,

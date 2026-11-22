@@ -252,6 +252,26 @@ it says so, e.g. `{"tests": "not run: harness unavailable"}`.
 are wrong or oversized: a truncated pointer is a broken pointer, while prose cut
 at the cap still reads.
 
+## A question the worker did not report
+
+A worker that stops on you without a `work_report` is reported for it. When a
+bound worker's turn ends on a question line (`[Q2a] ...`) or an `[OPTIONS: ...]`
+line, waits on a tool approval, or opens a question card, the gateway files a
+`question` report on its item: reason `approval` for an approval, `needs_human`
+otherwise. Its `summary` starts `Gateway:` and quotes the question, and its
+`artifacts` carry `waits_in_chat`, naming where the question waits. A command a
+safety policy blocked in that turn shows no approval anywhere, so it is listed in
+`refused_calls`. The worker's own `artifacts` and `discussion` stay on the item
+beside them. Only the gateway writes those two keys: a worker's own report that
+names them has them dropped. The report wakes the conductor and shows on the
+Board like the worker's own.
+
+Nothing is filed for a turn you typed into that chat yourself, while a
+`question`, `blocked` or `done` the worker filed is still unanswered (a `done`
+whose check failed after it is the worker's move again, so it is filed), or when
+the worker asks the same question again. Answering the approval or the card in the
+worker's chat clears it.
+
 ## A person's steer
 
 An item can carry a `steer` event: the time, actor `person`, and the person's own
@@ -260,7 +280,9 @@ the crew member (the worker session) that holds the item, from a conductor mode 
 It is also written, with fixed text and nothing from the tool call, when the
 person answers a tool approval in that crew member's chat while the item's last
 report is `blocked` or `question` with reason `approval` and nobody has answered
-it yet (`work_ledger_worker.record_approval_answered`). One is written per such
+it yet (`work_ledger_worker.record_approval_answered`), and when the person
+answers a question card the gateway reported
+(`work_ledger_waits.record_question_card_answered`). One is written per such
 report, so the Board, the sidebar count and goal-board stop showing the item as
 needing you once the approval it asked for is answered.
 `work_ledger_read` shows it in the item's events. A steer moves no field: status,
