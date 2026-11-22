@@ -1243,6 +1243,32 @@ applies to both HTTP requests and WebSocket handshakes created by `create_ws()`.
 | `getSlotHistory(slotId, limit?)` | `{messages, total}` | Get slot message history |
 | `sendMessage(slotId, message)` | `—` (no body) | Send a message (validates length, auto-flushes pending context) |
 
+#### Who sent a row (`meta.sentBy`)
+
+Every row of role `user`, `inject`, `nudge` or `subagent` names its sender in
+`meta.sentBy.kind`: `typed` (a person typed it), `app` (with `appId`),
+`session_send` (with `senderKey`, the sending session, and `via`), `wake` (with
+`loopId` when a loop fired it), `cron`, `subagent_event`, `agent`, `card`,
+`gateway` or `unknown`. Only `typed` means a person typed it. The gateway sets
+it from server-only marks; a sender cannot write it, and text in the message
+never changes it.
+
+You see it on rows of slots your app owns (`getSlotHistory`, the live
+`chat_message` frame), and in the session's transcript file,
+`<crew home>/sessions/<key>.jsonl`, which is where an app reads a person's own
+chat.
+
+A row written before this field has no `sentBy`. Read it through the same
+table the gateway uses, over the row's stored `role` and `meta`
+([history: Row sender](../system-specs/modules/history.md#row-sender-metasentby-dashboardrow_senderpy)):
+a stored `human: true` with no `relay`, `turnActor` or `cardOrigin` is `typed`.
+Never treat a missing field as "not typed" alone.
+
+When several rows already in the file went to the model as one prompt, each
+carries `meta.prompt: {id, part, of}` with the same `id`; match them to the
+model's one prompt by `id`, not by position. A row with no `meta.prompt` is its
+own prompt. A row reaches the file within about five seconds of being sent.
+
 ### WebSocket Events
 
 | Method | Returns | Description |

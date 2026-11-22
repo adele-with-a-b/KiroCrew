@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew.config.loader import resolve_effective_agent
 from kiro_crew.constants import OPTIONS_RE_LINE
+from kiro_crew.dashboard.row_sender import with_sent_by
 from kiro_crew.dashboard.slot_row_memo import ROW_MEMO
 from kiro_crew.dashboard.state_parts.source_links import (
     _budgeted_source_links,
@@ -412,6 +413,9 @@ def append(
         # reopening a session is not writing in it.
         if note_participant:
             note_author(self, meta)
+    # Who sent it, from the marks above and the caller's: the field's one writer,
+    # so a replayed row is answered again from its stored marks.
+    meta = with_sent_by(role, meta)
     if meta:
         msg["meta"] = meta
     # Stamp a per-row delivery identity. A client sees the SAME row through

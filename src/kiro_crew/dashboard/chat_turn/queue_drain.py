@@ -45,6 +45,7 @@ from kiro_crew.dashboard.chat_utils_injected_rows import (
 from kiro_crew.dashboard.chat_utils_slots import dashboard_slot_key
 from kiro_crew.dashboard.queue_edit_hold import edit_hold_blocks_user_turn
 from kiro_crew.dashboard.recovery_replays import replays_of
+from kiro_crew.dashboard.row_sender import stamp_shared_prompt
 from kiro_crew.dashboard.session_directive_apply import (
     REFUSAL_SELF_WAKE_META_KEY,
     REFUSAL_WAKE_LOOP_ID_META_KEY,
@@ -956,9 +957,13 @@ async def _start_next_queued_turn(
     # structural source the MCP-App case below reads. Nor is a restored entry:
     # only plain prompts persist (`slot_queue_repository._is_durable_queue_entry`),
     # and the restore drops the actor stamp, so the text is all that is left and
-    # it cannot name an event.
+    # it cannot name an event. Nor is text the session's own human typed
+    # (``deliver_as_typed``): a real cron or sub-agent event is queued with its
+    # producer ``kind``, so a typed banner stays the person's row, as it is when
+    # sent to an idle session.
     _not_an_event = (
-        _actor_for_queue_items(consumed) == "app"
+        deliver_as_typed
+        or _actor_for_queue_items(consumed) == "app"
         or any(item.get(RESTORED_QUEUE_KEY) for item in consumed)
         or any(responsive_chat.priority_entry(item) for item in consumed)
     )
@@ -1016,9 +1021,9 @@ async def _start_next_queued_turn(
     # because then the old row holds different text from what runs. And only when
     # this drain writes a row of the old row's own role: a `user` row for the
     # person's or a peer's steer, a `nudge` row for an automation steer (a
-    # work-ledger wake). Typed text that opens with a cron or sub-agent prefix
+    # work-ledger wake). A peer's text that opens with a cron or sub-agent prefix
     # drains as an event row, and hiding the old row would leave no copy drawn as
-    # the person's own words.
+    # the sender's own words.
     _drains_as_user = not (
         is_cron
         or is_subagent
@@ -1395,6 +1400,15 @@ async def _start_next_queued_turn(
         # Persist it on the row so auto-titling and refresh rebase both exclude it.
         _drained_meta[RESTORED_TURN_META_KEY] = True
     current_row = responsive_chat.reusable_row(slot, consumed, next_msg)
+    if current_row is not None and len(consumed) > 1:
+        # Several rows already on the transcript become ONE prompt and no row is
+        # written for it, so each says which prompt and which part it is.
+        # shortcut: a part already evicted to the frozen prefix keeps no stamp,
+        # since only the window is rewritten; stamp through the log if it matters.
+        stamp_shared_prompt(
+            [row for item in consumed if (row := responsive_chat.present_row(slot, item))]
+        )
+        slot._dirty = True
     if current_row is None:
         if is_automation_steer:
             current_row = append_and_surface(

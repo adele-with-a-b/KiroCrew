@@ -1671,6 +1671,9 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             # app-origin signal as `user_origin` and `turn_actor` above: an app's
             # send is not a human turn and must not advance the ranking stamp.
             _user_row_meta[HUMAN_TURN_META_KEY] = True
+            if cron_creator:
+                # The script cron's own mark, as its queued twin carries it.
+                _user_row_meta[TURN_ACTOR_META_KEY] = "cron"
         elif not card_origin:
             # The queued path stamps the same actor on its entry, which the drain
             # unions onto the row; the title counter reads it off either row.
