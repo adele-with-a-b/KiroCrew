@@ -2,14 +2,40 @@
 
 :func:`kiro_crew.dashboard.handlers.agents._cc_models` keeps the entitlement filter,
 the ``auto`` row and the configured default; this module decides which row each
-advertised id lands on and which label that row shows.
+advertised id lands on and which label that row shows, and appends the ids the
+operator added for a backend (:func:`with_extra_models`).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from kiro_crew import model_registry
+
+
+def with_extra_models(rows: list[dict], dashboard: Any, backend: str) -> list[dict]:
+    """Return *rows* with ``dashboard.model_picker_extra_models[backend]`` appended.
+
+    The ids the operator named for a model *backend* runs but does not advertise
+    (:mod:`kiro_crew.config.picker_extra_models`). An id already in *rows* keeps its
+    advertised row; each new one is appended under its own id, after every advertised
+    row, so the backend's own list keeps its order.
+    """
+    extras = (getattr(dashboard, "model_picker_extra_models", None) or {}).get(backend) or []
+    seen = {str(r.get("model_name", "")) for r in rows}
+    added = [
+        {
+            "model_name": model,
+            "display_name": model,
+            "description": "Added in settings (dashboard.model_picker_extra_models)",
+            "context_window": model_registry.model_window(model)
+            or model_registry.REFERENCE_WINDOW_TOKENS,
+        }
+        for model in dict.fromkeys(extras)
+        if model not in seen
+    ]
+    return [*rows, *added]
 
 
 def merge_advertised_rows(

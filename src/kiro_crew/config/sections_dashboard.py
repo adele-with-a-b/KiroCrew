@@ -666,6 +666,17 @@ class DashboardConfig:
             "models, fallback models, bulk switching, or app-specific model lists.",
         ),
     )
+    model_picker_extra_models: dict[str, list[str]] = field(
+        default_factory=dict,
+        metadata=_meta(
+            "Extra Picker Models",
+            "Model IDs added to the chat model picker, per agent backend "
+            '(for example {"claude": ["<model id>"]}), for a model the backend runs '
+            "but does not advertise. Applies to backends whose picker lists what "
+            "the backend advertises; a pick goes to the backend as written, and the "
+            "backend still decides whether it runs.",
+        ),
+    )
     session_grid: bool = field(
         default=False,
         metadata=_meta(

@@ -22,6 +22,7 @@ from kiro_crew.config.loader_document import (
     unsandboxed_exec_platform_default,
 )
 from kiro_crew.config.loader_locations import config_path
+from kiro_crew.config.picker_extra_models import coerce_picker_extra_models
 from kiro_crew.config.sections import (
     _DEFAULT_CHAT_TURN_TIMEOUT_SECS,
     _MANAGED_SERVICE_ENV,
@@ -1460,6 +1461,9 @@ def _build_dashboard_config(_degraded: set[str], dashboard_data: dict) -> Dashbo
                 for raw in _safe_list(section.get("model_picker_hidden_models"))
                 if isinstance(raw, str) and (model := raw.strip()) and model != "auto"
             )
+        ),
+        model_picker_extra_models=coerce_picker_extra_models(
+            section.get("model_picker_extra_models")
         ),
         session_grid=section.get("session_grid"),
         mcp_app_panel=section.get("mcp_app_panel"),

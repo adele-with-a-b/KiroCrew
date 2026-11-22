@@ -544,6 +544,14 @@ its own once the cache refreshes with a list that carries it.
 - **Pickers** MUST list options from `GET /api/models`, the advertised set, never a
   static in-code list. A hand-maintained list offers models the account cannot run and
   hides the ones it can.
+- **`dashboard.model_picker_extra_models`** is the operator's one addition to that set:
+  `{backend id: [model id, ...]}`, for a model the backend runs but leaves out of its
+  advertised list (claude-agent-acp passes an unlisted id to Claude Code on a live
+  pick, so the CLI's own picker is not the limit of what it runs). `GET /api/models`
+  appends each id after the advertised rows, under its own id, on the claude branch
+  and every advertised-list backend; the Kiro catalog branch is unchanged. Nothing is
+  added in code, and an added id is an explicit pick like any other: the backend still
+  refuses one it cannot run. The value is read per request, so an edit applies live.
 - **A pin's save gate accepts every id its picker offers.** The config PATCH gives
   every validated model pin (`agent.role_models.*`, `agent.fallback_model`,
   `agent.refusal_fallback_model`, the per-app `apps.<name>.model` and the
