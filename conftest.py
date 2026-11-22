@@ -780,7 +780,7 @@ def pytest_xdist_auto_num_workers(config: pytest.Config) -> int | None:
         import xdist_budget
     except ImportError:  # pragma: no cover - partial checkout
         return None
-    return xdist_budget.resolve_workers()
+    return xdist_budget.resolve_workers(config)
 
 
 @pytest.hookimpl(tryfirst=True)

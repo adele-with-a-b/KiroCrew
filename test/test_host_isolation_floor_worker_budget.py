@@ -38,7 +38,7 @@ class TestTheWorkerBudgetIsMemoryBounded:
     """
 
     #: The per-worker reservation is now platform-aware (5 GiB on Linux/Windows,
-    #: 16 GiB on macOS), so an assertion here computed against the live selector
+    #: 4 or 16 GiB on macOS by what the run names), so an assertion here computed against the live selector
     #: would read one number on Linux and another on macOS. These tests are about
     #: the shared division MECHANISM, not the platform default that feeds it, so
     #: the autouse fixture below forces the selectors to the Linux/Windows
@@ -50,6 +50,8 @@ class TestTheWorkerBudgetIsMemoryBounded:
     def _pin_per_worker_reservation(self, _floor_monkeypatch: pytest.MonkeyPatch) -> None:
         import xdist_budget as budget
 
+        # A macOS full-suite worker also holds several slots; pin that to one too.
+        _floor_monkeypatch.setattr(budget.platform_compat, "IS_MACOS", False, raising=False)
         _floor_monkeypatch.setattr(budget, "_gib_per_worker", lambda: budget._GIB_PER_WORKER)
         _floor_monkeypatch.setattr(
             budget, "_gib_per_worker_available", lambda: budget._GIB_PER_WORKER_AVAILABLE

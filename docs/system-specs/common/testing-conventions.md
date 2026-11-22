@@ -4471,8 +4471,9 @@ Linux child-process tests verify these mechanics, not native Windows performance
 ### Running on a machine with little RAM
 
 **The Linux/Windows budget reserves 5 GiB per worker; the Linux wide-run
-measurements below were 1.8–2.8 GiB, and a host OOM later showed ~4.5 GiB workers. macOS reserves 16 GiB after measured
-14.9–16.1 GiB workers.** Without the budget, `-n auto` would ask for one worker per
+measurements below were 1.8–2.8 GiB, and a host OOM later showed ~4.5 GiB workers. macOS reserves 16 GiB for a
+run over the tree, after measured 14.9–16.1 GiB full-suite workers, and 4 GiB for a run
+that names a short list of test files (see "macOS sizes the worker by the run" below).** Without the budget, `-n auto` would ask for one worker per
 core. In the Linux measurement almost all of the fixed part was *collection*: every
 xdist worker collected every testpath — 106,491 items — at ~1,499 MiB of peak RSS
 before running a test, 99% of it private. From there a worker grew another ~60 MiB per
@@ -4512,6 +4513,33 @@ Linux/Windows, sizing the divisor on a wide-run number would grant 4 workers on 
 the machine. On macOS, the 16 GiB value prevents four workers measured at roughly
 62 GiB total from being granted on a 36 GiB host. **Do not lower either divisor on the
 strength of a high-parallelism or cross-platform measurement.**
+
+**macOS sizes the worker by the run.** What a worker holds tracks the files it is
+given (measured below), and #10061 was the full suite: every worker collected every
+testpath and then ran a quarter of it. A `local-gate.py` batch names at most a few
+hundred files, because its argv is capped at `ARGV_CHAR_LIMIT`; on a 48 GiB / 18-core
+Mac one 651-file, 26,375-test batch peaked at 1,477-1,923 MiB per worker at `-n 4`
+(765 s) and at 4,156 MiB on ONE worker running all of it (`-n 1`, 2,219 s), and the
+16 GiB reservation clamped every gate there to "1 of 18 workers" with the CPU
+73% idle. So `xdist_budget.run_is_scoped` reads the run's arguments: when every one is
+an existing test file (a `file::test` node id counts as its file) and there are at most
+`_SCOPED_MAX_FILES` (700) of them, a worker reserves `_MACOS_GIB_PER_SCOPED_WORKER`
+(4 GiB). No arguments (the testpaths), a directory, a module, a missing path or a longer
+list all keep the 16 GiB: identity is positive, and an unknown shape is sized as the full
+suite.
+
+Both shapes share one slot pool, so on macOS a slot is 4 GiB and a full-suite worker
+holds four of them. The aggregate stays `slots × 4 GiB ≤ RAM` across any mix of runs:
+on the 48 GiB Mac two gates take 6 slots each, a full run alone takes all 12 for its 3
+workers, and on #10061's 36 GiB host a full run gets 9 slots, two workers, never four.
+The live reading divides by the same per-worker figure (16 GiB for a full run). Slots
+that do not make a whole worker are handed back, except at the one-worker floor.
+
+The agent-spawn cap (`resource_status.inject_xdist_auto_cap`) is set before anyone
+knows what the agent will run, so on macOS it sizes the scoped worker (4 GB); with
+16 it seeded `PYTEST_XDIST_AUTO_NUM_WORKERS=1` into every agent shell on that Mac, which
+clamps a gate whatever this budget allows. The full-suite reservation is applied here,
+where the run's arguments are known.
 
 Where the floor goes, measured by ablation on one worker (a `--collect-only -n0` run
 reproduces a real worker's peak to within about a megabyte, which is the cheap way to
