@@ -232,6 +232,7 @@ _FLOOR_PARTS = (
     "conftest_floor_determinism",
     "conftest_floor_reporting",
     "conftest_floor_git",
+    "conftest_floor_collect",
 )
 
 
@@ -258,6 +259,9 @@ def _load_floor_part(stem: str):
 
 for _stem in _FLOOR_PARTS:
     _load_floor_part(_stem)
+
+# Collection: a directory is scanned once per run, however many of its files a run names.
+from conftest_floor_collect import pytest_collect_directory  # noqa: E402,F401 -- bound for pytest
 
 # Once-per-run redirects pytest_configure installs, and the warning trim.
 from conftest_floor_configure import (  # noqa: E402,F401 -- bound for pytest and for tests
