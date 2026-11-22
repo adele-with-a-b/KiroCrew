@@ -10,12 +10,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Check, ChevronRight, Circle, GripVertical, Square, SquareCheck } from 'lucide-react'
+import { ArrowDown, ArrowUpDown, Check, ChevronRight, Circle, GripVertical, Square, SquareCheck } from 'lucide-react'
 import { api } from '../../../api/client'
 import { crewBoardQueryKey, PLAN_STEPS, type PlanStep, type WorkBoardConductor, type WorkBoardItem } from '../../../api/crewBoard'
-import { backlogCompare, boardPlan, childProgress, epicOf, epicTone, isMerged, moveRow, planOf, projectedIndex, ranksForDrop, releaseViews, seatsBusy, stepIndex, type BoardPlan, type ReleaseView } from '../../../lib/crewPlan'
+import { backlogCompare, boardPlan, byEstimate, childProgress, epicOf, epicTone, estimateMinutes, isEstimateTag, isMerged, moveRow, planOf, projectedIndex, ranksForDrop, releaseViews, seatsBusy, stepIndex, type BoardPlan, type ReleaseView } from '../../../lib/crewPlan'
 import { useDndSensors } from '../../../hooks/useDndSensors'
-import { fmtDateFields } from '../../../i18n/format'
+import { fmtDateFields, fmtUnit } from '../../../i18n/format'
 import { i18nT } from '../../../i18n/t'
 import ErrorNotice from '../../../components/ErrorNotice'
 import { errMessage } from '../../../utils/thunkError'
@@ -67,16 +67,30 @@ function EpicChip({ epic, plan }: { epic: WorkBoardItem | null; plan: BoardPlan 
   )
 }
 
-function Tags({ item }: { item: WorkBoardItem }) {
-  const tags = planOf(item).tags ?? []
+/** An estimate in minutes as the person reads it: minutes under an hour, else hours. */
+function fmtEstimate(minutes: number): string {
+  return minutes < 60
+    ? fmtUnit(minutes, 'minute', { maximumFractionDigits: 0 })
+    : fmtUnit(minutes / 60, 'hour', { maximumFractionDigits: 1 })
+}
+
+/** The backlog's Estimate column: a fixed width, so the rows line up under its header. */
+const EST_COL = 'shrink-0 w-12 text-right text-[12px] tabular-nums'
+
+/** The row's free tags. Where the row shows an Estimate column, the estimate tag is
+ *  that column and is not drawn again here. */
+function Tags({ item, hideEstimate }: { item: WorkBoardItem; hideEstimate?: boolean }) {
+  const tags = (planOf(item).tags ?? []).filter(t => !hideEstimate || !isEstimateTag(t))
   return <>{tags.map(t => <span key={t} className="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-bg-hover text-[11px] text-muted">{t}</span>)}</>
 }
 
 /** One story's row: its title, then its epic, step, tags and PR, and on the
  *  right how many of its sub-tasks are merged. A row that waits on the person is
  *  marked and says on what. */
-function StoryRow({ item, plan, row, onOpen, lead }: {
+function StoryRow({ item, plan, row, onOpen, lead, estimate }: {
   item: WorkBoardItem; plan: BoardPlan; row?: BacklogRowState; onOpen?: () => void; lead?: ReactNode
+  /** Set on a backlog row: draw the Estimate column. */
+  estimate?: boolean
 }) {
   const progress = childProgress(item, plan.children)
   const needs = !!row?.needsYou
@@ -91,7 +105,7 @@ function StoryRow({ item, plan, row, onOpen, lead }: {
           <EpicChip epic={epicOf(item, plan.byId)} plan={plan} />
           <StepTag step={planOf(item).step} />
           {needs && <span className="inline-flex items-center h-[18px] px-1.5 rounded-full border border-current text-[11px] font-medium crew-tone-warn">{i18nT('components.crewMode.plan_needs_you_tag')}</span>}
-          <Tags item={item} />
+          <Tags item={item} hideEstimate={estimate} />
           {item.pr != null && <span className="text-[11px] text-muted tabular-nums">{i18nT('components.crewMode.plan_pr', { n: item.pr })}</span>}
         </span>
         {needs && row?.waitingOn && (
@@ -102,8 +116,22 @@ function StoryRow({ item, plan, row, onOpen, lead }: {
         )}
       </span>
       {progress.total > 0 && <span className="shrink-0 text-[11px] text-muted tabular-nums mt-0.5">{i18nT('components.crewMode.plan_progress', { done: progress.done, total: progress.total })}</span>}
+      {estimate && <EstimateCell item={item} />}
     </div>
   )
+}
+
+function EstimateCell({ item }: { item: WorkBoardItem }) {
+  const minutes = estimateMinutes(item)
+  return (
+    <span className={`${EST_COL} mt-0.5 ${minutes === undefined ? 'text-muted' : 'text-text font-medium'}`} data-testid="plan-estimate">
+      {minutes === undefined ? '—' : fmtEstimate(minutes)}
+    </span>
+  )
+}
+
+function RankNumber({ n }: { n: number }) {
+  return <span className="text-[12px] text-muted tabular-nums w-4 text-right">{n}</span>
 }
 
 function SortableBacklogRow({ item, plan, row, onOpen }: { item: WorkBoardItem; plan: BoardPlan; row?: BacklogRowState; onOpen?: () => void }) {
@@ -117,7 +145,7 @@ function SortableBacklogRow({ item, plan, row, onOpen }: { item: WorkBoardItem; 
         className="text-muted hover:text-text cursor-grab active:cursor-grabbing rounded-sm" style={{ touchAction: 'none' }}>
         <GripVertical size={14} aria-hidden="true" />
       </button>
-      <span className="text-[12px] text-muted tabular-nums w-4 text-right">{rank}</span>
+      <RankNumber n={rank} />
     </span>
   )
   return (
@@ -129,7 +157,7 @@ function SortableBacklogRow({ item, plan, row, onOpen }: { item: WorkBoardItem; 
           <span className="flex-1 h-0.5 rounded bg-current" /><span className="px-1 rounded bg-bg-elevated">{i18nT('components.crewMode.plan_drop_here', { n: overIndex + 1 })}</span>
         </span>
       )}
-      <div className={isDragging ? 'invisible' : undefined}><StoryRow item={item} plan={plan} row={row} onOpen={onOpen} lead={grip} /></div>
+      <div className={isDragging ? 'invisible' : undefined}><StoryRow item={item} plan={plan} row={row} onOpen={onOpen} lead={grip} estimate /></div>
     </li>
   )
 }
@@ -320,6 +348,13 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
   const active = activeId ? plan.byId.get(activeId) : undefined
   // While a drop is unsaved the pick shown is the row the person put on top.
   const shownPick = pending ? backlog[0] : pick
+  // Sorting by estimate is a view only: it never writes a rank, and the drag is off
+  // while it is on, so the person's ranked order stays the one the conductor picks by.
+  const [estSort, setEstSort] = useState(false)
+  const shown = estSort ? byEstimate(backlog) : backlog
+  const rankOf = new Map(backlog.map((i, n) => [i.item_id, n + 1]))
+  const estimates = backlog.map(estimateMinutes).filter((m): m is number => m !== undefined)
+  const estTotal = estimates.reduce((a, b) => a + b, 0)
   const [epicOpen, setEpicOpen] = useState<string | null>(null)
   const openEpic = plan.epics.find(e => e.item_id === epicOpen) ?? null
 
@@ -373,7 +408,30 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
         {rank.isError && <ErrorNotice variant="inline" message={errMessage(rank.error) || i18nT('components.crewMode.plan_rank_failed')} />}
         {backlog.length === 0
           ? <p className="text-[12px] text-muted">{i18nT('components.crewMode.plan_backlog_none')}</p>
-          : (
+          : (<>
+            <div className="flex items-center gap-2 px-2.5 text-[11px] text-muted" data-testid="plan-backlog-head">
+              {estimates.length > 0 && (
+                <span className="flex-1 min-w-0" data-testid="plan-estimate-total">
+                  {i18nT('components.crewMode.plan_estimate_total', { total: fmtEstimate(estTotal) })}
+                </span>
+              )}
+              <button type="button" onClick={() => setEstSort(on => !on)} aria-pressed={estSort} data-testid="plan-estimate-sort"
+                title={i18nT('components.crewMode.plan_estimate_sort')}
+                className={`ml-auto inline-flex items-center justify-end gap-0.5 min-w-12 font-semibold uppercase tracking-[0.5px] rounded-sm hover:text-text ${estSort ? 'text-text' : ''}`}>
+                {i18nT('components.crewMode.plan_estimate')}
+                {estSort ? <ArrowDown size={11} aria-hidden="true" /> : <ArrowUpDown size={11} aria-hidden="true" />}
+              </button>
+            </div>
+            {estSort ? (
+              <ol className="space-y-2" data-testid="plan-backlog-sorted">
+                {shown.map(item => (
+                  <li key={item.item_id} data-testid="plan-backlog-row">
+                    <StoryRow item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} estimate
+                      lead={<span className="shrink-0 flex items-center gap-1.5 mt-0.5 pl-[20px]"><RankNumber n={rankOf.get(item.item_id) ?? 0} /></span>} />
+                  </li>
+                ))}
+              </ol>
+            ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveId(null)}>
               {/* One drop's writes at a time: a second drop while they run would rank from rows
                   the server has not stored yet, and the two would interleave. */}
@@ -382,9 +440,10 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
                   {backlog.map(item => <SortableBacklogRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} />)}
                 </ol>
               </SortableContext>
-              <DragOverlay>{active ? <div className="rounded-lg ring-2 ring-[var(--danger)] shadow-lg bg-bg-elevated"><StoryRow item={active} plan={plan} /></div> : null}</DragOverlay>
+              <DragOverlay>{active ? <div className="rounded-lg ring-2 ring-[var(--danger)] shadow-lg bg-bg-elevated"><StoryRow item={active} plan={plan} estimate /></div> : null}</DragOverlay>
             </DndContext>
-          )}
+            )}
+          </>)}
       </section>
 
       <section className="space-y-1.5" data-testid="plan-epics">
