@@ -57,6 +57,7 @@ if TYPE_CHECKING:
         _emit_stale,
         _emit_stall,
         _flush_thinking_stream,
+        _handed_to_a_chat_keeper,
         _persist_partial_reply,
     )
     from kiro_crew.dashboard.chat_turn.turn_stats import (
@@ -328,6 +329,11 @@ async def _turn_stop_recovery(turn: _ChatTurn) -> Literal[_Flow.END] | None:
     # death reaches this re-queue.
     if _stop_class.name == STOP_CLASS_FAILED and _stop_class.retryable:
         await _persist_partial_reply(turn, _stop_reason)
+        if _handed_to_a_chat_keeper(client):
+            # Detached at a gateway exit, not lost: the turn runs on under its chat
+            # keeper and the next gateway finishes it, so nothing is retried, queued
+            # or announced here (runtime-ownership.md, "Chats that outlive the gateway").
+            return _Flow.END
         _rc = getattr(client, "exit_code", None)
         _rc_suffix = f" (exit {_rc})" if _rc is not None else ""
         # The localized copy shows the exit code from the notice args.

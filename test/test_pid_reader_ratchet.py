@@ -166,9 +166,10 @@ _OWNER_MARKER = "pid-owner" + "-ok"
 #: two changes that move the SAME file's entry to the same pair.
 _BASELINE: dict[str, tuple[int, int]] = {
     "acp/client_class.py": (3, 0),
+    "acp/client_keeper.py": (0, 1),
     "acp/client_lifecycle.py": (8, 0),
     "acp/client_mcp_array.py": (0, 1),
-    "acp/client_start.py": (14, 0),
+    "acp/client_start.py": (14, 1),
     "acp/client_turn.py": (1, 0),
     "acp/runtime_class.py": (3, 0),
     "acp/runtime_host_requests.py": (3, 0),
@@ -181,6 +182,8 @@ _BASELINE: dict[str, tuple[int, int]] = {
     "acp/session_provider.py": (3, 0),
     "acp/session_provider_context.py": (1, 0),
     "apps/builtins/code_review_sage/sage_lib/review_pool.py": (0, 1),
+    "chat_keeper/records.py": (0, 2),
+    "chat_keeper/spawn.py": (0, 3),
     "connections/mint.py": (2, 0),
     "connections/mint_kas.py": (0, 4),
     "dashboard/chat_turn/mcp_session.py": (2, 0),

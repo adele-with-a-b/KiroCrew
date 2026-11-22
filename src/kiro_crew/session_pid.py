@@ -312,6 +312,13 @@ def _sweep_pid_entries(
     killed = 0
     killed_or_dead: set[str] = set()
     candidates: list[int] = []
+    # A live chat keeper's pid is left to its keeper and to the gateway that adopts
+    # it (runtime-ownership.md, "Chats that outlive the gateway"): it is ended by
+    # its holder, its own orphan timer, or the adopt pass, never by a sweep. Read
+    # once per pass; a pass over no keepers reads one empty directory.
+    from kiro_crew.chat_keeper.records import live_keeper_pids
+
+    keeper_pids = live_keeper_pids()
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -348,6 +355,8 @@ def _sweep_pid_entries(
                     continue
                 if should_skip_bare(pid):
                     continue
+            if pid in keeper_pids:
+                continue
             if _windows_pending_pid_entry(stripped):
                 continue
             # Probe liveness, three-way (os.kill(pid, 0) would *terminate* on
@@ -830,6 +839,10 @@ def cleanup_orphaned_session_roots() -> int:
     my_gw_pid = os.getpid()
     entries_to_remove: set[str] = set()
     supervisor_verdicts: dict[int, bool] = {}
+    # A live chat keeper's row is its own to settle, as in ``_sweep_pid_entries``.
+    from kiro_crew.chat_keeper.records import live_keeper_pids
+
+    keeper_pids = live_keeper_pids()
 
     for line in lines:
         stripped = line.strip()
@@ -857,6 +870,8 @@ def cleanup_orphaned_session_roots() -> int:
 
         if gw_pid <= 0 or child_pid <= 0:
             entries_to_remove.add(stripped)
+            continue
+        if child_pid in keeper_pids:
             continue
 
         # Skip entries owned by the current (live) gateway

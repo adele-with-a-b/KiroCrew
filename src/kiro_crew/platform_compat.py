@@ -364,6 +364,7 @@ if TYPE_CHECKING:  # the forwarded names, visible to type checkers and IDEs
         kill_process_tree_pinned,
         pgroup_exists,
         run_killing_tree_on_timeout,
+        signal_own_process_group,
         stdlib_run_killing_tree_on_timeout,
         terminate_and_reap,
         terminate_and_reap_sync,

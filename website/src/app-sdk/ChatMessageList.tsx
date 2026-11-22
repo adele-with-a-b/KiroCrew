@@ -28,6 +28,7 @@ import { createDisplayItemReconciler, hasToolStep, isSynthesisInjection, REASONI
 import { isSubagentCompletionMessage } from '../pages/chat/subagentCompletion'
 import { injectOpensTurn } from '../pages/chat/RecoveryCard'
 import { isHiddenSupersededSteer } from '../pages/chat/groupDisplayItems'
+import { drawnRow } from '../pages/chat/carriedOnReply'
 import {
   type MessageRenderer,
   type MessageRenderContext,
@@ -249,8 +250,11 @@ const ChatMessageList = memo(forwardRef<VirtualTranscriptHandle, ChatMessageList
     const raw: TurnItem[] = []
     let group: ChatMessage[] = []
     let groupStart = 0
+    // The rows a cut reply's bubble already draws (carriedOnReply.ts).
+    const joinedInto = new Set<number>()
 
     for (let i = 0; i < messages.length; i++) {
+      if (joinedInto.has(i)) continue
       // A sub-agent completion the card cannot parse stays internal — the model
       // sees it, the reader does not.
       if (messages[i].role === 'subagent' && !isSubagentCompletionMessage(messages[i])) continue
@@ -260,7 +264,7 @@ const ChatMessageList = memo(forwardRef<VirtualTranscriptHandle, ChatMessageList
         group.push(messages[i])
       } else {
         if (group.length) { raw.push({ kind: 'group', msgs: group, startIdx: groupStart }); group = [] }
-        raw.push({ kind: 'single', msg: messages[i], idx: i })
+        raw.push(drawnRow(messages, i, joinedInto))
       }
     }
     if (group.length) raw.push({ kind: 'group', msgs: group, startIdx: groupStart })

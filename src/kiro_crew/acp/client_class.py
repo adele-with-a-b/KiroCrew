@@ -1003,6 +1003,14 @@ class AcpClient:
     #: makes neither.
     _reads_back_session_mode: bool = False
 
+    #: A chat keeper's adopt (``acp.client_keeper``): whether this client already asked
+    #: for one (a refusal falls back to a spawn), and whether the process it holds is
+    #: the adopted keeper whose handshake is still owed, and the one whose session
+    #: it adopted. Each names its process, so a later process is neither.
+    _keeper_adopt_spent: bool = False
+    _keeper_adopting: Any = None
+    _keeper_adopted_process: Any = None
+
     #: What the completed-unasked tripwire tells the person to check when a gate
     #: extension's session ran a tool call Crew was never asked about
     #: (``_tripwire_pi_gate``): pi's adapter and pi itself here.

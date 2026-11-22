@@ -59,6 +59,11 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
         # The chats that held an approval mode when the previous process stopped,
         # read before the restore rebuilds them without it (``chat_trust_restart``).
         held_modes = await asyncio.to_thread(chat_trust_restart.arm, state)
+        from kiro_crew.dashboard import chat_keeper_adopt
+
+        # The chats a chat keeper kept running, read before the restore so it does
+        # not mark their turns interrupted (``chat_keeper_adopt``).
+        kept = await asyncio.to_thread(chat_keeper_adopt.arm, cfg)
         # Session restores spawn a kiro-cli process per restored tab — the last
         # large group of the startup battery, so it too gets a cautious-boot window.
         await cautious_boot.pause_before("session restore")
@@ -87,6 +92,9 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
 
         # Tell the owner which of them came back without it.
         await chat_trust_restart.report(state, held_modes)
+        # Attach to those chats now, so a turn that was running and any approval it
+        # waits on reach the dashboard without waiting for a message.
+        await chat_keeper_adopt.adopt_kept_chats(state, cfg, kept)
 
         from kiro_crew.dashboard.member_slot_retry import schedule_member_slot_retry
         from kiro_crew.dashboard.slot_queue_repository import drain_restored_parked_sends

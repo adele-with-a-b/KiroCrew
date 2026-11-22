@@ -892,6 +892,7 @@ def _agent_section_fields(agent_data: dict) -> AgentConfig:
             section.get("chat_runtime_sharing_harnesses")
         ),
         agent_started_turns=bool(section.get("agent_started_turns")),
+        chat_keeper=bool(section.get("chat_keeper")),
         max_subagents=section.read("max_subagents", _safe_int, 0, SUBAGENT_AUTO_MAX_CEILING),
         max_stop_hook_nudges=section.read("max_stop_hook_nudges", _safe_int, 0),
         subagent_mem_buffer_pct=section.read("subagent_mem_buffer_pct", _safe_int),

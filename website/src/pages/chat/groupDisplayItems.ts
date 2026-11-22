@@ -4,6 +4,7 @@ import { isSubagentCompletionMessage } from './subagentCompletion'
 import { isNoteRow } from '../../lib/noteContract'
 import { isSystemNoticeRow } from './CompactionCard'
 import { injectOpensTurn } from './RecoveryCard'
+import { drawnRow } from './carriedOnReply'
 
 /** Roles that fold into a collapsible group in the turn view. Thinking is NOT
  *  here: it carries real content and renders as its own standalone block (a
@@ -346,9 +347,12 @@ export function groupDisplayItems(messages: ChatMessage[]): GroupedTurns {
   // Phase 1: build raw items (singles + groups)
   const raw: TurnItem[] = []
   let group: ChatMessage[] = [], groupStart = 0
+  // The rows a cut reply's bubble already draws (carriedOnReply.ts).
+  const joinedInto = new Set<number>()
   for (let i = 0; i < messages.length; i++) {
     // Permission messages handled by pinned ApprovalBar — skip entirely
     if (messages[i].role === 'permission') continue
+    if (joinedInto.has(i)) continue
     // A sub-agent completion the card cannot parse stays internal: the LLM sees
     // it, the user does not. One it CAN parse renders as a compact outcome row,
     // which is the only scrollback record that a wave's results arrived.
@@ -359,7 +363,7 @@ export function groupDisplayItems(messages: ChatMessage[]): GroupedTurns {
       group.push(messages[i])
     } else {
       if (group.length) { raw.push({ kind: 'group', msgs: group, startIdx: groupStart }); group = [] }
-      raw.push({ kind: 'single', msg: messages[i], idx: i })
+      raw.push(drawnRow(messages, i, joinedInto))
     }
   }
   if (group.length) raw.push({ kind: 'group', msgs: group, startIdx: groupStart })

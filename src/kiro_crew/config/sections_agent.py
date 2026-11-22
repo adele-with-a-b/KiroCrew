@@ -903,6 +903,18 @@ class AgentConfig:
             "Applies from the next turn.",
         ),
     )
+    chat_keeper: bool = field(
+        default=False,
+        metadata=_meta(
+            "Chat Keeper",
+            "Keep a claude chat running when the gateway restarts (an update, "
+            "kirocrew restart, a crash): its reply in progress, background agents "
+            "and background commands carry on, and the restarted gateway shows the "
+            "chat live again. Each chat's agent runs under a small keeper process "
+            "that outlives the gateway. Needs Agent-started Turns on. macOS and "
+            "Linux only. Applies to chats started after the change.",
+        ),
+    )
     max_subagents: int = field(
         default=0,
         metadata=_meta(
