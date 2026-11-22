@@ -181,13 +181,12 @@ def test_the_rules_fire_only_past_their_marks(tokens, idle, cache, rule):
     assert chat_runner._context_cap_rule(tokens, idle, cache) == rule
 
 
-def _claude(tokens: int, *, agent_env: dict[str, str] | None = None) -> _Provider:
-    """A live claude session's meter, its client launched with *agent_env*."""
+def _claude(tokens: int) -> _Provider:
+    """A live claude session's meter. Its client, like a real claude one, holds no
+    ``agent.env`` snapshot, so the gateway's environment names the tier."""
     provider = _Provider(tokens)
     provider.harness_managed_compaction_backend = "claude"
-    provider.client = SimpleNamespace(
-        backend="claude", _agent_env_snapshot=agent_env or {}, _extra_env={}
-    )
+    provider.client = SimpleNamespace(backend="claude", _agent_env_snapshot=None, _extra_env={})
     return provider
 
 
@@ -195,20 +194,19 @@ def _claude(tokens: int, *, agent_env: dict[str, str] | None = None) -> _Provide
 async def test_kas_keeps_its_measured_five_minute_cache_life(tmp_path, monkeypatch):
     """KAS is not in ``PROMPT_CACHE_LIFETIMES``; its chat is trimmed after 300 s idle."""
     monkeypatch.delenv("CLAUDE_CODE_PROMPT_CACHE_TTL", raising=False)
-    sessions = _Sessions(_Provider(250_000), idle_secs=299.0)
+    sessions = _Sessions(_Provider(250_000), idle_secs=240.0)
     state, slot = _conductor(tmp_path, sessions)
     assert await _check(state, slot) == "below_marks"
 
-    sessions.set_idle(300.0)
+    sessions.set_idle(360.0)
     assert await _check(state, slot) == "trimmed"
 
 
 @pytest.mark.asyncio
 async def test_a_claude_chat_on_a_one_hour_cache_is_not_trimmed_while_warm(tmp_path, monkeypatch):
     """The tier ``CLAUDE_CODE_PROMPT_CACHE_TTL`` names is the clock Rule B reads."""
-    monkeypatch.delenv("CLAUDE_CODE_PROMPT_CACHE_TTL", raising=False)
-    provider = _claude(250_000, agent_env={"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"})
-    sessions = _Sessions(provider, idle_secs=59 * 60.0)
+    monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
+    sessions = _Sessions(_claude(250_000), idle_secs=59 * 60.0)
     state, slot = _conductor(tmp_path, sessions)
     assert await _check(state, slot) == "below_marks"
 

@@ -1,7 +1,7 @@
 """The conductor context cap (``docs/request-for-change/rfc-conductor-context-cap.md``).
 
 A goal conductor's KAS or claude chat over its marks is trimmed at a dashboard turn's start,
-before the turn claims its session: the KAS conversation ends through
+before the turn claims its session: the conversation ends through
 ``discard_conversation(replay=True)``, and the session the turn then starts is seeded
 with a trim note, the session-ledger snapshot and a longer text tail of the transcript.
 No model call is spent, and the transcript gains no row: the person cannot act on a
@@ -102,7 +102,7 @@ async def _cap_conductor_context(
     *,
     is_slash: bool,
 ) -> str:
-    """Trim *slot*'s conductor KAS chat when it is over a mark, before the turn claims it.
+    """Trim *slot*'s conductor chat when it is over a mark, before the turn claims it.
 
     Runs at a dashboard turn's start, beside the pending-reset consume. Returns
     ``"trimmed"`` or the hold that stopped the trim (RFC section 3.4); every hold
@@ -279,7 +279,7 @@ def _context_cap_damping_floor(state: DashboardState, session_key: str, tokens: 
 
 
 async def _context_cap_discard(state: DashboardState, slot: _ChatSlot, session_key: str) -> bool:
-    """End the slot's KAS conversation with replay kept on; False when a turn holds it.
+    """End the slot's conversation with replay kept on; False when a turn holds it.
 
     ``skip_if_busy`` refuses under the same session lock that pops the session, so a
     turn that starts between the checks above and the teardown is never cut.

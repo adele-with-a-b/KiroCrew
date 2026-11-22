@@ -118,9 +118,11 @@ class SessionConfig:
         default=True,
         metadata=_meta(
             "Conductor Context Cap",
-            "Trim a goal conductor's chat on the KAS backend at the start of a "
-            "dashboard turn: a chat over 400K tokens, or over 200K tokens after 5 "
-            "minutes idle, starts that turn on a new session seeded with its "
+            "Trim a goal conductor's chat on the KAS or Claude backend at the start "
+            "of a dashboard turn: a chat over 400K tokens, or over 200K tokens once "
+            "idle past its backend's prompt-cache life (5 minutes on KAS; on Claude "
+            "only when CLAUDE_CODE_PROMPT_CACHE_TTL names it), starts that turn on a "
+            "new session seeded with its "
             "session-ledger snapshot and the newest messages as text. Older messages "
             "and tool output stay in the chat's transcript. Read at each turn start, "
             "so a change needs no restart.",
