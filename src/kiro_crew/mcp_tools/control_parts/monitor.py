@@ -333,9 +333,10 @@ def _arming_preflight_refusal(tool_name: str, session_key: str) -> str:
     benign: a record cleared just after the read costs one retryable refusal, and
     one written just after it is still caught authoritatively.
 
-    The retained-stop half covers the STRUCTURED record, the only one the endpoint
-    reports an outcome for. A paused legacy timer loop reads as ``autonudge_loop`` with no outcome
-    and is left to the existing create-only refusal.
+    The retained-stop half covers the STRUCTURED record by its outcome, and a stopped
+    legacy loop by the ``retained_stop`` mark the endpoint sets with the arm path's own
+    predicate (a person's pause from the goal popover reads that way). A legacy
+    reading with no mark, from an older gateway, fails open.
     """
     if mcp_core.directive_capture_active():
         return ""
@@ -375,6 +376,9 @@ def _arming_preflight_refusal(tool_name: str, session_key: str) -> str:
                 "loop is watching anything now. To watch a new subject, call "
                 "monitor_start in this turn; do NOT report monitoring as changed."
             )
+    legacy = reading.get("autonudge_loop")
+    if isinstance(legacy, dict) and not legacy.get("active") and legacy.get("retained_stop"):
+        return _retained_loop_refusal(tool_name, legacy)
     monitor = reading.get("monitor")
     if not isinstance(monitor, dict):
         return ""
@@ -392,6 +396,45 @@ def _arming_preflight_refusal(tool_name: str, session_key: str) -> str:
         "dashboard's goal/automation popover (Clear), after which this call will "
         "succeed. Tell the user that is the one step needed, and do NOT report "
         "monitoring as started. Use monitor_inspect to read the retained record."
+    )
+
+
+def _retained_loop_refusal(tool_name: str, loop: dict[str, Any]) -> str:
+    """The in-band refusal for a legacy loop a person paused or stopped, or ``""``.
+
+    ``monitor_update`` with no recorded reason is left to the turn boundary, whose
+    cycle-count fallback may still read such a row as a cap stop it can revive.
+    """
+    reason = str(loop.get("stopped_reason") or "")
+    if tool_name == "monitor_update" and not reason:
+        return ""
+    loop_id = str(loop.get("id") or "").strip()
+    if reason == autonudge.AUTONUDGE_STOP_REASON:
+        # This session's own monitor_stop, on a slot that keeps the row as its
+        # finish record. No person paused it, and Play or Clear would revive a
+        # finished loop or delete the record its campaign reads.
+        return (
+            f"{tool_name}: NOT applied — this session's own monitor_stop ended loop"
+            + (f" {loop_id}" if loop_id else "")
+            + ", and this chat keeps that stopped row as its finish record, so it can "
+            "be neither resumed nor replaced here and nothing would be watched. Do NOT "
+            "ask the user to press Play or Clear on it. Tell the user in this turn that "
+            "no loop is running, and do NOT report monitoring as started or changed."
+        )
+    not_done = (
+        "no change was made and the loop stays paused"
+        if tool_name == "monitor_update"
+        else "nothing would be watched"
+    )
+    return (
+        f"{tool_name}: NOT applied — this session's loop"
+        + (f" {loop_id}" if loop_id else "")
+        + f" was paused or stopped by a person (stop reason: {reason or 'none recorded'}). "
+        "A person's stop is kept: an agent may not resume, change or replace it, so "
+        f"this call is refused every time and {not_done}. Only the person can lift it, "
+        "in this chat's goal popover: Play resumes this loop, and after Clear "
+        "monitor_start will succeed. Tell the user in this turn that this is the one step needed, "
+        "and do NOT report monitoring as started or changed."
     )
 
 

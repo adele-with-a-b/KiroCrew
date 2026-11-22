@@ -457,6 +457,16 @@ async def _monitor_watch(
     )
 
 
+def _system_stopped(loop: Any) -> bool:
+    """Whether the arm path may displace this stopped row; an unreadable row is kept."""
+    from kiro_crew.autonudge import _stopped_row_is_replaceable
+
+    try:
+        return bool(_stopped_row_is_replaceable(loop))
+    except Exception:  # noqa: BLE001 - a row the predicate cannot read is evidence
+        return False
+
+
 async def _monitor_update(
     state: Any,
     session_key: str,
@@ -697,8 +707,26 @@ async def _monitor_update(
                     "its stop file was created, so the goal is finished and there "
                     "is nothing to resume; arm monitor_start again only for a NEW goal"
                 )
+            elif reason == AUTONUDGE_STOP_REASON:
+                # The finish record of this session's own monitor_stop: no person
+                # paused it, and Play would revive a loop the agent finished.
+                bound = (
+                    "this session's own monitor_stop ended it and the row is kept as "
+                    "the chat's finish record, so it cannot be resumed or replaced"
+                )
+            elif _system_stopped(loop):
+                bound = (
+                    f"the system stopped it ({reason or 'no reason recorded'}); "
+                    "re-arm it with monitor_start"
+                )
             else:
-                bound = "it was paused manually; ask the user, or use monitor_start"
+                # monitor_start meets the same retained-stop refusal, so it is not
+                # offered: only the person who paused it can lift the pause.
+                bound = (
+                    "it was paused manually by a person, and only they can resume it, "
+                    "with Play in this chat's goal popover; monitor_start is refused "
+                    "too until they do, so tell them that is the one step needed"
+                )
             raise _DirectiveDenied(
                 f"Monitor loop {loop.id} is PAUSED (cycle {cycle_count}"
                 + (f" of {current_cap}" if current_cap else ", no cap")

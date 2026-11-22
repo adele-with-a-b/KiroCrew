@@ -13,6 +13,7 @@ from aiohttp import web
 from kiro_crew.autonudge import (
     NudgeAdmissionReason,
     NudgeAdmissionRefused,
+    _stopped_row_is_replaceable,
     binding_key_for,
 )
 from kiro_crew.autonudge import get_instance as _autonudge_get
@@ -417,8 +418,11 @@ def _autonudge_loop_reading(loop: Any) -> dict[str, Any]:
     Only presence, cadence and progress fields are surfaced. The loop's
     ``message`` is agent-controlled free text and is NOT included — it is not
     needed to verify arming, and leaving it out keeps this read narrow.
+
+    ``retained_stop`` is added only on a stopped row the arm path's own predicate
+    keeps (a person's pause or stop), so the arming tools refuse in band.
     """
-    return {
+    reading = {
         "id": loop.id,
         "active": bool(loop.active),
         "idle_secs": loop.idle_secs,
@@ -438,6 +442,9 @@ def _autonudge_loop_reading(loop: Any) -> dict[str, Any]:
         "waiting_on_person": bool(getattr(loop, "waiting_on_person", False)),
         "has_banner": bool(loop.banner),
     }
+    if not loop.active and not _stopped_row_is_replaceable(loop):
+        reading["retained_stop"] = True
+    return reading
 
 
 def _monitor_error(message: str, code: str, *, status: int = 400) -> web.Response:
