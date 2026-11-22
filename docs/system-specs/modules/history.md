@@ -3891,9 +3891,12 @@ Dashboard history rows show a source glyph: `Monitor` for a dashboard session, `
 
 Every transcript row of role `user`, `inject`, `nudge` or `subagent` carries
 `meta.sentBy`: who sent it into the session. Its one writer is
-`_ChatSlot.append`, which calls `row_sender.with_sent_by` on every append,
-replays included. It maps marks the entry points already stamp, so no entry
-point writes the field itself. `sentBy` and every mark it reads are in
+`_ChatSlot.append`, which calls `row_sender.with_sent_by` on every live append.
+A replay (restore, resume, fork, rebuild: `broadcast=False` or
+`note_participant=False`) keeps the stored meta as it is. It maps marks the
+entry points already stamp, so no entry point writes the field itself. A row
+whose fields live in a JSON `cls` (a live cron row) keeps its `sentBy` on the
+slot-history read too (`chat_utils_display._carry_row_sender`). `sentBy` and every mark it reads are in
 `chat_handlers.RESERVED_ROW_META_KEYS` or are a server-chosen role, so a
 sender's text or body `meta` never moves it: a typed message whose text opens
 with `[sent by session …]` or `[Cron notification from "…"]` still reads

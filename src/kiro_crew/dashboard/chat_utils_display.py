@@ -26,6 +26,7 @@ from kiro_crew import redaction_seams
 from kiro_crew.dashboard import display_verdicts as _display_verdicts
 from kiro_crew.dashboard.chat_utils_slots import effective_session_key
 from kiro_crew.dashboard.display_battery import display_battery
+from kiro_crew.dashboard.row_sender import SENDER_ROLES, SENT_BY_META_KEY
 from kiro_crew.dashboard.state import DashboardState, _ChatSlot, parse_cls_meta
 from kiro_crew.security import (
     CREDENTIAL_REDACTION_TAGS,
@@ -1238,6 +1239,15 @@ def without_unknown_row_fields(m: dict) -> dict:
     return {key: value for key, value in m.items() if key != UNKNOWN_ROW_FIELDS_KEY}
 
 
+def _carry_row_sender(meta: dict, msg: dict) -> dict:
+    """*meta* (parsed from a row's ``cls``) with the row's stored ``sentBy`` kept."""
+    stored = msg.get("meta")
+    sender = stored.get(SENT_BY_META_KEY) if isinstance(stored, dict) else None
+    if isinstance(sender, dict) and SENT_BY_META_KEY not in meta:
+        return {**meta, SENT_BY_META_KEY: sender}
+    return meta
+
+
 def _carry_row_mid(meta: dict, msg: dict) -> dict:
     """*meta* (parsed from a row's ``cls``) with the row's own ``mid`` kept.
 
@@ -1356,10 +1366,13 @@ def _prepare_messages_scoped(messages: list[dict], running: bool, *, live_child:
             # stamped by _ChatSlot.append) is not in cls, and its approval is
             # bound to that id (register_approval). Keep it for permission and
             # elicitation rows only (the two the approval registry binds, and
-            # the two whose resolution frame names a `mid`), so every other
-            # row's wire meta is unchanged.
+            # the two whose resolution frame names a `mid`). A sender row (a
+            # cron inject) keeps its `sentBy` the same way, as the live frame
+            # carries it. Every other row's wire meta is unchanged.
             if role in ("permission", "elicitation"):
                 meta = _carry_row_mid(meta, m)
+            elif role in SENDER_ROLES:
+                meta = _carry_row_sender(meta, m)
             msg_out["meta"] = _expire_dead_child_oauth_meta(
                 role, _redact_meta_for_role(role, meta), live_child
             )

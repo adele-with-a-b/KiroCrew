@@ -1856,22 +1856,26 @@ class TestRequeuedSteerShowsOnce:
         assert "requeued_steer_row_mid" not in (row.get("meta") or {})
 
     @pytest.mark.asyncio
-    async def test_a_steer_that_drains_as_an_event_keeps_its_user_row(
+    async def test_a_typed_steer_with_an_event_banner_drains_as_its_user_row(
         self, tmp_path, monkeypatch, _patch_sel
     ):
-        # Typed text that happens to open with the cron notice prefix drains as
-        # an `inject` row, not a `user` row. The old user row is then the only
-        # copy drawn as the person's words, so it must stay drawn.
+        # Typed text that happens to open with the cron notice prefix is still
+        # the person's: it drains as a `user` row, as it does on an idle
+        # session, and the old row gives way to it like any other steer's.
         self._TEXT = '[Cron notification from "nightly"] is this still running?'
         state, slot = await self._steer_then_requeue(tmp_path, monkeypatch)
         (old,) = self._user_rows(slot, self._TEXT)
 
         await self._drain(state, slot)
 
-        assert old["meta"]["steerState"] == "requeued"
-        assert any(
-            m.get("role") == "inject" and m.get("content") == self._TEXT for m in slot.messages
-        )
+        assert old["meta"]["steerState"] == "superseded"
+        assert not any(m.get("role") == "inject" for m in slot.messages)
+        drained = [
+            m
+            for m in self._user_rows(slot, self._TEXT)
+            if m.get("meta", {}).get("steerState") != "superseded"
+        ]
+        assert [m["meta"]["sentBy"] for m in drained] == [{"kind": "typed"}]
 
 
 class TestClientCannotStampSteerLifecycle:

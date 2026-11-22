@@ -413,9 +413,12 @@ def append(
         # reopening a session is not writing in it.
         if note_participant:
             note_author(self, meta)
-    # Who sent it, from the marks above and the caller's: the field's one writer,
-    # so a replayed row is answered again from its stored marks.
-    meta = with_sent_by(role, meta)
+    # Who sent it, from the marks above and the caller's: the field's one writer.
+    # Live writes only: a replay (restore, resume, fork, rebuild) keeps the
+    # stored meta as it is, so a row stored without the field stays without it
+    # and its reader answers it through the same table.
+    if broadcast and note_participant:
+        meta = with_sent_by(role, meta)
     if meta:
         msg["meta"] = meta
     # Stamp a per-row delivery identity. A client sees the SAME row through

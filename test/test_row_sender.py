@@ -9,6 +9,7 @@ stored marks, and that several rows drained into one prompt say so.
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -94,11 +95,51 @@ def test_append_derives_it_and_overwrites_a_forged_value(tmp_path):
     assert "sentBy" not in (slot.append("assistant", "reply").get("meta") or {})
 
 
-def test_an_old_row_replayed_without_the_field_reads_from_its_marks(tmp_path):
+def test_a_replay_keeps_the_stored_meta_and_the_table_still_reads_it(tmp_path):
     state = _make_state(tmp_path)
     slot = state.get_or_create_slot("replay")
     old = slot.append("user", "my answer", meta={"human": True, "mid": "m-old"}, broadcast=False)
-    assert old["meta"][SENT_BY_META_KEY] == {"kind": "typed"}
+    assert SENT_BY_META_KEY not in old["meta"]
+    assert sent_by(old["role"], old["meta"]) == {"kind": "typed"}
+    resumed = slot.append("user", "again", meta={"human": True}, note_participant=False)
+    assert SENT_BY_META_KEY not in resumed["meta"]
+
+
+def test_a_reopened_session_rewrites_its_old_rows_byte_for_byte(tmp_path):
+    """Rows stored before the field keep their bytes through a restore and a save."""
+    from kiro_crew.dashboard.chat_persistence import _save_slot_to_history
+    from kiro_crew.dashboard.chat_persistence_parts.slot_builders import (
+        _rehydrate_slot_from_history,
+    )
+    from kiro_crew.dashboard.chat_utils import slot_history_key
+
+    state = _make_state(tmp_path)
+    slot = state.get_or_create_slot("chat-old")
+    slot.append("user", "his old answer", "msg msg-u", meta={"human": True})
+    slot.append("assistant", "noted", "msg msg-a")
+    slot.append("nudge", "wake", "msg msg-nudge", meta={"nudge": {"loop_id": "L"}})
+    assert _save_slot_to_history(state, slot, force=True)
+    path = state.conversation_log._path(slot_history_key(slot))
+    legacy = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if isinstance(row.get("meta"), dict) and row["meta"].pop(SENT_BY_META_KEY, None):
+            line = json.dumps(row)
+        legacy.append(line)
+    path.write_text("\n".join(legacy) + "\n", encoding="utf-8")
+    old_rows = [line for line in legacy if '"role"' in line]
+    del state._slots["chat-old"]
+
+    restored = _rehydrate_slot_from_history(state, "chat-old")
+    assert restored is not None
+    restored.append("user", "a new answer", "msg msg-u", meta={"human": True})
+    assert _save_slot_to_history(state, restored, force=True)
+
+    after = path.read_text(encoding="utf-8").splitlines()
+    for line in old_rows:
+        assert line in after
+    new = [json.loads(line) for line in after if "a new answer" in line]
+    assert new[0]["meta"][SENT_BY_META_KEY] == {"kind": "typed"}
 
 
 @pytest.mark.asyncio
@@ -181,3 +222,21 @@ async def test_a_waiting_burst_drained_as_one_prompt_stamps_its_rows(
     ]
     assert all(r["meta"][SENT_BY_META_KEY] == {"kind": "typed"} for r in rows)
     assert slot._dirty
+
+
+def test_a_cron_row_read_back_over_http_keeps_its_sender(tmp_path):
+    """A live cron row keeps its fields in a JSON ``cls``; its read-back still names it."""
+    from kiro_crew.dashboard.chat_utils_display import _prepare_messages
+
+    state = _make_state(tmp_path)
+    slot = state.get_or_create_slot("cron-read")
+    slot.append(
+        "inject",
+        '[Cron notification from "digest"]\nhi',
+        json.dumps({"cronLabel": "digest"}),
+        meta={"injectKind": "cron", "cronLabel": "digest"},
+    )
+    out = _prepare_messages(list(slot.messages), False, live_child="")
+    row = [m for m in out if m.get("role") == "inject"][0]
+    assert row["meta"]["cronLabel"] == "digest"
+    assert row["meta"][SENT_BY_META_KEY] == {"kind": "cron", "label": "digest"}

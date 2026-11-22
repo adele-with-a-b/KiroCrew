@@ -1250,15 +1250,16 @@ Every row of role `user`, `inject`, `nudge` or `subagent` names its sender in
 `session_send` (with `senderKey`, the sending session, and `via`), `wake` (with
 `loopId` when a loop fired it), `cron`, `subagent_event`, `agent`, `card`,
 `gateway` or `unknown`. Only `typed` means a person typed it. The gateway sets
-it from server-only marks; a sender cannot write it, and text in the message
-never changes it.
+it from server-only marks; a send's body cannot write it, and text in the
+message never changes it.
 
 You see it on rows of slots your app owns (`getSlotHistory`, the live
 `chat_message` frame), and in the session's transcript file,
 `<crew home>/sessions/<key>.jsonl`, which is where an app reads a person's own
 chat.
 
-A row written before this field has no `sentBy`. Read it through the same
+A row written before this field, or restored after a crash, has no
+`sentBy`. Read it through the same
 table the gateway uses, over the row's stored `role` and `meta`
 ([history: Row sender](../system-specs/modules/history.md#row-sender-metasentby-dashboardrow_senderpy)):
 a stored `human: true` with no `relay`, `turnActor` or `cardOrigin` is `typed`.
