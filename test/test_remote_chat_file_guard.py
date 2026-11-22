@@ -28,6 +28,7 @@ pytestmark = pytest.mark.asyncio
 GUARDED = {
     "/api/file-read": ("api_file_read", "GET"),
     "/api/file-raw": ("api_file_raw", "GET"),
+    "/api/file-html": ("api_file_html", "GET"),
     "/api/file-stream": ("api_file_stream", "GET"),
     "/api/file-watch": ("api_file_watch", "GET"),
     "/api/file-write": ("api_file_write", "POST"),

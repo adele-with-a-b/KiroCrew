@@ -1258,6 +1258,37 @@ describe('MarkdownPanel — the last copy of a file that is gone', () => {
     await waitFor(() => expect(onDiskContent).toHaveBeenCalledWith('a prefix of b\n', false, 'truncated'))
   })
 
+  it('reloads a partial html frame on a return only when the catch-up read finds the file changed', async () => {
+    // The frame loads the WHOLE page from /api/file-html; a reload re-downloads
+    // it and loses the scroll. A plain return to an unchanged tab keeps it; a
+    // return whose read sees a change reloads it.
+    const path = '/tmp/mock.html'
+    partialReads.add(path)
+    disk.set(path, '<p>first</p>')
+    function Host({ active }: { active: boolean }) {
+      const [doc, setDoc] = useState<{ text: string; partial: PartialCause | false }>({ text: '<p>first</p>', partial: 'truncated' })
+      return (
+        <MarkdownPanel embedded liveWatch active={active} filePath={path} content={doc.text} savedBaseline={doc.text} partial={doc.partial}
+          onContentChange={() => {}} onDiskContent={(text, _binary, partial) => setDoc({ text, partial: partial ?? false })}
+          onSave={async () => {}} onClose={() => {}} />
+      )
+    }
+    const frameSrc = () => document.querySelector('iframe[sandbox]')?.getAttribute('src') ?? null
+    const { rerender } = render(<Host active />, { wrapper })
+    await waitFor(() => expect(frameSrc()).toContain('/api/file-html'))
+    const opened = frameSrc()
+    rerender(<Host active={false} />)
+    const before = readsOf(path)
+    rerender(<Host active />)
+    await waitFor(() => expect(readsOf(path)).toBe(before + 1))
+    await act(async () => {})
+    expect(frameSrc()).toBe(opened)
+    rerender(<Host active={false} />)
+    disk.set(path, '<p>second</p>')
+    rerender(<Host active />)
+    await waitFor(() => expect(frameSrc()).not.toBe(opened))
+  })
+
   it('marks a lossily decoded read partial too: a Latin-1 file shown with replacement characters is not the file as written', async () => {
     const onDiskContent = vi.fn()
     lossyReads.add('/tmp/b.md')

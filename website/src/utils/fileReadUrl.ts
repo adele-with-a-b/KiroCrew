@@ -141,6 +141,15 @@ export function fileStreamUrl(filePath: string): string {
   return withResolve('/api/file-stream?path=' + encodeURIComponent(filePath), filePath)
 }
 
+/** Build the /api/file-html URL — a whole .html file for the viewer's
+ * sandboxed frame. Absolute paths only: the route takes no resolve=1, so a
+ * relative path has no URL here. `version` changes when the file does, so a
+ * rewritten page reloads instead of showing the copy the frame already holds. */
+export function fileHtmlUrl(filePath: string, version: string): string | null {
+  if (!isAbsolutePath(filePath)) return null
+  return '/api/file-html?path=' + encodeURIComponent(filePath) + '&v=' + encodeURIComponent(version)
+}
+
 /** Build the /api/file-office-preview URL — extracts plaintext from a
  * .docx / .pptx for inline preview in the file viewer.
  *

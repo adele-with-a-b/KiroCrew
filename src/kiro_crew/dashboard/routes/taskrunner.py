@@ -56,6 +56,7 @@ def register(app: web.Application) -> None:
     app.router.add_get("/api/file-office-slides", handlers.api_file_office_slides)
     app.router.add_get("/api/file-office-slide", handlers.api_file_office_slide)
     app.router.add_get("/api/file-raw", _local_files(handlers.api_file_raw))
+    app.router.add_get("/api/file-html", _local_files(handlers.api_file_html))
     app.router.add_get("/api/file-stream", _local_files(handlers.api_file_stream))
     app.router.add_get("/api/file-watch", _local_files(handlers.api_file_watch))
     app.router.add_post("/api/file-write", _local_files(handlers.api_file_write))

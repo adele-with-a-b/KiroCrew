@@ -33,6 +33,7 @@ GET_ROUTES = [
     ("/api/file-diff", files_mod.api_file_diff, "path"),
     ("/api/file-download", files_mod.api_file_download, "path"),
     ("/api/file-raw", files_mod.api_file_raw, "path"),
+    ("/api/file-html", files_mod.api_file_html, "path"),
     ("/api/file-stream", files_mod.api_file_stream, "path"),
     ("/api/file-sheet", files_mod.api_file_sheet, "path"),
     ("/api/file-office-preview", files_mod.api_file_office_preview, "path"),
@@ -83,6 +84,8 @@ def planted(tmp_path):
     (tmp_path / "pic.svg").write_text(
         f'<svg xmlns="http://www.w3.org/2000/svg"><text>{SECRET}</text></svg>', encoding="utf-8"
     )
+    # /api/file-html serves only .html.
+    (tmp_path / "page.html").write_text(f"<p>{SECRET}</p>", encoding="utf-8")
     (tmp_path / "sub").mkdir()
     return tmp_path
 
@@ -99,7 +102,7 @@ async def _call(client: TestClient, route: str, kind: str, planted, headers: dic
         return await client.get(
             route, params={"project": str(planted), "q": "notes"}, headers=headers
         )
-    name = "pic.svg" if route == "/api/file-raw" else "notes.txt"
+    name = {"/api/file-raw": "pic.svg", "/api/file-html": "page.html"}.get(route, "notes.txt")
     target = planted if kind == "dir" else planted / name
     return await client.get(route, params={"path": str(target)}, headers=headers)
 
@@ -135,7 +138,13 @@ async def test_owner_passes_the_gate(route, planted):
                 return
             body = await resp.text()
             assert "owner_only" not in body
-            if route in ("/api/file-read", "/api/file-download", "/api/file-raw", "/api/file-grep"):
+            if route in (
+                "/api/file-read",
+                "/api/file-download",
+                "/api/file-raw",
+                "/api/file-html",
+                "/api/file-grep",
+            ):
                 assert resp.status == 200, route
                 assert SECRET in body, route
             if route == "/api/file-kinds":

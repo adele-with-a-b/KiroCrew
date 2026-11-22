@@ -6,7 +6,7 @@ import { api } from '../api/client'
 import { downloadFileName, partialDownloadName } from '../utils/fileReadUrl'
 import { saveBlob } from '../utils/download'
 import { fetchFileRead, fileReadQueryKey, partialReadCause, type PartialCause } from '../utils/fileReadQuery'
-import { documentBodyEpochNow } from '../hooks/usePanelTabs'
+import { documentBodyEpochNow, onDocumentBodiesEvicted } from '../hooks/usePanelTabs'
 import { copyToClipboard } from '../utils/clipboard'
 import { i18nT } from '../i18n/t'
 import type { ReportError } from './useMarkdownPanelFileState'
@@ -155,6 +155,15 @@ export function useMarkdownPanelDisk({ filePath, content, binary, partial, place
   const partialCopy: PartialCause | false = partial || false
   const partialCopyRef = useRef(partialCopy)
   partialCopyRef.current = partialCopy
+  // The capped text of a partial buffer cannot say that the file changed past
+  // the cut, so the whole-file html frame reloads on this count instead: one
+  // per write the watch reports, one per Refresh, and one per purge of
+  // document bodies -- the owner's redaction switch flipped, and the frame's
+  // page was rendered under the pass that was in force before.
+  const [wholeFileRevision, setWholeFileRevision] = useState(0)
+  const bumpWholeFile = useCallback(() => setWholeFileRevision(n => n + 1), [])
+  const bumpOwedRef = useRef(false)
+  useEffect(() => onDocumentBodiesEvicted(bumpWholeFile), [bumpWholeFile])
   /** Whether the buffer IS a copy worth keeping once the file is gone: text the
    *  disk once vouched for. Not the "file not found" sentence the host seeds
    *  into a tab opened on a path already missing (the tab's `placeholder`
@@ -271,9 +280,14 @@ export function useMarkdownPanelDisk({ filePath, content, binary, partial, place
    * (bufferIsLastCopy): a tab seeded with the host's placeholder sentence, or
    * a binary tab, has nothing the banner could truthfully call a last copy. A
    * read that finds the file again clears the banner. */
-  const adoptDisk = useCallback(async (opts?: { quietFailure?: boolean }): Promise<DiskRead['kind']> => {
+  const adoptDisk = useCallback(async (opts?: { quietFailure?: boolean; bumpOnChange?: boolean }): Promise<DiskRead['kind']> => {
+    // Owed until a read lands: a watch frame that supersedes this read takes
+    // the debt over, so a change it applies still reloads the frame.
+    if (opts?.bumpOnChange) bumpOwedRef.current = true
     const disk = await readFromDisk()
     if (disk.kind === 'superseded') return disk.kind
+    const bumpOwed = bumpOwedRef.current
+    bumpOwedRef.current = false
     // Whatever this read answered, the shared cache entry for the path does
     // not outlive it: a body older than the disk (open, then save within the
     // 10 s window) would rehydrate on a reopen, and a cached 404 or failure
@@ -298,10 +312,17 @@ export function useMarkdownPanelDisk({ filePath, content, binary, partial, place
     }
     // The disk says what the tab already shows -- the common outcome of a
     // mount or a return to an unchanged file: current, nothing to restamp.
-    if (disk.kind === 'ok' && (disk.text !== contentRef.current || disk.binary !== binaryRef.current || disk.partial !== partialCopyRef.current)) applyDiskRead(disk)
+    if (disk.kind === 'ok' && (disk.text !== contentRef.current || disk.binary !== binaryRef.current || disk.partial !== partialCopyRef.current)) {
+      // A read the watch did not prompt (a return to the tab, the missing-file
+      // retry) that finds the file changed reloads a partial buffer's frame;
+      // an unchanged read does not, so a plain tab switch keeps its place.
+      const framed = partialCopyRef.current || !!disk.partial
+      applyDiskRead(disk)
+      if (bumpOwed && framed) bumpWholeFile()
+    }
     settleCatchUp(catchUpRef)
     return disk.kind
-  }, [applyDiskRead, evictFileRead, readFromDisk, reportActionError, dirtyRef])
+  }, [applyDiskRead, bumpWholeFile, evictFileRead, readFromDisk, reportActionError, dirtyRef])
   const adoptDiskRef = useRef(adoptDisk)
   adoptDiskRef.current = adoptDisk
 
@@ -352,11 +373,20 @@ export function useMarkdownPanelDisk({ filePath, content, binary, partial, place
     // already covers, is compared.
     (frameText: string, { initial }: FileWatchFrame) => {
       const comparable = initial || !partialCopyRef.current
+      if (!comparable) bumpWholeFile()
       if (comparable && diskReadsInFlightRef.current === 0 && !binaryRef.current && frameText === contentRef.current) return
       void adoptDisk()
     },
-    [adoptDisk],
+    [adoptDisk, bumpWholeFile],
   )
+  // The mount's own read does not count: the frame is loading the file now,
+  // and a stale handed-in buffer would load the whole page twice.
+  const caughtUpOnceRef = useRef(false)
+  const catchUpDisk = useCallback(() => {
+    const bumpOnChange = caughtUpOnceRef.current
+    caughtUpOnceRef.current = true
+    return adoptDisk({ bumpOnChange })
+  }, [adoptDisk])
 
   // The catch-up for a parked watch: a tab that was hidden re-reads its file
   // when it becomes the visible one, so a change made while it held no stream
@@ -390,7 +420,7 @@ export function useMarkdownPanelDisk({ filePath, content, binary, partial, place
     catchUpArmable,
     editing,
     latch: catchUpRef,
-    catchUp: adoptDisk,
+    catchUp: catchUpDisk,
     onFrame: onWatchFrame,
   })
 
@@ -419,7 +449,7 @@ export function useMarkdownPanelDisk({ filePath, content, binary, partial, place
       // render, and an effect keyed on adoptDisk itself would restart before
       // its first read went out.
       if (diskReadsInFlightRef.current === 0) {
-        const verdict = await adoptDiskRef.current({ quietFailure: reported })
+        const verdict = await adoptDiskRef.current({ quietFailure: reported, bumpOnChange: true })
         if (verdict === 'failed') reported = true
       }
       delay = Math.min(delay * 2, MISSING_FILE_RETRY_MAX_MS)
@@ -432,7 +462,7 @@ export function useMarkdownPanelDisk({ filePath, content, binary, partial, place
   return {
     diskReadAbortRef, readFromDisk, missingOnDisk, setMissingOnDisk, partialCopy, partialCopyRef, bufferIsLastCopy,
     lastCopy, downloadLastCopy, lastCopyCopied, copyLastCopy, evictFileRead, applyDiskRead, catchUpRef, adoptDisk,
-    diskTickRef, diffStartTickRef, patchOwedTick,
+    diskTickRef, diffStartTickRef, patchOwedTick, wholeFileRevision, bumpWholeFile,
   }
 }
 
