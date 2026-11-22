@@ -94,9 +94,12 @@ def fork_slug(run: Run = run_git, remote: str = "origin") -> str:
 
 
 def http_json(url: str) -> object:
+    if not url.startswith(f"{API}/"):
+        raise ValueError(f"not a GitHub API address: {url}")
     request = urllib.request.Request(
         url, headers={"Accept": "application/vnd.github+json", "User-Agent": "kc-upstream"}
     )
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the address is checked above to start with the https GitHub API root
     with urllib.request.urlopen(request, timeout=20) as response:
         return json.load(response)
 

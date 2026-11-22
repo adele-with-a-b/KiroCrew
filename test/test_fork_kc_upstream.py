@@ -23,6 +23,7 @@ from kc_upstream.changes import (  # noqa: E402
     first_parent,
     fork_slug,
     git_changes,
+    http_json,
     release_tag,
 )
 
@@ -31,8 +32,8 @@ FORK = "someone/KiroCrew"
 
 
 @pytest.fixture(autouse=True)
-def _state(tmp_path, monkeypatch):
-    monkeypatch.setenv("KC_UPSTREAM_STATE", str(tmp_path / "state"))
+def _state(tmp_path, _floor_monkeypatch):
+    _floor_monkeypatch.setenv("KC_UPSTREAM_STATE", str(tmp_path / "state"))
 
 
 def fake_git(log: str, diffs: dict[str, str] | None = None):
@@ -76,6 +77,11 @@ def test_fork_slug_reads_ssh_and_https_remotes():
     assert fork_slug(lambda args, stdin=None: "https://github.com/someone/KiroCrew\n") == FORK
     with pytest.raises(RuntimeError):
         fork_slug(lambda args, stdin=None: "/srv/git/repo\n")
+
+
+def test_http_json_refuses_an_address_outside_the_github_api():
+    with pytest.raises(ValueError):
+        http_json("file:///etc/hosts")
 
 
 def test_first_parent_skips_the_commits_a_merge_brought_in():
