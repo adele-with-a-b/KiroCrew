@@ -509,6 +509,19 @@ on its next match, never drops the skill.
   window does not hold, so the next match of a recorded skill gets its pointer line
   rather than its body. The agent still learns the skill applies and can read it.
 
+### The conductor context cap
+
+A goal conductor's dashboard chat on KAS or claude (`session.context_cap`,
+[rfc-conductor-context-cap.md](../request-for-change/rfc-conductor-context-cap.md))
+starts a turn on a new session, seeded with a trim note, the session-ledger
+snapshot and a text tail, when its context is over 400K, or over 200K once its
+previous turn ended a cache life ago. That cache life is the backend's own
+(`chat_turn/context_cap._context_cap_cache_secs`): the `PROMPT_CACHE_LIFETIMES`
+table idle compaction reads, so claude is 300 s or 3600 s only when
+`CLAUDE_CODE_PROMPT_CACHE_TTL` names the tier, and KAS, absent from that table,
+keeps its measured 300 s. An unknown life never trims under 400K, because a
+trim on a warm cache drops detail for nothing.
+
 ### What comes back after compaction
 
 kiro-cli compacts its own window and drops the session-start blocks with it.
