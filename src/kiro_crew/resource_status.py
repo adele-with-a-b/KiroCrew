@@ -1318,13 +1318,16 @@ XDIST_AUTO_ENV = "PYTEST_XDIST_AUTO_NUM_WORKERS"
 
 #: Platform-aware assumed steady-state memory of one xdist worker (GB). A
 #: Linux worker running a long suite was measured at ~4.5 GB anonymous RSS (a
-#: host OOM's process table), a macOS one at 14.9-16.1 GB, so no single fixed
-#: number is correct for every host. macOS is sized to that footprint;
-#: Linux/Windows to the measured Linux worker plus headroom. Deliberately
-#: a constant, not a config key -- ``xdist_auto_cap`` is the single operator
-#: knob. Sized identically to the local ``-n auto`` budget (``xdist_budget``)
-#: so the two never disagree.
-_MACOS_XDIST_PER_WORKER_GB = 16.0
+#: host OOM's process table), so Linux/Windows reserve that plus headroom.
+#: On macOS this is the SCOPED worker of ``xdist_budget`` (a run naming a short
+#: list of test files, which is what agents run): this cap is set at spawn,
+#: before anyone knows what the agent will run, so it cannot tell a gate batch
+#: from the full suite. The 16 GB full-suite reservation is applied by
+#: ``xdist_budget`` itself, which sees the run's arguments; a repo without that
+#: budget gets this scoped figure for every run. Deliberately a constant, not a
+#: config key -- ``xdist_auto_cap`` is the single operator knob.
+#: Pinned equal to the budget's constants so the two never disagree.
+_MACOS_XDIST_PER_WORKER_GB = 4.0
 _DEFAULT_XDIST_PER_WORKER_GB = 5.0
 
 

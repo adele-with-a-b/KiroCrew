@@ -151,8 +151,7 @@ def _holding_slots(slot_dir: pathlib.Path, count: int) -> Iterator[subprocess.Po
     session. Yielding from a ``try``/``finally`` means no call site can be
     written without teardown.
     """
-    code = textwrap.dedent(
-        f"""
+    code = textwrap.dedent(f"""
         import os, sys
         sys.path.insert(0, {str(pathlib.Path(ct.__file__).parent)!r})
         sys.path.insert(0, {str(pathlib.Path(ct.__file__).parent.parent / "src")!r})
@@ -165,13 +164,13 @@ def _holding_slots(slot_dir: pathlib.Path, count: int) -> Iterator[subprocess.Po
             held.append(fd)
         print("ready", flush=True)
         sys.stdin.read()
-        """
-    )
+        """)
     proc = subprocess.Popen(
         [sys.executable, "-X", "utf8", "-c", code],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        text=True, encoding="utf-8",
+        text=True,
+        encoding="utf-8",
     )
     try:
         ready = _read_ready_line(proc, _HOLDER_READY_SECONDS)
@@ -225,9 +224,7 @@ def test_slot_dir_separates_hosts_sharing_a_network_home(
 
 
 @pytest.mark.parametrize("raw", ["host-1.example.com", "", "../../etc", "a/b", "  ", "."])
-def test_host_key_is_a_safe_single_path_segment(
-    monkeypatch: pytest.MonkeyPatch, raw: str
-) -> None:
+def test_host_key_is_a_safe_single_path_segment(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
     monkeypatch.setattr(socket, "gethostname", lambda: raw)
     key = ct._host_key()
 
@@ -321,9 +318,7 @@ def test_host_total_gib_falls_back_to_win32_when_sysconf_is_absent(
 def test_claim_alone_takes_the_ceiling(slot_dir: pathlib.Path) -> None:
     assert ct._claim_worker_slots(6, 64) == 6
     assert len(ct._held_slots) == 6
-    assert sorted(p.name for p in slot_dir.iterdir()) == [
-        f"worker-{i:03d}.lock" for i in range(6)
-    ]
+    assert sorted(p.name for p in slot_dir.iterdir()) == [f"worker-{i:03d}.lock" for i in range(6)]
 
 
 def test_claim_respects_the_per_run_cap(slot_dir: pathlib.Path) -> None:
@@ -525,7 +520,9 @@ def test_second_run_takes_what_is_left(budget_host: pathlib.Path) -> None:
         assert ct.resolve_workers() == 3
 
 
-def test_memory_binds_before_cores(budget_host: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_memory_binds_before_cores(
+    budget_host: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """8 GiB cannot back 10 workers, whatever the core count says."""
     monkeypatch.setattr(ct, "_host_total_gib", lambda: 8)
     assert ct.resolve_workers() == 8 // ct._GIB_PER_WORKER
@@ -562,21 +559,25 @@ def test_per_worker_reservation_is_platform_aware(monkeypatch: pytest.MonkeyPatc
     """The fix's core claim: one worker's reservation is not one number.
 
     A long-suite worker holds ~4.5 GiB on Linux but 14.9-16.1 GiB on macOS. The
-    remeasured Linux/Windows divisor is fatally low for macOS -- four ``-n auto``
-    workers reserve 62 GiB on a 36 GiB Mac and the kernel jetsam-kills it --
-    while the macOS figure would clamp a healthy Linux host to a handful of
-    workers, so the default depends on the platform. Both the static and the
-    live reading follow the platform, since they describe the same worker.
+    remeasured Linux/Windows divisor is fatally low for a macOS run over the tree --
+    four ``-n auto`` workers reserve 62 GiB on a 36 GiB Mac and the kernel
+    jetsam-kills it -- while the macOS figure would clamp a healthy Linux host to a
+    handful of workers. On macOS a slot is a scoped worker, and a full-suite worker
+    holds enough slots to reserve the full-suite figure.
     """
     monkeypatch.setattr(ct.platform_compat, "IS_MACOS", True, raising=False)
-    assert ct._gib_per_worker() == ct._MACOS_GIB_PER_WORKER
-    assert ct._gib_per_worker_available() == ct._MACOS_GIB_PER_WORKER
+    assert ct._gib_per_worker() == ct._MACOS_GIB_PER_SCOPED_WORKER
+    assert ct._gib_per_worker_available() == ct._MACOS_GIB_PER_SCOPED_WORKER
+    assert ct._slots_per_worker(True) == 1
+    full = ct._slots_per_worker(False) * ct._gib_per_worker()
+    assert full >= ct._MACOS_GIB_PER_WORKER
+    # The wall against the overshoot: four full-suite workers must not fit the
+    # reporter's 36 GiB host.
+    assert 4 * full > 36
     monkeypatch.setattr(ct.platform_compat, "IS_MACOS", False, raising=False)
     assert ct._gib_per_worker() == ct._GIB_PER_WORKER
     assert ct._gib_per_worker_available() == ct._GIB_PER_WORKER_AVAILABLE
-    # The macOS default is the wall against the overshoot: four workers must not
-    # be granted against the reporter's 36 GiB host.
-    assert 4 * ct._MACOS_GIB_PER_WORKER > 36
+    assert ct._slots_per_worker(True) == ct._slots_per_worker(False) == 1
 
 
 def test_the_live_linux_reservation_is_5_gib_and_matches_the_spawn_cap() -> None:
@@ -584,14 +585,161 @@ def test_the_live_linux_reservation_is_5_gib_and_matches_the_spawn_cap() -> None
 
     A Linux worker was measured at ~4.5 GiB, so 3 GiB admits more workers than
     the host can hold. The agent-spawn cap in ``resource_status`` sizes the
-    same worker, so the two must not drift apart.
+    same worker, so the two must not drift apart. On macOS the spawn cap sizes
+    the scoped worker: it is a ceiling set before anyone knows what the agent will
+    run, and the full-suite reservation is applied here, where the run is known.
     """
     from kiro_crew import resource_status
 
     assert ct._GIB_PER_WORKER_AVAILABLE == 5
     assert ct._GIB_PER_WORKER == ct._GIB_PER_WORKER_AVAILABLE
     assert ct._GIB_PER_WORKER_AVAILABLE == resource_status._DEFAULT_XDIST_PER_WORKER_GB
-    assert ct._MACOS_GIB_PER_WORKER == resource_status._MACOS_XDIST_PER_WORKER_GB
+    assert ct._MACOS_GIB_PER_SCOPED_WORKER == resource_status._MACOS_XDIST_PER_WORKER_GB
+
+
+class _ArgsConfig:
+    """The three attributes of a pytest config that :func:`run_is_scoped` reads."""
+
+    def __init__(self, args: list[str], base: pathlib.Path, source: str = "ARGS") -> None:
+        self.args = args
+        self.args_source = type("_Source", (), {"name": source})()
+        self.invocation_params = type("_Params", (), {"dir": base})()
+
+
+def _test_files(root: pathlib.Path, count: int) -> list[str]:
+    root.mkdir(parents=True, exist_ok=True)
+    for index in range(count):
+        (root / f"test_{index}.py").write_text("", encoding="utf-8")
+    return [f"{root.name}/test_{index}.py" for index in range(count)]
+
+
+def test_a_list_of_test_files_is_scoped(tmp_path: pathlib.Path) -> None:
+    files = _test_files(tmp_path / "t", 3)
+    assert ct.run_is_scoped(_ArgsConfig(files, tmp_path))
+    # A node id counts as its file.
+    assert ct.run_is_scoped(_ArgsConfig([files[0] + "::test_x[1]", files[1]], tmp_path))
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["no config", "testpaths", "a directory", "a missing file", "a module name", "too many files"],
+)
+def test_anything_but_a_short_file_list_is_sized_as_the_full_suite(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, shape: str
+) -> None:
+    """The failure direction of every unknown shape is the full-suite reservation."""
+    monkeypatch.setattr(ct, "_SCOPED_MAX_FILES", 3)
+    files = _test_files(tmp_path / "t", 4)
+    config = {
+        "no config": None,
+        "testpaths": _ArgsConfig(["t"], tmp_path, source="TESTPATHS"),
+        "a directory": _ArgsConfig([files[0], "t"], tmp_path),
+        "a missing file": _ArgsConfig([files[0], "t/test_gone.py"], tmp_path),
+        "a module name": _ArgsConfig(["kiro_crew.session"], tmp_path),
+        "too many files": _ArgsConfig(files, tmp_path),
+    }[shape]
+    assert not ct.run_is_scoped(config)
+    assert ct.run_is_scoped(_ArgsConfig(files[:3], tmp_path))
+
+
+@pytest.fixture
+def mac_host(budget_host: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """The Mac the gate runs on: 18 cores, 48 GiB, so 12 slots of 4 GiB."""
+    monkeypatch.setattr(ct.platform_compat, "IS_MACOS", True, raising=False)
+    monkeypatch.setattr(os, "cpu_count", lambda: 18)
+    monkeypatch.setattr(ct, "_host_total_gib", lambda: 48)
+    budget_host.mkdir(parents=True, exist_ok=True)
+    return budget_host
+
+
+def _scoped(tmp_path: pathlib.Path) -> _ArgsConfig:
+    return _ArgsConfig(_test_files(tmp_path / "t", 2), tmp_path)
+
+
+def test_issue_10061_a_full_run_on_a_36_gib_mac_never_gets_four_workers(
+    budget_host: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The jetsam kill this reservation exists for: four full-suite workers on 36 GiB."""
+    monkeypatch.setattr(ct.platform_compat, "IS_MACOS", True, raising=False)
+    monkeypatch.setattr(os, "cpu_count", lambda: 12)
+    monkeypatch.setattr(ct, "_host_total_gib", lambda: 36)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert ct.resolve_workers() == 2
+    assert len(ct._held_slots) == 2 * ct._slots_per_worker(False)
+
+
+def test_issue_10061_the_live_bound_sizes_a_full_run_at_16_gib(
+    mac_host: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ct, "_host_available_mib", lambda: 20 * 1024)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert ct.resolve_workers() == 1
+
+
+def test_a_gate_batch_on_the_mac_gets_its_cap(
+    mac_host: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gate batch on that Mac gets local-gate.py's cap, not "1 of 18 workers"."""
+    monkeypatch.setenv(ct._XDIST_ENV_CAP, "6")  # local-gate.py's cap on 18 cores
+    monkeypatch.setattr(ct, "_host_available_mib", lambda: 24 * 1024)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert ct.resolve_workers(_scoped(tmp_path)) == 6
+    assert len(ct._held_slots) == 6
+
+
+def test_the_live_bound_sizes_a_gate_batch_at_the_scoped_reservation(
+    mac_host: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ct, "_host_available_mib", lambda: 10 * 1024)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert ct.resolve_workers(_scoped(tmp_path)) == 10 // ct._MACOS_GIB_PER_SCOPED_WORKER
+
+
+def test_a_full_run_beside_two_gates_gets_only_what_they_left(mac_host: pathlib.Path) -> None:
+    """Two gates hold 6 slots each: nothing is left, so the full run floors at one."""
+    with _holding_slots(mac_host, 12):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert ct.resolve_workers() == 1
+
+
+def test_a_full_run_returns_slots_that_do_not_make_a_whole_worker(mac_host: pathlib.Path) -> None:
+    """One gate holds 6 of 12: 6 left back one 4-slot worker, and 2 go back to the pool."""
+    with _holding_slots(mac_host, 6):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert ct.resolve_workers() == 1
+    assert len(ct._held_slots) == ct._slots_per_worker(False)
+
+
+def test_a_gate_beside_a_full_run_gets_only_what_it_left(
+    mac_host: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
+    """A full run alone holds all 12 slots for its 3 workers, so a gate floors at one."""
+    config = _scoped(tmp_path)
+    with _holding_slots(mac_host, 12):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert ct.resolve_workers(config) == 1
+
+
+def test_an_explicit_full_n_beside_a_gate_stays_inside_the_memory_range(
+    mac_host: pathlib.Path,
+) -> None:
+    """``-n 4`` over the tree beside a gate holding 6 of 12 slots: one worker, 4 slots."""
+    with _holding_slots(mac_host, 6):
+        with pytest.warns(UserWarning, match="other runs on this host hold the rest"):
+            assert ct.claim_explicit_workers(4) == 1
+    assert len(ct._held_slots) == ct._slots_per_worker(False)
+
+
+def test_an_explicit_scoped_n_takes_one_slot_per_worker(mac_host: pathlib.Path) -> None:
+    assert ct.claim_explicit_workers(6, scoped=True) == 6
+    assert len(ct._held_slots) == 6
 
 
 def test_a_starved_host_floors_at_one_worker_instead_of_refusing(
@@ -608,7 +756,9 @@ def test_a_starved_host_floors_at_one_worker_instead_of_refusing(
     assert ct.resolve_workers() == 1
 
 
-def test_env_cap_lowers_the_ceiling(budget_host: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_cap_lowers_the_ceiling(
+    budget_host: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(ct._MAX_WORKERS_ENV, "3")
     assert ct.resolve_workers() == 3
 
@@ -872,13 +1022,20 @@ def test_the_explicit_n_hook_runs_before_xdist_turns_n_into_tx(
     assert ours[0] > xdist[0], [impl.plugin_name for impl in impls]
 
 
-def test_a_real_explicit_n_run_is_clamped_by_held_slots(tmp_path: pathlib.Path) -> None:
+def test_a_real_explicit_n_run_is_clamped_by_held_slots(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """End to end, through pytest and xdist: ``-n 3`` on a host whose slots are all held.
 
     Red on old code, where the explicit count skipped the pool and spawned 3 workers.
     The parent computes the same static capacity the child will, holds every slot, and
     the child must start exactly one worker.
+
+    The child runs on the real platform, so the parent undoes this file's Linux pin
+    before it counts: on macOS the child's range is ``48 GiB / 4`` slots, not ``/ 5``,
+    and the slots the parent left unheld would let the child start all three.
     """
+    monkeypatch.setattr(ct.platform_compat, "IS_MACOS", sys.platform == "darwin", raising=False)
     slot_root = tmp_path / "slots"
     slot_dir = slot_root / ct._host_key()
     slot_dir.mkdir(parents=True)

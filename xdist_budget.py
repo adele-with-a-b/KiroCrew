@@ -120,25 +120,96 @@ _GIB_PER_WORKER_AVAILABLE = 5
 # on Linux but 14.9-16.1 GiB on macOS (issue #10061), where four workers granted
 # by ``-n auto`` reserved 62 GiB on a 36 GiB host and the kernel jetsam-killed
 # it. A single constant cannot be right for both: 5 GiB is fatally low for a
-# macOS worker, and 16 would clamp a healthy Linux host to a handful of workers
-# for no reason. So the reservation is PLATFORM-AWARE -- macOS uses 16 GiB, every
-# other platform keeps the remeasured Linux/Windows number above. Still a
-# constant, not a config key: ``xdist_auto_cap`` remains the single operator
-# knob. The static and live axes stay distinct (they describe the same worker
-# but differ in KIND, per the comments above); each is selected for the
-# platform, so on macOS both become 16 and the aggregate ``N x per-worker <=
-# memory`` can never grant four workers against the reporter's 36 GiB host.
+# macOS worker on a run over the tree, and 16 would clamp a healthy Linux host
+# to a handful of workers for no reason. Still constants, not config keys:
+# ``xdist_auto_cap`` remains the single operator knob.
+#
+# On macOS the reservation also follows the RUN, because what a worker holds
+# scales with what it collects. #10061 was the FULL suite: every worker collects
+# every testpath (283,605 items at the last re-measure, ~3 GiB of item tree
+# before a test runs) and then runs a quarter of it. A related-set batch from
+# ``scripts/local-gate.py`` names at most a few hundred test files -- its argv
+# is capped at ``ARGV_CHAR_LIMIT`` characters. Measured 2026-11-22 on a 48 GiB /
+# 18-core Mac, one 651-file batch (26,375 tests): at ``-n 4`` the four workers
+# peaked at 1,477-1,923 MiB RSS and the run took 765 s; at ``-n 1`` the one
+# worker running all of it peaked at 4,156 MiB and took 2,219 s. Reserving
+# 16 GiB per worker had clamped every such gate on that Mac to one worker of 18
+# with the CPU 73% idle.
+#
+# So a run that names at most ``_SCOPED_MAX_FILES`` existing test files
+# (:func:`run_is_scoped`) reserves ``_MACOS_GIB_PER_SCOPED_WORKER``, about twice
+# the ``-n 4`` per-worker peak. shortcut: a lone worker running a whole batch
+# holds about 1x this (4,156 MiB), because a worker's share shrinks as workers
+# are added. 8 GiB would cover it, but the spawn cap in ``resource_status``
+# divides half the free memory by this same figure, so at 8 an agent shell on a
+# 48 GiB Mac gets one worker below 32 GB free. Raise it only with a per-width
+# reservation, if one-worker batch runs start to swap. Anything else -- no
+# arguments (the testpaths), a directory, a module path, more files than that -- keeps the
+# 16 GiB #10061 measured. Identity is positive: a run that cannot be shown to be
+# a small file list gets the full-suite reservation.
+#
+# Both shapes share ONE slot pool, so the pool is counted in the small unit:
+# one slot is ``_MACOS_GIB_PER_SCOPED_WORKER`` of RAM and a full-suite worker
+# holds ``_slots_per_worker(False)`` of them. That keeps the aggregate
+# ``slots x unit <= memory`` true across a mix of runs, and a full run on the
+# reporter's 36 GiB host still gets at most 9 // 4 = 2 workers, never four.
 _MACOS_GIB_PER_WORKER = 16
+_MACOS_GIB_PER_SCOPED_WORKER = 4
+#: The most test files a run may name and still count as scoped. Every batch
+#: ``local-gate.py`` forms stays under it (the largest seen was 658 files), and
+#: the measurement above was a 651-file batch; a longer list is unmeasured, so
+#: it takes the full-suite reservation.
+_SCOPED_MAX_FILES = 700
 
 
 def _gib_per_worker() -> int:
-    """Per-worker reservation for the STATIC (total-RAM / cgroup) readings."""
-    return _MACOS_GIB_PER_WORKER if platform_compat.IS_MACOS else _GIB_PER_WORKER
+    """GiB one slot reserves against the STATIC (total-RAM / cgroup) readings.
+
+    A worker holds :func:`_slots_per_worker` slots. On Linux and Windows that is
+    one, so a slot is a worker; on macOS a slot is a scoped worker.
+    """
+    return _MACOS_GIB_PER_SCOPED_WORKER if platform_compat.IS_MACOS else _GIB_PER_WORKER
 
 
 def _gib_per_worker_available() -> int:
-    """Per-worker reservation for the LIVE (currently-available) reading."""
-    return _MACOS_GIB_PER_WORKER if platform_compat.IS_MACOS else _GIB_PER_WORKER_AVAILABLE
+    """GiB one slot reserves against the LIVE (currently-available) reading."""
+    return _MACOS_GIB_PER_SCOPED_WORKER if platform_compat.IS_MACOS else _GIB_PER_WORKER_AVAILABLE
+
+
+def _slots_per_worker(scoped: bool) -> int:
+    """How many slots one worker of this run holds: 1, except a macOS run over the tree."""
+    if scoped or not platform_compat.IS_MACOS:
+        return 1
+    return -(-_MACOS_GIB_PER_WORKER // _gib_per_worker())  # ceiling division
+
+
+def run_is_scoped(config: object | None) -> bool:
+    """True when the run names at most ``_SCOPED_MAX_FILES`` test files and nothing else.
+
+    Every command-line argument must be an existing FILE (a ``file::test`` node id
+    counts as its file). No arguments means pytest fell back to ``testpaths``, the
+    full suite; a directory, a ``--pyargs`` module or a missing path cannot be sized
+    from here. All of those answer False, which is the full-suite reservation: the
+    failure direction is a slower run, never an over-granted one.
+    """
+    args = getattr(config, "args", None)
+    source = getattr(getattr(config, "args_source", None), "name", None)
+    if not args or source != "ARGS":
+        return False
+    invocation = getattr(getattr(config, "invocation_params", None), "dir", None)
+    base = pathlib.Path(invocation) if invocation else pathlib.Path.cwd()
+    files: set[pathlib.Path] = set()
+    for arg in args:
+        path = base / str(arg).split("::", 1)[0]
+        try:
+            if not path.is_file():
+                return False
+            files.add(path.resolve())
+        except (OSError, RuntimeError, ValueError):
+            return False
+        if len(files) > _SCOPED_MAX_FILES:
+            return False
+    return True
 
 
 # Lock files this process holds for its whole lifetime -- the fds MUST stay open,
@@ -340,9 +411,13 @@ def _static_memory_bounded_capacity(cores: int) -> int:
 
     Total RAM stays in GiB because a machine with under 1 GiB of RAM in total is not a
     configuration this suite runs on, and its unit is pinned by existing tests.
+
+    The answer is in SLOTS (see :func:`_slots_per_worker`), so the core bound is
+    scaled by the most slots one worker can hold: a core count is a bound on
+    workers, and a full-suite macOS worker holds several slots.
     """
     return _bounded_by(
-        cores,
+        cores * _slots_per_worker(False),
         (
             (_host_total_gib() * 1024, _gib_per_worker()),
             (_cgroup_limit_mib(), _gib_per_worker()),
@@ -350,7 +425,7 @@ def _static_memory_bounded_capacity(cores: int) -> int:
     )
 
 
-def _live_memory_bounded_cap(cap: int) -> int:
+def _live_memory_bounded_cap(cap: int, slots_per_worker: int = 1) -> int:
     """*cap*, reduced by what is free on the host RIGHT NOW.
 
     Deliberately applied to the per-run cap and NOT to the shared slot range. The
@@ -359,12 +434,21 @@ def _live_memory_bounded_cap(cap: int) -> int:
     later run to one worker while most of the machine sits idle. A cap is the right
     place for a transient reading: it throttles THIS run without reshaping the namespace
     every other run has to agree on.
+
+    *cap* is in workers, and one worker of this run reserves *slots_per_worker* slots.
     """
-    return _bounded_by(cap, ((_host_available_mib(), _gib_per_worker_available()),))
+    reading = (_host_available_mib(), _gib_per_worker_available() * slots_per_worker)
+    return _bounded_by(cap, (reading,))
 
 
-def _claim_worker_slots(capacity: int, cap: int, shared: int | None = None) -> int:
-    """Take up to ``cap`` of the host's ``capacity`` worker slots and HOLD them.
+def _claim_worker_slots(
+    capacity: int, cap: int, shared: int | None = None, slots_per_worker: int = 1
+) -> int:
+    """Take slots for up to ``cap`` workers out of the host's ``capacity`` and HOLD them.
+
+    Each worker holds ``slots_per_worker`` slots, so ``cap`` is in workers and
+    ``capacity`` and ``shared`` are in slots. Slots that do not make up a whole
+    worker are released again, except at the one-worker floor.
 
     With ``shared``, slots from index ``shared`` on are taken only when this run got
     every slot below it, so a range wider than the shared one never adds workers
@@ -390,14 +474,16 @@ def _claim_worker_slots(capacity: int, cap: int, shared: int | None = None) -> i
     was defunct -- and every one of those cleanup paths produced a real bug. A
     held lock needs none of it.
 
-    Returns the number of slots taken, at least 1: a run arriving at a genuinely
-    full host proceeds single-worker rather than stalling.
+    Returns the number of workers the held slots back, at least 1: a run arriving
+    at a genuinely full host proceeds single-worker rather than stalling.
     """
+    per = max(1, slots_per_worker)
+    fail_open = min(max(1, capacity // per), cap)
     if _held_slots:
         # Already claimed in this process. Re-locking would fail: flock treats
         # two fds on one file as independent even within the same process, so a
         # second pass would take nothing and collapse the run to one worker.
-        return len(_held_slots)
+        return max(1, len(_held_slots) // per)
     try:
         # Resolution itself must be inside the guard: Path.home() raises
         # RuntimeError when the home directory cannot be determined, and
@@ -407,16 +493,16 @@ def _claim_worker_slots(capacity: int, cap: int, shared: int | None = None) -> i
         # Refuse a symlink at either level: the root is caller-supplied via
         # KIROCREW_TEST_SLOT_DIR and could redirect our writes.
         if root.exists() and root.is_symlink():
-            return min(capacity, cap)
+            return fail_open
         slot_dir.mkdir(parents=True, exist_ok=True)
         if slot_dir.is_symlink() or not slot_dir.is_dir():
-            return min(capacity, cap)
+            return fail_open
     except (OSError, RuntimeError, ValueError):
-        return min(capacity, cap)  # fail open to the unbudgeted ceiling
+        return fail_open  # fail open to the unbudgeted ceiling
 
     taken = 0
     for index in range(capacity):
-        if taken >= cap or (index == shared and taken < index):
+        if taken >= cap * per or (index == shared and taken < index):
             break
         try:
             fd = os.open(str(_slot_path(slot_dir, index)), os.O_CREAT | os.O_RDWR, 0o600)
@@ -451,10 +537,14 @@ def _claim_worker_slots(capacity: int, cap: int, shared: int | None = None) -> i
             taken += 1
         else:
             os.close(fd)
-    return max(1, taken)
+    workers = taken // per
+    if workers:
+        while len(_held_slots) > workers * per:
+            _release_one(_held_slots.pop())
+    return max(1, workers)
 
 
-def _warn_if_clamped(resolved: int, cap: int, unbudgeted: int) -> None:
+def _warn_if_clamped(resolved: int, cap: int, unbudgeted: int, slots_per_worker: int = 1) -> None:
     """Say why parallelism is lower than the core count, if it is.
 
     A run that quietly drops from 10 workers to 1 is indistinguishable from a hang:
@@ -475,7 +565,8 @@ def _warn_if_clamped(resolved: int, cap: int, unbudgeted: int) -> None:
         warnings.warn(
             f"xdist worker budget: {cap} of {unbudgeted} workers ({free}, "
             f"{_host_total_gib()} GiB installed). Each worker needs about "
-            f"{_gib_per_worker_available()} GiB, mostly to collect the suite. A run this "
+            f"{_gib_per_worker_available() * slots_per_worker} GiB, mostly to collect the "
+            "suite. A run this "
             "narrow is slow, not stuck -- free some memory, or run a subset "
             "(pytest test/test_thing.py).",
             stacklevel=1,
@@ -488,7 +579,7 @@ def _warn_if_clamped(resolved: int, cap: int, unbudgeted: int) -> None:
         )
 
 
-def resolve_workers() -> int:
+def resolve_workers(config: object | None = None) -> int:
     """Budget the worker count for ``-n auto`` (and ``-n logical``).
 
     Two separate quantities.
@@ -542,6 +633,9 @@ def resolve_workers() -> int:
 
     An explicit ``-n <N>`` does not come through here; it claims slots from the
     same pool through :func:`claim_explicit_workers`.
+
+    *config* is the pytest config, read only by :func:`run_is_scoped` to size a
+    macOS worker by what the run names; without it the run is sized as the full suite.
     """
     # The two memory bounds go to different places, and which one goes where is the
     # whole correctness argument. The STATIC bound shapes the shared slot range, so the
@@ -550,6 +644,7 @@ def resolve_workers() -> int:
     # namespace every other run has to agree on -- slots fill from index 0, so a shrunken
     # range excludes exactly the slots an earlier run left free.
     cores = os.cpu_count() or 1
+    per = _slots_per_worker(run_is_scoped(config))
     # What the run would have got with no memory reading and no contention. Only used
     # to decide whether to SAY something, never to grant.
     unbudgeted = min(cores, max(1, _int_env(_MAX_WORKERS_ENV, _DEFAULT_WORKER_CAP)))
@@ -559,13 +654,13 @@ def resolve_workers() -> int:
     # suite, which is what a negative value would do once floored at one worker.
     raw_env_cap = _int_env(_XDIST_ENV_CAP, 0)
     env_cap = raw_env_cap if raw_env_cap > 0 else unbudgeted
-    cap = _live_memory_bounded_cap(min(capacity, unbudgeted, env_cap))
-    resolved = _claim_worker_slots(capacity, cap)
-    _warn_if_clamped(resolved, cap, unbudgeted)
+    cap = _live_memory_bounded_cap(min(capacity // per, unbudgeted, env_cap), per)
+    resolved = _claim_worker_slots(capacity, cap, slots_per_worker=per)
+    _warn_if_clamped(resolved, cap, unbudgeted, per)
     return resolved
 
 
-def claim_explicit_workers(requested: int) -> int:
+def claim_explicit_workers(requested: int, scoped: bool = False) -> int:
     """Hold host slots for an explicit ``-n N`` too, and clamp N to what was free.
 
     An explicit count used to skip the pool entirely. That is how one ``pytest -n 16``
@@ -581,6 +676,7 @@ def claim_explicit_workers(requested: int) -> int:
     worker, like every other path here.
 
     ``KIROCREW_TEST_SLOTS_BYPASS=1`` skips the claim and returns N unchanged.
+    *scoped* is :func:`run_is_scoped` for the run; it sets how many slots a worker holds.
     """
     if requested < 1 or os.environ.get(_EXPLICIT_BYPASS_ENV) == "1":
         return requested
@@ -589,13 +685,14 @@ def claim_explicit_workers(requested: int) -> int:
     # the memory-bounded capacity is smaller: a CI shard that runs -n 2 on a 16 GiB
     # macOS runner keeps its 2 workers when it is alone. Beside another run it stays
     # inside the memory-bounded range, so the two never exceed it together.
+    per = _slots_per_worker(scoped)
     static = _static_memory_bounded_capacity(cores)
-    capacity = max(static, min(requested, cores))
-    granted = _claim_worker_slots(capacity, requested, shared=static)
+    capacity = max(static, min(requested, cores) * per)
+    granted = _claim_worker_slots(capacity, requested, shared=static, slots_per_worker=per)
     if granted < requested:
         why = (
             "other runs on this host hold the rest"
-            if granted < capacity
+            if granted < min(requested, cores)
             else f"this host has {cores} cores"
         )
         warnings.warn(
@@ -619,7 +716,7 @@ def budget_explicit_workers(config: object) -> None:
     requested = getattr(option, "numprocesses", None)
     if type(requested) is not int or requested < 1 or hasattr(config, "workerinput"):
         return
-    setattr(option, "numprocesses", claim_explicit_workers(requested))
+    setattr(option, "numprocesses", claim_explicit_workers(requested, run_is_scoped(config)))
 
 
 def release_worker_slots() -> None:
@@ -630,9 +727,13 @@ def release_worker_slots() -> None:
     interpreter teardown, and is a no-op in xdist workers, which hold no slots.
     """
     while _held_slots:
-        fd = _held_slots.pop()
-        platform_compat.release_lock(fd)
-        try:
-            os.close(fd)
-        except OSError:
-            pass
+        _release_one(_held_slots.pop())
+
+
+def _release_one(fd: int) -> None:
+    """Unlock and close one held slot fd."""
+    platform_compat.release_lock(fd)
+    try:
+        os.close(fd)
+    except OSError:
+        pass
