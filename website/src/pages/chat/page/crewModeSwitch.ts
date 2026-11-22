@@ -11,15 +11,19 @@
  * The task board is the side panel's Board tab (`workers`, the conductor mode crew
  * view). It is opened the way
  * every other caller outside the panel opens a view (open the panel, then
- * `openView`), and only for a ROOT session (`isRootSession`): any other session
- * has no Overview of its own, and the gateway would refuse the read.
+ * `openView`), and only for a ROOT session: any other session has no Board of
+ * its own, and the gateway would refuse the read. A chat already in Crew Mode is
+ * a root when the gateway stamps it one (`crew_mode_root`), the settled lineage
+ * the Board's own route reads, so a chat `session_release` let go counts; a chat
+ * not on a conductor yet carries no stamp, and its birth fields
+ * (`isRootSession`) decide.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatSlot } from '../../../types'
 import { dropPanelViews, panelStripOf, type ViewKind } from '../../../hooks/usePanelTabs'
 import { useAppDispatch, useAppSelector } from '../../../store'
 import { closeActivityPanel, hasSavedActivityOpen, openActivityPanel } from '../../../store/chatSlice'
-import { crewModeAgent, gatewayRunsCrewMode, isDefaultAgentName, memoryModeAllowsCrewMode, runsConductor, runsCrewMode } from '../../../lib/crewMode'
+import { crewModeAgent, crewModeRoot, gatewayRunsCrewMode, isDefaultAgentName, memoryModeAllowsCrewMode, runsConductor, runsCrewMode } from '../../../lib/crewMode'
 import { isRootSession } from '../command-center/model'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 
@@ -65,7 +69,11 @@ export function useCrewModeSwitch({ currentSlot, defaultAgent, hasUserMessage, s
   const crewModeOn = plainChat && runsCrewMode(currentSlot?.agent, currentSlot?.agent_kind, currentSlot?.crew_mode_agent)
   const crewModeEligible = plainChat && !runsConductor(defaultAgent, 'template')
     && (crewModeOn || (currentSlot?.agent_kind !== 'member' && isDefaultAgentName(currentSlot?.agent ?? '', defaultAgent)))
-  const taskBoardOffered = (crewModeEligible || crewModeOn) && isRootSession(currentSlot)
+  // The gateway's stamp is read only on a chat that runs Crew Mode: a released
+  // chat's birth `created_by` stays, so the birth fields alone would hold it a
+  // worker for good. A child nothing released carries no stamp, as before.
+  const isRoot = isRootSession(currentSlot) || (crewModeOn && crewModeRoot(currentSlot))
+  const taskBoardOffered = (crewModeEligible || crewModeOn) && isRoot
   // The welcome page's Board button: the panel on the Board tab (`workers`), in
   // front. On a phone too, as the panel sheet: the person pressed it.
   const openTaskBoard = useCallback(() => {
@@ -98,7 +106,7 @@ export function useCrewModeSwitch({ currentSlot, defaultAgent, hasUserMessage, s
   // on the chat.
   const isMobile = useIsMobile()
   const enteredKey = useRef<string | null>(null)
-  const rootKey = crewModeOn && isRootSession(currentSlot) ? currentSlot!.key : null
+  const rootKey = crewModeOn && isRoot ? currentSlot!.key : null
   useEffect(() => {
     if (!rootKey || enteredKey.current === rootKey) { if (!rootKey) enteredKey.current = null; return }
     enteredKey.current = rootKey
@@ -180,7 +188,7 @@ export function useCrewModeSwitch({ currentSlot, defaultAgent, hasUserMessage, s
   // A plain ROOT chat that already has a message can still be turned into a
   // conductor mode chat (one way: the gateway then locks it on the conductor). A
   // crew member's chat is not a root, so it never offers this.
-  const crewModeMidChat = crewModeEligible && !crewModeChosen && hasUserMessage && isRootSession(currentSlot)
+  const crewModeMidChat = crewModeEligible && !crewModeChosen && hasUserMessage && isRoot
   return {
     crewModeEligible, crewModeOn, crewModeChosen, crewModeLeaving, crewModeSwitching, turnOnCrewMode, crewModeMidChat,
     turnOffCrewMode: crewModeCancellable ? turnOffCrewMode : undefined,
