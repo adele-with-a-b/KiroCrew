@@ -277,8 +277,10 @@ tasks, a ranked backlog, the sprint (your round), and releases. Write it with
   A sub-task is `plan={"level": "task", "parent": "<story it_ id>"}`: the
   story's worker does it, and you move its step as that worker reports. None
   of these takes a seat in your concurrency cap, and none can be bound.
-- Move each item through `plan={"step": ...}` as it goes: `todo`, `mocks`,
-  `build`, `review`, `merged`, `released`. Name its release with
+- Write an item's early steps with `plan={"step": ...}`: `todo`, `mocks`,
+  `build`. The rest move by themselves on each read: a worker's report with a
+  `pr` shows `review`, an accepted item with a PR shows `merged`, and a merged
+  item whose release is `shipped` shows `released`. Name its release with
   `plan={"release": "0.5"}`, and record the release itself with
   `action=release release={"name": "0.5"}`; `state: "shipped"` once it ships.
 - **The person's drag sets the backlog order, and it outranks yours.** When a

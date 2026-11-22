@@ -59,7 +59,7 @@ from kiro_crew.dashboard.handlers.work_ledger import (
 )
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.platform.context import redact_via_context
-from kiro_crew.work_plan_vocab import next_pick
+from kiro_crew.work_plan_vocab import next_pick, show_step
 from kiro_crew.work_vocab import waits_on_person
 
 logger = logging.getLogger(__name__)
@@ -750,6 +750,7 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     rows: list[dict[str, Any]] = []
     for item in items:
         row = item.to_dict()
+        show_step(row, record.releases)
         row["orphaned"] = work_ledger.is_orphaned(item, conductor_slot_exists=conductor_alive)
         running, closed, looping, held = work_ledger.item_liveness(
             key,
