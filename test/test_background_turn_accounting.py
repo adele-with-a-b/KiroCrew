@@ -827,3 +827,90 @@ class TestFaultyConverterFallsBackToCredits(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(persist.await_count, 1)
         self.assertEqual(persist.await_args.args[2].credits, 3.5)
+
+
+class _ModelClient(_Client):
+    """A background client that records the model switches made on it."""
+
+    def __init__(self, *, refuse: bool = False) -> None:
+        super().__init__()
+        self.models: list[str] = []
+        self.order: list[str] = []
+        self._refuse = refuse
+
+    async def set_model(self, model: str) -> None:
+        self.order.append("set_model")
+        if self._refuse:
+            raise RuntimeError("model not served")
+        self.models.append(model)
+
+
+def _live_background_role(model: str):
+    """Patch the live snapshot so ``agent.role_models.background`` resolves to *model*."""
+    agent = SimpleNamespace(resolve_model=lambda role: model if role == "background" else "auto")
+    return patch("kiro_crew.config.live.snapshot", lambda: SimpleNamespace(agent=agent))
+
+
+class TestBackgroundTurnRunsOnTheRoleModel(unittest.IsolatedAsyncioTestCase):
+    """A warm ``_consolidate`` runtime kept the model it started on, so a
+    background role pin set later never reached consolidation (11-22: every
+    ``bg:consolidation`` row said ``model: default`` after ``background`` was
+    pinned to ``sonnet``)."""
+
+    async def _consolidate(self, client: _ModelClient) -> list[str]:
+        from kiro_crew.history_consolidation import HistoryConsolidator
+
+        consolidator = HistoryConsolidator.__new__(HistoryConsolidator)
+        consolidator._sessions = _Sessions(client)
+
+        async def _stream(*_a, **_kw):
+            client.order.append("prompt")
+            return {"history_entry": "extracted"}
+
+        with (
+            patch(_USAGE_TARGET),
+            patch("kiro_crew.history_consolidation._facade_stream_and_collect_json", _stream),
+        ):
+            self.assertEqual(
+                await consolidator._call_llm("extract"), {"history_entry": "extracted"}
+            )
+        return client.order
+
+    async def test_consolidation_switches_to_the_pinned_role_model_before_its_prompt(self):
+        client = _ModelClient()
+        with _live_background_role("sonnet"):
+            order = await self._consolidate(client)
+        self.assertEqual(client.models, ["sonnet"])
+        self.assertEqual(order, ["set_model", "prompt"])
+
+    async def test_an_unpinned_role_leaves_the_session_model_alone(self):
+        client = _ModelClient()
+        with _live_background_role("auto"):
+            order = await self._consolidate(client)
+        self.assertEqual(order, ["prompt"])
+
+    async def test_a_refused_switch_still_runs_the_turn(self):
+        client = _ModelClient(refuse=True)
+        with _live_background_role("sonnet"):
+            order = await self._consolidate(client)
+        self.assertEqual(order, ["set_model", "prompt"])
+
+    async def test_every_background_agent_turn_takes_the_pin(self):
+        """The shared ``_bg`` key too: the skill judges and auto-title pass no agent
+        or ``kirocrew-lite``, and all run on the background role."""
+        client = _ModelClient()
+        sessions = _Sessions(client)
+        with patch(_USAGE_TARGET), _live_background_role("sonnet"):
+            async with background_turn(sessions, task="skill_dedupe", agent="kirocrew-lite"):
+                pass
+            async with background_turn(sessions, task="chat_auto_title"):
+                pass
+        self.assertEqual(client.models, ["sonnet", "sonnet"])
+
+    async def test_another_agent_keeps_its_own_model(self):
+        client = _ModelClient()
+        sessions = _Sessions(client)
+        with patch(_USAGE_TARGET), _live_background_role("sonnet"):
+            async with background_turn(sessions, task="other", agent="some-member"):
+                pass
+        self.assertEqual(client.models, [])

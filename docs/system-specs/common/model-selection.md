@@ -784,7 +784,16 @@ its own once the cache refreshes with a list that carries it.
   `agent.role_models.<role>` (`background`, `subagent`), read by
   `AgentConfig.resolve_model(role)` in `config/sections_agent.py`. Roles default to
   `"auto"` and deliberately do NOT inherit `agent.model`, so a user's chat model
-  does not silently become the price of every background task. The sessions a
+  does not silently become the price of every background task. A warm background
+  runtime (`_bg`, `_consolidate`) keeps the model it started on, and each fresh
+  conversation reopens on it, so the `background` pin is applied per turn:
+  `background_turn` (`llm_helpers_parts/background_turns.py`) switches a turn on
+  the background agent to the pin before it is yielded (history consolidation,
+  the skill dedupe and merge judges, channel auto-titles), read from the live
+  snapshot so a change applies on the next turn. An unpinned role (`"auto"`)
+  switches nothing, and a pin the backend refuses leaves the turn on the
+  session's current model with a warning. The decisions judge passes the same
+  pin to `run_bg_oneliner` itself; the other one-liners name their own model. The sessions a
   Bot dispatches with `session_create` are the one decided exception
   ([rfc-worker-model-inheritance](../../request-for-change/rfc-worker-model-inheritance.md)):
   they take a copy, made at creation, of the BOT profile's explicit model

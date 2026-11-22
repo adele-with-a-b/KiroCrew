@@ -610,6 +610,55 @@ async def _lite_spec_unconfirmed(
     return confirmed is not True
 
 
+async def _background_role_pin() -> str:
+    """``agent.role_models.background`` when it names a model, else ``""``.
+
+    ``"auto"`` (the unpinned default) answers ``""``: the session keeps the model it
+    started on, as it did before the pin was read here. The live snapshot is read
+    when the process has a watcher, so a change applies on the next turn; otherwise
+    the file, off the loop. Never raises.
+    """
+    from kiro_crew.config.sections_defaults import DEFAULT_MODEL
+
+    try:
+        from kiro_crew.config import live
+
+        cfg = live.snapshot()
+        if cfg is None:
+            from kiro_crew.config.loader import KiroCrewConfig
+
+            cfg = await asyncio.to_thread(KiroCrewConfig.load)
+        model = str(cfg.agent.resolve_model("background") or "")
+    except Exception:
+        logger.debug("background role model unreadable", exc_info=True)
+        return ""
+    return "" if model == DEFAULT_MODEL else model
+
+
+async def _apply_background_role_model(client: Any, task: str) -> None:
+    """Switch the background session to the background role's pinned model.
+
+    A warm runtime (``_bg``, ``_consolidate``) keeps the model it was started on, and
+    each fresh conversation reopens on that model, so a pin set after the start never
+    reached it. The switch is best-effort: a model the backend refuses leaves the
+    turn on the session's current model, with a warning naming the task.
+    """
+    model = await _background_role_pin()
+    set_model = getattr(client, "set_model", None)
+    if not model or not callable(set_model):
+        return
+    try:
+        await set_model(model)
+    except Exception:
+        logger.warning(
+            "background turn task=%s: could not switch to the background role model %r; "
+            "the turn runs on the session's current model",
+            task,
+            model,
+            exc_info=True,
+        )
+
+
 @asynccontextmanager
 async def background_turn(
     sessions: Any,
@@ -635,6 +684,10 @@ async def background_turn(
     ``agent`` is forwarded to ``get_or_create`` ONLY when supplied: it decides
     what the session is created AS, so a default here would change that for
     callers that pass none. The recorded row still names the background agent.
+    A turn on the background agent first switches the session to
+    ``agent.role_models.background`` when that names a model
+    (:func:`_apply_background_role_model`), so a pin reaches a runtime started
+    before it was set.
 
     ``fresh_conversation`` ends the turn's conversation before the permit is
     released, so the next caller on the key starts from an empty context (see
@@ -800,6 +853,9 @@ async def background_turn(
     # so this is the only duration a background row can carry.
     turn_started = time.monotonic()
     try:
+        if resolved_agent == BACKGROUND_AGENT:
+            # Inside the try: a cancellation during the switch still releases.
+            await _apply_background_role_model(client, task)
         with trace_surfaces.root(trace_surfaces.TRIGGER_BACKGROUND):
             yield client
     finally:
