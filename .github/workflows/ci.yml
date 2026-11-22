@@ -1824,7 +1824,9 @@ jobs:
   pod-boot-windows:
     name: Pod Boot Canary (Windows)
     needs: [await-fast-gate, lint-gate]
-    if: ${{ !cancelled() && needs.lint-gate.result == 'success' }}
+    # Fork only: the runner group below exists only upstream, and a job on a
+    # missing group queues for 24 h, so the fork skips this canary.
+    if: ${{ !cancelled() && needs.lint-gate.result == 'success' && github.repository == 'kirodotdev/KiroCrew' }}
     # Off the CodeBuild fleet, and that exclusion is specific to the fleet: the
     # Windows fleet is a CONTAINER (`ContainerAdministrator`), where
     # `schtasks /Create` exits 1 on its own `/ST is earlier than current time`

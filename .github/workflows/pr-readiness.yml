@@ -689,7 +689,7 @@ jobs:
             for ci_ref in "$ci_base" "$SHA"; do
               ci_yml="$(gh_retry gh api -H 'Accept: application/vnd.github.raw' \
                 "repos/$REPO/contents/.github/workflows/ci.yml?ref=$ci_ref")"
-              if grep -qxF '    branches: [main, "release/**"]' <<<"$ci_yml"; then
+              if grep -qxF '    branches: [main, "release/**", "local/**"]' <<<"$ci_yml"; then
                 CI_ON_RELEASE=true
               fi
             done

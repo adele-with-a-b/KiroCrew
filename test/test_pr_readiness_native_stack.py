@@ -115,7 +115,7 @@ def test_readiness_reads_the_exact_trigger_line_ci_yml_carries() -> None:
     # The context step greps the base branch's ci.yml for this literal line, so
     # a reformatted trigger in ci.yml would silently turn the lanes off again.
     root = Path(__file__).resolve().parents[1]
-    line = '    branches: [main, "release/**"]'
+    line = '    branches: [main, "release/**", "local/**"]'
     ci = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     readiness = (root / ".github" / "workflows" / "pr-readiness.yml").read_text(encoding="utf-8")
     assert ci.splitlines().count(line) == 2
