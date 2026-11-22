@@ -498,6 +498,9 @@ async def test_the_rank_route_moves_a_backlog_row_and_refuses_the_rest(monkeypat
         # Accepted with a pull request, or on a pr_merged bar, reaches merged.
         ({"step": "review"}, 7, "accepted", None, "merged"),
         ({"step": "build"}, None, "accepted", {"kind": "pr_merged", "pr": 7}, "merged"),
+        # A closed item that was not accepted keeps its stored step.
+        ({"step": "build"}, 7, "rejected", None, "build"),
+        ({"step": "build"}, 7, "abandoned", None, "build"),
         # Accepted with no pull request anywhere moves nothing.
         ({"step": "build"}, None, "accepted", {"kind": "file", "path": "x"}, "build"),
         # A merged item whose release shipped reaches released; a planned one waits.

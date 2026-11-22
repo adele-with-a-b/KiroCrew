@@ -150,7 +150,7 @@ def shown_step(
 ) -> str | None:
     """The step a read shows for an item: the stored one, moved on by what happened.
 
-    A pull request on the item (a worker's report carried it) reaches ``review``;
+    A pull request on an open item (a worker's report carried it) reaches ``review``;
     the conductor accepting an item that has one, or whose bar is ``pr_merged``,
     reaches ``merged``; and a merged item whose ``release`` has shipped reaches
     ``released``. A move only ever goes forward, so a step written by hand that
@@ -166,7 +166,7 @@ def shown_step(
     reached = None
     if state == "accepted" and has_pr:
         reached = "merged"
-    elif pr is not None:
+    elif pr is not None and state == "open":
         reached = "review"
     if reached and (step is None or PLAN_STEPS.index(reached) > PLAN_STEPS.index(step)):
         step = reached

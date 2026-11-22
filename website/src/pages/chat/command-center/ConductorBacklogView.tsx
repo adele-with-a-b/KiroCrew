@@ -69,18 +69,22 @@ function EpicChip({ epic, plan }: { epic: WorkBoardItem | null; plan: BoardPlan 
 
 /** An estimate in minutes as the person reads it: minutes under an hour, else hours. */
 function fmtEstimate(minutes: number): string {
-  return minutes < 60
-    ? fmtUnit(minutes, 'minute', { maximumFractionDigits: 0 })
+  // Rounded first, so 59.6 minutes reads as an hour, not as "60m".
+  const whole = Math.round(minutes)
+  return whole < 60
+    ? fmtUnit(whole, 'minute', { maximumFractionDigits: 0 })
     : fmtUnit(minutes / 60, 'hour', { maximumFractionDigits: 1 })
 }
 
 /** The backlog's Estimate column: a fixed width, so the rows line up under its header. */
 const EST_COL = 'shrink-0 w-12 text-right text-[12px] tabular-nums'
 
-/** The row's free tags. Where the row shows an Estimate column, the estimate tag is
- *  that column and is not drawn again here. */
+/** The row's free tags. Where the row shows an Estimate column, the estimate tag the
+ *  column reads (the first one) is that column and is not drawn again here. */
 function Tags({ item, hideEstimate }: { item: WorkBoardItem; hideEstimate?: boolean }) {
-  const tags = (planOf(item).tags ?? []).filter(t => !hideEstimate || !isEstimateTag(t))
+  const all = planOf(item).tags ?? []
+  const shown = hideEstimate ? all.findIndex(isEstimateTag) : -1
+  const tags = all.filter((_, n) => n !== shown)
   return <>{tags.map(t => <span key={t} className="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-bg-hover text-[11px] text-muted">{t}</span>)}</>
 }
 
