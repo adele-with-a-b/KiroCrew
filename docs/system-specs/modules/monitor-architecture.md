@@ -1195,7 +1195,12 @@ enforced nowhere:
   turn-boundary refusal of the same arm is a transcript `notice`, which no model
   reads, so without this the agent holds "requested" and is never woken. The
   agent's own `monitor_stop` of a legacy loop REMOVES the row, so it never blocks
-  that agent's next `monitor_start`. `monitor_update` on a person's pause no
+  that agent's next `monitor_start` -- except on a slot the
+  `stopped_loop_tombstone` seam owns, where the stop is kept as an
+  `autonudge_stop` finish record. That row still refuses the re-arm, and the
+  refusal names the agent's own stop and offers no Play or Clear, since either
+  would revive the finished loop or delete the record its campaign reads.
+  `monitor_update` on a person's pause no
   longer names `monitor_start` as a remedy, since that arm is refused too.
 
 ## Adding a new monitored kind

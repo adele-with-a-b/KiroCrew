@@ -180,6 +180,29 @@ class TestTheToolRefusesInBand:
 
         assert _emitted(_start(), "monitor_start")
 
+    @pytest.mark.parametrize("tool", ["monitor_start", "monitor_update"])
+    def test_the_agents_own_finish_record_is_not_blamed_on_a_person(
+        self, bound: None, monkeypatch: pytest.MonkeyPatch, tool: str
+    ) -> None:
+        """A tombstone slot keeps the agent's own stop; Play or Clear would harm it."""
+        legacy = {
+            "id": "a1",
+            "active": False,
+            "stopped_reason": _an.AUTONUDGE_STOP_REASON,
+            "retained_stop": True,
+        }
+        reading = {"enabled": True, "monitor": None, "autonudge_loop": legacy}
+        monkeypatch.setattr(mcp_core, "_get", lambda *a, **k: reading)
+
+        args: dict[str, Any] = {"watch": "work-ledger"}
+        if tool == "monitor_start":
+            args["message"] = "m"
+        out = getattr(control, tool)(tool, args)
+
+        assert not _emitted(out, tool), out
+        assert "own monitor_stop" in out and "by a person" not in out, out
+        assert "Do NOT ask the user to press Play or Clear" in out, out
+
     def test_update_with_no_recorded_reason_is_left_to_the_boundary(
         self, bound: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -210,3 +233,20 @@ class TestTheBoundaryNoLongerOffersADeadEnd:
         text = str(denied.value)
         assert "paused manually by a person" in text, text
         assert "monitor_start is refused" in text, text
+
+    @pytest.mark.asyncio
+    async def test_update_on_the_agents_own_finish_record_names_its_own_stop(
+        self, svc: AutoNudgeService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        loop = await _arm(svc)
+        await svc.update(loop.id, active=False, stopped_reason=_an.AUTONUDGE_STOP_REASON)
+        monkeypatch.setattr(_an, "get_instance", lambda: svc)
+
+        with pytest.raises(Exception) as denied:
+            await apply_monitor._monitor_update(
+                None, SESSION, {"patch": {"message": "new"}}, self_arm_ok=True
+            )
+
+        text = str(denied.value)
+        assert "own monitor_stop ended it" in text, text
+        assert "by a person" not in text and "Play" not in text, text

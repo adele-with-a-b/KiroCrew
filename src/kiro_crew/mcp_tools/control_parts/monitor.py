@@ -409,6 +409,18 @@ def _retained_loop_refusal(tool_name: str, loop: dict[str, Any]) -> str:
     if tool_name == "monitor_update" and not reason:
         return ""
     loop_id = str(loop.get("id") or "").strip()
+    if reason == autonudge.AUTONUDGE_STOP_REASON:
+        # This session's own monitor_stop, on a slot that keeps the row as its
+        # finish record. No person paused it, and Play or Clear would revive a
+        # finished loop or delete the record its campaign reads.
+        return (
+            f"{tool_name}: NOT applied — this session's own monitor_stop ended loop"
+            + (f" {loop_id}" if loop_id else "")
+            + ", and this chat keeps that stopped row as its finish record, so it can "
+            "be neither resumed nor replaced here and nothing would be watched. Do NOT "
+            "ask the user to press Play or Clear on it. Tell the user in this turn that "
+            "no loop is running, and do NOT report monitoring as started or changed."
+        )
     not_done = (
         "no change was made and the loop stays paused"
         if tool_name == "monitor_update"

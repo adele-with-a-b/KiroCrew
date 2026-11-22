@@ -707,6 +707,13 @@ async def _monitor_update(
                     "its stop file was created, so the goal is finished and there "
                     "is nothing to resume; arm monitor_start again only for a NEW goal"
                 )
+            elif reason == AUTONUDGE_STOP_REASON:
+                # The finish record of this session's own monitor_stop: no person
+                # paused it, and Play would revive a loop the agent finished.
+                bound = (
+                    "this session's own monitor_stop ended it and the row is kept as "
+                    "the chat's finish record, so it cannot be resumed or replaced"
+                )
             elif _system_stopped(loop):
                 bound = (
                     f"the system stopped it ({reason or 'no reason recorded'}); "
