@@ -11,9 +11,10 @@ batch spent over 8 minutes per xdist worker in that loop before the first test r
 which reads as a stalled run.
 
 :class:`MemoDir` keeps the children of its first collection and hands the same nodes
-back on every later one. The children are the same nodes pytest would have built, and
-a file named twice still yields its tests twice, since the repeat is decided by the
-argument loop, not by the directory's child list.
+back on every later one. A file named twice under ``--keep-duplicates`` still yields
+its tests twice, since the repeat is decided by the argument loop, not by the
+directory's child list; both copies are then the same Module node, so its
+module-scoped fixtures set up once rather than once per copy.
 
 Part of the rootdir ``conftest.py``'s floor. That file loads this module by path and
 binds the hook, so pytest registers it as the rootdir conftest's own; see "the floor's

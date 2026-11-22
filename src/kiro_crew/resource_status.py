@@ -1322,9 +1322,10 @@ XDIST_AUTO_ENV = "PYTEST_XDIST_AUTO_NUM_WORKERS"
 #: On macOS this is the SCOPED worker of ``xdist_budget`` (a run naming a short
 #: list of test files, which is what agents run): this cap is set at spawn,
 #: before anyone knows what the agent will run, so it cannot tell a gate batch
-#: from the full suite. The 16 GB full-suite reservation (#10061) is applied by
-#: ``xdist_budget`` itself, which sees the run's arguments. Deliberately a
-#: constant, not a config key -- ``xdist_auto_cap`` is the single operator knob.
+#: from the full suite. The 16 GB full-suite reservation is applied by
+#: ``xdist_budget`` itself, which sees the run's arguments; a repo without that
+#: budget gets this scoped figure for every run. Deliberately a constant, not a
+#: config key -- ``xdist_auto_cap`` is the single operator knob.
 #: Pinned equal to the budget's constants so the two never disagree.
 _MACOS_XDIST_PER_WORKER_GB = 4.0
 _DEFAULT_XDIST_PER_WORKER_GB = 5.0

@@ -140,8 +140,11 @@ _GIB_PER_WORKER_AVAILABLE = 5
 # (:func:`run_is_scoped`) reserves ``_MACOS_GIB_PER_SCOPED_WORKER``, about twice
 # the ``-n 4`` per-worker peak. shortcut: a lone worker running a whole batch
 # holds about 1x this (4,156 MiB), because a worker's share shrinks as workers
-# are added; raise it if one-worker batch runs start to swap. Anything else -- no arguments (the
-# testpaths), a directory, a module path, more files than that -- keeps the
+# are added. 8 GiB would cover it, but the spawn cap in ``resource_status``
+# divides half the free memory by this same figure, so at 8 an agent shell on a
+# 48 GiB Mac gets one worker below 32 GB free. Raise it only with a per-width
+# reservation, if one-worker batch runs start to swap. Anything else -- no
+# arguments (the testpaths), a directory, a module path, more files than that -- keeps the
 # 16 GiB #10061 measured. Identity is positive: a run that cannot be shown to be
 # a small file list gets the full-suite reservation.
 #

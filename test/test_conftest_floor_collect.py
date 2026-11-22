@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from kiro_crew.testing.wait import default_timeout
+
 _FLOOR_DIR = Path(__file__).resolve().parent
 
 _CONFTEST = """
@@ -47,7 +49,8 @@ def _run(root: Path, *args: str, memodir: bool = True) -> tuple[str, int, int]:
         env=env,
         capture_output=True,
         text=True,
-        timeout=120,
+        encoding="utf-8",
+        timeout=default_timeout(),
     )
     scans = json.loads((root / "scans.json").read_text())
     # notes.txt sits only in pkg/, so its count is how many times pkg/ was scanned.

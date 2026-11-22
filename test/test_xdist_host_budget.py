@@ -563,7 +563,7 @@ def test_per_worker_reservation_is_platform_aware(monkeypatch: pytest.MonkeyPatc
     four ``-n auto`` workers reserve 62 GiB on a 36 GiB Mac and the kernel
     jetsam-kills it -- while the macOS figure would clamp a healthy Linux host to a
     handful of workers. On macOS a slot is a scoped worker, and a full-suite worker
-    holds enough slots to reserve the #10061 figure.
+    holds enough slots to reserve the full-suite figure.
     """
     monkeypatch.setattr(ct.platform_compat, "IS_MACOS", True, raising=False)
     assert ct._gib_per_worker() == ct._MACOS_GIB_PER_SCOPED_WORKER
@@ -681,7 +681,7 @@ def test_issue_10061_the_live_bound_sizes_a_full_run_at_16_gib(
 def test_a_gate_batch_on_the_mac_gets_its_cap(
     mac_host: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every gate on that Mac used to resolve to "1 of 18 workers"."""
+    """A gate batch on that Mac gets local-gate.py's cap, not "1 of 18 workers"."""
     monkeypatch.setenv(ct._XDIST_ENV_CAP, "6")  # local-gate.py's cap on 18 cores
     monkeypatch.setattr(ct, "_host_available_mib", lambda: 24 * 1024)
     with warnings.catch_warnings():
