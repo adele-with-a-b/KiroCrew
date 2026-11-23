@@ -1125,7 +1125,9 @@ async def _load_session_with_harness_state(
     pending = _PENDING_ABANDONED_CLOSES.get((id(self), resume_sid))
     if pending is not None:
         await asyncio.wait({pending})
-    agent = kwargs["agent"] or self._agent
+    # Mapped as the create twin maps it: a stored skill-view name names its source
+    # agent, which the session's env then names (``_name_the_session_agent``).
+    agent = await self._source_agent(kwargs["agent"]) or self._agent
     work_dir = await self._session_work_dir(kwargs["cwd"])
     state = await self._harness.prepare_session(
         work_dir=work_dir,

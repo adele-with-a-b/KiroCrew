@@ -59,7 +59,9 @@ from kiro_crew.acp.types import (
     METHOD_SESSION_NEW,
     METHOD_SET_MODE,
 )
+from kiro_crew.agent import DEPRECATED_AGENT_SPECS
 from kiro_crew.agent_sdk.backends import resolve_cc_pin_inherited_mode
+from kiro_crew.constants import KIROCREW_SESSION_AGENT_ENV
 from kiro_crew.platform.context import redact_log_via_context
 from kiro_crew.security import (
     redact_credentials,
@@ -1092,10 +1094,37 @@ def _harness_session_meta(self: ClaudeAcpClient, mcp_servers: Any) -> dict[str, 
 
     Built AFTER the array it travels with: the envelope carries the setting sources
     that array was authorized under, and a zero-tool session whose array mounts a
-    server is refused here (:func:`refuse_claude_zero_tool_mounts`).
+    server is refused here (:func:`refuse_claude_zero_tool_mounts`). It also names
+    the session's agent to its ``claude`` child (:func:`_name_the_session_agent`).
     """
     refuse_claude_zero_tool_mounts(getattr(self, "_spec_zero_tools", False), mcp_servers)
-    return self._claude_session_meta()
+    meta = self._claude_session_meta()
+    _name_the_session_agent(meta["claudeCode"]["options"], getattr(self, "_agent", None))
+    return meta
+
+
+def _name_the_session_agent(options: dict[str, Any], agent: str | None) -> None:
+    """Name the session's agent to its ``claude`` child as ``KIROCREW_SESSION_AGENT``.
+
+    The value is the client's ``_agent``, which Crew sets from the session's own
+    record when it builds the client; nothing a turn sends reaches it. A deprecated
+    alias is named by the agent it emits (``DEPRECATED_AGENT_SPECS``), as Crew
+    counts it. It is a label, not proof of who created the session: any chat able
+    to create a session can create one that runs ``kirocrew-conductor``. It goes in
+    ``env`` (spread over the adapter's process env for this session's child only)
+    and in the flag tier's ``settings.env``, which Claude Code applies after the
+    user, project and local tiers' ``env``, so no settings file a chat can write
+    renames the agent. It is always set, to the agent the session runs as, and empty
+    only if ``_agent`` is: ``env`` can only overwrite the process env it is
+    spread over, never remove a key, and a value inherited from a parent process
+    names another session's agent (the spawn builders drop that one too). Copied,
+    never mutated: the inline settings are shared.
+    """
+    value = DEPRECATED_AGENT_SPECS.get(agent or "", agent or "")
+    options["env"] = {**dict(options.get("env") or {}), KIROCREW_SESSION_AGENT_ENV: value}
+    flag = dict(options.get("settings") or {})
+    flag["env"] = {**dict(flag.get("env") or {}), KIROCREW_SESSION_AGENT_ENV: value}
+    options["settings"] = flag
 
 
 async def _retry_after_model_substitution(
