@@ -22,6 +22,9 @@
  *   older show is dropped.
  * - `placement { invocation, placement }` the latest show's card was moved to the
  *   other side of its link (its own `resize`, or the window's).
+ * - `opened { request, ok, reason? }` the answer to an `openPanelTab` or
+ *   `openSessionControl` that carried a `request` number: opened, or refused
+ *   with an `OpenRefusal` (`linkPreviewNav.ts`).
  * - `leave`, `hide { reason }`, `theme { theme }`, `dispose`
  * - `key { key, code, shift }` a key pressed in the dashboard while a card shows,
  *   so a card's own shortcuts work without a click into it first. Never while
@@ -42,6 +45,12 @@
  *   `sessionKey` (the tab is told its chat), while that chat is on screen, right
  *   after the person's click in the card, or once, within `CLICK_GRANT_MS`, for
  *   the show a click or tap on the link made while its card is up.
+ * - `openSessionControl { invocation, control, payload, request? }` open this
+ *   app's own session control `control` (a `contributes.sessionControls[].id`):
+ *   its chip's popover under the message box of the chat that show came from,
+ *   handing it `payload` (`useSessionControlRequest`). The same rules as
+ *   `openPanelTab`, and the same click grant: one click on a link opens ONE
+ *   target, a tab or a control, never both.
  * - `jump { invocation, ts, id? }` scroll the chat that show came from to one of its
  *   messages and light it, with a Back pill. Only for an app approved for
  *   `sessionKey`, while that chat is on screen, right after a click in the card.
@@ -62,6 +71,7 @@
  */
 
 import { finite, readTagged, tagged } from '../appFrame/frameProtocol'
+import type { OpenRefusal } from './linkPreviewNav'
 
 export { BURST_CAPACITY, BURST_PER_SECOND, messageBytes } from '../appFrame/frameProtocol'
 
@@ -111,6 +121,7 @@ export type ToFrame =
   | { type: 'dispose' }
   | { type: 'key'; key: string; code: string; shift: boolean }
   | { type: 'placement'; invocation: number; placement: Placement }
+  | { type: 'opened'; request: number; ok: boolean; reason?: OpenRefusal }
 
 export type FromFrame =
   | { type: 'ready' }
@@ -125,11 +136,14 @@ export type FromFrame =
   | { type: 'escape' }
   | { type: 'capabilityExpired' }
   | { type: 'regions'; rects: AnchorRect[] }
-  | { type: 'openPanelTab'; invocation: number; tab: string; payload: unknown }
+  | { type: 'openPanelTab'; invocation: number; tab: string; payload: unknown; request?: number }
+  | { type: 'openSessionControl'; invocation: number; control: string; payload: unknown; request?: number }
   | { type: 'jump'; invocation: number; target: MessageRef }
 
 /** A `panelTabs[].id`: the slug the manifest allows (`_PANEL_TAB_ID_RE`). */
 const TAB_ID = /^[a-z][a-z0-9_-]{0,63}$/
+/** A `sessionControls[].id`: a kebab slug (`APP_ITEM_ID_RE`), as long as a tab id. */
+const CONTROL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 /** Longest message `ts` or `mid` a frame may name. */
 const MAX_ID_CHARS = 128
 
@@ -147,6 +161,11 @@ function jsonCopy(value: unknown): unknown {
   } catch {
     return undefined
   }
+}
+
+/** `{ request }` when the frame numbered its open so it can be answered, else nothing. */
+function requestOf(raw: unknown): { request?: number } {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? { request: raw } : {}
 }
 
 /** At most this many rects in one `regions` message; the rest are dropped. */
@@ -195,7 +214,12 @@ export function readFrameMessage(data: unknown): FromFrame | null {
     case 'openPanelTab': {
       if (typeof m.tab !== 'string' || !TAB_ID.test(m.tab)) return null
       const payload = jsonCopy(m.payload)
-      return payload === undefined ? null : { type: 'openPanelTab', invocation, tab: m.tab, payload }
+      return payload === undefined ? null : { type: 'openPanelTab', invocation, tab: m.tab, payload, ...requestOf(m.request) }
+    }
+    case 'openSessionControl': {
+      if (typeof m.control !== 'string' || !CONTROL_ID.test(m.control)) return null
+      const payload = jsonCopy(m.payload)
+      return payload === undefined ? null : { type: 'openSessionControl', invocation, control: m.control, payload, ...requestOf(m.request) }
     }
     case 'jump': {
       const target = readMessageRef(m.ts, m.id)

@@ -207,7 +207,7 @@ describe('link-preview cards: open the app tab, jump to a message', () => {
   it("a shown card opens its own app's tab in the chat it was shown in, with its payload", async () => {
     const frame = await shown([app(true)])
     ask(frame, 'openPanelTab', { tab: 'questions', payload: { label: '[R4]' } })
-    expect(heard).toEqual([{ kind: 'openPanelTab', slot: SLOT, appName: 'refs-app', tab: 'questions', payload: { label: '[R4]' } }])
+    expect(heard).toEqual([{ kind: 'open', slot: SLOT, appName: 'refs-app', target: { kind: 'panelTab', id: 'questions' }, payload: { label: '[R4]' }, via: 'link' }])
   })
 
   it('a card of an app not approved for sessionKey opens no tab: the tab would tell it the chat', async () => {
@@ -291,7 +291,7 @@ describe('link-preview cards: a click on the span may open the tab once', () => 
     fromFrame(frame, 'open')
     return frame
   }
-  const tab = { kind: 'openPanelTab', slot: SLOT, appName: 'refs-app', tab: 'questions', payload: 1 }
+  const tab = { kind: 'open', slot: SLOT, appName: 'refs-app', target: { kind: 'panelTab', id: 'questions' }, payload: 1, via: 'link' }
 
   it('a clicked or tapped card opens its tab with no click in it, once', async () => {
     for (const how of ['click', 'tap'] as const) {

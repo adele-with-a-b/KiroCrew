@@ -33,6 +33,7 @@ import {
   type ShowTrigger,
   type ToFrame,
 } from './linkPreviewProtocol'
+import type { AppOpenTarget, OpenRefusal } from './linkPreviewNav'
 
 export { FRAME_SANDBOX, type Minted } from '../appFrame/sandboxFrame'
 /** Waiting for the module to activate; a frame that has not said `ready` by then failed. */
@@ -121,8 +122,10 @@ export interface FrameHostOptions {
   onEscape(): void
   /** The set of live frames changed (the link bridge listens to them). */
   onFramesChanged(frames: HTMLIFrameElement[]): void
-  /** A shown card of an app approved for `sessionKey` asked to open its app's own side-panel tab `tab` in the chat `scope` is in. */
-  onOpenPanelTab?(appName: string, tab: string, payload: unknown, scope: ShowScope): void
+  /** A shown card of an app approved for `sessionKey` asked to open its app's own
+   *  `target` (a side-panel tab or its session control) in the chat `scope` is in:
+   *  true when the chat took it, else why not. */
+  onOpen?(appName: string, target: AppOpenTarget, payload: unknown, scope: ShowScope): true | OpenRefusal
   /** A shown card of an app approved for `sessionKey` asked to jump to `target` in the chat `scope` is in. */
   onJump?(appName: string, target: MessageRef, scope: ShowScope): void
   /** The provider's card-mode hover card closed itself (`card.close`). */
@@ -528,10 +531,20 @@ export class FrameHost {
     return frame.scopes.get(invocation)
   }
 
+  /** `scopeOf` for an open, approved for `sessionKey`, or why not, so the card
+   *  can be told. */
+  private openScope(frame: PreviewFrame, invocation: number, granted: boolean): ShowScope | OpenRefusal {
+    if (!frame.visible) return 'not_shown'
+    if (!(granted || hasGesture(frame.el))) return 'no_click'
+    const scope = this.scopeOf(frame, invocation, granted)
+    if (!scope) return 'not_shown'
+    return scope.messages ? scope : 'not_approved'
+  }
+
   /** Spend the frame's click grant: true when it was made for `invocation`, the
-   *  latest show, no more than `CLICK_GRANT_MS` ago. The first `openPanelTab` of
-   *  that show spends it whatever else it asks, so one click opens at most one
-   *  tab; a late one from an earlier show leaves it alone. */
+   *  latest show, no more than `CLICK_GRANT_MS` ago. The first open of that show
+   *  (`openPanelTab` or `openSessionControl`) spends it whatever it asks, so one
+   *  click opens at most one target; a late one from an earlier show leaves it alone. */
   private takeClickGrant(frame: PreviewFrame, invocation: number): boolean {
     const grant = frame.clickGrant
     if (!grant || grant.invocation !== invocation) return false
@@ -551,16 +564,32 @@ export class FrameHost {
       case 'escape': this.opts.onEscape(); return
     }
     if (frame.state !== 'ready') return
-    if (msg.type === 'openPanelTab' || msg.type === 'jump') {
-      // Both need the owner's `sessionKey` approval: a tab body is told its chat,
-      // so opening one from a card says which chat the card's text was in. A
-      // `jump` always needs a click in the card; a tab may also be the click on
-      // the link the card was shown for.
-      const granted = msg.type === 'openPanelTab' && this.takeClickGrant(frame, msg.invocation)
-      const scope = this.scopeOf(frame, msg.invocation, granted)
+    if (msg.type === 'openPanelTab' || msg.type === 'openSessionControl') {
+      // One request shape for both targets. Both need the owner's `sessionKey`
+      // approval: a tab or control is told its chat, so opening one from a card
+      // says which chat the card's text was in. Either may be the click on the
+      // link the card was shown for, and that click opens ONE of them: the
+      // first open of the show spends the grant, whatever it names.
+      const target: AppOpenTarget = msg.type === 'openPanelTab'
+        ? { kind: 'panelTab', id: msg.tab }
+        : { kind: 'sessionControl', id: msg.control }
+      const granted = this.takeClickGrant(frame, msg.invocation)
+      const scope = this.openScope(frame, msg.invocation, granted)
+      const result = typeof scope === 'string' ? scope
+        : scope.slot ? this.opts.onOpen?.(frame.appName, target, msg.payload, scope) ?? 'not_on_screen'
+          : 'not_on_screen'
+      if (msg.request !== undefined) {
+        this.post(frame, result === true
+          ? { type: 'opened', request: msg.request, ok: true }
+          : { type: 'opened', request: msg.request, ok: false, reason: result })
+      }
+      return
+    }
+    if (msg.type === 'jump') {
+      // A `jump` always needs a click in the card.
+      const scope = this.scopeOf(frame, msg.invocation)
       if (!scope?.slot || !scope.messages) return
-      if (msg.type === 'openPanelTab') this.opts.onOpenPanelTab?.(frame.appName, msg.tab, msg.payload, scope)
-      else this.opts.onJump?.(frame.appName, msg.target, scope)
+      this.opts.onJump?.(frame.appName, msg.target, scope)
       return
     }
     if (msg.type === 'regions') {

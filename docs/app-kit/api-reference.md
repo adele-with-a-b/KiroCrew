@@ -998,6 +998,30 @@ const back = useStatusGoBack?.() ?? null
 back?.()
 ```
 
+## Session Control Requests
+
+`useSessionControlRequest()` is the same reader for a session control (the chip's popover
+under the message box, [`contributes.sessionControls`](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)):
+`{ seq, payload, via }` for the latest open of THIS control in THIS chat, or `null` when the
+person opened the chip by hand and outside a session control. `via` says who asked:
+`'link'` for this app's own link-preview card (`link.card.openSessionControl(control,
+payload)`), `'status'` for one of its status rows or its `go` (`target.sessionControl`,
+with `target.arg` as the payload). A request sent before the control's module loaded is
+read on its first render, and an open while the popover is already open keeps it mounted
+and only raises `seq`, so act on a `seq` you have not handled. The request is dropped when
+the popover closes. A card's open resolves with the dashboard's answer, `{ ok: true }` or
+`{ ok: false, reason }` (the reasons are listed under "Reaching into the chat" in the
+manifest reference). Needs `APP_SDK_LEVEL >= 11`; read it off the namespace import:
+
+```tsx
+const useSessionControlRequest = (sdk as Record<string, unknown>).useSessionControlRequest as
+  (() => { seq: number; payload: unknown; via: 'link' | 'status' } | null) | undefined
+
+// Inside the control (call it only when it is there):
+const req = useSessionControlRequest?.()
+useEffect(() => { if (req) showQuestion(req.payload) }, [req?.seq])
+```
+
 ## Chat Marker Protocol
 
 An agent encodes UI affordances inline in the prose it streams. A surface that renders a transcript
@@ -2092,7 +2116,10 @@ directory entries in `credentialMasks` (`"state/"`), the dashboard's
 `permissions.bots`, which an app's backend uses with its app token
 ([Bots](#bots-permissionsbots-from-your-backend)), and level 10 adds
 [app status refresh](#app-status-refresh) (`useAppStatusRefresh`,
-`POST /api/apps/<app>/status-changed`); each level
+`POST /api/apps/<app>/status-changed`), and level 11 adds
+[session control requests](#session-control-requests) (`useSessionControlRequest`,
+`link.card.openSessionControl`, a status target's `sessionControl`, the answer an open
+resolves with) and `contributes.sessionControls[].width`; each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

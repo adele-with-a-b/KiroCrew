@@ -436,6 +436,7 @@ each replaced field with its old and new value (a WARNING line ending in
 | `contributes.sessionControls[].label` | string | | Accessible name, and the chip's tooltip |
 | `contributes.sessionControls[].icon` | string | | Icon name. Only `Shield`, `Bot`, `Search`, `Tag`, `Users`, `Zap`, `Star`, `Package`, `Cat`, `AudioLines` and `Mic` are rendered; any other name falls back to `Package`. Use `AudioLines` for a control that starts a voice conversation and `Mic` only for voice input: the composer's own dictation button already draws `Mic`, so a conversation chip with that glyph reads as a second dictation button |
 | `contributes.sessionControls[].statusPath` | string | | Optional backend route reporting per-session chip state (see below) |
+| `contributes.sessionControls[].width` | integer | | Optional popover width in CSS px on a desktop window, from 340 (the default) to 396; refused at install outside that range. A window under 768 px wide keeps 340 |
 | `contributes.statusItems[].id` | string | | Item id, kebab-case; addressed as `<appName>:<id>` |
 | `contributes.statusItems[].label` | string | | Accessible name and the detail card's row heading, at most 40 characters, with no control, format or separator character (the zero-width joiners are allowed); never drawn on the pill |
 | `contributes.statusItems[].icon` | string | | Icon name from the app icon set listed under `contributes.panelTabs`; any other name draws the generic panel glyph |
@@ -701,7 +702,8 @@ makes the user leave the conversation to configure it.
         "entryPoint": "dist/session-control.mjs",
         "label": "Environment",
         "icon": "Tag",
-        "statusPath": "session-status"
+        "statusPath": "session-status",
+        "width": 396
       }
     ]
   }
@@ -726,6 +728,28 @@ import map `ui.pages` uses, so React stays a single instance.
 The control is remounted when the session changes, so per-chat state cannot leak
 across a switch, and a control that throws renders an inline notice instead of
 disturbing the chat.
+
+**Width.** The popover is 340 px wide unless the control asks for more with
+`width`, at most 396: the composer's box at the narrowest desktop window (768 px
+wide), so the popover anchored on its chip stays over the composer.
+A phone-width window (under 768 px) always draws 340, and any window draws no
+wider than itself less 16 px.
+
+**Opened by the app, with a payload.** The app's own link-preview card
+(`link.card.openSessionControl`, under
+[`contributes.linkPreviews`](#contributeslinkpreviews--hover-cards-for-links))
+and its status rows and go (`target.sessionControl`, under
+[`contributes.statusItems`](#contributesstatusitems--a-readout-in-the-top-bar))
+can open the control in a chat and hand it a JSON payload. The control reads it
+with the SDK's `useSessionControlRequest()`: `{ seq, payload, via }` for the latest
+open, where `via` is `'link'` or `'status'` and `seq` grows with each open, so the
+same payload twice still reads as new; `null` when the person opened the chip by
+hand. It lasts until the popover closes, and a request sent before the module
+loaded is still there when it mounts. An open while the popover is already open
+keeps it mounted (no remount, no lost draft) and only hands over the new payload.
+A press on a link or label a link-preview card answers does not close the popover
+at once: it waits the 3 seconds the card has to open it, and closes then only if
+no open came in. Needs `APP_SDK_LEVEL >= 11`.
 
 **Two caps, and the second one drops.** The backend allows at most **2** controls
 per app. The dashboard renders at most **2** across all apps, and controls past
@@ -840,13 +864,17 @@ rebindable in Settings → Shortcuts) takes them to:
 |-------|---------|
 | `heading` | The card's line over the rows, cut to 48 characters |
 | `rows[]` | At most 10, drawn in the order given. `lead` (12) is drawn in the row's `tone` with the item's icon, `text` (48) bold, `detail` (160) under it on one line. A row with neither `text` nor `detail` is skipped |
-| `rows[].target`, `go.target` | `sid`: the chat's session key, as `/chat?sid=` takes it. `panelTab`: optional, a side-panel tab id THIS app declares in `contributes.panelTabs`; `arg`: what that tab is opened with, any JSON value of at most 4 KB serialized. A target with a bad `sid` is dropped (the row is drawn, not clickable); a bad tab id opens the chat alone; an oversized `arg` opens the tab with none |
+| `rows[].target`, `go.target` | `sid`: the chat's session key, as `/chat?sid=` takes it. `panelTab`: optional, a side-panel tab id THIS app declares in `contributes.panelTabs`. `sessionControl`: optional instead, a session control id THIS app declares in `contributes.sessionControls` (level 11); a target naming both keeps `panelTab`. `arg`: what that tab or control is opened with, any JSON value of at most 4 KB serialized. A target with a bad `sid` is dropped (the row is drawn, not clickable); a bad tab or control id opens the chat alone; an oversized `arg` opens the tab or control with none |
 | `go` | `{label, target}`: the button under the rows, and what the go key fires. `label` is cut to 24 characters; empty draws the host's own "Go". The key fires the first item's `go`, in bar order, that offers one |
 
 A tap on a row or the button closes the card and switches to the target's chat,
 behind the same unsaved-draft guard as any "go to chat" button, then opens the
 tab: the tab reads `arg` with `usePanelTabRequest()`, as a tab opened from a link
-preview does. The chat the operator left is kept, and the chat header shows a
+preview does. A `sessionControl` target opens that control's popover on its chip
+instead, and the control reads `arg` with `useSessionControlRequest()` (`via` is
+`'status'`). When the chat cannot open it (the control is not drawn there, for
+example past the composer's cap), the chat still opens and the refusal is
+written to the browser console with its reason. The chat the operator left is kept, and the chat header shows a
 "Back to <chat>" chip; `useStatusGoBack()` returns that way back to a tab that
 wants its own button, or `null`. A target chat that is closed is reopened from
 its history; one with no history is not opened, and the operator is told it is
@@ -1076,7 +1104,7 @@ No app code runs until a link on one of the provider's `hosts` is hovered.
 | `hosts` | string[] | Up to 64 hostnames, at least one unless `textPatterns` is set (a text-only provider lists none); a leading dot means the domain and every subdomain. Only `https:` links match. Stored lowercased, in IDNA (punycode) form and without a trailing dot. A public suffix (`co.uk`, `.github.io`) or a bare TLD (`com`) is refused |
 | `textPatterns` | object[] | Optional. Plain text in chat messages that also opens a card; see below |
 | `fullUrl` | boolean | Optional. `show` gets the URL without its query and fragment unless this is `true` and the owner approved it |
-| `sessionKey` | boolean | Optional. `show` also gets the session key of the chat the hovered link or text is in (`dashboard:<slot>`) and that message (`{ ts, id? }`) when this is `true` and the owner approved it; the card may then also `card.openPanelTab` and `card.jumpTo` |
+| `sessionKey` | boolean | Optional. `show` also gets the session key of the chat the hovered link or text is in (`dashboard:<slot>`) and that message (`{ ts, id? }`) when this is `true` and the owner approved it; the card may then also `card.openPanelTab`, `card.openSessionControl` and `card.jumpTo` |
 
 **Approval.** The hosts, the text patterns (id, flags and source), `fullUrl` and
 `sessionKey` are part of what the owner approves for the app, like
@@ -1147,13 +1175,19 @@ export function activate(ctx: {
       dragBy(dx: number, dy: number): void
       dock(edge: 'left' | 'right' | null): void
       // Open this app's own side-panel tab (a `contributes.panelTabs[].id`) in
-      // the chat this show came from, handing it `payload` (JSON).
-      openPanelTab(tab: string, payload?: unknown): void
+      // the chat this show came from, handing it `payload` (JSON). Resolves with
+      // the dashboard's answer (level 11; an older dashboard returns nothing).
+      openPanelTab(tab: string, payload?: unknown): Promise<OpenResult>
+      // Open this app's own session control (a `contributes.sessionControls[].id`)
+      // on its chip under that chat's message box, handing it `payload` (JSON).
+      openSessionControl(control: string, payload?: unknown): Promise<OpenResult>
       // Scroll the chat this show came from to one of its messages and light it
       // (an approved `sessionKey` only); a Back pill returns to where it was.
       jumpTo(message: { ts: string; id?: string }): void
     }
   }): void
+  // OpenResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' |
+  //   'not_approved' | 'not_on_screen' | 'not_declared' | 'not_json' | 'no_answer' }
   leave(): void              // the pointer left the link; the card may hold itself open
   hide(reason: string): void // 'scroll' | 'escape' | 'blur' | 'click' | 'other-provider' | 'disabled'
   theme?(theme: 'dark' | 'light'): void
@@ -1191,7 +1225,7 @@ example from a slow fetch that finished after the user moved to another link, is
 dropped. A message over 8 KB, or
 past a burst of 120 messages refilled at 60 a second, is dropped unread.
 
-**Reaching into the chat.** Two card calls act outside the frame, and only on the
+**Reaching into the chat.** Three card calls act outside the frame, and only on the
 chat the show came from, while that chat is the one on screen and the card is
 showing (in card mode, for the latest show only), and only for an app the owner
 approved for `sessionKey`. Each also needs the person's own click in the card a
@@ -1200,13 +1234,14 @@ card's frame. So call them from a button's click handler. A call on hover, or wi
 no click in the card, is dropped, and so is one made from a key the dashboard
 passes to the card (focus is then not in the frame).
 
-One exception, for `openPanelTab` only: a show whose `trigger` is `'click'` or
-`'tap'` was the person's own click or tap on the link, so that show may open a
-tab once with no click in the card. Call `card.open()` first (the card must be
-showing), then `card.openPanelTab`, within 3 seconds of the show: before any
-slow read, since the 3 seconds count from the show. The first `openPanelTab`
-call of that show that reaches the dashboard uses the allowance up whether it
-opens a tab or not; so do `leave`, `hide`, pinning the card and the next show.
+One exception, for the two opens only: a show whose `trigger` is `'click'` or
+`'tap'` was the person's own click or tap on the link, so that show may open ONE
+target (a tab or the session control, never both) with no click in the card.
+Call `card.open()` first (the card must be showing), then `card.openPanelTab` or
+`card.openSessionControl`, within 3 seconds of the show: before any slow read,
+since the 3 seconds count from the show. The first open of either kind that
+reaches the dashboard uses the allowance up whether it opens anything or not;
+so do `leave`, `hide`, pinning the card and the next show.
 A hover show has no allowance, and `jumpTo` and links in the card always need a
 click in the card:
 
@@ -1218,6 +1253,21 @@ click in the card:
   the latest open (`seq` grows with each one, so the same payload twice still reads
   as new), until the tab is closed; `null` before any or outside a side-panel tab.
   A payload that is not JSON is dropped.
+- `card.openSessionControl(control, payload)` opens `control`, one of this app's
+  own `contributes.sessionControls`, on its chip under that chat's message box,
+  and the control reads the payload with `useSessionControlRequest()` (`via` is
+  `'link'`); see [`contributes.sessionControls`](#contributessessioncontrols--a-per-chat-control-in-the-composer).
+  Another app's control, one the app does not declare, or one the composer does
+  not draw in that chat is refused. Asking again while the popover is open keeps
+  it open and hands it the new payload.
+- Both opens resolve with what the dashboard did: `{ ok: true }`, or `{ ok: false,
+  reason }`, where `reason` is `no_click` (no click in the card and no allowance
+  left: a hover show, a second open, or past the 3 seconds), `not_shown` (the card
+  is not showing, or the call is from an earlier show), `not_approved` (no
+  approved `sessionKey`), `not_on_screen` (that chat is not on screen, or the
+  control's chip is not drawn), `not_declared` (no such tab or control of this app
+  in that chat), `not_json` (the payload is not JSON; nothing was sent) or
+  `no_answer` (no answer within 5 seconds: a dashboard older than level 11).
 - `card.jumpTo({ ts, id? })` scrolls to that message in the same chat (paging back
   for one not loaded yet, as a `?msg=` link does) and lights it. Any `ts` or `id` of
   that chat may be named (each at most 128 characters); one that is not there shows
@@ -1227,8 +1277,9 @@ click in the card:
   to the message the card's link or text sat in; a newer jump replaces it, and
   switching chats or scrolling back to the bottom by hand drops it.
 
-Feature-detect both (`'jumpTo' in link.card`) and the hook (`usePanelTabRequest` in
-the SDK's exports): a dashboard older than these has neither.
+Feature-detect the calls (`'jumpTo' in link.card`, `'openSessionControl' in
+link.card`) and the hooks (`usePanelTabRequest`, `useSessionControlRequest` in the
+SDK's exports): a dashboard older than these has neither.
 
 Links in a card open through the dashboard's link bridge, only right after a click
 in the card. A plain key pressed in the dashboard while a card shows is passed to

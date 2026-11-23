@@ -6,6 +6,8 @@ import { useAnchoredTriggerRect } from '../../../hooks/useAnchoredTriggerRect'
 import { useFolderSortMode } from '../../../hooks/useFolderSortMode'
 import { dashboardSessionKey, SESSION_CONTROL_STATUS_KEY, useSessionControls, useSessionControlStatuses } from '../../../hooks/useSessionControls'
 import type { ChatFolder, ChatSlot } from '../../../types'
+import { onLinkPreviewNav } from '../../../linkPreview/linkPreviewNav'
+import { clearSessionControlRequest, putSessionControlRequest } from '../../../app-sdk/sessionControlRequest'
 
 /** One shared empty list, so an absent folder cache keeps a stable identity. */
 const NO_CHAT_FOLDERS: ChatFolder[] = []
@@ -46,9 +48,39 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
   // slot matching activeSlot, so the committed render after a chat switch
   // mounts nothing against the new session. This only resets the state so the
   // control does not reappear if the user switches back to the original chat.
+  // An open captured for the chat now on screen (an app's open request that
+  // landed with the switch) is kept.
   useEffect(() => {
-    setOpenSessionControl(null)
+    setOpenSessionControl(o => (o && o.slot !== activeSlot ? null : o))
   }, [activeSlot])
+  // The request an app opened the popover with lives while it is open: closing
+  // it, or opening another control, drops it, so the chip opened by hand next
+  // reads null (`useSessionControlRequest`).
+  useEffect(() => {
+    const open = openSessionControl
+    return () => { if (open) clearSessionControlRequest(dashboardSessionKey(open.slot), open.key) }
+  }, [openSessionControl])
+  // An app opening its OWN control (`card.openSessionControl`, a status go's
+  // `sessionControl`): only in the chat on screen, only a control this chat's
+  // composer draws (else `not_declared`), anchored on its chip (else
+  // `not_on_screen`). Opening the one already open keeps it open and hands it
+  // the new payload.
+  const latestOpen = useRef({ activeSlot, sessionControls, anchorSessionControl })
+  latestOpen.current = { activeSlot, sessionControls, anchorSessionControl }
+  useEffect(() => onLinkPreviewNav(req => {
+    if (req.kind !== 'open' || req.target.kind !== 'sessionControl') return false
+    const { activeSlot: slot, sessionControls: list, anchorSessionControl: anchor } = latestOpen.current
+    if (!slot || req.slot !== slot) return false
+    const id = req.target.id
+    const sc = list.find(c => c.appName === req.appName && c.id === id)
+    if (!sc) return 'not_declared'
+    const chip = sessionControlChip(sc.key)
+    if (!chip) return 'not_on_screen'
+    putSessionControlRequest(dashboardSessionKey(slot), sc.key, req.payload, req.via)
+    anchor(chip.getBoundingClientRect(), chip)
+    setOpenSessionControl(o => (o?.key === sc.key && o.slot === slot ? o : { key: sc.key, slot }))
+    return true
+  }), [])
   // Folder names for the session-control context. Shares the sidebar's own
   // ['chat-folders'] cache, so this costs no extra request.
   const { data: chatFoldersRaw, error: chatFoldersError } = useQuery<ChatFolder[]>({
@@ -101,6 +133,14 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
     mobileNewSessionInFlightRef, mobileNewSessionBusy, setMobileNewSessionBusy,
     sessionControlKey, sessionControlStatuses, sessionControlStatusError,
   }
+}
+
+/** The drawn chip of control `key` (`<app>:<id>`), or null. */
+function sessionControlChip(key: string): HTMLElement | null {
+  for (const el of document.querySelectorAll<HTMLElement>('[data-session-control-key]')) {
+    if (el.dataset.sessionControlKey === key && el.isConnected) return el
+  }
+  return null
 }
 
 /** The composer bar's chip model for each control. */

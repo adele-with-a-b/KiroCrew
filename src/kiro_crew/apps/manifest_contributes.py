@@ -40,6 +40,14 @@ from kiro_crew.apps.manifest_status_items import (
 #: composer, on the path of every turn — an app must not be able to crowd the
 #: bar out. Apps needing more configuration have a page for it.
 MAX_SESSION_CONTROLS_PER_APP = 2
+#: A session control's popover width, in CSS px: the default, and the widest an
+#: app may ask for with ``width``. Mirrored by ``SESSION_CONTROL_WIDTH`` in
+#: ``website/src/hooks/useSessionControls.ts``. The cap is the composer's box at
+#: the narrowest desktop window (768 px wide, the phone breakpoint), measured on a
+#: test Crew in the default layout: x 350 to 746, so a popover anchored on the
+#: chip at the box's left edge stays over the composer.
+SESSION_CONTROL_DEFAULT_WIDTH = 340
+SESSION_CONTROL_MAX_WIDTH = 396
 
 
 @dataclass
@@ -76,9 +84,14 @@ class SessionControlContribution:
     label: str = ""  # accessible name; also the tooltip
     icon: str = ""  # lucide icon name
     statusPath: str = ""  # optional backend route reporting per-session chip state  # noqa: N815
+    # Optional popover width on a desktop window, in CSS px; 0 = the default.
+    # Anything but an int in [default, max] is refused at install (-1 here).
+    width: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"id": self.id, "entryPoint": self.entryPoint}
+        if self.width:
+            d["width"] = self.width
         if self.label:
             d["label"] = self.label
         if self.icon:
@@ -95,7 +108,15 @@ class SessionControlContribution:
             label=str(data.get("label", "")),
             icon=str(data.get("icon", "")),
             statusPath=_normalize_status_path(data.get("statusPath", "")),  # noqa: N815
+            width=_session_control_width(data.get("width", 0)),
         )
+
+
+def _session_control_width(raw: Any) -> int:
+    """A declared ``width`` as an int, or -1 when it is not a plain int (a bool is not)."""
+    if raw is None:
+        return 0
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) else -1
 
 
 # A contributed command's id keys the Command Bar row and its usage record, so the

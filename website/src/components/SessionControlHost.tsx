@@ -27,9 +27,15 @@ import { RefreshCw } from 'lucide-react'
 import ErrorNotice from './ErrorNotice'
 import { useDocumentImeLatch } from '../hooks/useImeGuard'
 import { AppApiProvider } from '../app-sdk'
+import { SessionControlRequestScope, sessionControlRequestSeq } from '../app-sdk/sessionControlRequest'
+import { CLICK_GRANT_MS } from '../linkPreview/linkPreviewFrames'
 import { i18nT } from '../i18n/t'
-import type { ResolvedSessionControl } from '../hooks/useSessionControls'
+import { SESSION_CONTROL_WIDTH, type ResolvedSessionControl } from '../hooks/useSessionControls'
+import { MOBILE_BREAKPOINT } from '../hooks/useIsMobile'
 import { withBase } from '@/lib/basePath'
+
+/** What a link-preview card answers in a chat message: a link, or a matched label. */
+const LINK_PREVIEW_TARGET = '[data-link-preview-scope] a[href], [data-link-preview-scope] [data-link-preview-text]'
 
 // ---------------------------------------------------------------------------
 // Session identity handed to the control
@@ -167,6 +173,16 @@ export default function SessionControlHost({
   // while its Crew is hidden behind a remote one (components/overlayRoot): closing
   // discards the draft, and those keys belong to the Crew in front.
   const crewHidden = useLocalCrewHidden()
+  // A press on a link or label a link-preview card answers may be the person
+  // asking this app to open this popover again: the card's open arrives after
+  // the click has shown it. So that press holds the close for the click
+  // grant's bound (`CLICK_GRANT_MS`), and the popover closes then only if no
+  // new open came in: an open request wins, and the control is never
+  // unmounted between two of them. Refs, since `onClose` is new every render.
+  const hold = useRef<number | undefined>(undefined)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => () => window.clearTimeout(hold.current), [])
   useEffect(() => {
     if (crewHidden) return
     const onDown = (e: MouseEvent) => {
@@ -175,7 +191,16 @@ export default function SessionControlHost({
       // closing here would let the chip's own toggle re-open it — clicking an
       // open chip would flicker rather than dismiss.
       if (target?.closest?.('[data-session-control-chip]')) return
-      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose()
+      if (!popRef.current || popRef.current.contains(e.target as Node)) return
+      window.clearTimeout(hold.current)
+      if (target?.closest?.(LINK_PREVIEW_TARGET)) {
+        const seen = sessionControlRequestSeq(session.sessionKey, control.key)
+        hold.current = window.setTimeout(() => {
+          if (sessionControlRequestSeq(session.sessionKey, control.key) === seen) closeRef.current()
+        }, CLICK_GRANT_MS)
+        return
+      }
+      onClose()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -193,7 +218,7 @@ export default function SessionControlHost({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose, imeLatch, crewHidden])
+  }, [onClose, imeLatch, crewHidden, session.sessionKey, control.key])
 
   const subscribeFn = useCallback((event: string, cb: (data: unknown) => void) => {
     const handler = (e: Event) => cb((e as CustomEvent).detail)
@@ -225,7 +250,10 @@ export default function SessionControlHost({
   // off-screen with no way to scroll to it. Floored at 0 so an absurd viewport
   // (jsdom defaults, a measurement taken mid-teardown) cannot yield a negative
   // width, which is an invalid CSS length rather than a narrow popover.
-  const width = Math.max(0, Math.min(340, window.innerWidth - 16))
+  // An app may ask for more room on a desktop window (`control.width`, capped
+  // at install); a phone keeps the default.
+  const wanted = window.innerWidth >= MOBILE_BREAKPOINT ? control.width || SESSION_CONTROL_WIDTH.default : SESSION_CONTROL_WIDTH.default
+  const width = Math.max(0, Math.min(wanted, window.innerWidth - 16))
   const left = Math.max(8, Math.min(anchorRect.left, window.innerWidth - width - 8))
   const bottom = window.innerHeight - anchorRect.top + 6
 
@@ -285,8 +313,11 @@ export default function SessionControlHost({
             }
           >
             {/* Keyed on the session: a control holding per-session state must
-                not carry it across a chat switch. */}
-            <LazyControl key={session.sessionKey} session={session} onClose={onClose} />
+                not carry it across a chat switch. The scope tells
+                `useSessionControlRequest()` which chat and control it is. */}
+            <SessionControlRequestScope sessionKey={session.sessionKey} control={control.key}>
+              <LazyControl key={session.sessionKey} session={session} onClose={onClose} />
+            </SessionControlRequestScope>
           </Suspense>
         </AppApiProvider>
       </ControlErrorBoundary>

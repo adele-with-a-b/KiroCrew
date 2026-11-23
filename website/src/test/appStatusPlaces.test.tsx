@@ -96,7 +96,7 @@ describe('a status card that lists places', () => {
     const card = await openCard()
     fireEvent.click(within(card).getAllByTestId('app-status-place')[0])
     await waitFor(() => expect(screen.queryByTestId('app-status-card')).toBeNull())
-    expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', appName: 'fixture-links', pending: { tab: 'questions', arg } })
+    expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', appName: 'fixture-links', pending: { target: { kind: 'panelTab', id: 'questions' }, arg } })
     expect(store.getState().chat.activeSlot).toBe('chat-4')
   })
 
@@ -128,7 +128,7 @@ describe('a status card that lists places', () => {
     fireEvent.click(within(card).getAllByTestId('app-status-place')[0])
     await waitFor(() => expect(mockResume).toHaveBeenCalledWith('dashboard:chat-4', 'Blick'))
     expect(mockMeta).toHaveBeenCalledWith('chat-4')
-    await waitFor(() => expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', opening: false, pending: { tab: 'questions', arg } }))
+    await waitFor(() => expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', opening: false, pending: { target: { kind: 'panelTab', id: 'questions' }, arg } }))
   })
 
   it('never makes a new chat for a target with no transcript, and says it is gone', async () => {
@@ -161,7 +161,7 @@ describe('a status card that lists places', () => {
     renderWithProviders(<AppStatusItems />, { route: '/chat', store })
     const card = await openCard()
     fireEvent.click(within(card).getAllByTestId('app-status-place')[0])
-    await waitFor(() => expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', from: 'chat-1', pending: { tab: 'questions', arg } }))
+    await waitFor(() => expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', from: 'chat-1', pending: { target: { kind: 'panelTab', id: 'questions' }, arg } }))
   })
 
   it('registers its go for the global key, and drops it on unmount', async () => {
@@ -169,7 +169,7 @@ describe('a status card that lists places', () => {
     const { unmount } = renderWithProviders(<AppStatusItems />, { route: '/chat', store })
     await screen.findByTestId('app-status-items')
     await waitFor(() => expect(firePrimaryStatusGo()).toBe(true))
-    expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', pending: { tab: 'questions', arg } })
+    expect(getActiveStatusGo()).toMatchObject({ to: 'chat-4', pending: { target: { kind: 'panelTab', id: 'questions' }, arg } })
     unmount()
     expect(firePrimaryStatusGo()).toBe(false)
   })

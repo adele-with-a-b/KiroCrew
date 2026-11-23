@@ -647,6 +647,10 @@ export { appWebOrigin } from './webOrigin'
 // (`card.openPanelTab`). Feature-detected by name: an older host has no export.
 export { usePanelTabRequest } from './panelTabRequest'
 export type { PanelTabRequest } from './panelTabRequest'
+// What this app's session control (its chip's popover) was opened with by its own
+// link-preview card (`card.openSessionControl`) or a status go (level 11).
+export { useSessionControlRequest } from './sessionControlRequest'
+export type { SessionControlRequest } from './sessionControlRequest'
 // The way back after a status item's go sent the operator to this tab's chat.
 // Feature-detected by name, as `usePanelTabRequest` is.
 export { useStatusGoBack } from './statusGoBack'

@@ -18,7 +18,7 @@ function mount(slot: string | null = 'chat-1') {
 }
 const open = (slot: string, appName: string, tabId: string, payload: unknown = { label: '[R4]' }) => {
   let taken = false
-  act(() => { taken = sendLinkPreviewNav({ kind: 'openPanelTab', slot, appName, tab: tabId, payload }) })
+  act(() => { taken = sendLinkPreviewNav({ kind: 'open', slot, appName, target: { kind: 'panelTab', id: tabId }, payload, via: 'link' }) })
   return taken
 }
 

@@ -937,6 +937,21 @@ def _resolve_link_preview(name: str, provider_id: str) -> FrameEntry | None:
 # point's own (`website/src/linkPreview/linkPreviewProtocol.ts`), not the shared
 # invocation contract.
 _LINK_PREVIEW_POINT = r"""
+// An open's answer (`opened`), by the number it was sent with. A host that never
+// answers (an older one, a dropped message) resolves `no_answer` after 5 s.
+const opens = new Map();
+let openSeq = 0;
+function openTarget(type, invocation, fields, payload) {
+  let copy;
+  try { copy = JSON.parse(JSON.stringify(payload === undefined ? null : payload)); } catch (_) { return Promise.resolve({ ok: false, reason: 'not_json' }); }
+  openSeq += 1;
+  const request = openSeq;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { opens.delete(request); resolve({ ok: false, reason: 'no_answer' }); }, 5000);
+    opens.set(request, (r) => { clearTimeout(timer); resolve(r); });
+    send(type, Object.assign({ invocation, payload: copy, request }, fields));
+  });
+}
 function cardControls(invocation) {
   return Object.freeze({
     open: () => send('open', { invocation }),
@@ -945,12 +960,11 @@ function cardControls(invocation) {
     pin: (pinned) => send('pin', { invocation, pinned: pinned === true }),
     dragBy: (dx, dy) => send('drag', { invocation, dx: clampNum(dx), dy: clampNum(dy) }),
     dock: (edge) => send('dock', { invocation, edge: edge === 'left' || edge === 'right' ? edge : null }),
-    // This app's own side-panel tab, in the chat this show sat in; `payload` must be JSON.
-    openPanelTab: (tab, payload) => {
-      let copy;
-      try { copy = JSON.parse(JSON.stringify(payload === undefined ? null : payload)); } catch (_) { return; }
-      send('openPanelTab', { invocation, tab: String(tab), payload: copy });
-    },
+    // This app's own side-panel tab, or its own session control (the chip's
+    // popover under the message box), in the chat this show sat in; `payload`
+    // must be JSON. Each resolves `{ ok: true }` or `{ ok: false, reason }`.
+    openPanelTab: (tab, payload) => openTarget('openPanelTab', invocation, { tab: String(tab) }, payload),
+    openSessionControl: (control, payload) => openTarget('openSessionControl', invocation, { control: String(control) }, payload),
     // Scroll this show's chat to one of its messages (`link.message`'s shape).
     jumpTo: (message) => {
       if (!message || typeof message.ts !== 'string') return;
@@ -998,6 +1012,13 @@ const POINT = {
       }
       case 'leave': call('leave'); return;
       case 'hide': call('hide', String(m.reason || 'other')); return;
+      case 'opened': {
+        const done = opens.get(m.request);
+        if (!done) return;
+        opens.delete(m.request);
+        done(m.ok === true ? { ok: true } : { ok: false, reason: typeof m.reason === 'string' ? m.reason : 'refused' });
+        return;
+      }
       case 'placement':
         if (m.placement === 'above' || m.placement === 'below') call('placement', m.placement);
         return;

@@ -6,5 +6,7 @@
  * adds `permissions.bots`: an app's backend reaches the Bots the owner ticks for it
  * with its app token. Level 10 adds `useAppStatusRefresh` and
  * `POST /api/apps/<app>/status-changed`: an app re-reads its own status chips and top-bar items at once.
+ * Level 11 adds the session-control open: `card.openSessionControl`, a status target's
+ * `sessionControl`, `useSessionControlRequest`, and the `opened` answer to a card's open.
  */
-export const APP_SDK_LEVEL = 10
+export const APP_SDK_LEVEL = 11

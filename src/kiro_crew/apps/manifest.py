@@ -119,6 +119,8 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     MESSAGE_ACTION_ROLES,
     SELECTION_EFFECTS,
     SELECTION_SOURCES,
+    SESSION_CONTROL_DEFAULT_WIDTH,
+    SESSION_CONTROL_MAX_WIDTH,
     TEXT_PATTERN_TONES,
     CommandArgument,
     CommandContribution,
@@ -748,6 +750,11 @@ class AppManifest:
                 report_path(
                     refusal,
                     f"session control contribution entryPoint {refusal}: {ctl.entryPoint!r}",
+                )
+            if ctl.width and not SESSION_CONTROL_DEFAULT_WIDTH <= ctl.width <= SESSION_CONTROL_MAX_WIDTH:
+                errors.append(
+                    f"session control contribution {ctl.id or '<unnamed>'} width must be a whole number of px "
+                    f"from {SESSION_CONTROL_DEFAULT_WIDTH} to {SESSION_CONTROL_MAX_WIDTH}"
                 )
             if ctl.statusPath and not _SESSION_CONTROL_STATUS_PATH_RE.fullmatch(ctl.statusPath):
                 # Refused rather than ignored: a status route the dashboard
