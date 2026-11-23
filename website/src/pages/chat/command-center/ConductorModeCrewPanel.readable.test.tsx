@@ -1,11 +1,11 @@
 /**
- * Conductor mode Board > Status on a long run: no text is cut. The Overview shows
- * the whole goal and Done when, plus the goal's latest Changed entry with its age;
- * a running milestone shows the time since its report, never "now"; the done fold
- * reads only its count; the Recap counts running milestones instead of naming them.
+ * Conductor mode Board on a long run: the goal is one line that opens onto the whole
+ * goal and Done when, plus the goal's latest Changed entry with its age; no story
+ * line is cut; a running story shows the time since its report, never "now"; the
+ * done fold reads only its count.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
 import { createTestStore } from '../../../test/helpers'
@@ -49,7 +49,7 @@ function renderPanel(goal: string) {
   return screen.findByText(LONG)
 }
 
-describe('Conductor mode Status on a long run', () => {
+describe('Conductor mode Board on a long run', () => {
   beforeEach(() => {
     // One clock, frozen: only Date is faked, so the query's own timers still run.
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -79,23 +79,24 @@ describe('Conductor mode Status on a long run', () => {
     expect(screen.queryByTestId('conductor-mode-changed')).toBeNull()
   })
 
-  it('cuts no text: no truncate or line clamp in the Status view, and no ellipsis added', async () => {
+  it('draws the goal as one line that opens onto the whole of it, and cuts no story text', async () => {
     await renderPanel(GOAL)
-    const status = screen.getByTestId('conductor-mode-status')
-    expect(status.querySelector('.truncate, [class*="line-clamp"]')).toBeNull()
-    expect(status.textContent).not.toContain('…')
+    const line = screen.getByTestId('conductor-mode-goal-line')
+    expect(line).not.toHaveAttribute('open')
+    expect(screen.getByTestId('conductor-mode-goal')).toHaveClass('truncate')
+    fireEvent.click(line.querySelector('summary')!)
+    expect(line).toHaveAttribute('open')
+    for (const row of screen.getAllByTestId('conductor-mode-milestone')) {
+      expect(row.querySelector('.truncate, [class*="line-clamp"]')).toBeNull()
+      expect(row.textContent).not.toContain('…')
+    }
   })
 
-  it('gives a running milestone its age, not "now", and the done fold only its count', async () => {
+  it('gives a running story its age, not "now", and the done fold only its count', async () => {
     await renderPanel(GOAL)
     const row = screen.getAllByTestId('conductor-mode-milestone').find(r => r.getAttribute('data-state') === 'running')!
     expect(row.textContent).not.toMatch(/\bnow\b/)
-    expect(row).toHaveTextContent('29m')
-    expect(within(screen.getByTestId('conductor-mode-milestones-done')).getByText('2 done').closest('summary')?.textContent).toBe('2 done')
-  })
-
-  it('counts running milestones in the Recap instead of repeating their titles', async () => {
-    await renderPanel(GOAL)
-    expect(screen.getByTestId('conductor-mode-recap')).toHaveTextContent(/^2 of 3 done; 1 running\.$/)
+    expect(within(row.closest('[data-testid="plan-story"]') as HTMLElement).getByTestId('plan-story-age')).toHaveTextContent('29m')
+    expect(screen.getByTestId('conductor-mode-milestones-done').querySelector('summary')?.textContent).toBe('2 done')
   })
 })

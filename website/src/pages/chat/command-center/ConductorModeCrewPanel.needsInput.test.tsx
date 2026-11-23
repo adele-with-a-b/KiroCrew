@@ -55,9 +55,10 @@ describe('Conductor mode Needs your input', () => {
     expect(within(row).getByTestId('conductor-mode-person-ask-text')).toHaveTextContent('Which tea goes on the menu: oolong or green?')
     expect(screen.getByTestId('conductor-mode-needs-you')).toHaveTextContent('· 1')
     expect(screen.queryByTestId('conductor-mode-needs-you-none')).toBeNull()
-    // Its milestone and the recap say it waits on the person, not on the main chat.
-    expect(screen.getByTestId('conductor-mode-milestone')).toHaveTextContent('Waiting on your answer above')
-    expect(screen.getByTestId('conductor-mode-recap')).toHaveTextContent('Pick a tea waits on you')
+    // Its sprint row says it waits on the person, quoting the ask, not the main chat.
+    const story = screen.getByTestId('plan-story')
+    expect(story).toHaveAttribute('data-needs-you', 'true')
+    expect(story).toHaveTextContent('Needs you: Which tea goes on the menu: oolong or green?')
   })
 
   it("puts the conductor's offered answers in one menu beside Reply: two controls in the row", async () => {

@@ -33,7 +33,7 @@ const WORKERS = {
 
 const BOARD = { conductor: { schema: 1, slot_key: 'root-1', goal: 'Plan the launch. Then more.', round: 1, depth: 0, parent_item: null, created_at: '' }, conductor_alive: 'idle', items: [], take_over_available: false }
 
-/** The Crew tab opens on Status; most tests here read the List. */
+/** The Crew tab opens on the Board; most tests here read the Workers list. */
 async function toList() {
   fireEvent.click(await screen.findByTestId('conductor-mode-view-list'))
 }
@@ -58,16 +58,17 @@ describe('Conductor mode Crew tab', () => {
   })
   afterEach(() => vi.clearAllMocks())
 
-  it('opens on Status: Overview from the ledger goal, Needs your input, Milestones and Recap', async () => {
+  it('opens on the Board: the goal line from the ledger, Needs your input and the sprint, with no Recap', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
-    expect(screen.getByTestId('conductor-mode-view-status')).toHaveAttribute('aria-checked', 'true')
-    expect(await screen.findByText('Plan the launch.')).toBeInTheDocument()
+    expect(screen.getByTestId('conductor-mode-view-board')).toHaveAttribute('aria-checked', 'true')
+    expect(await screen.findByText('Plan the launch.')).toHaveAttribute('data-testid', 'conductor-mode-goal')
     expect(screen.getByTestId('conductor-mode-needs-you')).toBeInTheDocument()
-    expect(screen.getByTestId('conductor-mode-milestones')).toBeInTheDocument()
-    expect(screen.getByTestId('conductor-mode-recap')).toBeInTheDocument()
-    // Session counts live in List, not Status.
-    expect(screen.getByTestId('conductor-mode-status')).not.toHaveTextContent(/sessions ·/)
+    expect(screen.getByTestId('plan-sprint')).toBeInTheDocument()
+    expect(screen.queryByTestId('conductor-mode-recap')).toBeNull()
+    expect(screen.queryByTestId('conductor-mode-milestones')).toBeNull()
+    // Session counts live in Workers, not on the Board.
+    expect(screen.getByTestId('conductor-mode-backlog')).not.toHaveTextContent(/sessions ·/)
     expect(screen.queryByText(/Timeline/)).toBeNull()
   })
 
@@ -307,10 +308,10 @@ describe('Conductor mode Crew tab', () => {
     }
   })
 
-  it('names the two views Status and Workers', async () => {
+  it('names the two views Board and Workers', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />, [{ key: 'root-1', title: 'Sample goal', crew_mode_root: true }])
-    expect(await screen.findByTestId('conductor-mode-view-status')).toHaveTextContent(/^Status$/)
+    expect(await screen.findByTestId('conductor-mode-view-board')).toHaveTextContent(/^Board$/)
     expect(screen.getByTestId('conductor-mode-view-list')).toHaveTextContent(/^Workers$/)
   })
 
@@ -385,12 +386,12 @@ describe('Conductor mode Crew tab', () => {
     acceptance_concrete: true, outstanding: false, terminal: false, alive: 'idle', events: [], ...over,
   })
 
-  it('Status: a failed board read says so instead of an empty milestone list', async () => {
+  it('Board: a failed board read says so instead of an empty sprint', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockRejectedValue(new ApiError(500, 'board down', ''))
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
     expect(await screen.findByText('board down')).toBeInTheDocument()
-    expect(screen.queryByText('No milestones yet.')).toBeNull()
+    expect(screen.queryByText('Nothing in this sprint yet.')).toBeNull()
   })
 
   it('List: a failed crew read says so', async () => {
@@ -400,7 +401,7 @@ describe('Conductor mode Crew tab', () => {
     expect(await screen.findByText('Could not load the crew.')).toBeInTheDocument()
   })
 
-  it('Status: the pulse says stuck only when a milestone has no chat left', async () => {
+  it('Board: the pulse says stuck only when a milestone has no chat left', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'a', alive: 'closed' })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
@@ -410,7 +411,7 @@ describe('Conductor mode Crew tab', () => {
     expect(screen.getByTestId('conductor-mode-pulse').className).not.toContain('danger')
   })
 
-  it('Status: the quiet pulse shows even when nobody has reported yet', async () => {
+  it('Board: the quiet pulse shows even when nobody has reported yet', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'n1', status: null, last_report_at: null, stale: true })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
@@ -419,7 +420,7 @@ describe('Conductor mode Crew tab', () => {
     expect(screen.getByTestId('conductor-mode-pulse').className).not.toContain('warn')
   })
 
-  it('Status: a stale milestone whose chat is open reads Quiet with its PR, an idle one names its PR or says no reason', async () => {
+  it('Board: a stale milestone whose chat is open reads Quiet with its PR, an idle one names its PR or says no reason', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [
       ITEM({ item_id: 'q1', title: 'Supplies list', stale: true, pr: 42, summary: 'Holding for CI.' }),
@@ -439,11 +440,10 @@ describe('Conductor mode Crew tab', () => {
     expect(rows[1]).toHaveTextContent('Waiting on PR #7')
     expect(rows[2]).toHaveTextContent('Paused, no reason given')
     expect(screen.getByTestId('conductor-mode-pulse')).toHaveTextContent(/quiet/i)
-    expect(screen.getByTestId('conductor-mode-recap')).toHaveTextContent('Supplies list has gone quiet')
-    expect(screen.getByTestId('conductor-mode-needs-you-none')).toHaveTextContent('Quiet or stuck work is under Milestones.')
+    expect(screen.getByTestId('conductor-mode-needs-you-none')).toHaveTextContent('Quiet or stuck work is in the sprint below.')
   })
 
-  it('Status: an idle milestone whose worker loops on CI reads running and names its PR', async () => {
+  it('Board: an idle milestone whose worker loops on CI reads running and names its PR', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [
       ITEM({ item_id: 'l1', title: 'Drinks menu', pr: 7, looping: true, summary: 'Monitor armed, ending turn.' }),
@@ -458,17 +458,17 @@ describe('Conductor mode Crew tab', () => {
     expect(row).not.toHaveTextContent(/\bnow\b/)
   })
 
-  it('Status: a blocked milestone opens its crew member, and shows no "moving" pulse', async () => {
+  it('Board: a blocked milestone opens its crew member, and shows no "moving" pulse', async () => {
     api.crewWorkers.mockResolvedValue({ ...WORKERS, workers: [{ ...W('w-sup', 'Supplies', 'idle', 'waiting'), ledger_item: 'b1' }] })
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'b1', title: 'Supplies list', status: 'blocked' })] })
     const store = renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
-    const open = await screen.findByTestId('conductor-mode-milestone-open')
+    const open = within(await screen.findByTestId('plan-story')).getByRole('button', { name: 'Supplies list' })
     expect(screen.queryByTestId('conductor-mode-pulse')).toBeNull()
     fireEvent.click(open)
     expect(store.getState().chat.activeSlot).toBe('w-sup')
   })
 
-  it('Status: a worker blocked on the conductor says the main chat is answering, and is not counted as needing you', async () => {
+  it('Board: a worker blocked on the conductor says the main chat is answering, and is not counted as needing you', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'b2', title: 'Supplies list', status: 'blocked', summary: 'The file save was declined. Retry next.' })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
@@ -477,35 +477,33 @@ describe('Conductor mode Crew tab', () => {
     expect(row).toHaveTextContent('Main chat is answering')
     expect(row).not.toHaveTextContent('The file save was declined.')
     expect(screen.getByTestId('conductor-mode-needs-you-none')).toHaveTextContent('Nothing needs you right now.')
-    expect(screen.getByTestId('conductor-mode-recap')).not.toHaveTextContent(/wait on you|waits on you/)
   })
 
-  it('Status: a report whose reason names a person needs you, and the Needs your input line points at it', async () => {
+  it('Board: a report whose reason names a person needs you, and the Needs your input line points at it', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'h1', title: 'Supplies list', status: 'blocked', reason: 'needs_human', summary: 'Sign in to the shop. Then retry.' })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
-    const row = await screen.findByTestId('conductor-mode-milestone')
-    expect(row.getAttribute('data-state')).toBe('needs_you')
-    expect(row).toHaveTextContent('Sign in to the shop.')
+    // Its sprint row is marked and says what it needs, in place of the worker's line.
+    const row = await screen.findByTestId('plan-story')
+    expect(row).toHaveAttribute('data-needs-you', 'true')
+    expect(row).toHaveTextContent('Needs you: Sign in to the shop.')
     // The header counts the row, so the number and the line agree.
     expect(screen.getByTestId('conductor-mode-needs-you')).toHaveTextContent('· 1')
-    expect(screen.getByTestId('conductor-mode-needs-you-none')).toHaveTextContent('Supplies list needs you. See Milestones.')
+    expect(screen.getByTestId('conductor-mode-needs-you-none')).toHaveTextContent('Supplies list needs you. See the sprint below.')
     expect(screen.getByTestId('conductor-mode-needs-you-none')).not.toHaveTextContent('No approval')
-    expect(screen.getByTestId('conductor-mode-recap')).toHaveTextContent('Supplies list waits on you')
   })
 
-  it('Status: a worker whose session closed on an open report reads Stuck, not needs you', async () => {
+  it('Board: a worker whose session closed on an open report reads Stuck, not needs you', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 's1', title: 'Supplies list', status: 'progress', alive: 'closed', summary: 'Half the list. More soon.' })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
     const row = await screen.findByTestId('conductor-mode-milestone')
     expect(row.getAttribute('data-state')).toBe('stuck')
     expect(row).toHaveTextContent('Stuck · its chat closed, ask the main chat to restart it')
-    expect(screen.getByTestId('conductor-mode-needs-you-none')).toHaveTextContent('Quiet or stuck work is under Milestones.')
-    expect(screen.getByTestId('conductor-mode-recap')).toHaveTextContent('Supplies list is stuck')
+    expect(screen.getByTestId('conductor-mode-needs-you-none')).toHaveTextContent('Quiet or stuck work is in the sprint below.')
   })
 
-  it('Status: an unstarted milestone says Not started, never a made-up order', async () => {
+  it('Board: an unstarted milestone says Not started, never a made-up order', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'r1', title: 'Menu', alive: 'running' }), ITEM({ item_id: 'n1', title: 'Decor', status: null, last_report_at: null, created_at: '2026-10-30T00:01:00Z' })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
@@ -515,7 +513,7 @@ describe('Conductor mode Crew tab', () => {
     expect(next).not.toHaveTextContent('Starts after')
   })
 
-  it('Status: an idle worker whose last report was progress reads Waiting, with no spinner or "moving" pulse', async () => {
+  it('Board: an idle worker whose last report was progress reads Waiting, with no spinner or "moving" pulse', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'p1', title: 'Menu', summary: 'Drafted the menu. More soon.' })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
@@ -525,10 +523,9 @@ describe('Conductor mode Crew tab', () => {
     expect(row).toHaveTextContent('Drafted the menu.')
     expect(row).not.toHaveTextContent('now')
     expect(screen.queryByTestId('conductor-mode-pulse')).toBeNull()
-    expect(screen.getByTestId('conductor-mode-recap')).not.toHaveTextContent(/running/)
   })
 
-  it('Status: a milestone turns running on the same slot push the List re-reads on, not on the next poll', async () => {
+  it('Board: a milestone turns running on the same slot push the List re-reads on, not on the next poll', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'p1', title: 'Menu' })] })
     // A root of its own: the coalesced re-read is keyed by root across the file,
@@ -544,7 +541,43 @@ describe('Conductor mode Crew tab', () => {
     await waitFor(() => expect(screen.getByTestId('conductor-mode-milestone').getAttribute('data-state')).toBe('running'), { timeout: CREW_WORKERS_PUSH_COALESCE_MS + 2000 })
   })
 
-  it('Status: a finished crew shows no pulse', async () => {
+  it('Board: a sub-task with no report of its own shows its step, never "Not started"', async () => {
+    api.crewWorkers.mockResolvedValue(WORKERS)
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [
+      ITEM({ item_id: 'it_0000000a', title: 'Menu', plan: { level: 'story' } }),
+      ITEM({ item_id: 'it_0000000b', title: 'Tea list', status: null, last_report_at: null, plan: { level: 'task', parent: 'it_0000000a', step: 'merged' } }),
+      ITEM({ item_id: 'it_0000000c', title: 'Prices', status: 'progress', summary: 'Half priced.', plan: { level: 'task', parent: 'it_0000000a', step: 'build' } }),
+    ] })
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
+    fireEvent.click(await screen.findByTestId('plan-story-tasks-toggle'))
+    const [tea, prices] = screen.getAllByTestId('plan-story-task')
+    expect(tea).toHaveTextContent('Tea list')
+    expect(tea).not.toHaveTextContent('Not started')
+    expect(within(tea).queryByTestId('conductor-mode-milestone')).toBeNull()
+    expect(within(prices).getByTestId('conductor-mode-milestone')).toHaveTextContent('Half priced.')
+  })
+
+  it('Board: a story reported done but not accepted says Done in the sprint, aged from its report', async () => {
+    api.crewWorkers.mockResolvedValue(WORKERS)
+    const reported = new Date(Date.now() - 5 * 60_000).toISOString()
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'd2', title: 'Menu', status: 'done', summary: 'Menu drafted. All of it.', pr: 7, created_at: '2026-10-30T00:00:00Z', last_report_at: reported })] })
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
+    const row = await screen.findByTestId('plan-story')
+    expect(row.closest('[data-testid="plan-sprint"]')).not.toBeNull()
+    expect(within(row).getByTestId('conductor-mode-milestone')).toHaveTextContent(/^Done· Menu drafted\.· PR #7$/)
+    expect(within(row).getByTestId('plan-story-age')).toHaveTextContent('5m')
+    expect(screen.queryByTestId('conductor-mode-milestones-done')).toBeNull()
+  })
+
+  it('Board: a Conductor with no ledger yet says its sprint is empty', async () => {
+    api.crewWorkers.mockResolvedValue(WORKERS)
+    api.crewBoard.mockRejectedValue(new ApiError(404, 'no ledger', ''))
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
+    expect(await screen.findByText('Nothing in this sprint yet.')).toBeInTheDocument()
+    expect(screen.queryByText('no ledger')).toBeNull()
+  })
+
+  it('Board: a finished crew shows no pulse', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'b', state: 'accepted', terminal: true })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
@@ -565,7 +598,7 @@ describe('Conductor mode Crew tab', () => {
     expect(store.getState().chat.activeSlot).toBe('root-1')
   })
 
-  it('Milestones: the done fold reads "N done" alone, folded or open, never a list of titles', async () => {
+  it('Board: the done fold reads "N done" alone, folded or open, never a list of titles', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'd1', title: 'Drinks menu', state: 'accepted', terminal: true })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
@@ -576,20 +609,17 @@ describe('Conductor mode Crew tab', () => {
     expect(summary).toHaveTextContent(/^1 done$/)
   })
 
-  it('Status: a failed summary read and a failed crew read say so', async () => {
+  it('Board: a failed crew read says so', async () => {
     api.crewWorkers.mockRejectedValue(new ApiError(500, 'boom', ''))
-    api.sessionSummary.mockRejectedValue(new ApiError(500, 'summary down', ''))
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
-    expect(await screen.findByText('summary down')).toBeInTheDocument()
     expect(await screen.findByText('Could not load the crew.')).toBeInTheDocument()
   })
 
-  it('Status: a worker question waiting on the main chat does not ask the person', async () => {
+  it('Board: a worker question waiting on the main chat does not ask the person', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'q', title: 'Menu', status: 'question', outstanding: true })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
     const row = await screen.findByTestId('conductor-mode-milestone')
     expect(row).toHaveTextContent('Main chat is answering')
-    expect(screen.getByTestId('conductor-mode-recap')).not.toHaveTextContent(/on you/)
   })
 })

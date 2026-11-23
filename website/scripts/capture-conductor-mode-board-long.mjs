@@ -32,10 +32,12 @@ for (const w of [360, 560, 900]) {
   await page.locator('[data-testid="conductor-mode-milestone"][data-state="running"]').first().waitFor({ state: 'visible', timeout: 20000 })
   await page.waitForTimeout(300)
   const cut = await page.evaluate(() => {
-    const status = document.querySelector('[data-testid="conductor-mode-status"]')
+    const status = document.querySelector('[data-testid="conductor-mode-backlog"]')
     const out = []
     for (const el of status.querySelectorAll('*')) {
       if (!(el instanceof HTMLElement) || !el.textContent?.trim() || el.offsetParent === null) continue
+      // The goal line is the one line drawn cut on purpose: a click opens it.
+      if (el.closest('[data-testid="conductor-mode-goal-line"]:not([open]) > summary')) continue
       const s = getComputedStyle(el)
       const wide = el.scrollWidth > el.clientWidth + 1 && (s.textOverflow === 'ellipsis' || s.overflow === 'hidden')
       const tall = el.scrollHeight > el.clientHeight + 1 && s.webkitLineClamp !== 'none' && s.webkitLineClamp !== ''
@@ -49,10 +51,10 @@ for (const w of [360, 560, 900]) {
   })
   report[w] = cut
   cutTotal += cut.length
-  // The frame is taller than any run needs: crop to the Recap's bottom edge.
+  // The frame is taller than any run needs: crop to the Board's bottom edge.
   const frame = await page.getByTestId('capture-frame').boundingBox()
-  const recap = await page.getByTestId('conductor-mode-recap-section').boundingBox()
-  await page.screenshot({ path: `${OUT}/${TAG}-${w}.png`, clip: { x: frame.x, y: frame.y, width: frame.width, height: recap.y + recap.height + 16 - frame.y } })
+  const foot = await page.getByTestId('conductor-mode-backlog').boundingBox()
+  await page.screenshot({ path: `${OUT}/${TAG}-${w}.png`, clip: { x: frame.x, y: frame.y, width: frame.width, height: Math.min(foot.y + foot.height + 16, frame.y + frame.height) - frame.y } })
   console.log(`[${w}px] ${cut.length} cut elements`)
   for (const c of cut) console.log(`  ${c.section} | ${c.how} | ${c.text}`)
   await page.close()

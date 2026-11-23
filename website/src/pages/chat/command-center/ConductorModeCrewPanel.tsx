@@ -1,11 +1,13 @@
-/** The conductor mode chat's Crew tab: a Status | List switch. Status = Overview
- *  (the goal and "Done when" in one sentence each), Needs your input (the main
- *  chat's question as one row pointing at its card, the approval cards compact), Milestones (one row per
- *  work-ledger item) and a one-line Recap. List = the crew as one indented tree,
- *  each lead foldable, trees finished all through folded away; a click opens the member in the main pane. Every
- *  number comes from reads the dashboard already makes: the crew list route,
- *  the work-ledger board, the session summary (GET only), the live slot rows
- *  and the pending question cards. No model call. */
+/** The conductor mode chat's Crew tab: a Board | Workers switch, opening on the
+ *  Board (`ConductorBacklogView`). This file works out what the Board draws from the
+ *  ledger: the goal as one line that opens onto its "Done when", scope and latest
+ *  change; the run's state word; Needs your input (the main chat's question as one
+ *  row pointing at its card, the approval cards compact); and each story's line,
+ *  what its worker last said or what it waits on. Workers = the crew as one
+ *  indented tree, each lead foldable, trees finished all through folded away; a
+ *  click opens the member in the main pane. Every number comes from reads the
+ *  dashboard already makes: the crew list route, the work-ledger board, the live
+ *  slot rows and the pending question cards. No model call. */
 import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowDown, Check, ChevronDown, ChevronLeft, ChevronRight, Loader, Loader2, MessageCircleQuestionMark, MessageSquare, Pause, CircleStop, X } from 'lucide-react'
@@ -14,7 +16,6 @@ import { useCrewBack, type CrewBack } from '../../../components/crew/useCrewBack
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
 import { api } from '../../../api/client'
 import type { CrewWorker, ConductorModeRun } from '../../../types'
-import type { SessionSummary } from '../../../types/sessionSummary'
 import { timedPoll, usePollRule } from '../../../lib/pollRule'
 import { crewBoardQueryKey, CREW_BOARD_POLL_MS, type WorkBoardItem, type WorkBoardResponse } from '../../../api/crewBoard'
 import { artifactEntries } from '../../crewBoardRows'
@@ -37,7 +38,7 @@ import { RadioChipGroup, radioChip } from '../../../components/RadioChipGroup'
 import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
 import { conductorModeRunState, type ConductorModeRunState } from '../../../lib/conductorModeRun'
-import ConductorBacklogView from './ConductorBacklogView'
+import ConductorBacklogView, { type BacklogRowState } from './ConductorBacklogView'
 import { levelOf } from '../../../lib/crewPlan'
 
 export interface ConductorModeCounts { total: number; done: number; running: number; approvals: number; questions: number }
@@ -56,49 +57,6 @@ export function conductorModeCounts(workers: readonly CrewWorker[], approvals: n
 /** Names joined for a sentence, in the active locale ("A, B and C"). */
 function joinNames(names: string[]): string {
   return fmtList(names)
-}
-
-/** The recap: ONE plain sentence from the counts and the names that wait. */
-export function conductorModeRecap(c: ConductorModeCounts, waitingNames: string[], hasQuestion: boolean): string {
-  if (c.total === 0) return i18nT('components.crewMode.conductor_mode_recap_empty')
-  const head = i18nT('components.crewMode.conductor_mode_recap_head', { done: c.done, total: c.total })
-  const names = [...waitingNames]
-  if (hasQuestion) names.push(i18nT('components.crewMode.conductor_mode_recap_main_chat'))
-  if (names.length > 0) {
-    return i18nT(names.length === 1 ? 'components.crewMode.conductor_mode_recap_waiting_one' : 'components.crewMode.conductor_mode_recap_waiting_many', { head, names: joinNames(names) })
-  }
-  if (c.running > 0) return i18nT('components.crewMode.conductor_mode_recap_running', { head, n: c.running })
-  return i18nT('components.crewMode.conductor_mode_recap_quiet', { head })
-}
-
-/** The Recap from the session summary (GET /api/chat/slots/{slot}/summary, a free
- *  read that never generates): the first goal's latest status
- *  line, else its title. '' when the summary is off or has no goal yet. */
-export function summaryRecap(summary: SessionSummary | undefined, milestoneTitles: readonly string[]): string {
-  // A stale summary may name a state the milestones have moved past.
-  if (!summary?.enabled || summary.stale || !summary.intents?.length) return ''
-  // The FIRST goal, in the summary's own order (the panel's lead goal).
-  const goal = summary.intents[0]
-  const line = firstSentence((goal.progress?.[goal.progress.length - 1] || '').trim())
-  // Only a line about the goal's progress: one that names a milestone, and none
-  // of the crew's own bookkeeping (limits, caps, ledger, sessions, retries).
-  if (!line || BOOKKEEPING.test(line)) return ''
-  const lower = line.toLowerCase()
-  return milestoneTitles.some(t => t && lower.includes(t.toLowerCase())) ? line : ''
-}
-
-const BOOKKEEPING = /\b(task limit|open-task|tasks used|cap|ledger|item id|session|dispatch|worker|round|retry|try|timed out|approval|auto-nudge|monitor|patrol)\b/i
-
-/** The milestone sentence: "4 of 8 done; A and B wait on you; C is stuck; E has gone quiet; D is running." */
-export function milestoneSentence(done: number, total: number, waiting: string[], running: string[], stuck: string[] = [], quiet: string[] = []): string {
-  if (total === 0) return i18nT('components.crewMode.conductor_mode_recap_empty')
-  const parts = [i18nT('components.crewMode.conductor_mode_recap_head', { done, total })]
-  if (waiting.length) parts.push(i18nT(waiting.length === 1 ? 'components.crewMode.conductor_mode_recap_wait_one' : 'components.crewMode.conductor_mode_recap_wait', { names: joinNames(waiting) }))
-  if (stuck.length) parts.push(i18nT(stuck.length === 1 ? 'components.crewMode.conductor_mode_recap_stuck_one' : 'components.crewMode.conductor_mode_recap_stuck_many', { names: joinNames(stuck) }))
-  if (quiet.length) parts.push(i18nT(quiet.length === 1 ? 'components.crewMode.conductor_mode_recap_gone_quiet_one' : 'components.crewMode.conductor_mode_recap_gone_quiet_many', { names: joinNames(quiet) }))
-  // Running milestones are listed right above the Recap, so it counts them, never repeats their titles.
-  if (running.length) parts.push(i18nT('components.crewMode.conductor_mode_row_count_running', { count: running.length }))
-  return `${parts.join('; ')}.`
 }
 
 /** One member in the Workers tree, with what its subtree holds: the members
@@ -346,35 +304,26 @@ function minutesBetween(a: string | null | undefined, b: string | number | null 
 }
 
 
-const STATE_ICON: Record<MilestoneState, JSX.Element> = {
-  done: <span className="w-5 h-5 rounded-full grid place-items-center bg-[color-mix(in_srgb,var(--ok)_18%,transparent)] crew-tone-ok"><Check size={12} strokeWidth={3} /></span>,
-  // Closed without being accepted: finished, so calm, but never the done check.
-  not_done: <span className="w-5 h-5 rounded-full grid place-items-center bg-[color-mix(in_srgb,var(--muted)_18%,transparent)] text-muted"><X size={12} strokeWidth={2.5} /></span>,
-  needs_you: <span className="w-5 h-5 rounded-full grid place-items-center bg-[color-mix(in_srgb,var(--warn)_20%,transparent)] crew-tone-warn"><AlertTriangle size={11} strokeWidth={2.5} /></span>,
-  running: <span className="w-5 h-5 rounded-full grid place-items-center bg-[color-mix(in_srgb,var(--aim)_18%,transparent)] conductor-mode-accent"><Loader size={12} className="motion-safe:animate-spin" /></span>,
-  waiting: <span className="block w-5 h-5 rounded-full border-[1.5px] border-[color-mix(in_srgb,var(--muted)_70%,transparent)]" />,
-  // Quiet and stuck are the conductor's to pick up, so they are muted: only
-  // needs_you takes the warm colour.
-  quiet: <span className="w-5 h-5 rounded-full grid place-items-center bg-[color-mix(in_srgb,var(--muted)_18%,transparent)] text-muted"><Pause size={11} strokeWidth={2.5} /></span>,
-  stuck: <span className="w-5 h-5 rounded-full grid place-items-center bg-[color-mix(in_srgb,var(--muted)_18%,transparent)] text-muted"><AlertTriangle size={11} strokeWidth={2.5} /></span>,
-  next: <span className="block w-5 h-5 rounded-full border-[1.5px] border-dashed border-[color-mix(in_srgb,var(--muted)_70%,transparent)]" />,
-}
-
 /** A text that wraps, a long word (a SHA, a path) included, instead of being cut. */
 const WRAP = 'min-w-0 [overflow-wrap:anywhere]'
 
 const VIEW_LABEL = {
-  status: 'components.crewMode.conductor_mode_view_status',
-  backlog: 'components.crewMode.conductor_mode_view_backlog',
+  board: 'components.crewMode.conductor_mode_view_board',
   list: 'components.crewMode.conductor_mode_view_list',
 } as const
 
-function MilestoneRow({ item, state, waitingOn, now, onOpen }: { item: WorkBoardItem; state: MilestoneState; waitingOn: string; now: number; onOpen?: () => void }) {
+/** A story's line on the Board: what its worker last said, or what it waits on,
+ *  as far as the board knows. The story's title, chips and button are the Board's. */
+function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state: MilestoneState; waitingOn: string }) {
   let sub: JSX.Element | string = ''
   if (state === 'done') {
     const link = artifactEntries(item).find(([, v]) => /^https?:\/\//.test(v))
+    // Reported done but not accepted yet: it stays in the sprint, so it says Done.
+    const open = item.state !== 'accepted'
+    const said = firstSentence(item.summary)
     sub = <>
-      <span className={WRAP}>{firstSentence(item.summary)}</span>
+      {open && <span className="shrink-0">{i18nT('components.crewMode.conductor_mode_run_done')}</span>}
+      {said && <span className={WRAP}>{open ? `· ${said}` : said}</span>}
       {item.pr != null && <span className="shrink-0 conductor-mode-accent">{i18nT('components.crewMode.conductor_mode_ms_pr', { n: item.pr })}</span>}
       {link && <a className="shrink-0 conductor-mode-accent hover:underline" href={link[1]} target="_blank" rel="noreferrer">· {link[0]}</a>}
     </>
@@ -415,27 +364,21 @@ function MilestoneRow({ item, state, waitingOn, now, onOpen }: { item: WorkBoard
     // A worker idle inside its own loop reads one way, typed: "In progress · PR #N".
     const text = state === 'needs_you' ? waitingOn
       : state === 'running' && item.alive !== 'running' && item.pr != null ? `${i18nT('components.crewMode.conductor_mode_ms_running')} ${i18nT('components.crewMode.conductor_mode_ms_pr', { n: item.pr })}`
-      : state === 'running' ? (firstSentence(item.summary) || i18nT('components.crewMode.conductor_mode_ms_running'))
+      : state === 'running' ? [i18nT('components.crewMode.conductor_mode_ms_running'), firstSentence(item.summary)].filter(Boolean).join(' · ')
         : i18nT('components.crewMode.conductor_mode_ms_not_started')
     sub = <span className={WRAP} title={text}>{text}</span>
   }
-  // The time since its last report, a running turn's too (the spinner says it runs).
-  const right = state === 'next' ? i18nT('components.crewMode.conductor_mode_ms_next')
-    : state === 'done' || state === 'not_done' ? fmtMinutes(minutesBetween(item.created_at, item.closed_at || item.last_report_at))
-      : fmtMinutes(minutesBetween(item.last_report_at || item.created_at, now))
   return (
-    <li className="flex items-start gap-2.5 py-1.5" data-testid="conductor-mode-milestone" data-state={state}>
-      <span className="mt-0.5 shrink-0">{STATE_ICON[state]}</span>
-      <span className="flex-1 min-w-0">
-        {/* A milestone with a crew member opens it, so a blocked one is one click from where it is decided. */}
-        {onOpen
-          ? <button type="button" onClick={onOpen} data-testid="conductor-mode-milestone-open" className={`block max-w-full text-left text-[13px] font-medium [overflow-wrap:anywhere] hover:underline ${state === 'next' ? 'text-muted' : 'text-text'}`}>{item.title}</button>
-          : <span className={`block text-[13px] font-medium [overflow-wrap:anywhere] ${state === 'next' ? 'text-muted' : 'text-text'}`}>{item.title}</span>}
-        <span className={`flex flex-wrap items-baseline gap-x-1 min-w-0 text-[12px] ${state === 'needs_you' ? 'crew-tone-warn' : 'text-muted'}`}>{sub}</span>
-      </span>
-      <span className={`shrink-0 text-[11px] tabular-nums mt-0.5 ${state === 'running' ? 'conductor-mode-accent font-medium' : 'text-muted'}`}>{right}</span>
-    </li>
+    <span className={`flex flex-wrap items-baseline gap-x-1 min-w-0 text-[12px] ${state === 'needs_you' ? 'crew-tone-warn' : 'text-muted'}`} data-testid="conductor-mode-milestone" data-state={state}>{sub}</span>
   )
+}
+
+/** The time since a story's last report, a running turn's too, and an open one
+ *  reported done; a closed one's whole run. */
+function milestoneAge(item: WorkBoardItem, state: MilestoneState, now: number): string {
+  return state === 'next' ? i18nT('components.crewMode.conductor_mode_ms_next')
+    : (state === 'done' || state === 'not_done') && item.closed_at ? fmtMinutes(minutesBetween(item.created_at, item.closed_at || item.last_report_at))
+      : fmtMinutes(minutesBetween(item.last_report_at || item.created_at, now))
 }
 
 const RUN_ICON: Record<ConductorModeRunState, JSX.Element> = {
@@ -455,24 +398,27 @@ const RUN_WORD: Record<ConductorModeRunState, string> = {
   stopped: 'components.crewMode.conductor_mode_run_stopped',
 }
 
-/** The run's state in one line at the top of Overview: the word, then for a
- *  settled run one plain sentence with no numbers. The way back to the main chat
- *  is the panel's own Back row. No line says a final report exists: a stop at a
- *  limit or by a person sends none, and the board cannot tell. */
-function RunLine({ state, run }: { state: ConductorModeRunState; run: ConductorModeRun | undefined }) {
-  const detail = state === 'done'
-    ? [i18nT((run?.not_done ?? 0) > 0 ? 'components.crewMode.conductor_mode_run_done_some' : 'components.crewMode.conductor_mode_run_done_all')]
-    : state === 'stopped'
-      ? [i18nT(run?.at_limit ? 'components.crewMode.conductor_mode_run_stopped_limit' : 'components.crewMode.conductor_mode_run_stopped_detail'), i18nT('components.crewMode.conductor_mode_run_continue')]
-      : []
+/** The run's state word at the head of the Board's sprint line. The way back to
+ *  the main chat is the panel's own Back row. */
+function RunWord({ state, run }: { state: ConductorModeRunState; run: ConductorModeRun | undefined }) {
   return (
-    <div className="space-y-0.5" data-testid="conductor-mode-run" data-state={state}>
-      {/* Done with milestones not done keeps the check but not its green: the run ended, not everything landed. */}
-      <p className="flex items-center gap-1.5 text-[13px] font-semibold text-text">{state === 'done' && (run?.not_done ?? 0) > 0
-        ? <Check size={12} strokeWidth={3} aria-hidden="true" className="shrink-0 text-muted" /> : RUN_ICON[state]}{i18nT(RUN_WORD[state])}</p>
-      {detail.length > 0 && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{detail.join(' ')}</p>}
-    </div>
+    <span className="inline-flex items-center gap-1 font-semibold text-text" data-testid="conductor-mode-run" data-state={state}>
+      {/* Done with stories not done keeps the check but not its green: the run ended, not everything landed. */}
+      {state === 'done' && (run?.not_done ?? 0) > 0
+        ? <Check size={12} strokeWidth={3} aria-hidden="true" className="shrink-0 text-muted" /> : RUN_ICON[state]}{i18nT(RUN_WORD[state])}
+    </span>
   )
+}
+
+/** A settled run's one plain sentence, with no numbers, under the sprint line. No
+ *  line says a closing note exists: a stop at a limit or by a person sends none,
+ *  and the board cannot tell. */
+function runDetail(state: ConductorModeRunState | null, run: ConductorModeRun | undefined): string {
+  return state === 'done'
+    ? i18nT((run?.not_done ?? 0) > 0 ? 'components.crewMode.conductor_mode_run_done_some' : 'components.crewMode.conductor_mode_run_done_all')
+    : state === 'stopped'
+      ? `${i18nT(run?.at_limit ? 'components.crewMode.conductor_mode_run_stopped_limit' : 'components.crewMode.conductor_mode_run_stopped_detail')} ${i18nT('components.crewMode.conductor_mode_run_continue')}`
+      : ''
 }
 
 /** One member card. A member with a crew of its own gets a chevron (`onToggle`;
@@ -648,9 +594,6 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   const pendingQuestion = useAppSelector(st => pendingQuestionFor(st.chat.pendingQuestions, root))
   const questionCount = pendingQuestion?.questions?.length ? 1 : 0
   const c = conductorModeCounts(workers, approvals.length, questionCount)
-  const waitingNames = [...new Set(approvals.map(a => a.title))]
-  // Same query key and read as the side panel's Summary tab, so one cache serves both.
-  const summary = useQuery({ queryKey: ['session-summary', root], queryFn: () => api.sessionSummary(root), enabled: !!root, staleTime: 30_000, retry: false })
   const [reopenFailed, setReopenFailed] = useState(false)
   // The main chat's own question is answered on its card in the chat: bring
   // the main chat on screen if a crew member is, then scroll to that card.
@@ -708,8 +651,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       onToggle={searching ? undefined : () => toggleRow(n, pathToViewing.has(n.w.key))} onOpen={n.w.remote_crew ? undefined : () => open(n.w)}
       pausedIn={pause?.stopped.includes(n.w.key) ? root : undefined} />
   )
-  const [view, setView] = useState<'status' | 'backlog' | 'list'>('status')
-  const [doneOpen, setDoneOpen] = useState(false)
+  // The Board opens first; the per-tab choice is not kept, as before.
+  const [view, setView] = useState<'board' | 'list'>('board')
   // The work ledger through the Crew page's own read (GET /api/crew-board), same key and cadence.
   const boardInterval = usePollRule(`crew-board:${root}`, CREW_BOARD_POLL_MS, active, crewBoardQueryKey(root))
   const board = useQuery({ queryKey: crewBoardQueryKey(root), queryFn: () => timedPoll(`crew-board:${root}`, () => api.crewBoard(root)) as Promise<WorkBoardResponse>, enabled: !!root && active, refetchInterval: boardInterval, retry: false })
@@ -744,7 +687,6 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     const waitingOn = approvalByItem.get(item.item_id) || firstSentence(item.summary) || i18nT('components.crewMode.conductor_mode_needs_you')
     return { item, state, waitingOn }
   })
-  const doneMs = milestones.filter(m => m.state === 'done')
   // Needs-you milestones with no approval card of their own count too (an
   // approval row's card is already in `c.approvals`), so the header and the
   // rows agree on whether the person must act.
@@ -753,7 +695,6 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // Plus the rows below that wait on the person (kept out of `needsYouRows`).
   const needCount = needYou + forYou.length
   const openMs = milestones.filter(m => m.state !== 'done')
-  const msDone = doneMs.length
   const lastReport = items.map(i => i.last_report_at).filter(Boolean).sort().pop() || null
   // Stuck: a milestone with nothing left to move it. Quiet: one idle with
   // nothing scheduled to wake it, whose chat can still be resumed. Both muted.
@@ -774,12 +715,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     const w = workers.find(x => x.ledger_item === item.item_id)
     return w && !w.remote_crew ? () => open(w) : undefined
   }
-  const recap = summaryRecap(summary.data, items.map(i => i.title))
-    || (items.length
-      ? milestoneSentence(msDone, milestones.length, milestones.filter(m => m.state === 'needs_you').map(m => m.item.title), milestones.filter(m => m.state === 'running').map(m => m.item.title), milestones.filter(m => m.state === 'stuck').map(m => m.item.title), milestones.filter(m => m.state === 'quiet').map(m => m.item.title))
-      : conductorModeRecap(c, waitingNames, questionCount > 0))
-
-  // (2) Needs your input, shown by Status and Backlog alike: the chat's own
+  // Needs your input, on the Board above the sprint: the chat's own
   // ask_question card and the crew's approval cards, both compact.
   const needsYouSection = (
     <section data-testid="conductor-mode-needs-you" className="space-y-1.5">
@@ -803,14 +739,51 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       <CrewApprovalCards root={root} compact />
     </section>
   )
-  const backlogRow = (itemId: string) => {
-    const m = milestones.find(x => x.item.item_id === itemId)
+  const byId = new Map(milestones.map(m => [m.item.item_id, m]))
+  const backlogRow = (itemId: string): BacklogRowState | undefined => {
+    const m = byId.get(itemId)
     if (!m) return undefined
     // A plan row quotes the worker's ask itself: the plan's rows sit far below the
     // Needs-you card, where "the answer above" points at nothing.
     const asked = forYou.some(i => i.item_id === itemId) ? firstSentence(m.item.summary) : ''
-    return { needsYou: m.state === 'needs_you', waitingOn: asked || m.waitingOn }
+    return {
+      needsYou: m.state === 'needs_you', waitingOn: asked || m.waitingOn,
+      line: <MilestoneLine item={m.item} state={m.state} waitingOn={m.waitingOn} />, age: milestoneAge(m.item, m.state, now),
+    }
   }
+  // The goal as ONE line above the stories. A click opens what sat under it: the
+  // whole goal sentence, its "Done when", the scope and the latest change.
+  const overview = (
+    <section data-testid="conductor-mode-overview" className="space-y-1">
+      {/* A ledger the root never opened (404) is the empty state; any other
+          failure says so and offers the agent hand-off. */}
+      {board.isError && !isNotFoundError(board.error) && <ErrorNotice variant="inline" message={errMessage(board.error) || i18nT('pages.crewBoard.error_title')} askAgent />}
+      <details className="group" data-testid="conductor-mode-goal-line">
+        <summary className="flex items-baseline gap-2 cursor-pointer list-none text-[14px] font-semibold text-text">
+          <span className="shrink-0 inline-flex items-center h-[18px] px-1.5 rounded-sm border border-border text-[10px] font-semibold uppercase tracking-[0.5px] text-muted">{i18nT('components.crewMode.plan_goal_tag')}</span>
+          <span className="flex-1 min-w-0 truncate group-open:whitespace-normal group-open:[overflow-wrap:anywhere]" data-testid="conductor-mode-goal">{goalFull || i18nT('components.crewMode.conductor_mode_goal_none')}</span>
+          <ChevronRight size={14} aria-hidden="true" className="shrink-0 self-center text-muted transition-transform group-open:rotate-90" />
+        </summary>
+        <div className="mt-1 space-y-0.5">
+          {/* "Done when" needs something to finish: no goal and no story, no line. */}
+          {(goalText || items.length > 0) && <p className="text-[12px] text-text/85 [overflow-wrap:anywhere]" data-testid="conductor-mode-done-when">{doneText}</p>}
+          {scope && <p className="text-[11px] text-muted [overflow-wrap:anywhere]">{scope}</p>}
+          {/* The goal's own Changed line: the conductor's latest re-plan and how old it
+              is, so a rewrite shows here and a goal nobody rewrote reads as old. */}
+          {changed && <p className="text-[12px] text-muted [overflow-wrap:anywhere]" data-testid="conductor-mode-changed" title={changed.stamp || undefined}>{changed.at != null
+            ? i18nT('components.crewMode.conductor_mode_changed_when', { when: fmtRelative(Math.min(changed.at, now)), what: changed.text })
+            : i18nT('components.crewMode.conductor_mode_changed', { what: changed.text })}</p>}
+        </div>
+      </details>
+    </section>
+  )
+  // The sprint's pulse: stuck or quiet (muted), else moving while a story runs.
+  const pulse = (stuck || quiet || (moving && lastReport)) ? (
+    <span className={`ml-auto text-[11px] inline-flex items-center gap-1 normal-case tracking-normal font-normal ${stuck || quiet ? 'text-muted' : 'crew-tone-ok'}`} data-testid="conductor-mode-pulse">
+      <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-current" />
+      {stuck ? i18nT('components.crewMode.conductor_mode_stuck') : quiet ? i18nT('components.crewMode.conductor_mode_quiet') : i18nT('components.crewMode.conductor_mode_moving', { when: fmtRelative(lastReport || '') })}
+    </span>
+  ) : null
 
   return (
     <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={view}>
@@ -821,7 +794,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       {listed.isError && !crewRouteNotServed(listed.error) && <div className="shrink-0 px-3 pt-3"><ErrorNotice variant="inline" message={i18nT(live.length ? 'commandCenter.workers_error_live' : 'commandCenter.workers_error')} askAgent /></div>}
       <div className="shrink-0 px-3 pt-3">
         <RadioChipGroup ariaLabel={i18nT('commandCenter.workers_view_label')} className="flex gap-1 rounded-lg border border-border bg-bg-hover/40 p-0.5" data-testid="conductor-mode-view-switch">
-          {(['status', 'backlog', 'list'] as const).map(v => (
+          {(['board', 'list'] as const).map(v => (
             <button key={v} type="button" {...radioChip(view === v)} data-testid={`conductor-mode-view-${v}`} onClick={() => setView(v)}
               className={`flex-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors ${view === v ? 'bg-bg-elevated text-text shadow-sm' : 'text-muted hover:text-text'}`}>
               {i18nT(VIEW_LABEL[v])}
@@ -829,66 +802,10 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
           ))}
         </RadioChipGroup>
       </div>
-      {view === 'status' ? (
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4" data-testid="conductor-mode-status">
-          {/* (1) Overview: the ledger's goal in one line, and what "done" means. */}
-          <section data-testid="conductor-mode-overview" className="space-y-0.5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{i18nT('components.crewMode.conductor_mode_overview')}</h3>
-            {runState && <RunLine state={runState} run={board.data?.run} />}
-            <p className="text-[14px] font-semibold text-text [overflow-wrap:anywhere]" data-testid="conductor-mode-goal">{goalFull || i18nT('components.crewMode.conductor_mode_goal_none')}</p>
-            {/* "Done when" needs something to finish: no goal and no milestone, no line. */}
-            {(goalText || items.length > 0) && <p className="text-[12px] text-text/85 [overflow-wrap:anywhere]" data-testid="conductor-mode-done-when">{doneText}</p>}
-            {scope && <p className="text-[11px] text-muted [overflow-wrap:anywhere]">{scope}</p>}
-            {/* The goal's own Changed line: the conductor's latest re-plan and how old it
-                is, so a rewrite shows here and a goal nobody rewrote reads as old. */}
-            {changed && <p className="text-[12px] text-muted [overflow-wrap:anywhere]" data-testid="conductor-mode-changed" title={changed.stamp || undefined}>{changed.at != null
-              ? i18nT('components.crewMode.conductor_mode_changed_when', { when: fmtRelative(Math.min(changed.at, now)), what: changed.text })
-              : i18nT('components.crewMode.conductor_mode_changed', { what: changed.text })}</p>}
-          </section>
-          {needsYouSection}
-          {/* (3) Milestones: one row per ledger item, as outcomes. */}
-          <section data-testid="conductor-mode-milestones">
-            <div className="flex items-center gap-2">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{i18nT('components.crewMode.conductor_mode_milestones', { done: msDone, total: milestones.length })}</h3>
-              {(stuck || quiet || (moving && lastReport)) && (
-                <span className={`ml-auto text-[11px] inline-flex items-center gap-1 ${stuck || quiet ? 'text-muted' : 'crew-tone-ok'}`} data-testid="conductor-mode-pulse">
-                  <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-current" />
-                  {stuck ? i18nT('components.crewMode.conductor_mode_stuck') : quiet ? i18nT('components.crewMode.conductor_mode_quiet') : i18nT('components.crewMode.conductor_mode_moving', { when: fmtRelative(lastReport || '') })}
-                </span>
-              )}
-            </div>
-            {/* A ledger the root never opened (404) is the empty state; any
-                other failure says so and offers the agent hand-off. */}
-            {board.isError && !isNotFoundError(board.error) && <div className="mt-1"><ErrorNotice variant="inline" message={errMessage(board.error) || i18nT('pages.crewBoard.error_title')} askAgent /></div>}
-            {board.isError && !isNotFoundError(board.error) ? null : milestones.length === 0
-              ? <p className="text-[12px] text-muted mt-1">{i18nT('components.crewMode.conductor_mode_milestones_none')}</p>
-              : <>
-                {/* Finished milestones fold into one row, so what is open stays on screen. */}
-                {doneMs.length > 0 && (
-                  <details className="group mt-0.5 border-b border-border" data-testid="conductor-mode-milestones-done" open={doneOpen}
-                    onToggle={e => setDoneOpen((e.currentTarget as HTMLDetailsElement).open)}>
-                    <summary className="flex items-center gap-2.5 py-1.5 cursor-pointer list-none">
-                      <span className="shrink-0">{STATE_ICON.done}</span>
-                      <span className="flex-1 min-w-0 text-[13px] text-text">{i18nT('components.crewMode.conductor_mode_ms_done_fold', { n: doneMs.length })}</span>
-                      <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-muted transition-transform group-open:rotate-90" />
-                    </summary>
-                    <ol className="divide-y divide-border pl-2">{doneMs.map(m => <MilestoneRow key={m.item.item_id} {...m} now={now} onOpen={openItem(m.item)} />)}</ol>
-                  </details>
-                )}
-                <ol className="divide-y divide-border">
-                  {openMs.map(m => <MilestoneRow key={m.item.item_id} {...m} now={now} onOpen={openItem(m.item)} />)}
-                </ol>
-              </>}
-          </section>
-          {/* (4) Recap: one line from the session summary. */}
-          <section data-testid="conductor-mode-recap-section" className="space-y-0.5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{i18nT('components.crewMode.conductor_mode_recap_title')}</h3>
-            <p className="text-[13px] leading-snug text-text [overflow-wrap:anywhere]" data-testid="conductor-mode-recap">{recap}</p>
-            {summary.isError && !isNotFoundError(summary.error) && <ErrorNotice variant="inline" message={errMessage(summary.error) || i18nT('components.errorBoundary.something_went_wrong')} askAgent />}
-          </section>
-        </div>
-      ) : view === 'backlog' ? (
-        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={needCount} />
+      {view === 'board' ? (
+        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={runState === 'waiting' ? 0 : needCount}
+          overview={overview} run={runState ? <RunWord state={runState} run={board.data?.run} /> : null} runDetail={runDetail(runState, board.data?.run)} pulse={pulse}
+          loaded={board.isSuccess || (board.isError && isNotFoundError(board.error))} />
       ) : (
         <div className="relative flex-1 min-h-0 flex flex-col">
         {showSearch && <CrewWorkerSearch query={query} onChange={setQuery} />}

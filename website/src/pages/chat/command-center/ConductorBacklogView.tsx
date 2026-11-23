@@ -1,10 +1,12 @@
-/** The conductor mode chat's Crew tab, Backlog view: the board plan as a scrum
- *  team reads it. From the top: the goal and the sprint's seats, the releases,
- *  what needs the person, the sprint (round) the conductor is working, the one it
- *  picks next, the ranked backlog the person drags to reorder, and the epics,
- *  each opening a drawer of its stories and their sub-tasks. The data is the
- *  work ledger's `plan` (`work_plan_vocab.py`); a drag writes only `plan.rank`
- *  (`crew_board_rank.py`), and the conductor's next pick follows it. */
+/** The conductor mode chat's Crew tab, Board view, the one it opens on: the board
+ *  plan as a scrum team reads it, in one scroll. From the top: the goal as one line
+ *  (a click opens it), the run's state and the sprint's seats, what needs the
+ *  person, the sprint (round) the conductor is working with each story's line
+ *  (what its worker last said, or what it waits on), the one it picks next, the
+ *  ranked backlog the person drags to reorder, the epics, each opening a drawer of
+ *  its stories and their sub-tasks, then the releases and the done stories, folded.
+ *  The data is the work ledger's `plan` (`work_plan_vocab.py`); a drag writes only
+ *  `plan.rank` (`crew_board_rank.py`), and the conductor's next pick follows it. */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
@@ -13,16 +15,17 @@ import { CSS } from '@dnd-kit/utilities'
 import { ArrowDown, ArrowUpDown, Check, ChevronRight, Circle, GripVertical, Square, SquareCheck } from 'lucide-react'
 import { api } from '../../../api/client'
 import { crewBoardQueryKey, PLAN_STEPS, type PlanStep, type WorkBoardConductor, type WorkBoardItem } from '../../../api/crewBoard'
-import { backlogCompare, boardPlan, byEstimate, childProgress, epicOf, epicTone, estimateMinutes, isEstimateTag, isMerged, moveRow, planOf, projectedIndex, ranksForDrop, releaseViews, seatsBusy, stepIndex, type BoardPlan, type ReleaseView } from '../../../lib/crewPlan'
+import { backlogCompare, boardPlan, byEstimate, childProgress, epicOf, epicTone, estimateMinutes, isEstimateTag, isMerged, isOpen, levelOf, moveRow, planOf, projectedIndex, ranksForDrop, releaseViews, seatsBusy, stepIndex, type BoardPlan, type ReleaseView } from '../../../lib/crewPlan'
 import { useDndSensors } from '../../../hooks/useDndSensors'
 import { fmtDateFields, fmtUnit } from '../../../i18n/format'
 import { i18nT } from '../../../i18n/t'
 import ErrorNotice from '../../../components/ErrorNotice'
 import { errMessage } from '../../../utils/thunkError'
 
-/** What the Status view already worked out for an item: whether it waits on the
- *  person, and on what. */
-export interface BacklogRowState { needsYou: boolean; waitingOn: string }
+/** What the panel worked out for an item from its reports: whether it waits on the
+ *  person and on what, its line (what its worker last said, or what it waits on)
+ *  and the time since its last report. */
+export interface BacklogRowState { needsYou: boolean; waitingOn: string; line?: ReactNode; age?: string }
 
 const H3 = 'text-[11px] font-semibold uppercase tracking-[1px] text-muted'
 const HINT = 'text-[11px] text-muted normal-case tracking-normal font-normal'
@@ -89,15 +92,22 @@ function Tags({ item, hideEstimate }: { item: WorkBoardItem; hideEstimate?: bool
 }
 
 /** One story's row: its title, then its epic, step, tags and PR, and on the
- *  right how many of its sub-tasks are merged. A row that waits on the person is
- *  marked and says on what. */
-function StoryRow({ item, plan, row, onOpen, lead, estimate }: {
+ *  right how many of its sub-tasks are merged, a click opening them. A row that
+ *  waits on the person is marked and says on what. A sprint or done row
+ *  (`withLine`) also carries its line and the time since its last report. */
+function StoryRow({ item, plan, row, onOpen, lead, estimate, withLine, rowState }: {
   item: WorkBoardItem; plan: BoardPlan; row?: BacklogRowState; onOpen?: () => void; lead?: ReactNode
   /** Set on a backlog row: draw the Estimate column. */
   estimate?: boolean
+  withLine?: boolean
+  /** Each sub-task's own line, drawn when its list is open. */
+  rowState?: (itemId: string) => BacklogRowState | undefined
 }) {
   const progress = childProgress(item, plan.children)
+  const tasks = plan.children.get(item.item_id) ?? []
+  const [tasksOpen, setTasksOpen] = useState(false)
   const needs = !!row?.needsYou
+  const tasksLabel = i18nT('components.crewMode.plan_tasks_toggle', { done: progress.done, total: progress.total })
   return (
     <div className={`flex items-start gap-2 px-2.5 py-2 ${CARD} ${needs ? NEEDS : ''}`} data-testid="plan-story" data-item={item.item_id} data-needs-you={needs || undefined}>
       {lead}
@@ -118,8 +128,30 @@ function StoryRow({ item, plan, row, onOpen, lead, estimate }: {
             {onOpen && <button type="button" onClick={onOpen} className="inline-flex items-center h-6 px-2 rounded-md text-[12px] font-medium border border-border hover:bg-bg-hover">{i18nT('components.crewMode.plan_open')}</button>}
           </span>
         )}
+        {withLine && !needs && row?.line}
+        {tasksOpen && tasks.length > 0 && (
+          <ul className="pt-1 space-y-1" data-testid="plan-story-tasks">
+            {tasks.map(task => (
+              <li key={task.item_id} className="flex items-start gap-1.5 text-[12px]" data-testid="plan-story-task">
+                {isMerged(task) ? <SquareCheck size={13} aria-hidden="true" className="shrink-0 mt-0.5 crew-tone-ok" /> : <Square size={13} aria-hidden="true" className="shrink-0 mt-0.5 text-muted" />}
+                <span className="flex-1 min-w-0 space-y-0.5">
+                  <span className="flex flex-wrap items-center gap-1"><span className={`text-text ${WRAP}`}>{task.title}</span><StepTag step={planOf(task).step} /></span>
+                  {/* A sub-task is never bound to a worker, so without a report of its own its step says it all. */}
+                  {task.last_report_at && rowState?.(task.item_id)?.line}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </span>
-      {progress.total > 0 && <span className="shrink-0 text-[11px] text-muted tabular-nums mt-0.5">{i18nT('components.crewMode.plan_progress', { done: progress.done, total: progress.total })}</span>}
+      {progress.total > 0 && (
+        <button type="button" onClick={() => setTasksOpen(on => !on)} aria-expanded={tasksOpen} aria-label={tasksLabel} title={tasksLabel} data-testid="plan-story-tasks-toggle"
+          className="shrink-0 inline-flex items-center gap-0.5 text-[11px] text-muted hover:text-text tabular-nums mt-0.5 rounded-sm">
+          <ChevronRight size={11} aria-hidden="true" className={`transition-transform ${tasksOpen ? 'rotate-90' : ''}`} />
+          {i18nT('components.crewMode.plan_progress', { done: progress.done, total: progress.total })}
+        </button>
+      )}
+      {withLine && row?.age && <span className="shrink-0 text-[11px] text-muted tabular-nums mt-0.5" data-testid="plan-story-age">{row.age}</span>}
       {estimate && <EstimateCell item={item} />}
     </div>
   )
@@ -185,16 +217,18 @@ function ReleaseBlock({ view, plan }: { view: ReleaseView; plan: BoardPlan }) {
       </details>
     )
   }
+  // The next release folds to one line too, at the foot of the Board; a click opens its stories.
   return (
-    <div className={`rounded-lg border px-2.5 py-2 border-[color-mix(in_srgb,var(--ok)_55%,transparent)]`} data-testid="plan-release" data-state="planned">
-      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+    <details className={`group rounded-lg border px-2.5 py-1.5 border-[color-mix(in_srgb,var(--ok)_55%,transparent)]`} data-testid="plan-release" data-state="planned">
+      <summary className="flex flex-wrap items-center gap-2 cursor-pointer list-none text-[12px]">
+        <ChevronRight size={12} aria-hidden="true" className="shrink-0 text-muted transition-transform group-open:rotate-90" />
         {tag}
         <span className="font-semibold text-text text-[13px]">{release.name}</span>
         <span className="text-muted">{i18nT('components.crewMode.plan_release_next', { merged: view.merged, total: items.length })}</span>
         {release.note && <span className={`ml-auto text-[11px] text-muted ${WRAP}`}>{release.note}</span>}
-      </div>
-      {items.length > 0 && <ul className="mt-1 space-y-0.5">{items.map(i => <ReleaseItem key={i.item_id} item={i} plan={plan} />)}</ul>}
-    </div>
+      </summary>
+      {items.length > 0 && <ul className="mt-1 space-y-0.5 pl-5">{items.map(i => <ReleaseItem key={i.item_id} item={i} plan={plan} />)}</ul>}
+    </details>
   )
 }
 
@@ -274,17 +308,33 @@ function EpicDrawer({ epic, plan, rowState, openItem }: { epic: WorkBoardItem; p
   )
 }
 
-export default function ConductorBacklogView({ root, items, conductor, rowState, openItem, needsYou, needCount }: {
+export default function ConductorBacklogView({ root, items, conductor, rowState, openItem, needsYou, needCount, overview, run, runDetail, pulse, loaded }: {
   root: string
   items: readonly WorkBoardItem[]
   conductor: WorkBoardConductor | undefined
   rowState: (itemId: string) => BacklogRowState | undefined
   openItem: (item: WorkBoardItem) => (() => void) | undefined
-  /** The Status view's Needs-you section, rendered here as it is there. */
+  /** The panel's Needs-you section. */
   needsYou: ReactNode
   needCount: number
+  /** The goal as one line that opens onto its "Done when", scope and latest change. */
+  overview: ReactNode
+  /** The run's state word, at the head of the sprint line; null when there is none. */
+  run: ReactNode
+  /** A settled run's one sentence, under the sprint line; '' when there is none. */
+  runDetail: string
+  /** Stuck, quiet or moving, beside the sprint's heading. */
+  pulse: ReactNode
+  /** The board read has landed: before that, or when it failed, an empty sprint says nothing. */
+  loaded: boolean
 }) {
   const plan = useMemo(() => boardPlan(items), [items])
+  // Closed stories are on no list of the plan: one closed without being accepted
+  // stays in the sprint, marked Not done; an accepted one folds into Done at the foot.
+  const closed = items.filter(i => !isOpen(i) && levelOf(i) !== 'epic' && !(levelOf(i) === 'task' && plan.byId.has(planOf(i).parent ?? '')))
+  const notDone = closed.filter(i => i.state !== 'accepted')
+  const done = closed.filter(i => i.state === 'accepted')
+  const [doneOpen, setDoneOpen] = useState(false)
   const round = conductor?.round ?? 0
   const cap = conductor?.concurrency_cap
   const busy = seatsBusy(items)
@@ -364,33 +414,26 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4" data-testid="conductor-mode-backlog">
-      <section className="space-y-0.5" data-testid="plan-overview">
-        <p className="flex items-baseline gap-2 text-[14px] font-semibold text-text">
-          <span className="shrink-0 inline-flex items-center h-[18px] px-1.5 rounded-sm border border-border text-[10px] font-semibold uppercase tracking-[0.5px] text-muted">{i18nT('components.crewMode.plan_goal_tag')}</span>
-          <span className={WRAP}>{(conductor?.goal || '').split('\n')[0] || i18nT('components.crewMode.conductor_mode_goal_none')}</span>
-        </p>
+      <section className="space-y-1" data-testid="plan-overview">
+        {overview}
         <p className="text-[12px] text-muted" data-testid="plan-sprint-line">
+          {run}{run ? ' · ' : null}
           {[
             i18nT('components.crewMode.plan_sprint_round', { n: round }),
             cap != null ? i18nT('components.crewMode.plan_slots_busy', { busy, cap }) : null,
           ].filter(Boolean).join(' · ')}
-          {needCount > 0 && <span className="crew-tone-warn font-semibold">{` · ${i18nT('components.crewMode.plan_needs_you_count', { n: needCount })}`}</span>}
+          {/* The panel sends 0 while the run word already says "Waiting for you". */}
+          {needCount > 0 &&<span className="crew-tone-warn font-semibold">{` · ${i18nT('components.crewMode.plan_needs_you_count', { n: needCount })}`}</span>}
         </p>
+        {runDetail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{runDetail}</p>}
       </section>
-
-      {releases.length > 0 && (
-        <section className="space-y-1.5" data-testid="plan-releases">
-          <h3 className={H3}>{i18nT('components.crewMode.plan_releases')} <span className={HINT}>{i18nT('components.crewMode.plan_releases_hint')}</span></h3>
-          {releases.map(v => <ReleaseBlock key={v.release.name} view={v} plan={plan} />)}
-        </section>
-      )}
 
       {needsYou}
 
       <section className="space-y-1.5" data-testid="plan-sprint">
-        <h3 className={H3}>{i18nT('components.crewMode.plan_sprint', { n: round })} <span className={HINT}>{i18nT('components.crewMode.plan_sprint_hint', { n: round })}</span></h3>
-        {plan.sprint.length === 0 && <p className="text-[12px] text-muted">{i18nT('components.crewMode.plan_sprint_none')}</p>}
-        {plan.sprint.map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} />)}
+        <h3 className={`${H3} flex items-baseline gap-1`}><span>{i18nT('components.crewMode.plan_sprint', { n: round })} <span className={HINT}>{i18nT('components.crewMode.plan_sprint_hint', { n: round })}</span></span>{pulse}</h3>
+        {loaded && plan.sprint.length === 0 && notDone.length === 0 && <p className="text-[12px] text-muted">{i18nT('components.crewMode.plan_sprint_none')}</p>}
+        {[...plan.sprint, ...notDone].map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} withLine rowState={rowState} />)}
         {free > 0 && backlog.length > 0 && (
           <p className="rounded-lg border border-dashed border-border px-2.5 py-1.5 text-center text-[12px] text-muted" data-testid="plan-slot-free">{i18nT('components.crewMode.plan_slot_free', { n: free })}</p>
         )}
@@ -473,6 +516,28 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
           )}
         {openEpic && <EpicDrawer epic={openEpic} plan={plan} rowState={rowState} openItem={openItem} />}
       </section>
+
+      {releases.length > 0 && (
+        <section className="space-y-1.5" data-testid="plan-releases">
+          <h3 className={H3}>{i18nT('components.crewMode.plan_releases')} <span className={HINT}>{i18nT('components.crewMode.plan_releases_hint')}</span></h3>
+          {releases.map(v => <ReleaseBlock key={v.release.name} view={v} plan={plan} />)}
+        </section>
+      )}
+
+      {/* Accepted stories fold into one row at the foot, so what is open stays on screen. */}
+      {done.length > 0 && (
+        <details className={`group ${CARD} px-2.5 py-1.5`} data-testid="conductor-mode-milestones-done" open={doneOpen}
+          onToggle={e => setDoneOpen((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary className="flex items-center gap-2 cursor-pointer list-none text-[13px] text-text">
+            <ChevronRight size={12} aria-hidden="true" className="shrink-0 text-muted transition-transform group-open:rotate-90" />
+            <Check size={13} strokeWidth={3} aria-hidden="true" className="shrink-0 crew-tone-ok" />
+            {i18nT('components.crewMode.conductor_mode_ms_done_fold', { n: done.length })}
+          </summary>
+          <div className="mt-1.5 space-y-1.5">
+            {done.map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} withLine rowState={rowState} />)}
+          </div>
+        </details>
+      )}
     </div>
   )
 }
