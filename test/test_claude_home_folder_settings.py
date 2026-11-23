@@ -19,7 +19,7 @@ from acp_session_mcp_helpers import agents_dir_fixture  # noqa: F401
 from acp_session_mcp_helpers import isolated_seed_provenance  # noqa: F401
 from acp_session_mcp_helpers import _by_name, _write_spec
 
-from kiro_crew.acp import client as client_mod
+from kiro_crew.acp import client_claude_session as client_session_mod
 from kiro_crew.acp.client import AcpClient
 from kiro_crew.acp.types import ACP_BACKEND_CLAUDE
 
@@ -78,14 +78,95 @@ class TestHomeFolderSession:
         assert client._claude_local_settings_excluded is False
         assert client._session_mcp_servers() == []
 
-    def test_another_folders_settings_json_with_hooks_still_refuses(self, tmp_path, monkeypatch):
+    def test_the_default_config_dir_under_home_is_recognised(
+        self, tmp_path, agents_dir, monkeypatch
+    ):
+        """No ``CLAUDE_CONFIG_DIR``: the user's file is ``~/.claude/settings.json``."""
+        _write_spec(agents_dir, servers={"foo": {"command": "/bin/foo"}}, tools=["@foo"])
+        home = _home_folder(tmp_path, monkeypatch)
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR")
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        client = AcpClient(work_dir=home, agent="kirocrew", acp_backend=ACP_BACKEND_CLAUDE)
+        client._write_claude_local_settings()
+
+        assert client._claude_local_settings_excluded is True
+        assert "foo" in _by_name(client._session_mcp_servers())
+
+    @pytest.mark.parametrize("name", ["CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE"])
+    def test_a_child_pointed_at_another_user_tier_gets_no_exemption(
+        self, tmp_path, agents_dir, monkeypatch, name
+    ):
+        """The child would load another ``settings.json`` as its user tier, so this one's
+        hooks would load nowhere: it refuses, as a project file does."""
+        _write_spec(agents_dir, servers={"foo": {"command": "/bin/foo"}}, tools=["@foo"])
+        home = _home_folder(tmp_path, monkeypatch)
+        client = AcpClient(
+            work_dir=home,
+            agent="kirocrew",
+            acp_backend=ACP_BACKEND_CLAUDE,
+            extra_env={name: str(tmp_path / "elsewhere")},
+        )
+        client._write_claude_local_settings()
+
+        assert client._claude_local_settings_excluded is False
+        assert client._session_mcp_servers() == []
+
+    def test_a_spec_that_moves_the_childs_config_dir_gets_no_exemption(
+        self, tmp_path, agents_dir, monkeypatch
+    ):
+        _write_spec(agents_dir, servers={"foo": {"command": "/bin/foo"}}, tools=["@foo"])
+        home = _home_folder(tmp_path, monkeypatch)
+        client = AcpClient(work_dir=home, agent="kirocrew", acp_backend=ACP_BACKEND_CLAUDE)
+        monkeypatch.setattr(
+            client_session_mod,
+            "apply_spec_claude_options",
+            lambda options, agent: options.update(env={"CLAUDE_CONFIG_DIR": "/elsewhere"}),
+        )
+
+        assert client_session_mod._claude_user_settings_file(client) is None
+
+    def test_a_remapped_home_gets_no_exemption(self, tmp_path, agents_dir, monkeypatch):
+        home = _home_folder(tmp_path, monkeypatch)
+        client = AcpClient(work_dir=home, agent="kirocrew", acp_backend=ACP_BACKEND_CLAUDE)
+        assert client_session_mod._claude_user_settings_file(client) == (
+            home / ".claude" / "settings.json"
+        )
+        monkeypatch.setenv("KIROCREW_POD", "1")
+
+        assert client_session_mod._claude_user_settings_file(client) is None
+
+
+class TestProjectSettingsRestrictions:
+    def test_another_folders_settings_json_with_hooks_still_refuses(self, tmp_path):
         user = tmp_path / "user-config"
         user.mkdir()
         (user / "settings.json").write_text(json.dumps(_HOOKS), encoding="utf-8")
-        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(user))
         project = tmp_path / "repo" / ".claude"
         project.mkdir(parents=True)
         (project / "settings.json").write_text(json.dumps(_HOOKS), encoding="utf-8")
+        restrictions = client_session_mod._project_settings_restrictions
 
-        assert client_mod._project_settings_restrictions(user / "settings.json") == []
-        assert client_mod._project_settings_restrictions(project / "settings.json") is None
+        assert restrictions(user / "settings.json", user / "settings.json") == []
+        assert restrictions(project / "settings.json", user / "settings.json") is None
+        # With no user file known, the user's own path is examined like any other.
+        assert restrictions(user / "settings.json") is None
+
+    def test_a_link_to_the_users_file_is_not_the_users_file(self, tmp_path):
+        """Recognised by spelling, never through a link a repository controls."""
+        user = tmp_path / "user-config"
+        user.mkdir()
+        (user / "settings.json").write_text("{}", encoding="utf-8")
+        project = tmp_path / "repo" / ".claude"
+        project.mkdir(parents=True)
+        try:
+            (project / "settings.json").symlink_to(user / "settings.json")
+        except OSError:
+            pytest.skip("this host cannot create a symlink")
+
+        assert (
+            client_session_mod._project_settings_restrictions(
+                project / "settings.json", user / "settings.json"
+            )
+            is None
+        )

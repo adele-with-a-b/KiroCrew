@@ -239,26 +239,64 @@ _CLAUDE_CARRIED_PERMISSION_KEYS: tuple[str, ...] = ("deny", "ask")
 _CLAUDE_PROJECT_SETTINGS_MAX_BYTES = CLAUDE_SETTINGS_MAX_BYTES
 
 
-def _is_user_settings_file(path: Path) -> bool:
-    """Whether *path* is the user's own ``settings.json``, the file the ``user`` source loads.
+#: The environment names that decide which ``settings.json`` a claude child loads as
+#: its ``user`` source: the config directory itself, else the home it sits under.
+_CLAUDE_USER_TIER_ENV_NAMES: tuple[str, ...] = ("CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE")
+
+
+def _claude_user_settings_file(self: ClaudeAcpClient) -> Path | None:
+    """The ``settings.json`` this session's ``user`` source loads, or None when unknown.
+
+    The gateway's own resolution (``CLAUDE_CONFIG_DIR``, else ``~/.claude``) holds for
+    the child only while the child resolves it the same way. So None, and no file is
+    then taken for the user's, when anything Crew puts on this session's environment
+    names one of :data:`_CLAUDE_USER_TIER_ENV_NAMES` (``agent.env``, the session's
+    ``extra_env``, the ``env`` of its spec's or Bot's ``claudeCode`` block), or when
+    the child's home is remapped (a pod). Blocking: it reads config and the spec.
+    """
+    if os.environ.get("KIROCREW_POD") == "1":
+        return None
+    options: dict[str, Any] = {}
+    apply_spec_claude_options(options, getattr(self, "_agent", None))
+    apply_crewmate_claude_options(options, getattr(self, "_session_key", None))
+    layers: tuple[Any, ...] = (
+        self._agent_env_for_spawn(),
+        getattr(self, "_extra_env", None),
+        options.get("env"),
+    )
+    for layer in layers:
+        if isinstance(layer, dict) and any(name in layer for name in _CLAUDE_USER_TIER_ENV_NAMES):
+            return None
+    config_dir = claude_config_dir()
+    return None if config_dir is None else config_dir / "settings.json"
+
+
+def _is_user_settings_file(path: Path, user_settings: Path | None) -> bool:
+    """Whether *path* is *user_settings*, the file the session's ``user`` source loads.
 
     A session whose work folder is the home directory has the user's Claude config
     directory as its ``.claude``, so its project ``settings.json`` is that same file.
     Leaving the project tiers out drops nothing from it: the ``user`` source still
-    loads it, its hooks and sandbox settings included, exactly as it does for a
-    session in any other folder. So it neither refuses the exclusion nor needs its
-    rules carried inline.
+    loads it, as it does for a session in any other folder. So it neither refuses
+    the exclusion nor needs its rules carried inline.
+
+    Compared as written, never through the filesystem: *path* is attacker-influenced,
+    and the same spelling is the same file whatever either one links to. A home
+    folder reached through another spelling is not recognised and is examined as a
+    project file, the refusing direction.
     """
-    config_dir = claude_config_dir()
-    if config_dir is None:
-        return False
-    try:
-        return os.path.samefile(path, config_dir / "settings.json")
-    except OSError:
+    if user_settings is None:
         return False
 
+    def spelled(p: Path) -> str:
+        return os.path.normcase(os.path.abspath(p))
 
-def _project_settings_restrictions(path: Path) -> list[tuple[str, str]] | None:
+    return spelled(path) == spelled(user_settings)
+
+
+def _project_settings_restrictions(
+    path: Path, user_settings: Path | None = None
+) -> list[tuple[str, str]] | None:
     """The ``(kind, rule)`` pairs a project settings file restricts with.
 
     ``kind`` is a key of :data:`_CLAUDE_CARRIED_PERMISSION_KEYS`: a
@@ -282,9 +320,10 @@ def _project_settings_restrictions(path: Path) -> list[tuple[str, str]] | None:
     have GAINED a rule Crew did not carry; it can never add an allow, because the
     tier still does not load.
 
-    ``[]`` too for the user's own ``settings.json`` (:func:`_is_user_settings_file`).
+    ``[]`` too when *path* is *user_settings*, the file the session's ``user`` source
+    loads (:func:`_is_user_settings_file`).
     """
-    if _is_user_settings_file(path):
+    if _is_user_settings_file(path, user_settings):
         return []
     try:
         raw = read_claude_settings_bytes(path, follow_links=False)
@@ -395,8 +434,9 @@ def _exclude_foreign_local_settings(
     if not isinstance(inline, dict):
         return False
     project_rules: list[tuple[str, str]] = []
+    user_settings = _claude_user_settings_file(self)
     for name in _CLAUDE_PROJECT_SETTINGS_FILES:
-        found = _project_settings_restrictions(local_settings.parent / name)
+        found = _project_settings_restrictions(local_settings.parent / name, user_settings)
         if found is None:
             logger.warning(
                 "%s %s and %s could not be examined, or sets "
@@ -865,8 +905,9 @@ async def _verify_claude_project_denies_unchanged(self: ClaudeAcpClient) -> None
     directory = self._claude_local_settings_path().parent
 
     def _gained() -> bool:
+        user_settings = _claude_user_settings_file(self)
         for name in _CLAUDE_PROJECT_SETTINGS_FILES:
-            found = _project_settings_restrictions(directory / name)
+            found = _project_settings_restrictions(directory / name, user_settings)
             if found is None or not set(found) <= carried:
                 return True
         return False
