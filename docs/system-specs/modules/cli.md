@@ -2320,6 +2320,16 @@ is `refused`, since every later attempt gets the same result.
 
 `kirocrew stop [--port PORT]` stops a running gateway:
 
+It is the user ending Kiro Crew, so before anything else it leaves the owner-stop
+mark (`kept_trust.mark_owner_stop`, `kept-trust/owner-stop` in the data home): the
+next boot then clears the YOLO grant and the chats' Trust and Read modes a restart
+would have kept ([session](session.md) § Trust survives every exit the user did not
+choose). The mark lands in the CLI's own data home, so it is left only when that
+home's gateway is running and, given `--port`, listens on that port; a root run leaves
+none. A stop that exits non-zero or fails on an error takes back the mark it made.
+`--expect-pid` and `KIROCREW_STOP_KEEPS_TRUST=1` (the desktop app's stop of a stuck
+gateway it replaces) leave no mark, because those stops are part of a restart.
+
 `kirocrew stop --port PORT --expect-pid PID` is a narrower stop for a caller
 that already identified the gateway (the desktop app's stuck-gateway restart).
 It skips the steps below: it opens a pidfd on `PID`, checks that `PID` is the

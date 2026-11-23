@@ -221,6 +221,7 @@ function harness({
   internalSecret = "",
   getRequiredChannel = undefined,
   relayCrewOpenerOverride = null,
+  noteRestart = undefined,
   detectWsl = async () => ({
     available: true,
     distros: [],
@@ -448,6 +449,7 @@ function harness({
     ...(externalTerminal ? { externalTerminal } : {}),
     ...(getRequiredChannel ? { getRequiredChannel } : {}),
     relayCrewOpenerOverride,
+    ...(noteRestart ? { noteRestart } : {}),
     // Like main.js's readInternalSecret: the secret belongs to one gateway
     // URL, so a read that names no URL gets nothing.
     readInternalSecret: (gatewayUrl) => {

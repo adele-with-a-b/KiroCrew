@@ -14,8 +14,8 @@ rather than a person's choice:
 * it never replaces a posture the slot already holds (a grant, a scope);
 * it sweeps no pending approvals: a slot being seeded has none.
 
-Trust is in-memory like every slot's: a restart returns the slot to asking, and
-whoever seeded it decides whether to seed again.
+A seeded mode is carried over a restart like any other (``chat_trust_restart``),
+and the seeder finds it held and seeds nothing over it.
 """
 
 from __future__ import annotations

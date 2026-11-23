@@ -782,6 +782,15 @@ _CREW_READONLY_LEAVES: tuple[str, ...] = (
     # record is rewritten through ``atomic_write`` on every config save, and the rename
     # inside the directory leaves the directory's inode -- what its seal pins -- alone.
     "config-provenance",
+    # The trust kept across an exit the user did not choose (``kept_trust``): which
+    # chats hold Trust or Read, the ad-hoc YOLO grant, and the explicit-stop mark.
+    # A GRANT on the host-exec footing: a writable record would let an agent trust
+    # its own chat (or arm YOLO) and wait for a restart, or remove the owner's stop
+    # mark. READONLY rather than hidden because the write is the whole risk: it
+    # names chat keys and a deadline, no secret. A directory, for the
+    # ``seed-provenance`` reason: each save publishes through ``atomic_write``, and
+    # the rename inside it leaves the sealed directory's inode alone.
+    "kept-trust",
     # The crew webview template directory. A ceiling in exactly the sense above:
     # the whole value of splitting a panel into human-authored TEMPLATE and
     # agent-published DATA is that layout is authored by a person, so a crew must
@@ -1101,6 +1110,7 @@ _CREW_CHILD_READABLE_LEAVES: tuple[str, ...] = (
     "seed-provenance",
     "settings_seeds.json",
     "config-provenance",
+    "kept-trust",
     "agent_model_state.json",
     "agent_model_state.json.lock",
     # Gateway-owned run records, read to restore app authorization on a cold

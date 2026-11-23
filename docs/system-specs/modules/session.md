@@ -698,35 +698,77 @@ workflow ceiling read it, so the sessions a card-trusted worker opens are born
 asking, on the same card. A revoke clears `_trust` and writes `""`, so a subagent
 spawned after it asks again, and one already running loses its `parent_policy=auto`
 grant on its next tool request ([subagent](subagent.md) § Revoked parent trust).
-Trust is in memory only and never persisted. A pending
+Trust lives on the slot, and the gateway keeps it across a restart (below). A pending
 approval's slot row carries `trust_grantable` (the slot approve route's own proof
 that Trust may be offered) and, for a coordinator request such as a spawn,
 `request_instance` (names THIS record, since the id can recur), so a card that
 relays the decision can pin it.
 
-**A restart ends a chat's Trust or Read mode, and says so**
-(`dashboard/chat_trust_restart.py`). Without a notice, a loop or task left in a
-trusted chat waits on approvals after any restart (the in-place re-exec, `kirocrew
-restart`, an update, a crash relaunch) and nobody is told why. The periodic flush and
-the shutdown save every restart runs (`save_all_slots_to_history`) write the open
-persistent chats holding a mode to `chat_trust_held.json` in the data home, but only
-once this process's boot has taken the previous record. `_restore_dashboard_sessions`
-takes it (reads it once and deletes it) before the open-tab restore and, after it,
-posts one `agent` bell note (`meta.slot`, `meta.approval_mode`) and one system row in
-each recorded chat that came back without its mode. A chat whose tools still run
-unasked with nobody acting is owed no notice. An app-owned chat (`_app`) is never
-recorded, because its mode is the app's to set and the app sets it again. A chat a live
-auto-approve grant reaches (`is_yolo_active` and `yolo_reaches`, the tool gate's own
-test) is skipped: boot arms a declared grant (`agent.dangerously_skip_permissions`,
-`gateway --approval yolo`) again before the restore, so its tools ask for nothing, and
-the note's remedy, Trust on that one chat, would end a declared grant for every other
-chat. A chat the launch grant does not reach (channel-linked) is still told. A
+**Trust survives every exit the user did not choose** (`kept_trust.py`,
+`dashboard/chat_trust_restart.py`; upstream ruling on kirodotdev/KiroCrew#12275,
+2026-11-18). A chat's Trust or Read mode and an ad-hoc YOLO grant stay on across a
+dashboard or desktop Restart, `kirocrew restart`, the re-exec after an update, a crash,
+a watchdog or OOM kill, a host reboot, and a stop a service manager sends
+(`launchctl kickstart -k`, `systemctl restart`). Only an explicit stop by the user
+clears them: `kirocrew stop`, the desktop app's Quit, or Ctrl+C on a foreground
+`kirocrew gateway`. So a SIGTERM keeps trust whoever sent it, and each explicit stop
+says so instead: it leaves `kept-trust/owner-stop` in the data home before the gateway
+goes down (`kept_trust.mark_owner_stop`, called by the CLI stop and the gateway's first
+SIGINT; `stopGatewayGracefully({ownerStop: true})` on Quit). Every desktop quit runs
+`before-quit`, so the app's `quit-intent.js` names the quits that are not the user's
+and so do not mark: one after `app.relaunch` (the update lanes, the update relaunch, the
+GPU-crash fallback), Restart now (the `update:relaunch` IPC calls `noteRestart` first,
+because on an armed update it quits with no `app.relaunch` and the install's
+`before-quit-for-update` comes only after `before-quit`), an update install
+(`before-quit-for-update`), and a system shutdown, reboot or logout (`powerMonitor`
+`shutdown`, a window's `session-end` on Windows). A stop that is part of a restart does
+not mark: `kirocrew stop --expect-pid`, and the desktop's stop of a stuck gateway it
+replaces (`KIROCREW_STOP_KEEPS_TRUST=1`). The CLI marks its own data home, so it marks
+only when that home's gateway is running and, given `--port`, listens on that port
+(`cli_server_stop._stops_this_homes_gateway`); a stop of another home's gateway leaves
+none. A root process never marks (`sudo kirocrew stop` would leave a root-owned
+`kept-trust/` the person's gateway could never clear), so that stop keeps trust. A CLI
+stop that exits non-zero or fails on an error takes back the mark it made. The next boot reads the mark once
+(`kept_trust.take_owner_stop`), first, before the startup YOLO arm and every restore.
+When the mark is there, the boot removes `kept-trust/chats.json` and
+`kept-trust/yolo.json`, then the mark, and audits `kept_trust:cleared_on_owner_stop`. A
+record it cannot remove keeps the mark for the next boot, and this boot restores
+nothing. A mark that cannot be read counts as present.
+
+The kept records are grants, so `kept-trust/` is sealed: read-only in the OS sandbox
+(`sandbox_leaves`, `sandbox_precreate`, opened no-follow) and write-fenced at the
+file-tool gate (`security.paths_lists`). An agent can neither plant a mode for its own
+chat nor remove the owner's stop mark, and a linked `kept-trust` is never read or
+written.
+
+The chats' modes. The periodic flush and the shutdown save
+(`save_all_slots_to_history`) write each open persistent chat holding a mode to
+`kept-trust/chats.json`: its key, the mode, whether a card scoped it, and whether it
+follows its creator. `apply_approval_mode` writes the record before it answers, so a
+revoke is on disk before a crash could bring the mode back. No write lands until this
+boot's restore has run (`_Writer.ready`), because the flush loop starts before the
+restore and would otherwise erase the record. `_restore_dashboard_sessions` reads it
+before the open-tab restore (`arm`). After that restore it gives each recorded chat that
+came back its mode (`restore`) through the slot's own setters, so a mode the
+approval-modes policy denies now is refused. Each restore is audited
+`mode_change:<mode>` with outcome `restored`, and the stored `approval_policy` is
+written `auto` wherever the restored Trust or a live YOLO grant reaches. A card's
+narrower Trust comes back card-scoped, never wider. A recorded key that no open tab
+holds gets nothing, and a chat opened under it later starts asking. An app-owned chat
+(`_app`) is never recorded, because its mode is the app's to set.
+
+A chat that came back without its mode is told (`report`) with one `agent` bell note
+(`meta.slot`, `meta.approval_mode`) and one system row. That is a chat whose mode the
+policy now refuses, or one named by an older build's `chat_trust_held.json` at the
+writable data-home root, which is read for the notice only, never as a grant, and then
+deleted. A chat whose tools still run unasked with nobody acting is owed no notice. A
+chat a live auto-approve grant reaches (`is_yolo_active` and `yolo_reaches`, the tool
+gate's own test) is skipped: its tools ask for nothing, and the note's remedy, Trust on
+that one chat, would end a declared grant for every other chat. A chat the launch grant does not reach (channel-linked) is still told. A
 crewmate's conductor chat or worker is skipped when its Profile
 (`agents.<name>.approval_mode`, unset read as `trust`, clamped by policy) seeds the
 recorded mode back at its next turn (`crewmate_approval.seed_for_turn`); a Profile that
-seeds less still gets the notice.
-The record grants nothing: no reader turns it back into a mode, and the notice names
-the live chat's own title, so a forged record can at most notify a chat that is open.
+seeds less still gets the notice. The notice names the live chat's own title.
 The system row carries `meta.kind = "trust_reset_notice"` and `meta.approval_mode`;
 the dashboard draws it as a localized card (`pages/chat/TrustResetNoticeCard.tsx`)
 with one **Turn Trust back on** (or **Turn Reads back on**) button, gone once the chat holds
@@ -736,7 +778,34 @@ every caller check, and the inherited-posture walk re-raises the chat's workers 
 creation edge the crew log records, exactly as a picker pick does. A conductor mode lead
 is an ordinary owner chat here, so it gets the card. A crew window's peer rows leave
 it out (`PEER_SAFE_ROWS`), because the pick would go to this gateway.
-`test_chat_trust_restart_notice.py` and `TrustResetNoticeCard.test.tsx` pin it.
+
+An ad-hoc YOLO grant (`safety_override_breadcrumb`) keeps its breadcrumb in
+`kept-trust/yolo.json`; the older root `safety_override_last_grant.json` is deleted
+unread. At boot, after the startup arm, `_notify_restart_dropped_grant` takes the
+breadcrumb and `SafetyOverride.restore_kept` re-arms it through `_commit_activation`,
+so the policy ceiling and the 24 h cap apply. A timed grant comes back with the time it
+had left, bounded by `yolo_max_seconds`, and an `until_shutdown` grant with no expiry,
+until the user stops Crew, only while the `yolo_duration` policy still allows that
+duration (`until_shutdown_permitted`, the check a new grant passes). A grant the boot
+re-arms itself (the `config` and `cli` sources) is not taken. A restore is audited
+`safety_override:restored`. One the policy refuses, or one a live grant makes moot, is
+audited `safety_override:dropped_by_restart` with the reason, and a refused one gets the
+"Auto-approve was dropped by a restart" notice. A headless (`--slack-only`) gateway
+runs the same read of the mark and the same restore in `start_api_server`; it has no
+dashboard chats. A revoke (`deactivate`) waits up to a second for its record's removal,
+so a crash right after YOLO off cannot bring the grant back.
+
+Known gaps, kept narrow on purpose. A chat whose slot is built after the restore (a
+deferred crewmate thread, a rehydrate retry, a channel-surfaced chat) gets no mode back
+and is dropped from the record; a crewmate's Profile seeds its own back. On Windows no
+OS sandbox confines an agent, so the `kept-trust/` seal is only the file-tool gate
+there; such an agent can already write `config.json`, so this adds no power it lacks.
+The desktop's quit verdict never resets, so a quit that is announced as a restart and
+then cancelled leaves a later Quit keeping trust. A chat the Chat Keeper (`agent.chat_keeper`) carried across the restart
+and a cold-started one get the same, because the restore runs before the keeper adopts
+its chats. `test_kept_trust.py`, `test_chat_trust_survives_restart.py`,
+`test_chat_trust_restart_notice.py`, `test_safety_override_restart_drop.py` and
+`TrustResetNoticeCard.test.tsx` pin it.
 
 **A person's steer is a ledger event.** The work ledger accepts a `steer` event
 (`work_vocab`: actor `person`, kind `steer`, the person's own text redacted and cut

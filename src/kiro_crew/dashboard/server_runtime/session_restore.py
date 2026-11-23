@@ -57,7 +57,8 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
         from kiro_crew.dashboard import chat_trust_restart
 
         # The chats that held an approval mode when the previous process stopped,
-        # read before the restore rebuilds them without it (``chat_trust_restart``).
+        # read before the restore rebuilds them without it (``chat_trust_restart``;
+        # nothing after an explicit stop, ``kept_trust``).
         held_modes = await asyncio.to_thread(chat_trust_restart.arm, state)
         from kiro_crew.dashboard import chat_keeper_adopt
 
@@ -89,9 +90,15 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
             # Restart notes reconciliation owes a session land only once the slots
             # the restore builds exist (``shared_crew.host_hooks``).
             mark_sessions_restored(state)
+            # Give those chats their mode back before any queued turn runs or a kept
+            # chat is adopted. In the ``finally`` because it is also what lets this
+            # process write its own record: a restore that raised must not leave a
+            # revoke made later unrecorded. Never raises.
+            await chat_trust_restart.restore(state, held_modes.restore)
 
-        # Tell the owner which of them came back without it.
-        await chat_trust_restart.report(state, held_modes)
+        # Tell the owner which of them still came back without it (the policy
+        # denies it now, or an older build's record named it).
+        await chat_trust_restart.report(state, held_modes.every_chat())
         # Attach to those chats now, so a turn that was running and any approval it
         # waits on reach the dashboard without waiting for a message.
         await chat_keeper_adopt.adopt_kept_chats(state, cfg, kept)

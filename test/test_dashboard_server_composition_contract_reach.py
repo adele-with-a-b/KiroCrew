@@ -900,9 +900,9 @@ _API_BOOT = tuple("""
 _API_TEARDOWN: tuple[str, ...] = ("_release_sleep_block",)
 _API_ELSEWHERE = tuple("""
     S:_initialize_workflow_service S:_stt_idle_sweep S:_stt_startup_prewarm
-    T:_live_sibling_port T:_write_instance_credentials T:_write_secret_file
-    T:_write_secret_file T:_write_secret_file T:record_healthy_boot T:tighten_data_home
-    T:warm_own_host_names
+    T:_live_sibling_port T:_take_prior_dropped_grant T:_write_instance_credentials
+    T:_write_secret_file T:_write_secret_file T:_write_secret_file T:record_healthy_boot
+    T:take_dropped_grant T:tighten_data_home T:warm_own_host_names
     """.split())
 
 #: Done callbacks of tasks the boot creates, whose position depends on when a worker

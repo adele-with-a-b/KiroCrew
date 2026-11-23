@@ -959,6 +959,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _stop,
         _stop_expected_pid,
         _stop_mcp_gateway_daemon,
+        _stops_this_homes_gateway,
         _terminal_safe_name,
         _verified_loopback_gateway_pids,
         desktop_app_supervisor,

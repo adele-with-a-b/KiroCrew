@@ -1541,6 +1541,12 @@ async def start_dashboard(
     # NOTE: Even with restore_sessions=false, foldered and pinned sessions are restored
     # so the Explorer tree stays populated.  Users can unpin or remove from folder to dismiss.
     cfg = KiroCrewConfig.load()
+    # Whether the previous process ended on an explicit stop, read once before
+    # anything this boot writes into ``kept-trust`` (the declared grant's record
+    # below) or restores from it (``kiro_crew.kept_trust``).
+    from kiro_crew import kept_trust
+
+    await asyncio.to_thread(kept_trust.take_owner_stop)
     # Offloaded: arming has a fail-closed ``approval_modes`` gate, so
     # ``grant_declared_yolo`` resolves governance -- an ``iterdir`` + per-file
     # ``stat`` walk of the profiles dir. We are inside ``async def start_dashboard``,

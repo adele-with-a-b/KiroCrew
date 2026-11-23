@@ -79,7 +79,12 @@ function createHomeLock({
       execFile(bin, ["stop", "--port", String(PORT), ...extraArgs], {
         timeout: STUCK_GATEWAY_STOP_TIMEOUT_MS,
         windowsHide: true,
-        env: buildGatewayEnvironment({ ...cleanEnv, KIROCREW_HOME }, { bundled, platform: processObj.platform }),
+        // A stuck gateway stopped to start this app's own is a restart, not the
+        // user ending Kiro Crew, so the CLI keeps the trust they gave (kept_trust).
+        env: buildGatewayEnvironment(
+          { ...cleanEnv, KIROCREW_HOME, KIROCREW_STOP_KEEPS_TRUST: "1" },
+          { bundled, platform: processObj.platform },
+        ),
       }, (error, stdout, stderr) => {
         const output = `${stdout || ""}${stderr || ""}`.trim();
         const said = output ? `: ${output.slice(0, 200)}` : "";

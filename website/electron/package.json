@@ -233,6 +233,7 @@
       "local-token.js",
       "local-gateway.js",
       "close-action.js",
+      "quit-intent.js",
       "tray-icon.js",
       "wsl-detection.js",
       "mochi-session-token.js",

@@ -259,29 +259,34 @@ def _dispatch_override_expiry_notification(
 
 
 async def _notify_restart_dropped_grant(state: DashboardState) -> None:
-    """Tell the operator about a safety-override grant the previous process lost.
+    """Restore the ad-hoc safety-override grant the previous process held.
 
-    A grant that was live when the process went down is GONE -- grants are
-    in-memory by design and this does not change that. What it changes is that
-    the operator now hears about it. Without this, someone who granted six
-    hours of auto-approval and restarted an hour later got no signal at all:
-    the next unattended run just stopped on a prompt nobody was waiting for.
+    The kept-trust rule (``kiro_crew.kept_trust``): an exit the user did not choose
+    keeps an ad-hoc grant, with its original expiry (``until_shutdown``: until the
+    user stops Kiro Crew). After an explicit stop there is no record and nothing
+    comes back. Run after ``_apply_startup_yolo``, so a declared grant already live
+    is left alone (``SafetyOverride.restore_kept``), and before the open-tab
+    restore, whose trust settle (``chat_trust_restart.restore``) writes the
+    restored grant's ``auto`` session policy onto each chat it reaches.
 
-    Read OFF the loop and off the boot path: it is a file open on a filesystem
-    that may be slow, and nothing about boot should wait on it (found in
-    review). Safe to run after the startup grant because the record carries the
-    writing pid, so this process's own record is never read as a dropped one.
-
-    Notice only, never a restored grant, and withheld when auto-approve is live
-    RIGHT NOW: a declared grant that the enterprise ceiling clamps to a timed
-    one is re-established by ``_apply_startup_yolo`` first, and telling the operator
-    it is "OFF" while it is on would be worse than saying nothing. A lapsed
-    grant, a config-declared one and an ``until_shutdown`` one are all silent
-    too -- see ``take_dropped_grant``.
+    The record is read OFF the loop: it is a file open on a filesystem that may be
+    slow. A grant the policy now refuses is not restored, and the operator is told
+    it is off. Never raises: startup must not fail over the grant.
     """
     try:
         _dropped_grant = await asyncio.to_thread(_take_prior_dropped_grant)
-        if _dropped_grant is not None and not safety_override().is_active():
+        if _dropped_grant is None:
+            return
+        restored = await asyncio.to_thread(
+            safety_override().restore_kept,
+            _dropped_grant.source,
+            _dropped_grant.remaining_secs,
+            _dropped_grant.permanent,
+        )
+        if restored:
+            logger.info("Kept the %s auto-approve grant across the restart", _dropped_grant.source)
+            return
+        if not safety_override().is_active():
             state.notify(
                 "safety",
                 "Auto-approve was dropped by a restart",
@@ -292,6 +297,5 @@ async def _notify_restart_dropped_grant(state: DashboardState) -> None:
                 },
             )
     except Exception:
-        # Startup must not fail over a notification. The grant is off either
-        # way; the worst case is the operator not being told.
-        logger.debug("Could not report a restart-dropped safety override", exc_info=True)
+        # Startup must not fail over the grant. The worst case is asking again.
+        logger.warning("Could not restore a kept safety override", exc_info=True)

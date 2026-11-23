@@ -1241,6 +1241,14 @@ _WRITE_PROTECTED_HOME_PATHS += [
     f"{prefix}/config-provenance"
     for prefix in _CREW_HOME_PREFIXES
 ]
+_WRITE_PROTECTED_HOME_PATHS += [
+    # The trust kept across a restart (``kept_trust``). No secret, so READS stay
+    # open; a WRITE would let an agent keep Trust or YOLO for itself at the next
+    # restart, or remove the owner's stop mark. Its writers (the gateway, the
+    # owner's CLI and desktop app) are outside this gate.
+    f"{prefix}/kept-trust"
+    for prefix in _CREW_HOME_PREFIXES
+]
 
 
 _WRITE_PROTECTED_HOME_PATHS += [

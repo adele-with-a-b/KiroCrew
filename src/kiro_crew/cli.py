@@ -1122,9 +1122,32 @@ def main() -> None:
             except OSError:
                 pass  # the notice stays; the update itself succeeded
     elif args.command == "stop":
+        from kiro_crew import kept_trust
+        from kiro_crew import cli_server_stop
         from kiro_crew.cli_server import _stop
 
-        _stop(args.port, expect_pid=args.expect_pid)
+        # An explicit stop ends the trust the user gave (``kept_trust``), so it is
+        # marked before the gateway goes down. Not ``--expect-pid`` or a stop the
+        # desktop app runs to replace a stuck gateway (``KEEP_TRUST_ENV``): those
+        # are part of a restart. The mark lands in this CLI's home, so only a stop
+        # of this home's gateway leaves one. A stop that stopped nothing, or failed
+        # on an error, takes its mark back.
+        marked = (
+            args.expect_pid is None
+            and os.environ.get(kept_trust.KEEP_TRUST_ENV) != "1"
+            and cli_server_stop._stops_this_homes_gateway(args.port)
+            and kept_trust.mark_owner_stop("kirocrew stop")
+        )
+        try:
+            _stop(args.port, expect_pid=args.expect_pid)
+        except SystemExit as exc:
+            if marked and exc.code not in (0, None):
+                kept_trust.unmark_owner_stop()
+            raise
+        except Exception:
+            if marked:
+                kept_trust.unmark_owner_stop()
+            raise
     elif args.command == "restart":
         if args.max_wait is not None and not args.when_idle:
             print("❌ --max-wait applies only with --when-idle.", file=sys.stderr)

@@ -24,6 +24,7 @@ const launchLog = createLaunchLog({
 
 const { findConfiguredDashboardPort } = require("./data-home");
 const { onQuitForUpdate } = require("./close-action");
+const { createQuitIntent } = require("./quit-intent");
 const { defaultedPort } = require("./gateway-auth-hint");
 const {
   classifyBundleLocation,
@@ -416,6 +417,11 @@ onQuitForUpdate(electron.autoUpdater, () => {
   isQuitting = true;
 });
 
+// Whether a quit is the user ending Kiro Crew (it ends the trust they gave) or a
+// relaunch, an update or a system shutdown (it keeps it). Installed before anything
+// can call app.relaunch.
+const quitIntent = createQuitIntent({ app, autoUpdater: electron.autoUpdater, log: glog });
+
 // Only the lock winner may arm native logging. A rejected second instance must
 // not rotate chromium.log out from under the primary process.
 if (!app.requestSingleInstanceLock()) {
@@ -621,6 +627,7 @@ const ipcRegistrar = createIpcRegistrar({
   readInternalSecret,
   fetchGatewayAuth: () => fetchMochiGatewayAuth(BACKEND_URL),
   cookieHeader: sessionCookieHeader,
+  noteRestart: (why) => quitIntent.noteRestart(why),
 });
 
 /**
@@ -745,6 +752,11 @@ app.whenReady().then(async () => {
     });
   } catch (error) {
     glog("power: could not watch for resume: " + (error && error.message));
+  }
+  try {
+    quitIntent.watchPower(electron.powerMonitor);
+  } catch (error) {
+    glog("power: could not watch for shutdown: " + (error && error.message));
   }
 
   // A dictation left running when the person locks the screen keeps the
@@ -999,7 +1011,7 @@ app.on("before-quit", () => {
   } catch {
     // Best effort during quit.
   }
-  gateway.stopOnQuit();
+  gateway.stopOnQuit({ ownerStop: quitIntent.isOwnerQuit() });
 });
 
 // Release only the shell summon accelerator. Mochi owns and removes its own

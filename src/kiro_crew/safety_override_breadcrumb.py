@@ -1,11 +1,15 @@
-"""The restart-drop breadcrumb: a record that a timed grant was live, so a restart can say it ended.
+"""The kept YOLO grant: a record of the live ad-hoc grant, so an exit the user did not choose keeps it.
 
-A grant lives in memory only. This module writes, on one daemon worker, the
-wall-clock deadline and source of the live grant to
-``safety_override_last_grant.json`` in the data home, and at startup
-``take_dropped_grant`` reads it once, deletes it, and returns a ``DroppedGrant``
-when a timed grant still had time left. The section comment below explains why the
-record is unsigned and confers no authority.
+The rule is ``kiro_crew.kept_trust``'s (kirodotdev/KiroCrew#12275): an ad-hoc grant
+(Slack, the dashboard picker, the API) stays on across every gateway exit the user
+did not choose, with its original expiry, and an ``until_shutdown`` grant lasts
+until the user stops Kiro Crew. This module writes, on one daemon worker, the
+wall-clock deadline and source of the live grant to ``kept-trust/yolo.json``, and at
+startup ``take_dropped_grant`` reads it once, deletes it, and returns a
+``DroppedGrant`` for an ad-hoc grant with time left (or no expiry), which the boot
+then restores (``SafetyOverride.restore_kept``). After an explicit stop
+(``kept_trust.take_owner_stop``) there is no record to read. The record is a grant,
+so it lives in the sealed ``kept-trust`` directory: an agent cannot write it.
 
 :mod:`kiro_crew.safety_override` stays the import path and the patch surface for every
 name here, and this module logs under that name. It imports only
@@ -37,47 +41,55 @@ logger = logging.getLogger("kiro_crew.safety_override")
 
 @dataclass
 class DroppedGrant:
-    """A timed grant that was live when the process went down.
+    """An ad-hoc grant that was live when the process went down.
 
-    Returned by :func:`take_dropped_grant` so a startup can TELL the operator
-    their override is gone. Carries no authority: it is a notice, never a
-    restored grant, which is why the record it comes from is not signed -- see
-    :func:`_write_breadcrumb`.
+    Returned by :func:`take_dropped_grant` so the startup can restore it, or TELL
+    the operator it is gone when policy now refuses it.
     """
 
     source: str
     remaining_secs: int
+    #: An ``until_shutdown`` grant: no expiry, kept until the user stops Kiro Crew.
+    permanent: bool = False
 
 
-# ─── Restart-drop breadcrumb ─────────────────────────────────────────────────
+# ─── The kept grant ──────────────────────────────────────────────────────────
 #
-# A grant lives in memory only, so a restart ends it. That is the DESIGNED
-# behaviour and this module does not change it -- it makes the ending VISIBLE.
-# Otherwise an operator who grants six hours of auto-approval and restarts the
-# gateway an hour later gets no reply telling them the remaining five hours are
-# gone, and the next unattended run simply stops and waits for an approval
-# nobody is watching for.
+# A grant lives in memory, so every exit would end it. The rule
+# (``kiro_crew.kept_trust``) is that an exit the user did not choose must not: an
+# operator who grants six hours of auto-approval and has the gateway restarted
+# under them (an install, a crash, a reboot) an hour later still has five hours.
 #
-# So the file below records that a grant WAS live, never that it may resume. It
-# holds the wall-clock deadline (the in-memory deadlines are
-# ``time.monotonic()``, which means nothing to another process), the source, and
-# whether the grant had an expiry at all. Startup reads it once, tells the
-# operator when a TIMED grant still had time left, and deletes it.
+# So the file below records the live grant. It holds the wall-clock deadline (the
+# in-memory deadlines are ``time.monotonic()``, which means nothing to another
+# process), the source, and whether the grant had an expiry at all. Startup reads
+# it once, deletes it, and restores the grant, which the current policy ceiling
+# still bounds (``SafetyOverride.restore_kept``). An explicit stop leaves the
+# ``kept_trust`` owner-stop mark instead, and the startup restores nothing.
 #
-# It is deliberately NOT signed, and that follows from what it can do: the file
-# confers no authority, so the worst a forged one achieves is a spurious "your
-# override was dropped" notice. A restored GRANT would need signing -- and a
-# planned-vs-crash discriminator this codebase does not have -- which is exactly
-# why restoring one is not what this does.
+# It is a grant, so only the gateway may write it: it lives in the sealed
+# ``kept-trust`` directory, read-only in the OS sandbox and write-fenced at the
+# file-tool gate. Not signed: where the OS sandbox confines agents they cannot
+# write it, and where none does (Windows) an agent can already write
+# ``config.json``, so a signature would add no protection there.
 #
 # One record per data home is correct, not a shared-state hazard: the file lives
-# in ``config_dir()``, which is the very directory ``gateway_lock`` holds an
+# under ``config_dir()``, which is the very directory ``gateway_lock`` holds an
 # exclusive advisory flock on for a gateway's whole lifetime, and a second
 # gateway on the same home is REFUSED at startup rather than allowed to race
 # (see gateway_lock's module docstring -- the invariant exists because shared-home
 # writers clobber ``sessions/*.jsonl``). So there is never a sibling gateway to
 # consume this record out from under the one that wrote it.
-_BREADCRUMB_FILE = "safety_override_last_grant.json"
+_BREADCRUMB_FILE = "yolo.json"
+
+#: Where an older build wrote the same record, at the agent-writable data-home root.
+#: Deleted at startup, never read: a record an agent could write is not a grant.
+_LEGACY_BREADCRUMB_FILE = "safety_override_last_grant.json"
+
+#: The sources whose grant the startup arms again itself (``_apply_startup_yolo``):
+#: the declared config grant and ``gateway --approval yolo``. Never restored from the
+#: record, so a declaration the operator removed does not come back.
+_REARMED_SOURCES = ("config", "cli")
 
 #: Serializes breadcrumb I/O. Separate from the state lock ON PURPOSE: this
 #: module's rule is that no I/O happens while the state lock is held (the SEL
@@ -165,7 +177,11 @@ def flush_breadcrumb_writes(timeout: float = 5.0) -> bool:
 
 
 def _breadcrumb_path() -> Path:
-    return config_dir() / _BREADCRUMB_FILE
+    from kiro_crew import kept_trust
+
+    # ``config_dir`` from this module's own globals, the facade's patch seam, so
+    # not ``kept_trust.kept_path``.
+    return config_dir() / kept_trust.KEPT_DIR / _BREADCRUMB_FILE
 
 
 def _write_breadcrumb(*, path: Path, source: str, expires_at_wall: float, permanent: bool) -> None:
@@ -197,6 +213,10 @@ def _write_breadcrumb(*, path: Path, source: str, expires_at_wall: float, perman
                 "image": _IMAGE_TOKEN,
             }
         )
+        if path.parent.is_symlink():
+            logger.warning("safety override: not keeping the grant through a linked directory")
+            return
+        path.parent.mkdir(mode=0o700, exist_ok=True)
         # 0600: the record names the auto-approval posture and its deadline.
         atomic_write(path, payload, mode=0o600)
     except Exception:
@@ -217,7 +237,10 @@ def _clear_breadcrumb(path: Path) -> None:
 
 
 def take_dropped_grant() -> Optional[DroppedGrant]:
-    """Consume the breadcrumb; return a notice when a TIMED grant lost time.
+    """Consume the record; return the ad-hoc grant the previous process held.
+
+    ``None`` after an explicit stop (``kept_trust.take_owner_stop``), which removed
+    the record. Audited by the caller, which restores the grant or says it is gone.
 
     Serialized against the publisher: ``_consume_breadcrumb`` runs under
     ``_breadcrumb_io_lock`` from the open through the identity check to the
@@ -226,23 +249,13 @@ def take_dropped_grant() -> Optional[DroppedGrant]:
     now and leaving the next restart with nothing to report (found in review).
     The audit below stays outside the lock: it is unrelated I/O.
     """
-    with _breadcrumb_io_lock:
-        dropped = _consume_breadcrumb()
-    if dropped is None:
+    from kiro_crew import kept_trust
+
+    _clear_breadcrumb(config_dir() / _LEGACY_BREADCRUMB_FILE)
+    if kept_trust.take_owner_stop():
         return None
-    # Audited like every other posture change of the safety override, so the operator's
-    # lost grant is on the durable record and not only in a notification.
-    try:
-        sel().log_api_access(
-            caller="safety_override",
-            operation="safety_override:dropped_by_restart",
-            outcome="expired",
-            source="safety_override",
-            resources=f"source:{dropped.source}, remaining:{dropped.remaining_secs}s",
-        )
-    except Exception:
-        logger.debug("safety override: dropped-grant audit failed", exc_info=True)
-    return dropped
+    with _breadcrumb_io_lock:
+        return _consume_breadcrumb()
 
 
 def _consume_breadcrumb() -> Optional[DroppedGrant]:
@@ -252,16 +265,16 @@ def _consume_breadcrumb() -> Optional[DroppedGrant]:
     one dropped grant cannot notify twice, and a stale record from an older
     install cannot notify forever.
 
-    Returns ``None`` -- no notice is owed -- in three cases:
+    Returns ``None`` -- nothing to restore -- in three cases:
 
     * **No record.** No grant was live.
-    * **The grant had no expiry** (``permanent``). A DECLARED grant is
-      re-established from config on this very startup, so it was not lost at
-      all; an ``until_shutdown`` grant is already contracted to the operator as
-      "stays on until Kiro Crew restarts", so its ending is the documented
-      behaviour rather than news.
-    * **The deadline has passed.** The grant would have expired on its own by
-      now, so the restart cost the operator nothing.
+    * **A grant the startup arms itself** (:data:`_REARMED_SOURCES`): the
+      DECLARED config grant and ``gateway --approval yolo`` come from config or
+      argv on this very startup, and a declaration since removed must not return.
+    * **The deadline has passed.** The grant would have expired on its own by now.
+
+    An ``until_shutdown`` grant (``permanent``) is returned with no time: it lasts
+    until the user stops Kiro Crew, and an exit they did not choose is not that.
     """
     path = _breadcrumb_path()
     # Opened by descriptor rather than read by name, because the SHAPE of the file
@@ -280,6 +293,9 @@ def _consume_breadcrumb() -> Optional[DroppedGrant]:
     _nonblock = getattr(os, "O_NONBLOCK", 0)
     _nofollow = getattr(os, "O_NOFOLLOW", 0)
     try:
+        if path.parent.is_symlink():
+            logger.warning("safety override: not reading a kept grant through a linked directory")
+            return None
         if path.is_symlink():
             logger.warning("safety override: discarding a restart record that is a link")
             _clear_breadcrumb(path)
@@ -360,8 +376,10 @@ def _consume_breadcrumb() -> Optional[DroppedGrant]:
     # left by an older install cannot notify forever.
     _clear_breadcrumb(path)
 
-    if permanent:
+    if source in _REARMED_SOURCES or not source:
         return None
+    if permanent:
+        return DroppedGrant(source=source, remaining_secs=0, permanent=True)
 
     remaining = int(expires_at - datetime.now(tz=timezone.utc).timestamp())
     if remaining <= 0:
