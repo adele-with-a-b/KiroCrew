@@ -1046,7 +1046,8 @@ before, and its group dies with it.
   for one. Each keeper has its own secret, so a key one chat could read opens no
   other. With the sandbox off, the agent runs as the operator with the operator's
   reach. It can then read the key, just as it can read `token_signing.key`; the keeper
-  adds no exposure beyond that.
+  adds no exposure beyond that. The same holds for `<instance>.token`: the token is
+  already in the chat's own process environment, which the operator's reach covers.
 - **One attachment at a time.** An authenticated attach replaces the current one,
   because only a gateway holds the secret and a new attach means the old gateway is
   gone or going. An unauthenticated connection never affects the current attachment.
@@ -1201,14 +1202,16 @@ republishes only its client's token. So `KeeperSpawn` writes the launching clien
 token to `<instance>.token`, and `client_keeper._restore_session_token`, run first
 in `restore_launch_state`, sets it as the adopting client's `_stub_session_token` and
 publishes its mapping before the adopt handshake resumes the kept turn. Every later
-turn republishes the same token, so the mapping's week-long prune never reaches a
-live kept chat. Without this, a kept chat worked only while a mapping the launching
+turn that publishes the turn's identity (`messaging.identity.publish_turn_identity`)
+republishes the same token, as for any chat. Without this, a kept chat worked only while a mapping the launching
 gateway wrote still existed. It had none when no turn ran under that gateway (the
 keeper a restart's own boot started), and a mapping that did exist was pruned a
 week after its last write. The token is restored only for a record whose session
 key is the client's, from a file only a gateway writes in the `HIDDEN` keepers
 directory, read without following a link, owned by this uid and shaped as a minted
-token. A token already vouched for another chat is never re-pointed to this one. A
+token. That directory is the control; besides, a token a live mapping vouches for
+another chat is not re-pointed to this one. A refused adopt keeps the restored token
+for the fresh adapter that replaces the keeper: it is the same chat's. A
 keeper from a build that kept no token leaves the client its own, as before
 (`test_chat_keeper_session_token.py`).
 

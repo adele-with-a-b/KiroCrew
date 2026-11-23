@@ -13,6 +13,7 @@ gateway".
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import os
 import signal
@@ -190,49 +191,85 @@ async def test_a_keeper_from_a_build_that_kept_no_token_leaves_the_client_its_ow
     adopted.request_terminate()
 
 
-def _record(directory: Path, session_key: str = KEY) -> records.KeeperRecord:
+INSTANCE = "abc123def456"
+
+
+@pytest.fixture
+def kdir(tmp_path, monkeypatch) -> Path:
+    """The gateway's keepers directory, under *tmp_path*; returns the token's path."""
+    base = tmp_path / "keeper-home"
+    monkeypatch.setattr(records, "keepers_dir", lambda h=None: chat_keeper.keepers_dir(h or base))
+    records.ensure_dir()
+    return records.keepers_dir() / f"{INSTANCE}.token"
+
+
+def _record(session_key: str = KEY) -> records.KeeperRecord:
     return records.KeeperRecord(
-        instance="abc123def456",
+        instance=INSTANCE,
         session_key=session_key,
         backend="claude",
         keeper_pid=4242,
         keeper_start="s",
         adapter_pid=4243,
-        socket=str(directory / "abc123def456.s"),
+        socket=str(records.keepers_dir() / f"{INSTANCE}.s"),
         wire=1,
         created=0.0,
     )
 
 
-def test_a_token_vouched_for_another_chat_is_never_moved_to_this_one(tmp_path, mappings) -> None:
+def test_a_kept_token_is_restored_and_vouched_for(kdir, mappings) -> None:
+    kept = mint_stub_session_token()
+    records.write_session_token(INSTANCE, kept)
+    client = _client()
+    client_keeper.restore_launch_state(client, _record())
+    assert client._stub_session_token == kept
+    assert session_token_sig.verify_session_token(kept) == KEY
+
+
+def test_a_token_vouched_for_another_chat_is_never_moved_to_this_one(kdir, mappings) -> None:
     other = mint_stub_session_token()
     session_token_sig.publish_session_token(other, OTHER_KEY)
-    records._write_private(tmp_path / "abc123def456.token", other.encode("ascii"))
+    records.write_session_token(INSTANCE, other)
     client = _client()
     own = client._stub_session_token
-    client_keeper.restore_launch_state(client, _record(tmp_path))
+    client_keeper.restore_launch_state(client, _record())
     assert client._stub_session_token == own
     assert session_token_sig.verify_session_token(other) == OTHER_KEY
 
 
-def test_a_record_for_another_chat_restores_no_token(tmp_path, mappings) -> None:
+def test_a_record_for_another_chat_restores_no_token(kdir, mappings) -> None:
     kept = mint_stub_session_token()
-    records._write_private(tmp_path / "abc123def456.token", kept.encode("ascii"))
+    records.write_session_token(INSTANCE, kept)
     client = _client()
     own = client._stub_session_token
-    client_keeper.restore_launch_state(client, _record(tmp_path, session_key=OTHER_KEY))
+    client_keeper.restore_launch_state(client, _record(session_key=OTHER_KEY))
     assert client._stub_session_token == own
     assert session_token_sig.verify_session_token(kept) == ""
 
 
+def test_an_unreadable_token_still_restores_the_launch_state(kdir, mappings, monkeypatch) -> None:
+    records.write_session_token(INSTANCE, mint_stub_session_token())
+
+    def _eio(path: Path) -> bytes:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(records, "_read_private", _eio)
+    client = _client()
+    own = client._stub_session_token
+    record = dataclasses.replace(_record(), launch={"ssh_auth_sock_forwarded": True})
+    client_keeper.restore_launch_state(client, record)
+    assert client._stub_session_token == own
+    assert client._ssh_auth_sock_forwarded is True
+
+
 @pytest.mark.parametrize("body", [b"", b"not-a-token", b"A" * 64, b"0" * 63])
-def test_a_token_file_that_is_not_a_token_reads_as_none(tmp_path, body: bytes) -> None:
-    records._write_private(tmp_path / "abc123def456.token", body)
-    assert records.read_session_token(_record(tmp_path)) == ""
+def test_a_token_file_that_is_not_a_token_reads_as_none(kdir, body: bytes) -> None:
+    records._write_private(kdir, body)
+    assert records.read_session_token(INSTANCE) == ""
 
 
-def test_a_linked_token_file_is_not_followed(tmp_path) -> None:
+def test_a_linked_token_file_is_not_followed(kdir, tmp_path) -> None:
     target = tmp_path / "elsewhere"
     target.write_text(mint_stub_session_token(), encoding="ascii")
-    (tmp_path / "abc123def456.token").symlink_to(target)
-    assert records.read_session_token(_record(tmp_path)) == ""
+    kdir.symlink_to(target)
+    assert records.read_session_token(INSTANCE) == ""

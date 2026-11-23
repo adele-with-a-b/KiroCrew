@@ -403,11 +403,11 @@ def _restore_session_token(client: AcpClient, record: Any) -> None:
     and it is pruned a week after its last write), and every identity-bound tool
     call is refused as ``identity_unattested``.
 
-    The token comes from the keeper's own files, which only a gateway writes, for a
-    record whose session key is this client's; the attach before this proved the
-    keeper serves that key. A token already vouched for another chat is never moved
-    to this one, so no chat comes to answer for another's servers. A keeper whose
-    launcher kept no token leaves the client its own.
+    The token comes from the keeper's own files in the ``HIDDEN`` keepers directory,
+    which only a gateway writes, for a record whose session key is this client's; the
+    attach before this proved the keeper serves that key. That directory is the
+    control. Besides, a token a live mapping vouches for another chat is not moved to
+    this one. A keeper whose launcher kept no token leaves the client its own.
     """
     from kiro_crew.chat_keeper import records
     from kiro_crew.session_token_sig import publish_session_token, verify_session_token
@@ -415,7 +415,7 @@ def _restore_session_token(client: AcpClient, record: Any) -> None:
     session_key = getattr(client, "_session_key", None) or ""
     if not session_key or record.session_key != session_key:
         return
-    token = records.read_session_token(record)
+    token = records.read_session_token(record.instance)
     if not token:
         return
     vouched = verify_session_token(token)

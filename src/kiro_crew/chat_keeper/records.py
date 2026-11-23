@@ -153,15 +153,19 @@ def write_session_token(instance: str, token: str, home: Path | None = None) -> 
     _write_private(keepers_dir(home) / f"{instance}.token", token.encode("ascii"))
 
 
-def read_session_token(record: KeeperRecord) -> str:
-    """The session token kept for *record*'s keeper, or "" when there is none.
+def read_session_token(instance: str, home: Path | None = None) -> str:
+    """The session token kept for keeper *instance*, or "" when there is none.
 
-    Read from the directory the record's socket was made in. A keeper started by a
-    build that kept no token has none, and a file that is not a token reads as none.
+    Read from the keepers directory, as the key is. A keeper started by a build that
+    kept no token has none, and a file that is not a token, or cannot be read, reads
+    as none.
     """
-    if not record.instance.isalnum():
+    if not instance.isalnum():
         return ""
-    raw = _read_private(Path(record.socket).parent / f"{record.instance}.token")
+    try:
+        raw = _read_private(keepers_dir(home) / f"{instance}.token")
+    except OSError:
+        return ""
     if raw is None:
         return ""
     try:
