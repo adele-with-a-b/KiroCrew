@@ -6129,6 +6129,49 @@ Writers: `apps/manifest_status_items.py`, `apps/manifest_route_grammar.py`,
 `website/src/pages/chat/useStatusLinks.ts`, `website/src/pages/chat/page/StatusGoBackCrumb.tsx`,
 `website/src/app-sdk/statusGoBack.ts`.
 
+## 18m. An app says its own status changed (seam level 10)
+
+The host reads an app's status routes on its own schedule: a session control's
+`statusPath` when its popover closes and when a turn ends, a status item's every
+60 seconds. A change the app makes itself (the person answers in the app's own
+tab, a cron, an MCP tool) starts no turn, so the chip stayed stale and the pill
+lagged up to a minute. The app now says so, and the host re-reads at once.
+
+- **Route** (`dashboard/handlers/app_status_changed.py`, mounted in
+  `dashboard/routes/system.py`): `POST /api/apps/<app>/status-changed`, body
+  optional `{"session_key"}`. The segment is in `CORE_APP_ROUTE_SEGMENTS` and its
+  frontend mirror `website/src/apps/coreAppRoutes.ts`, so no app route shadows it.
+- **Who.** An app token reaches it through `_app_owns_path` (the path is the
+  app's own namespace, the token sent as the `mc_token_<port>` cookie). Another
+  app's path is refused `403` by `_enforce_app_scope` before the route runs; the
+  handler checks again (`403 app_status_not_own`) for a token whose
+  `permissions.api` happens to grant that path. A call with no app claim must be the owner's dashboard
+  (`require_owner_dashboard_request`); that is where an app's page runs. Either
+  way the app must be enabled and declare a `statusPath` in `sessionControls` or
+  `statusItems`, else `404 app_status_not_declared`. A `session_key` outside
+  `[A-Za-z0-9:._-]{1,200}` is `400`. Every decision is one SEL row.
+- **Frame.** `app_status_changed` `{app, session_key?}` through
+  `broadcast_ws_owners`, listed in `ws_event_scope._OWNER_ONLY_EVENTS`: a relayed
+  teammate draws no app status, and an app token's stream never sees it.
+- **Re-read** (`handleAppStatusChanged` in
+  `website/src/hooks/websocket/serverState.ts`): one `invalidateQueries` whose
+  predicate matches only that app's probes: every `APP_STATUS_ITEM_KEY` key whose
+  item key starts `<app>:` (an app name holds no `:`), and every
+  `SESSION_CONTROL_STATUS_KEY` key whose app slot is `<app>`, narrowed to the
+  named chat when `session_key` is given. Mounted probes refetch now; a
+  background chat's are marked stale. No other app and no other chat moves.
+- **SDK** (`website/src/app-sdk/appStatusRefresh.ts`): `useAppStatusRefresh()`
+  takes no app name; it binds to the name the host gave the `AppApiProvider`
+  and posts through the host client, so it needs no `permissions.api` entry.
+- **No limit and no timer.** Every call is delivered, with no dedupe or rate
+  limit: each costs only that app's own status GETs. The 60-second item poll
+  stays; the push only makes an app-caused change show at once.
+
+Writers: `dashboard/handlers/app_status_changed.py`, `dashboard/routes/system.py`,
+`dashboard/ws_event_scope.py`, `apps/manifest.py`, `apps/app_sdk_level.py`,
+`website/src/hooks/websocket/serverState.ts`, `website/src/hooks/useWebSocket.ts`,
+`website/src/app-sdk/appStatusRefresh.ts`, `website/src/apps/coreAppRoutes.ts`.
+
 ## 19. Spec Builder's backend is composed by lifecycle owner
 
 Spec Builder's backend carries more orchestration than a typical app: agent turns

@@ -56,6 +56,7 @@ import { useWorkflowRunReconcile } from './websocket/workflowRuns'
 import { useSlotListSync } from './websocket/slotList'
 import { useBundleReload, handleUpdateProgress } from './websocket/bundleReload'
 import {
+  handleAppStatusChanged,
   handleArtifactUpdate,
   handleCredentialRedactionChanged,
   handleDashboardMoved,
@@ -423,6 +424,11 @@ export function useWebSocket() {
             }
             break
           }
+          case 'app_status_changed':
+            // Owner-only frame: an app said its own status changed. Re-ask
+            // only that app's status probes (see handleAppStatusChanged).
+            handleAppStatusChanged(queryClient, data)
+            break
           case 'artifact_update':
             handleArtifactUpdate(queryClient, data)
             break

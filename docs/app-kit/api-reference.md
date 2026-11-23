@@ -2086,9 +2086,11 @@ level 7 adds the manifest's `agentReadOnlyDirs` (see
 [`ctx.webhook_source`](#webhook-source-ctxwebhook_source), level 8 adds
 directory entries in `credentialMasks` (`"state/"`), the dashboard's
 [host sessions](#host-sessions) (`useHostSessions`), and the manifest's
-`backend.webOrigin` with the dashboard's `appWebOrigin(name)`, and level 9 adds
+`backend.webOrigin` with the dashboard's `appWebOrigin(name)`, level 9 adds
 `permissions.bots`, which an app's backend uses with its app token
-([Bots](#bots-permissionsbots-from-your-backend)); each level
+([Bots](#bots-permissionsbots-from-your-backend)), and level 10 adds
+[app status refresh](#app-status-refresh) (`useAppStatusRefresh`,
+`POST /api/apps/<app>/status-changed`); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call
@@ -2939,6 +2941,52 @@ the one behind your sidebar badge; another app's note reads as `404`. The dashbo
 gets the same list from `useAppNotifications()`. Both need `APP_SDK_LEVEL >= 4`: an
 older host answers the routes with `404`, and a page that must also load there reads
 the hook through a namespace import (`sdk.APP_SDK_LEVEL >= 4 && sdk.useAppNotifications`).
+
+## App status refresh
+
+The dashboard re-reads a session control's `statusPath` when its popover closes and
+when a turn ends ([manifest-reference.md](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)),
+and a status item's `statusPath` about once a minute
+([manifest-reference.md](manifest-reference.md#contributesstatusitems--a-readout-in-the-top-bar)).
+When your app changes what those routes answer some other way, tell the dashboard, and
+every owner window re-reads your app's status at once: all of your top-bar items, and
+your chips for the chat you name (or for every chat).
+
+From your page, side-panel tab or control:
+
+```tsx
+import { useAppStatusRefresh } from '@kirocrew/app-sdk'
+
+const refreshStatus = useAppStatusRefresh()
+await be.answerLater(label)
+await refreshStatus({ sessionKey })   // one chat; refreshStatus() for every chat
+```
+
+From your backend, with your app token sent as the gateway's session cookie, the
+same way as the [Bots example](#bots-permissionsbots-from-your-backend)
+(`KiroCrewClient` does this for you; in-gateway hooks get the token from
+`await ctx.app_token()`):
+
+```python
+cookie = {f"mc_token_{urlsplit(origin).port}": app_token}
+async with http.post(
+    f"{origin}/api/apps/{name}/status-changed",
+    json={"session_key": "dashboard:chat-7"},
+    cookies=cookie,
+) as r:
+    print(r.status, await r.json())  # 200 {"ok": true}
+```
+
+The body is optional; without `session_key` every chat's chips for your app are
+re-asked. Your top-bar items are re-asked either way: they are not per chat. Answers `{"ok": true}`. Refused with `403` when the token
+is another app's (the app-scope check refuses it before the route runs), `404 app_status_not_declared` when your app is disabled or declares
+no `statusPath` in `sessionControls` or `statusItems`, and `400 app_status_bad_session_key` for a key outside
+`[A-Za-z0-9:._-]{1,200}`. The hook takes no app name: the host binds it to your app,
+and the dashboard re-reads only your app's routes. Every call is delivered; there is
+no dedupe or rate limit, so two changes seconds apart are two re-reads. Needs
+`APP_SDK_LEVEL >= 10`; read the hook through a namespace import
+(`sdk.APP_SDK_LEVEL >= 10 && sdk.useAppStatusRefresh`) when the page must also load
+on an older host.
 
 ## App Dev Mode (live reload)
 

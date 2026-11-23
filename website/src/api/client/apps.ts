@@ -260,6 +260,18 @@ export function createAppsEndpoints({ get, post, put, del, j, jApps, jfetch: fet
         : '/api/apps/' + encodeURIComponent(appName) + '/'
       return get(base + statusPath + (qs ? '?' + qs : '')).then(j)
     },
+    /**
+     * Tell the gateway an app's own status changed, so every owner window
+     * re-reads that app's status routes now (`POST /api/apps/<app>/status-changed`).
+     * `sessionKey` narrows a chip re-read to one chat; without it every chat's
+     * chips for the app are re-asked. Its top-bar items are re-asked either way. The App SDK's `useAppStatusRefresh` is the
+     * caller and fills `appName` with the page's own app.
+     */
+    appStatusChanged: (appName: string, sessionKey?: string) =>
+      post(
+        '/api/apps/' + encodeURIComponent(appName) + '/status-changed',
+        sessionKey ? { session_key: sessionKey } : {},
+      ).then(j),
   }
 
   const fileMenu = {

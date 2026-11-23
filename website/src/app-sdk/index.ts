@@ -615,6 +615,9 @@ export type { AppProjectPickerProps } from './ProjectPicker'
 // The dashboard's live session list and the acts a person takes on a session
 // from it, behind the app's declared chat paths (see ./hostSessions).
 export { useHostSessions } from './hostSessions'
+// An app re-reads its own status (chips and top-bar items) in every owner window (level 10).
+export { useAppStatusRefresh } from './appStatusRefresh'
+export type { AppStatusRefreshOptions } from './appStatusRefresh'
 export type { HostSession, HostSessionApproval, HostSessions, HostSessionDecision, HostSessionSendResult } from './hostSessions'
 // The transcript's row registry, so an app can add a row type or replace one
 // instead of forking the message list.
