@@ -1,12 +1,12 @@
 """Commands: ``pending``, ``verdict``, ``carry``, ``list``, ``brief``, and the ones in
-``cli_prepare``. Run inside a fork clone."""
+``cli_prepare`` and ``cli_weekly``. Run inside a fork clone."""
 
 from __future__ import annotations
 
 import argparse
 import datetime
 
-from . import UPSTREAM, cli_prepare, ledger
+from . import UPSTREAM, cli_prepare, cli_weekly, ledger
 from .changes import Change, Run, git_changes, patch_id, run_git
 from .watch import judge_brief, unjudged
 
@@ -92,7 +92,10 @@ def main(argv: list[str], run: Run = run_git) -> int:
     verdict.add_argument("--pr", type=int, help="the fork pull request, when not a merge commit")
     verdict.add_argument("--by", default="judge", help="who judged")
     cli_prepare.register(commands)
+    cli_weekly.register(commands)
     args = parser.parse_args(argv)
+    if args.command in cli_weekly.COMMANDS:
+        return cli_weekly.run_command(args)
     if args.command in cli_prepare.COMMANDS:
         return cli_prepare.run_command(args, run)
 
