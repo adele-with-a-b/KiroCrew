@@ -207,6 +207,14 @@ def test_an_unfilled_part_or_a_wrong_issue_slot_fails_the_form_check(pr_body):
     assert not {check.name: check for check in found}["form"].ok
 
 
+def test_the_issue_slot_belongs_to_the_pull_request_only():
+    repos: dict[str, Repo] = {}
+    repos[str(write_item("one", issue="it breaks\n\nCloses {{issue}}\n"))] = Repo()
+    found = prepare.item_checks(prepare.load("one"), [], fake_git(repos), passing_form)
+    form = {check.name: check for check in found}["form"]
+    assert not form.ok and "only the pull request text may" in form.detail
+
+
 def test_the_originals_own_form_check_can_refuse():
     repos: dict[str, Repo] = {}
     ready_item("one", repos)

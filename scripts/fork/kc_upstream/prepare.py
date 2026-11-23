@@ -154,10 +154,20 @@ def personal_markers(fork_owner: str) -> list[str]:
     return [marker for marker in found if marker and not marker.startswith("#")]
 
 
-def personal_hits(text: str, markers: list[str]) -> list[str]:
+def marker_hits(text: str, markers: list[str]) -> list[str]:
     low = text.lower()
-    hits = [marker for marker in markers if marker.lower() in low]
-    return hits + sorted(set(_HOME_PATH.findall(text)))
+    return [marker for marker in markers if marker.lower() in low]
+
+
+def personal_hits(text: str, markers: list[str]) -> list[str]:
+    return marker_hits(text, markers) + sorted(set(_HOME_PATH.findall(text)))
+
+
+def published_names(git: Run) -> str:
+    """The file names the branch touches and the branch's own name: both go out with it."""
+    return git(["diff", "--name-only", f"{BASE}...HEAD"]) + git(
+        ["rev-parse", "--abbrev-ref", "HEAD"]
+    )
 
 
 def run_form(worktree: Path, body: str) -> Optional[str]:
@@ -205,14 +215,18 @@ def _branch(git: Run) -> Check:
     return Check("branch", "Clean branch", True, detail)
 
 
-def _names(item: Item, git: Run, markers: list[str]) -> Check:
-    added = "\n".join(
+def added_lines(git: Run) -> str:
+    """Every line the branch adds on top of the original."""
+    return "\n".join(
         line[1:]
         for line in git(["diff", f"{BASE}...HEAD"]).splitlines()
         if line.startswith("+") and not line.startswith("+++")
     )
+
+
+def _names(item: Item, git: Run, markers: list[str]) -> Check:
     parts = {
-        "the code": added,
+        "the code": added_lines(git),
         "the commit message": git(["log", "-1", "--format=%B"]),
         "the issue": f"{item.issue_title}\n{item.issue_body}",
         "the pull request": f"{item.pr_title}\n{item.pr_body}",
@@ -222,6 +236,8 @@ def _names(item: Item, git: Run, markers: list[str]) -> Check:
         for where, text in parts.items()
         if (hits := personal_hits(text, markers))
     ]
+    if named := marker_hits(published_names(git), markers):
+        found.append(f"the file and branch names: {', '.join(named)}")
     detail = (
         "; ".join(found)
         if found
@@ -236,6 +252,8 @@ def _form(item: Item, form: Form) -> Check:
         unfilled = sorted(set(m.group(0) for m in _UNFILLED.finditer(text)))
         if unfilled:
             problems.append(f"the {where} has unfilled parts: {', '.join(unfilled)}")
+    if "{{issue}}" in f"{item.issue_title}{item.issue_body}{item.pr_title}":
+        problems.append("only the pull request text may hold '{{issue}}', not a title or the issue")
     slots = [line for line in item.pr_body.splitlines() if line.strip() == ISSUE_SLOT]
     if len(slots) != 1 or item.pr_body.count("{{issue}}") != 1:
         problems.append(f"the pull request needs exactly one line '{ISSUE_SLOT}'")
