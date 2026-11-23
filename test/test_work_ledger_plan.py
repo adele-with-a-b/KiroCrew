@@ -32,7 +32,15 @@ from kiro_crew.dashboard.handlers import crew_board_rank, remote_dispatch_routes
 from kiro_crew.dashboard.handlers import work_ledger_board as board_routes
 from kiro_crew.probes import work_ledger as probe
 from kiro_crew.work_ledger_rules import is_stale
-from kiro_crew.work_plan_vocab import MAX_RELEASES, coerce_plan, next_pick, plan_problem, rank_value
+from kiro_crew.work_plan_vocab import (
+    MAX_RELEASES,
+    coerce_plan,
+    next_pick,
+    plan_problem,
+    rank_value,
+    show_step,
+    shown_step,
+)
 
 _isolated = work_ledger_projection_helpers._isolated
 
@@ -479,3 +487,45 @@ async def test_the_rank_route_moves_a_backlog_row_and_refuses_the_rest(monkeypat
     status, _ = await _rank_post(ids["later"], 9, user="someone-else")
     assert status == 403
     assert wl.read_work_item(CONDUCTOR, ids["later"]).plan["rank"] == 0.5
+
+
+@pytest.mark.parametrize(
+    ("plan", "pr", "state", "acceptance", "want"),
+    [
+        # A report that carried a pull request reaches review.
+        ({"step": "build"}, 7, "open", None, "review"),
+        ({"backlog": True}, 7, "open", None, "review"),
+        # Accepted with a pull request, or on a pr_merged bar, reaches merged.
+        ({"step": "review"}, 7, "accepted", None, "merged"),
+        ({"step": "build"}, None, "accepted", {"kind": "pr_merged", "pr": 7}, "merged"),
+        # A closed item that was not accepted keeps its stored step.
+        ({"step": "build"}, 7, "rejected", None, "build"),
+        ({"step": "build"}, 7, "abandoned", None, "build"),
+        # Accepted with no pull request anywhere moves nothing.
+        ({"step": "build"}, None, "accepted", {"kind": "file", "path": "x"}, "build"),
+        # A merged item whose release shipped reaches released; a planned one waits.
+        ({"step": "merged", "release": "0.5"}, None, "open", None, "released"),
+        ({"release": "0.5"}, 7, "accepted", None, "released"),
+        ({"step": "merged", "release": "0.6"}, None, "open", None, "merged"),
+        ({"step": "review", "release": "0.5"}, 7, "open", None, "review"),
+        # A step set by hand that is further along is never moved back.
+        ({"step": "merged"}, 7, "open", None, "merged"),
+        ({"step": "released"}, 7, "accepted", None, "released"),
+        # Nothing happened: the stored step, or none.
+        ({"step": "mocks"}, None, "open", None, "mocks"),
+        ({"backlog": True}, None, "open", None, None),
+    ],
+)
+def test_the_shown_step_moves_forward_on_what_happened(plan, pr, state, acceptance, want) -> None:
+    releases = [{"name": "0.5", "state": "shipped"}, {"name": "0.6", "state": "planned"}]
+    got = shown_step(plan, pr=pr, state=state, acceptance=acceptance, releases=releases)
+    assert got == want
+
+
+def test_a_row_with_no_plan_is_left_unplanned() -> None:
+    row = {"pr": 7, "state": "accepted", "acceptance": None}
+    show_step(row, [])
+    assert "plan" not in row
+    planned = {"pr": 7, "state": "open", "acceptance": None, "plan": {"rank": 1.0}}
+    show_step(planned, [])
+    assert planned["plan"] == {"rank": 1.0, "step": "review"}

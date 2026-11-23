@@ -24,9 +24,10 @@ const ITEMS = [
   item('it_t3', 'Move answers up', { level: 'task', parent: 'it_s2', step: 'merged' }),
   item('it_t4', 'Check at phone width', { level: 'task', parent: 'it_s2', step: 'todo' }),
   item('it_s5', 'Phone layout', { parent: 'it_e1', step: 'mocks' }),
-  item('it_b6', 'Fuzz the parser', { backlog: true, rank: 2, parent: 'it_e1' }),
-  item('it_b7', 'Bound the fetch', { backlog: true, rank: 1, tags: ['bug'] }),
-  item('it_b8', 'Colour legend', { backlog: true }),
+  item('it_b6', 'Fuzz the parser', { backlog: true, rank: 2, parent: 'it_e1', tags: ['est: 45 m'] }),
+  item('it_b7', 'Bound the fetch', { backlog: true, rank: 1, tags: ['bug', 'est: 2 h'] }),
+  item('it_b8', 'Colour legend', { backlog: true, tags: ['est: 59.6 m', 'est: 1 h'] }),
+  item('it_b9', 'Sort the epics', { backlog: true }),
 ]
 
 const CONDUCTOR = {
@@ -53,7 +54,7 @@ describe('Conductor mode Backlog view', () => {
     expect(sprint.getAllByTestId('plan-story').map(r => r.getAttribute('data-item'))).toEqual(['it_s2', 'it_s5'])
     expect(sprint.getByText('Needs you: Pick a design')).toBeTruthy()
     const rows = screen.getAllByTestId('plan-backlog-row').map(r => within(r).getByTestId('plan-story').getAttribute('data-item'))
-    expect(rows).toEqual(['it_b7', 'it_b6', 'it_b8'])
+    expect(rows).toEqual(['it_b7', 'it_b6', 'it_b8', 'it_b9'])
     expect(screen.getByTestId('plan-next-pick').getAttribute('data-item')).toBe('it_b7')
     expect(within(screen.getByTestId('plan-releases')).getByText('0.5')).toBeTruthy()
   })
@@ -69,5 +70,31 @@ describe('Conductor mode Backlog view', () => {
     expect(drawer.getAllByTestId('plan-epic-task').map(t => t.textContent)).toEqual([
       expect.stringContaining('Move answers up'), expect.stringContaining('Check at phone width'),
     ])
+  })
+
+  it('shows each backlog row\'s estimate in its own column, totals them, and sorts by them without moving a rank', async () => {
+    const { api } = await import('../../../api/client')
+    renderView()
+    const order = () => screen.getAllByTestId('plan-backlog-row').map(r => within(r).getByTestId('plan-story').getAttribute('data-item'))
+    const cells = () => screen.getAllByTestId('plan-estimate').map(c => c.textContent)
+    expect(order()).toEqual(['it_b7', 'it_b6', 'it_b8', 'it_b9'])
+    // 59.6 minutes rounds to an hour, and reads as one.
+    expect(cells()).toEqual(['2h', '45m', '1h', '—'])
+    expect(screen.getByTestId('plan-estimate-total').textContent).toBe('Total 3.7h')
+    // A second estimate tag is not the column's, so it stays a chip.
+    expect(within(screen.getAllByTestId('plan-backlog-row')[2]).getByText('est: 1 h')).toBeTruthy()
+    // The estimate tag is the column, not a chip; the other tags stay chips.
+    const top = within(screen.getAllByTestId('plan-backlog-row')[0])
+    expect(top.getByText('bug')).toBeTruthy()
+    expect(top.queryByText('est: 2 h')).toBeNull()
+
+    const sort = screen.getByTestId('plan-estimate-sort')
+    fireEvent.click(sort)
+    expect(sort.getAttribute('aria-pressed')).toBe('true')
+    expect(order()).toEqual(['it_b6', 'it_b8', 'it_b7', 'it_b9'])
+    expect(cells()).toEqual(['45m', '1h', '2h', '—'])
+    fireEvent.click(sort)
+    expect(order()).toEqual(['it_b7', 'it_b6', 'it_b8', 'it_b9'])
+    expect(vi.mocked(api.crewBoardAction)).not.toHaveBeenCalled()
   })
 })

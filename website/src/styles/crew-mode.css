@@ -170,6 +170,36 @@ html:root .liquid-glass.crew-chip[aria-pressed="true"]:not(:disabled):not([aria-
   color: color-mix(in srgb, var(--muted) 50%, var(--text-strong, var(--text)));
 }
 
+/* A plan step's tag on the Backlog view: one hue per step, each from the theme's
+   own tokens. The words take the hue mixed toward the strongest text colour, as
+   the tones above do; the border and the wash take the hue itself. */
+.plan-step {
+  --plan-step-tone: var(--muted);
+  color: color-mix(in srgb, var(--plan-step-tone) 65%, var(--text-strong, var(--text)));
+  border-color: color-mix(in srgb, var(--plan-step-tone) 60%, transparent);
+  background-color: color-mix(in srgb, var(--plan-step-tone) 12%, transparent);
+}
+
+.plan-step[data-step="mocks"] {
+  --plan-step-tone: var(--aim);
+}
+
+.plan-step[data-step="build"] {
+  --plan-step-tone: color-mix(in srgb, var(--info) 50%, var(--aim));
+}
+
+.plan-step[data-step="review"] {
+  --plan-step-tone: color-mix(in srgb, var(--info) 65%, var(--ok));
+}
+
+.plan-step[data-step="merged"] {
+  --plan-step-tone: var(--ok);
+}
+
+.plan-step[data-step="released"] {
+  --plan-step-tone: color-mix(in srgb, var(--ok) 35%, var(--muted));
+}
+
 /* "Paused" (Pause all): the theme's blue, mixed like the other tones. */
 .crew-tone-paused {
   color: color-mix(in srgb, var(--info) 45%, var(--text-strong, var(--text)));

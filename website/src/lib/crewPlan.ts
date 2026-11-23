@@ -179,3 +179,29 @@ export function epicTone(epic: WorkBoardItem | null, epics: readonly WorkBoardIt
   const n = epics.findIndex(e => e.item_id === epic.item_id)
   return EPIC_TONES[(n < 0 ? 0 : n) % EPIC_TONES.length]
 }
+
+/** A conductor's estimate tag, `est: 2 h`, `est: 1.5 h` or `est: 45 m`: the number
+ *  and its unit, hours or minutes. The estimate rides `plan.tags` and nothing else. */
+const ESTIMATE_TAG = /^est:\s*(\d+(?:\.\d+)?)\s*(h|m)$/i
+
+export function isEstimateTag(tag: string): boolean {
+  return ESTIMATE_TAG.test(tag.trim())
+}
+
+/** An item's estimate in minutes, read from its first estimate tag; undefined when it has none. */
+export function estimateMinutes(item: WorkBoardItem): number | undefined {
+  for (const tag of planOf(item).tags ?? []) {
+    const m = ESTIMATE_TAG.exec(tag.trim())
+    if (m) return Number(m[1]) * (m[2].toLowerCase() === 'h' ? 60 : 1)
+  }
+  return undefined
+}
+
+/** `rows` by estimate, smallest first, the rows with none last; a tie keeps the
+ *  order given. A copy: the ranked order it came from is not touched. */
+export function byEstimate(rows: readonly WorkBoardItem[]): WorkBoardItem[] {
+  return rows
+    .map((item, n) => ({ item, n, est: estimateMinutes(item) }))
+    .sort((a, b) => (a.est ?? Infinity) - (b.est ?? Infinity) || a.n - b.n)
+    .map(r => r.item)
+}

@@ -140,6 +140,62 @@ def merge_plan(current: dict[str, Any] | None, change: dict[str, Any]) -> dict[s
     return coerce_plan(merged)
 
 
+def shown_step(
+    plan: dict[str, Any] | None,
+    *,
+    pr: Any,
+    state: Any,
+    acceptance: Any,
+    releases: list[dict[str, Any]],
+) -> str | None:
+    """The step a read shows for an item: the stored one, moved on by what happened.
+
+    A pull request on an open item (a worker's report carried it) reaches ``review``;
+    the conductor accepting an item that has one, or whose bar is ``pr_merged``,
+    reaches ``merged``; and a merged item whose ``release`` has shipped reaches
+    ``released``. A move only ever goes forward, so a step written by hand that
+    is already further along is kept. Derived on every read and never stored, so
+    a closed item, which takes no write, still moves when its release ships.
+    """
+    plan = plan or {}
+    stored = plan.get("step")
+    step: str | None = stored if stored in PLAN_STEPS else None
+    has_pr = pr is not None or (
+        isinstance(acceptance, dict) and acceptance.get("kind") == "pr_merged"
+    )
+    reached = None
+    if state == "accepted" and has_pr:
+        reached = "merged"
+    elif pr is not None and state == "open":
+        reached = "review"
+    if reached and (step is None or PLAN_STEPS.index(reached) > PLAN_STEPS.index(step)):
+        step = reached
+    if step == "merged" and any(
+        r.get("name") == plan.get("release") and r.get("state") == "shipped" for r in releases
+    ):
+        step = "released"
+    return step
+
+
+def show_step(row: dict[str, Any], releases: list[dict[str, Any]]) -> None:
+    """Put :func:`shown_step` on a read *row* that carries a plan.
+
+    A row with no plan is left alone: a board that never planned reads as before.
+    """
+    plan = row.get("plan")
+    if not plan:
+        return
+    step = shown_step(
+        plan,
+        pr=row.get("pr"),
+        state=row.get("state"),
+        acceptance=row.get("acceptance"),
+        releases=releases,
+    )
+    if step:
+        row["plan"] = dict(plan, step=step)
+
+
 def counts_toward_concurrency(plan: dict[str, Any] | None) -> bool:
     """Whether an open item holds a seat in the goal's ``concurrency_cap``.
 

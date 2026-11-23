@@ -36,7 +36,7 @@ from kiro_crew.dashboard.handlers.work_ledger_refusals import (
 )
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.validation import WORK_LEDGER_READ_SCHEMA, ValidationError, validate_tool_args
-from kiro_crew.work_plan_vocab import next_pick
+from kiro_crew.work_plan_vocab import next_pick, show_step
 
 logger = logging.getLogger("kiro_crew.dashboard.handlers.work_ledger")
 
@@ -138,6 +138,7 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
             board=key,
             remote_live=remote_live.get(item.item_id),
         )
+        show_step(row, record.releases)
         if item.worker_instance_id or item.retired_bindings:
             row.update(await asyncio.to_thread(_remote_row_fields, key, item))
         if compact:

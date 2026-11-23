@@ -89,7 +89,7 @@ and an item with no `plan` is stored and read exactly as before.
 | `parent` | the `it_` id of its epic (for a story) or its story (for a task, which needs one); an epic takes none. Every link goes exactly one level down, and a level change that would strand an item under it is refused |
 | `backlog` | `true` while the item is stored but not started. Absent means it is in the sprint |
 | `rank` | a finite number, lower is sooner: the backlog's order. The person's drag on the board writes it |
-| `step` | `todo`, `mocks`, `build`, `review`, `merged` or `released` |
+| `step` | `todo`, `mocks`, `build`, `review`, `merged` or `released`. A read moves it forward by itself; see below |
 | `release` | the name of the release the item ships in |
 | `tags` | up to 8 free labels, each up to 32 chars |
 
@@ -116,6 +116,21 @@ name is refused: update a release instead of adding one.
   next when a seat frees: the lowest-ranked open backlog story (never an epic or
   a sub-task), unranked ones after ranked ones, oldest first. It is derived on every
   read and never stored. A compact read carries each planned row's `plan`.
+
+A planned item's `step` moves by itself on every read (`work_plan_vocab.shown_step`),
+so the conductor writes `todo`, `mocks` and `build` and never the rest:
+
+| What happened | Step a read shows |
+|---|---|
+| a worker's report carried a `pr` | `review` |
+| the item is accepted and has a `pr`, or its bar is `pr_merged` | `merged` |
+| the item is merged and the release its `release` names is `shipped` | `released` |
+
+A move only goes forward: a step written by hand that is already further along
+is kept. The moved step is derived, never stored, so a closed item still reaches
+`released` when its release ships. `work_ledger_read` and the Crew board show
+it; the `goal-board` page, which reads the crew log's fold, shows the stored step.
+An item with no `plan` gets none.
 
 The person's drag on the Crew board writes only `plan.rank`, and only on a backlog
 row, as a `rank` entry
