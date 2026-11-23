@@ -9,10 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { QueryClient } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import type { ReactNode } from 'react'
 
 import { renderHookWithProviders } from './helpers'
 import { api } from '../api/client'
-import { sendAppNav, setClickOpenProbe, type AppOpenTarget } from '../linkPreview/linkPreviewNav'
+import { onLinkPreviewNav, sendAppNav, setClickOpenProbe, type AppOpenTarget, type LinkPreviewNav } from '../linkPreview/linkPreviewNav'
 import { CLICK_GRANT_MS } from '../linkPreview/linkPreviewFrames'
 import { useComposerSessionControls } from '../pages/chat/page/sessionControls'
 import {
@@ -20,6 +21,7 @@ import {
   clearSessionControlRequest,
   peekSessionControlRequestForTest,
   putSessionControlRequest,
+  useSessionControlJump,
   useSessionControlRequest,
 } from '../app-sdk/sessionControlRequest'
 import { normalizeStatusTarget, setActiveStatusGo, getActiveStatusGo } from '../shell/topbar/statusGo'
@@ -142,6 +144,55 @@ describe('useSessionControlRequest', () => {
   })
 })
 
+describe('useSessionControlJump', () => {
+  const scoped = (sessionKey: string) => ({ children }: { children: ReactNode }) =>
+    <SessionControlRequestScope sessionKey={sessionKey} control={KEY}>{children}</SessionControlRequestScope>
+  /** A chat page that takes jumps for `slot` and answers each with `answer`. */
+  function chatPage(slot: string, answer: Parameters<NonNullable<Extract<LinkPreviewNav, { kind: 'jump' }>['onDone']>>[0]) {
+    const seen: LinkPreviewNav[] = []
+    const off = onLinkPreviewNav((req) => {
+      if (req.kind !== 'jump' || req.slot !== slot) return false
+      seen.push(req)
+      req.onDone?.(answer)
+      return true
+    })
+    return { seen, off }
+  }
+
+  it('is null outside a session control', () => {
+    expect(renderHook(() => useSessionControlJump()).result.current).toBeNull()
+  })
+
+  it("jumps the control's own chat, from the view on screen, and answers with how the jump ended", async () => {
+    const page = chatPage('chat-1', true)
+    try {
+      const jump = renderHook(() => useSessionControlJump(), { wrapper: scoped('dashboard:chat-1') }).result.current!
+      await expect(jump({ ts: 't4', id: 'm4' })).resolves.toEqual({ ok: true })
+      expect(page.seen).toEqual([expect.objectContaining({ kind: 'jump', slot: 'chat-1', target: { ts: 't4', id: 'm4' }, from: 'view' })])
+    } finally { page.off() }
+    const gone = chatPage('chat-1', 'not_found')
+    try {
+      const jump = renderHook(() => useSessionControlJump(), { wrapper: scoped('dashboard:chat-1') }).result.current!
+      await expect(jump({ ts: 'other-chat' })).resolves.toEqual({ ok: false, reason: 'not_found' })
+    } finally { gone.off() }
+  })
+
+  it('refuses at once, sending nothing: a bad target is not_found, a chat not on screen not_on_screen', async () => {
+    const page = chatPage('chat-1', true)
+    try {
+      const jump = renderHook(() => useSessionControlJump(), { wrapper: scoped('dashboard:chat-1') }).result.current!
+      for (const bad of [{ ts: '' }, { ts: 7 }, { ts: 'x'.repeat(129) }, { ts: 't4', id: 9 }, null]) {
+        await expect(jump(bad as never)).resolves.toEqual({ ok: false, reason: 'not_found' })
+      }
+      expect(page.seen).toEqual([])
+      const elsewhere = renderHook(() => useSessionControlJump(), { wrapper: scoped('dashboard:chat-2') }).result.current!
+      await expect(elsewhere({ ts: 't4' })).resolves.toEqual({ ok: false, reason: 'not_on_screen' })
+      const notDashboard = renderHook(() => useSessionControlJump(), { wrapper: scoped('slack:C1') }).result.current!
+      await expect(notDashboard({ ts: 't4' })).resolves.toEqual({ ok: false, reason: 'not_on_screen' })
+    } finally { page.off() }
+  })
+})
+
 describe('a status target can name a session control', () => {
   it('keeps sessionControl with its arg; a target naming both keeps panelTab; a bad id opens the chat alone', () => {
     expect(normalizeStatusTarget({ sid: 'chat-4', sessionControl: 'questions', arg: { label: 'Q4a' } }))
@@ -210,6 +261,17 @@ describe('SessionControlHost: an open request wins over the outside click that a
     press(label)
     act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS + 1) })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('a press on the Back pill after a jump leaves the popover open', () => {
+    const onClose = vi.fn()
+    host(onClose)
+    const pill = document.createElement('button')
+    pill.setAttribute('data-session-control-keep', '')
+    pill.appendChild(document.createElement('span'))
+    document.body.appendChild(pill)
+    fireEvent.mouseDown(pill.firstChild!)
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('any other outside press still closes at once, a press on a chat link too', () => {

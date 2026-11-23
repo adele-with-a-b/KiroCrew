@@ -199,6 +199,64 @@ describe('a target outside the loaded rows', () => {
   })
 })
 
+describe('a jump that asked to be told how it ended (a session control’s)', () => {
+  it('a loaded target answers true at once; a target with no older history answers not_found at once', () => {
+    const { result } = renderHook(() => useTranscriptPins(props()), { wrapper: withQueryClient() })
+    const done = vi.fn()
+    act(() => { result.current.handleJumpToPinnedMessage('t2', 'm2', { origin: 'link', onDone: done }) })
+    act(() => { result.current.handleJumpToPinnedMessage('gone', 'gone', { origin: 'link', onDone: done }) })
+    expect(done.mock.calls).toEqual([[true], ['not_found']])
+    // The caller says it: no chat notice claims the message left this chat.
+    expect(result.current.pinStatus).toBeNull()
+  })
+
+  it('a paged target answers once it lands, and once only, while the bounded page re-resolves', async () => {
+    const dispatch = pagingDispatch(async () => ({}))
+    const base = { slotHasMore: true, slotOldestIndex: 40, dispatch: dispatch as never, activeViewIsBoundedPage: true }
+    const { result, rerender } = renderHook((over: Partial<Props>) => useTranscriptPins(props({ ...base, ...over })), {
+      initialProps: {} as Partial<Props>, wrapper: withQueryClient(),
+    })
+    const done = vi.fn()
+    act(() => { result.current.handleJumpToPinnedMessage('old', 'm_old', { origin: 'link', onDone: done }) })
+    await waitFor(() => expect(dispatch.mock.calls.some(([a]) => typeof a === 'function')).toBe(true))
+    expect(done).not.toHaveBeenCalled()
+    const landed = [msg('assistant', 'old', 'm_old'), msg('user', 't1', 'm1')]
+    rerender({ messages: landed })
+    await waitFor(() => expect(done).toHaveBeenCalledWith(true))
+    rerender({ messages: [msg('user', 't0', 'm0'), ...landed] })
+    expect(done).toHaveBeenCalledTimes(1)
+  })
+
+  it('history read to its start answers not_found; a failed page load_failed; neither writes a chat notice', async () => {
+    const gone = renderHook(() => useTranscriptPins(props({ slotHasMore: true, slotOldestIndex: 40, dispatch: pagingDispatch(async () => null) as never })), { wrapper: withQueryClient() })
+    const notFound = vi.fn()
+    act(() => { gone.result.current.handleJumpToPinnedMessage('x', 'x', { origin: 'link', onDone: notFound }) })
+    await waitFor(() => expect(notFound).toHaveBeenCalledWith('not_found'))
+    const broken = renderHook(() => useTranscriptPins(props({ slotHasMore: true, slotOldestIndex: 40, dispatch: pagingDispatch(async () => { throw new Error('502') }) as never })), { wrapper: withQueryClient() })
+    const failed = vi.fn()
+    act(() => { broken.result.current.handleJumpToPinnedMessage('x', 'x', { origin: 'link', onDone: failed }) })
+    await waitFor(() => expect(failed).toHaveBeenCalledWith('load_failed'))
+    expect(gone.result.current.pinStatus).toBeNull()
+    expect(broken.result.current.pinError).toBeNull()
+  })
+
+  it('a pending jump answers replaced when a newer jump takes over, and not_on_screen when the chat is left', async () => {
+    const dispatch = pagingDispatch(() => new Promise(() => {}))
+    const { result, rerender } = renderHook((over: Partial<Props>) => useTranscriptPins(props({ slotHasMore: true, slotOldestIndex: 40, dispatch: dispatch as never, ...over })), {
+      initialProps: {} as Partial<Props>, wrapper: withQueryClient(),
+    })
+    const first = vi.fn()
+    const second = vi.fn()
+    act(() => { result.current.handleJumpToPinnedMessage('old', 'a', { origin: 'link', onDone: first }) })
+    act(() => { result.current.handleJumpToPinnedMessage('t2', 'm2', { origin: 'link' }) })
+    expect(first).toHaveBeenCalledWith('replaced')
+    act(() => { result.current.handleJumpToPinnedMessage('old', 'b', { origin: 'link', onDone: second }) })
+    rerender({ activeSlot: 'slot-b' })
+    await waitFor(() => expect(second).toHaveBeenCalledWith('not_on_screen'))
+    expect(first).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('putting a pinned message in the composer', () => {
   it('puts the message as sent in the composer once and jumps to the row; a plain Jump does not fill', () => {
     const block = { id: 'p1', seq: 1, lines: 3, content: 'a\nb\nc' }

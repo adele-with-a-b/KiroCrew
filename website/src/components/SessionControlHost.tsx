@@ -201,6 +201,9 @@ export default function SessionControlHost({
       // closing here would let the chip's own toggle re-open it — clicking an
       // open chip would flicker rather than dismiss.
       if (target?.closest?.('[data-session-control-chip]')) return
+      // The Back pill after a jump only scrolls the chat back: the box the
+      // person jumped from stays open.
+      if (target?.closest?.('[data-session-control-keep]')) return
       if (!popRef.current || popRef.current.contains(e.target as Node)) return
       if (target?.closest?.(LINK_PREVIEW_LABEL)) {
         const seen = sessionControlRequestSeq(session.sessionKey, control.key)

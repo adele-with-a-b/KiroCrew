@@ -13,6 +13,7 @@ import type { ChatMessage } from '../../../types'
 import { i18nT } from '../../../i18n/t'
 import { supersededSuccessorIdx } from '../groupDisplayItems'
 import { userResendText } from '../userMessageText'
+import type { JumpOutcome } from '../../../linkPreview/linkPreviewNav'
 
 /** Map message index → displayItems index, for scroll-to-match and the turn minimap. */
 function buildMessageToDisplayIdx(items: DisplayItem[]): Map<number, number> {
@@ -55,6 +56,12 @@ export function drawnSuccessorIdx(messages: ChatMessage[], idx: number): number 
  *              pin would report an action they did not take.
  */
 type PendingJumpOrigin = 'pin' | 'earlier' | 'link' | 'quote'
+
+/** `fn`, called at most once. */
+function once(fn: (o: JumpOutcome) => void): (o: JumpOutcome) => void {
+  let done = false
+  return (o) => { if (!done) { done = true; fn(o) } }
+}
 
 /** SINGLE writer for the not-found copy, so a new origin cannot reach the reader
  *  wearing another origin's wording. */
@@ -170,7 +177,18 @@ export function useTranscriptPins({
     origin: PendingJumpOrigin
     /** Put in composer: fill the composer with the message once it resolves. */
     fill?: boolean
+    /** Told once how this jump ended (`once`-wrapped). */
+    done?: (o: JumpOutcome) => void
   } | null>(null)
+  // A pending jump dropped by any path that did not say how it ended (a newer
+  // jump, the "earlier messages" control, an unmount) is told `replaced`.
+  const lastPendingRef = useRef(pendingPinnedJump)
+  useEffect(() => {
+    const prev = lastPendingRef.current
+    lastPendingRef.current = pendingPinnedJump
+    if (prev?.done && prev.done !== pendingPinnedJump?.done) prev.done('replaced')
+  }, [pendingPinnedJump])
+  useEffect(() => () => lastPendingRef.current?.done?.('not_on_screen'), [])
   const pinnedJumpPageLoadsRef = useRef(0)
   // Reads `messagesRef`, not `messages`: the array is new on every streamed
   // frame, and this resolver sits under `handleJumpToQuote`, a transcript
@@ -218,19 +236,23 @@ export function useTranscriptPins({
       return
     }
   }, [activeSlot, slotRunning, regenerating, activeSlotRemoteBound, navToDisplayIndex, editSeqRef, messagesRef, setEditLast])
-  const handleJumpToPinnedMessage = useCallback((messageTs: string, mid: string | undefined, { origin, fill }: { origin: PendingJumpOrigin; fill?: boolean }) => {
+  const handleJumpToPinnedMessage = useCallback((messageTs: string, mid: string | undefined, { origin, fill, onDone }: { origin: PendingJumpOrigin; fill?: boolean; onDone?: (o: JumpOutcome) => void }) => {
+    const done = onDone ? once(onDone) : undefined
     // A jump that lands at once replaces a pending one, so its fill cannot fire later.
-    if (jumpToLoadedPinnedMessage(messageTs, mid, fill)) { setPendingPinnedJump(null); return }
+    if (jumpToLoadedPinnedMessage(messageTs, mid, fill)) { setPendingPinnedJump(null); done?.(true); return }
     if (activeSlot && (!cursorIsForActiveSlot || (slotHasMore && slotOldestIndex > 0))) {
       pinnedJumpPageLoadsRef.current = 0
       setPinNotice(null)
       setPinLoadError(null)
-      setPendingPinnedJump({ slotKey: activeSlot, messageTs, mid, origin, fill })
+      setPendingPinnedJump({ slotKey: activeSlot, messageTs, mid, origin, fill, done })
       return
     }
     // Same writer as the async branch below, so the synchronous dead-link case
-    // cannot drift into pin wording while the paging case reports the truth.
-    setPinNotice(jumpUnavailableNotice(origin))
+    // cannot drift into pin wording while the paging case reports the truth. A
+    // jump with an `onDone` hands its answer to the caller, which says it in its
+    // own words: the chat's notice would claim the message left THIS chat.
+    if (done) done('not_found')
+    else setPinNotice(jumpUnavailableNotice(origin))
   }, [activeSlot, cursorIsForActiveSlot, jumpToLoadedPinnedMessage, slotHasMore, slotOldestIndex])
   // A sent quote card jumps to the quoted row through the pinned-message jump,
   // which already pages older history in when the target is off the loaded window.
@@ -251,6 +273,7 @@ export function useTranscriptPins({
     if (!pendingPinnedJump) return
     if (pendingPinnedJump.slotKey !== activeSlot) {
       pinnedJumpPageLoadsRef.current = 0
+      pendingPinnedJump.done?.('not_on_screen')
       setPendingPinnedJump(null)
       return
     }
@@ -267,6 +290,7 @@ export function useTranscriptPins({
     const fill = pendingPinnedJump.fill && !(splitMode && splitFeatureEnabled) && !crewWindow
     if (jumpToLoadedPinnedMessage(pendingPinnedJump.messageTs, pendingPinnedJump.mid, fill)) {
       pinnedJumpPageLoadsRef.current = 0
+      pendingPinnedJump.done?.(true)
       // A jump resolved against the bounded page is provisional: the full
       // transcript prepends older rows, so re-resolve once it has replaced it.
       // The composer fill is not: it happened once, just now.
@@ -279,7 +303,8 @@ export function useTranscriptPins({
     if (!cursorIsForActiveSlot) return
     if (!slotHasMore || slotOldestIndex <= 0) {
       pinnedJumpPageLoadsRef.current = 0
-      setPinNotice(notFoundNotice)
+      if (pendingPinnedJump.done) pendingPinnedJump.done('not_found')
+      else setPinNotice(notFoundNotice)
       setPendingPinnedJump(null)
       return
     }
@@ -300,7 +325,8 @@ export function useTranscriptPins({
     void dispatch(loadOlderMessages()).unwrap().then(result => {
       if (!cancelled && result === null) {
         pinnedJumpPageLoadsRef.current = 0
-        setPinNotice(notFoundNotice)
+        if (pendingPinnedJump.done) pendingPinnedJump.done('not_found')
+        else setPinNotice(notFoundNotice)
         setPendingPinnedJump(null)
       }
     }).catch(err => {
@@ -309,7 +335,8 @@ export function useTranscriptPins({
       if (isSupersededPagingRejection(err)) return
       if (!cancelled) {
         pinnedJumpPageLoadsRef.current = 0
-        setPinLoadError(loadFailedNotice)
+        if (pendingPinnedJump.done) pendingPinnedJump.done('load_failed')
+        else setPinLoadError(loadFailedNotice)
         setPendingPinnedJump(null)
       }
     })

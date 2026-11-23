@@ -13,7 +13,8 @@
  *  - the approval bar's "Show in chat" scrolls to the tool row by call id;
  *  - a row that is not in the display map is never scrolled to;
  *  - a link-preview card's jump acts only in the chat on screen, and keeps the
- *    spot it left from for the Back pill.
+ *    spot it left from for the Back pill (the bottom, when the view rested there);
+ *  - a session control's jump leaves from the view on screen.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
@@ -260,5 +261,72 @@ describe("a link-preview card's jump", () => {
     act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't1' } }) })
     expect(opts.handleJumpToPinnedMessage).toHaveBeenCalledWith('t0', undefined, { origin: 'link' })
     expect(hook.result.current.backSpot).toBeNull()
+  })
+})
+
+describe("a session control's jump (from: 'view')", () => {
+  /** A scroller from y=100 to y=700 holding rows (display index, top, bottom). */
+  function scroller(rows: [number, number, number][]) {
+    const sc = document.createElement('div')
+    sc.getBoundingClientRect = () => ({ top: 100, bottom: 700 }) as DOMRect
+    for (const [di, top, bottom] of rows) {
+      const row = document.createElement('div')
+      row.setAttribute('data-display-index', String(di))
+      row.getBoundingClientRect = () => ({ top, bottom }) as DOMRect
+      sc.append(row)
+    }
+    return sc
+  }
+  const jump = (target: { ts: string; id?: string }, onDone?: () => void) =>
+    sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target, from: 'view', ...(onDone ? { onDone } : {}) })
+
+  it('keeps the last reply whose top is on screen as the spot, and hands its answer to the paging jump', () => {
+    // t0 (10) is above the view, t1 is not drawn, t2 (12) starts on screen at 400.
+    const { opts, hook } = harness({ scrollerRef: { current: scroller([[10, 20, 380], [12, 400, 900]]) } })
+    const onDone = vi.fn()
+    act(() => { jump({ ts: 't0', id: 'm0' }, onDone) })
+    expect(opts.handleJumpToPinnedMessage).toHaveBeenCalledWith('t0', 'm0', { origin: 'link', onDone })
+    expect(hook.result.current.backSpot).toEqual({ from: { ts: 't2', id: 'm2' }, offset: 300, down: true })
+    act(() => { hook.result.current.goBack() })
+    expect(opts.navToDisplayIndex).toHaveBeenCalledWith(12, { behavior: 'smooth', align: 'start', offset: -300 })
+  })
+
+  it('a jump from the bottom of the chat (a card’s too) gives a Back to the bottom, through the chat’s own scroll', () => {
+    const scrollBottom = vi.fn()
+    const sc = scroller([[10, 20, 380], [12, 400, 900]])
+    const { opts, hook } = harness({ scrollerRef: { current: sc }, isAtBottom: true, scrollBottom })
+    act(() => { jump({ ts: 't0' }) })
+    expect(hook.result.current.backSpot).toMatchObject({ from: { ts: 't2', id: 'm2' }, bottom: true })
+    act(() => { hook.result.current.goBack() })
+    expect(scrollBottom).toHaveBeenCalledTimes(1)
+    expect(opts.navToDisplayIndex).not.toHaveBeenCalled()
+    expect(hook.result.current.backSpot).toBeNull()
+    act(() => { sendLinkPreviewNav({ kind: 'jump', slot: 'slot-a', target: { ts: 't0' }, from: { ts: 't2', id: 'm2' } }) })
+    expect(hook.result.current.backSpot).toMatchObject({ bottom: true })
+  })
+
+  it('with no row top on screen, the row that fills the view is the spot', () => {
+    const { hook } = harness({ scrollerRef: { current: scroller([[10, -50, 90], [12, 50, 1200]]) } })
+    act(() => { jump({ ts: 't0' }) })
+    expect(hook.result.current.backSpot).toEqual({ from: { ts: 't2', id: 'm2' }, offset: -50, down: true })
+  })
+
+  it('a second jump keeps the spot the first left from, so Back returns to where the person began', () => {
+    const { hook } = harness({ scrollerRef: { current: scroller([[12, 400, 900]]) } })
+    act(() => { jump({ ts: 't0' }) })
+    const first = hook.result.current.backSpot
+    act(() => { jump({ ts: 't2', id: 'm2' }) })
+    expect(hook.result.current.backSpot).toEqual({ ...first, down: false })
+  })
+
+  it('a target that is not in the chat moves nothing: no pill, and an earlier pill stays as it was', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller([[12, 400, 900]]) } })
+    act(() => { jump({ ts: 'gone' }) })
+    expect(hook.result.current.backSpot).toBeNull()
+    expect(opts.handleJumpToPinnedMessage).toHaveBeenCalledWith('gone', undefined, { origin: 'link' })
+    act(() => { jump({ ts: 't0' }) })
+    const spot = hook.result.current.backSpot
+    act(() => { jump({ ts: 'gone' }) })
+    expect(hook.result.current.backSpot).toBe(spot)
   })
 })

@@ -10,10 +10,15 @@
  * `SessionControlHost`), so a control reads only what was sent to itself, in its
  * own chat.
  *
+ * The same scope gives a control `useSessionControlJump()`: scroll its own chat
+ * to one of its messages, through the route a card's `jumpTo` takes.
+ *
  * @module app-sdk/sessionControlRequest
  */
-import { createContext, createElement, useCallback, useContext, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, createElement, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import type { PanelTabRequest } from './panelTabRequest'
+import { sendAppNav } from '../linkPreview/linkPreviewNav'
+import { readMessageRef } from '../linkPreview/linkPreviewProtocol'
 
 /** Where an open came from: a click on the app's own link-preview card, or a
  *  status row or go. One shape for every source, so a later one (a shortcut key
@@ -82,4 +87,40 @@ export function useSessionControlRequest(): SessionControlRequest | null {
   const where = useContext(WhereContext)
   const read = useCallback(() => (where ? requests.get(keyOf(where.sessionKey, where.control)) ?? null : null), [where])
   return useSyncExternalStore(subscribe, read, read)
+}
+
+/** How a session control's jump ended. `not_found`: this chat has no such
+ *  message (a message of another chat reads this; so does a `ts` or `id` that is
+ *  not a string of 1 to 128 characters). `load_failed`: a page of older history
+ *  failed to load. `not_on_screen`: the control's chat is not the one drawn (Split
+ *  View, or it was left). `replaced`: a newer jump took its place first. */
+export type SessionControlJumpResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'load_failed' | 'not_on_screen' | 'replaced' }
+
+/** Scroll the control's own chat to one of its messages, `{ ts, id? }` (the
+ *  shape a card's `link.message` and `card.jumpTo` use), and light it, with the
+ *  Back pill to where the view was; the popover stays open. A message older
+ *  than the loaded window is paged in first, so the answer comes once the
+ *  message is on screen or the chat's history is read to its start. Null outside
+ *  a session control. */
+export function useSessionControlJump(): ((message: { ts: string; id?: string }) => Promise<SessionControlJumpResult>) | null {
+  const where = useContext(WhereContext)
+  return useMemo(() => {
+    if (!where) return null
+    const slot = where.sessionKey.startsWith('dashboard:') ? where.sessionKey.slice('dashboard:'.length) : ''
+    return (message: { ts: string; id?: string }) => new Promise<SessionControlJumpResult>((resolve) => {
+      const m = message as { ts?: unknown; id?: unknown } | null | undefined
+      const target = m && typeof m === 'object' ? readMessageRef(m.ts, m.id) : null
+      // An `id` that is given but unreadable must not fall back to `ts`, which can
+      // name a same-tick twin.
+      if (!target || (m?.id !== undefined && target.id === undefined)) { resolve({ ok: false, reason: 'not_found' }); return }
+      if (!slot) { resolve({ ok: false, reason: 'not_on_screen' }); return }
+      const taken = sendAppNav({
+        kind: 'jump', slot, target, from: 'view',
+        onDone: (o) => resolve(o === true ? { ok: true } : { ok: false, reason: o }),
+      })
+      if (taken !== true) resolve({ ok: false, reason: 'not_on_screen' })
+    })
+  }, [where])
 }
