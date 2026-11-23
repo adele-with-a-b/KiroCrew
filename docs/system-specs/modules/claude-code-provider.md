@@ -722,6 +722,31 @@ file that sets either therefore refuses the exclusion
 withheld, as before this path existed. The startup re-read treats a file that gained
 either key the same way, and stops the harness.
 
+The user's own `settings.json` is not a project file, even where it sits at one's path.
+A session whose work folder is the home directory has the user's Claude config
+directory as its `.claude`, so its project `settings.json` is the very file the `user`
+source loads. Leaving the project tiers out drops nothing from it: it still loads,
+whole, as the user tier, as it does for a session in any other folder. So
+`_project_settings_restrictions` reads it as carrying nothing, and a home-folder
+session takes the exclusion and keeps its servers. The home folder's
+`settings.local.json` is still the project's own file and is examined like any other.
+
+Which file that is comes from `_claude_user_settings_file`: `settings.json` in
+`CLAUDE_CONFIG_DIR`, else in `~/.claude`, as the gateway resolves them. That answer
+holds for the child only while the child resolves it the same way, so no file is
+taken for the user's when anything Crew puts on the session's environment names
+`HOME`, `USERPROFILE` or a variable the harness tables declare as moving a config
+directory (`CLAUDE_CONFIG_DIR`, `CLAUDE_HOME`; `_claude_user_tier_env_names`) (`agent.env`, the session's `extra_env`,
+the `env` of a spec's or Bot's `claudeCode` block). A pod does not remap a claude
+child's home (`ACP_BACKENDS_POD_HOME_REMAP` names kiro alone). The path is matched as written
+(`_is_user_settings_file`), never through the filesystem, and a path spelled with `..` never matches: a link or hard link in a
+repository that resolves to the user's file is still a project file, and no `stat`
+follows a link a repository controls. The cost is the refusing direction: a home
+folder reached through another spelling (a linked home, a different case on a
+case-insensitive volume, an unexpanded `~` in `CLAUDE_CONFIG_DIR`) is examined as a
+project file, and a session there runs without its servers when that file sets
+hooks, as before.
+
 Two smaller residuals. The adapter's own `SettingsManager` still reads
 `availableModels` from every tier for its model picker, so a project file can shape
 the picker even though the CLI loads Crew's inline allowlist; this is cosmetic for
