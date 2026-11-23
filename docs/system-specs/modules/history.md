@@ -3886,3 +3886,72 @@ Messages include `source_thread` and `source_user` fields:
 - Session keys prefixed `dashboard:` for dashboard chat slots
 
 Dashboard history rows show a source glyph: `Monitor` for a dashboard session, `MessageSquare` for a unified session, and the channel's brand icon otherwise.
+
+## Row sender (`meta.sentBy`, `dashboard/row_sender.py`)
+
+Every transcript row of role `user`, `inject`, `nudge` or `subagent` carries
+`meta.sentBy`: who sent it into the session. Its one writer is
+`_ChatSlot.append`, which calls `row_sender.with_sent_by` on every live append.
+A replay (restore, resume, fork, rebuild: `broadcast=False` or
+`note_participant=False`) keeps the stored meta as it is. It maps marks the
+entry points already stamp, so no entry point writes the field itself. A row
+whose fields live in a JSON `cls` (a live cron row) keeps its `sentBy` on the
+slot-history read too (`chat_utils_display._carry_row_sender`). `sentBy` and every mark it reads are in
+`chat_handlers.RESERVED_ROW_META_KEYS` or are a server-chosen role, so a
+sender's text or body `meta` never moves it: a typed message whose text opens
+with `[sent by session …]` or `[Cron notification from "…"]` still reads
+`typed`. The role is not read from the text either: a person's queued send
+that opens with a cron or sub-agent banner drains as a `user` row, as it does
+on an idle session. A real cron or sub-agent event is queued with its producer
+`kind`, which a typed send never carries.
+
+**The precedence table is the contract.** First match wins:
+
+| row | `sentBy` |
+|---|---|
+| role `nudge` | `{kind: "wake", loopId}` (`nudge.loop_id`) |
+| role `subagent` | `{kind: "subagent_event"}` |
+| role `inject`, `injectKind: "cron"` | `{kind: "cron", label}` (`cronLabel`) |
+| role `inject`, `injectKind: "mcp_app"` | `{kind: "app", appId}` |
+| role `inject`, `injectKind: "automation_notice"` | `{kind: "wake"}` |
+| role `inject`, any other `injectKind` or none | `{kind: "gateway"}` |
+| role `user`, `relay.senderKey` set | `{kind: "session_send", senderKey, via}` |
+| role `user`, `turnActor: "app"` | `{kind: "app", appId}` |
+| role `user`, `turnActor: "cron"` | `{kind: "cron"}` |
+| role `user`, `turnActor: "crew"` | `{kind: "agent"}` |
+| role `user`, `cardOrigin: true` | `{kind: "card"}` |
+| role `user`, `human: true` | `{kind: "typed"}` |
+| anything else | `{kind: "unknown"}` |
+
+`appId` is the app principal the gateway stamped as `meta.author`
+(`display.name` `app:<name>`), else `meta.appLabel` up to its first `/`, the
+order the frontend's `appSender` reads. A field with no value is left out. Only
+`typed` means a person typed the row. A script cron's `send_to_session` row
+carries `human: true` (it rides the person-send path) and also
+`turnActor: "cron"`, on the idle path as on the queued one, so it reads `cron`.
+
+**A row with no `sentBy` is read through the same table.** Rows written before
+the field keep their stored marks byte-for-byte; nothing back-fills them, and
+the window save rewrites them as stored. A reader of the file runs the table
+over the row's own `role` and `meta`, so an old row a person typed
+(`human: true`) reads `typed`, never `unknown`.
+
+**Several rows, one prompt.** Two shapes reach the model as one prompt:
+
+- A merged queue drain (`dashboard.merge_queued_messages`) writes ONE row whose
+  text is every send's, with `meta.sendIds` naming each send. One row, one
+  prompt.
+- A run of a person's waiting sends in a Bot DM (`responsive_chat`) already has
+  one row per send and the drain writes none. Each of those rows then gets
+  `meta.prompt = {id, part, of}`: `id` is the last row's `mid` (the row the
+  turn anchors on), `part` counts from 1. `prompt` is reserved like `sentBy`.
+  A part already trimmed out of the live window keeps no stamp.
+
+A row with no `meta.prompt` is its own prompt.
+
+**When a row reaches the file.** A row is in the in-memory window at append and
+reaches `<crew home>/sessions/<key>.jsonl` on the next save: the five-second
+flush loop, or a turn's own save when it ends. Measured on an isolated gateway
+with a held turn, ten typed rows reached the file 0.08 to 4.95 s after their
+`ts`. A reader that finds no row yet for a message it saw live re-reads after
+that interval.

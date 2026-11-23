@@ -182,7 +182,7 @@ def reusable_row(slot: Any, consumed: list[dict], text: str) -> dict | None:
     if len(consumed) > 1:
         # A merged run of waiting sends: every one already has its row where it
         # was sent, so the turn anchors on the last of them and writes none.
-        rows = [_present_row(slot, item) for item in consumed]
+        rows = [present_row(slot, item) for item in consumed]
         if all(priority_entry(item) for item in consumed) and all(rows):
             return rows[-1]
         return None
@@ -192,7 +192,7 @@ def reusable_row(slot: Any, consumed: list[dict], text: str) -> dict | None:
         return _restored_row(slot, consumed[0], text)
     if consumed[0].get("content") != text:
         return None
-    return _present_row(slot, consumed[0])
+    return present_row(slot, consumed[0])
 
 
 def _restored_row(slot: Any, item: dict, text: str) -> dict | None:
@@ -239,7 +239,7 @@ def remember_row(slot: Any, entry: dict, row: dict | None) -> None:
             return
 
 
-def _present_row(slot: Any, item: dict) -> dict | None:
+def present_row(slot: Any, item: dict) -> dict | None:
     row = item.get("_responsive_row")
     if not isinstance(row, dict) or row.get("content") != item.get("content"):
         return None
@@ -263,7 +263,7 @@ def row_already_written(slot: Any, item: dict) -> bool:
     content = item.get("content")
     if not isinstance(content, str):
         return False
-    return _present_row(slot, item) is not None or _restored_row(slot, item, content) is not None
+    return present_row(slot, item) is not None or _restored_row(slot, item, content) is not None
 
 
 def dequeue_waiting_run(slot: Any) -> tuple[str, list[dict]] | None:
@@ -287,7 +287,7 @@ def dequeue_waiting_run(slot: Any) -> tuple[str, list[dict]] | None:
             not priority_entry(item)
             or carries_attachments(item)
             or (item.get("meta") or {}).get(STEER_POSSIBLY_DELIVERED_META)
-            or _present_row(slot, item) is None
+            or present_row(slot, item) is None
         ):
             break
         run.append(item)

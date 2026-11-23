@@ -18,6 +18,10 @@ so `subagent.py` can import them without importing the dashboard layer;
 `injected_turns.py` imports and aggregates them. Classification is by `str.startswith` on the resolved
 prefix or prefix tuple, never by a loose regex.
 
+An envelope is for the model. A program asking who sent a stored row reads
+`meta.sentBy` instead, which comes from server-only marks and never from the
+text ([history: Row sender](../modules/history.md#row-sender-metasentby-dashboardrow_senderpy)).
+
 ## Cron notification
 
 A cron job called `send_message(session="origin")`, or a script cron reported a
