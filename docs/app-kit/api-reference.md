@@ -960,12 +960,12 @@ refuses.
 `usePanelTabRequest()` reads what this app's own link-preview card opened its side-panel
 tab with (`link.card.openPanelTab(tab, payload)`, see
 [`contributes.linkPreviews`](manifest-reference.md#contributeslinkpreviews--hover-cards-for-links)):
-A card shown by a click or tap on its link may make one such open right away, with no
-click inside the card (manifest reference, "Reaching into the chat").
 `{ seq, payload }` for the latest open in this chat, kept until the tab is closed (a body
 mounted again reads the same one, so act on a `seq` you have not handled), or `null` before
 any and outside a side-panel tab. `seq` grows with every open, so the same payload sent
-twice still reads as new. A tab only ever reads requests sent to itself, in its own chat. Read it off a namespace
+twice still reads as new. A tab only ever reads requests sent to itself, in its own chat. A
+card shown by a click or tap on its link may make one such open right away, with no click
+inside the card (manifest reference, "Reaching into the chat"). Read it off a namespace
 import, since an older host does not have it:
 
 ```tsx

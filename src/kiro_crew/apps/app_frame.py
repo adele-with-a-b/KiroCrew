@@ -998,6 +998,9 @@ const POINT = {
       }
       case 'leave': call('leave'); return;
       case 'hide': call('hide', String(m.reason || 'other')); return;
+      case 'placement':
+        if (m.placement === 'above' || m.placement === 'below') call('placement', m.placement);
+        return;
       case 'key': {
         if (typeof m.key !== 'string' || m.key.length !== 1) return;
         const init = { key: m.key, code: typeof m.code === 'string' ? m.code : '', shiftKey: m.shift === true, bubbles: true, composed: true, cancelable: true };

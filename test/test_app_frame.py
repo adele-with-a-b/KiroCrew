@@ -163,8 +163,9 @@ const listeners = {};
 const parent = { postMessage: (m) => posted.push(m) };
 globalThis.window = { parent, addEventListener: (t, f) => { (listeners[t] ||= []).push(f); } };
 globalThis.location = { pathname: '/app-frame/a/linkPreviews/c/f/t', href: 'http://gw/app-frame/a/linkPreviews/c/f/t' };
-const lateProvider = 'export function activate(ctx) { return { show(link) { globalThis.shows.push(link); } }; }';
+const lateProvider = 'export function activate(ctx) { return { show(link) { globalThis.shows.push(link); }, placement(side) { globalThis.sides.push(side); } }; }';
 globalThis.shows = [];
+globalThis.sides = [];
 globalThis.document = {
   activeElement: null,
   body: {},
@@ -249,7 +250,10 @@ a.card.openPanelTab('questions');
 a.card.jumpTo(a.message);
 a.card.jumpTo({ ts: 't2', id: 9 });
 a.card.jumpTo(null);
+deliver({ type: 'placement', invocation: 5, placement: 'below' });
+deliver({ type: 'placement', invocation: 5, placement: 'left' });
 console.log(JSON.stringify({
+  sides,
   a: { trigger: a.trigger, placement: a.placement, message: a.message },
   b: { trigger: b.trigger ?? null, placement: b.placement ?? null, message: b.message ?? null },
   sent: posted.filter((m) => ['openPanelTab', 'jump'].includes(m.type)).map(({ type, invocation, tab, payload, ts, id }) => ({ type, invocation, tab, payload, ts, id })),
@@ -258,8 +262,9 @@ console.log(JSON.stringify({
 
 
 def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown() -> None:
-    """``trigger``, ``placement`` and ``message`` reach the provider read field by field, and
-    ``card.openPanelTab`` / ``card.jumpTo`` post JSON for this show only.
+    """``trigger``, ``placement`` and ``message`` reach the provider read field by field, a
+    later ``placement`` reaches its ``placement`` hook, and ``card.openPanelTab`` /
+    ``card.jumpTo`` post JSON for this show only.
 
     The dashboard checks the tab, the chat and the grant (``linkPreviewFrames.ts``);
     the frame only shapes what it sends.
@@ -286,6 +291,7 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
         "message": {"ts": "t", "id": "m"},
     }
     assert result["b"] == {"trigger": None, "placement": None, "message": None}
+    assert result["sides"] == ["below"]
     assert result["sent"] == [
         {
             "type": "openPanelTab",

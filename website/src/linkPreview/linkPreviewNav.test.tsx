@@ -327,7 +327,7 @@ describe('link-preview cards: a click on the span may open the tab once', () => 
     expect(heard).toEqual([tab])
   })
 
-  it('a card that is not open yet, or asks for an older show, spends it for nothing', async () => {
+  it('a card that is not open yet spends it for nothing; an ask for an older show leaves it', async () => {
     const span = await mount([app(true)])
     fireEvent.click(span)
     let frame = await ready()
@@ -339,16 +339,26 @@ describe('link-preview cards: a click on the span may open the tab once', () => 
     resetTextPatternsForTest()
     frame = await opened('click')
     ask(frame, 'openPanelTab', { tab: 'questions', payload: 1, invocation: 0 })
-    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
     expect(heard).toEqual([])
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    expect(heard).toEqual([tab])
   })
 
   it('a frame cannot make a grant of its own: what it sends never counts as a click', async () => {
     const frame = await opened('hover')
     const at = shows(frame).at(-1)?.invocation
     for (const type of ['show', 'click', 'tap', 'trigger', 'clickGrant']) fromFrame(frame, type, { invocation: at, trigger: 'click' })
-    fromFrame(frame, 'open')
-    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    // Messages the host does read, carrying a click trigger it must not take:
+    // each is asked after on its own, so nothing clears a grant in between.
+    const sent: [string, Record<string, unknown>][] = [
+      ['open', { trigger: 'click', clickGrant: { invocation: at, at: 0 } }],
+      ['resize', { width: 300, height: 120, trigger: 'tap' }],
+      ['pin', { pinned: false, trigger: 'click' }],
+    ]
+    for (const [type, data] of sent) {
+      fromFrame(frame, type, data)
+      ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    }
     expect(heard).toEqual([])
   })
 })

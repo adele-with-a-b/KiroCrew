@@ -20,6 +20,8 @@
  *   `invocation` numbers the shows of one frame; a card message (`open`, `close`,
  *   `resize`, `pin`, `drag`, `dock`) carries the one it answers, and one for an
  *   older show is dropped.
+ * - `placement { invocation, placement }` the latest show's card was moved to the
+ *   other side of its link (its own `resize`, or the window's).
  * - `leave`, `hide { reason }`, `theme { theme }`, `dispose`
  * - `key { key, code, shift }` a key pressed in the dashboard while a card shows,
  *   so a card's own shortcuts work without a click into it first. Never while
@@ -108,6 +110,7 @@ export type ToFrame =
   | { type: 'theme'; theme: 'dark' | 'light' }
   | { type: 'dispose' }
   | { type: 'key'; key: string; code: string; shift: boolean }
+  | { type: 'placement'; invocation: number; placement: Placement }
 
 export type FromFrame =
   | { type: 'ready' }

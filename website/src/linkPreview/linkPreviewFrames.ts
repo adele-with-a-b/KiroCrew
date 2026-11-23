@@ -48,7 +48,13 @@ const MIN_SIZE = { width: 40, height: 24 }
 const MAX_SIZE = { width: 720, height: 800 }
 /** How long a card a click or tap showed may open its app's own tab without a
  *  click inside it: the label click is the person's ask (see `takeClickGrant`).
- *  shortcut: a fixed bound; measure again if a provider's first read gets slower. */
+ *  Counted from the show, which on a cold frame waits for the module. Measured
+ *  on a test Crew (2026-11-22) with a real provider (Ref Links' label card):
+ *  show to its card's `open` took 7-34 ms on a chat it had read; its server's
+ *  first read of a never-read 43 MB chat took 2.9-4.0 s (its own 4 s cap). A
+ *  provider that opens the tab at once on a click, before its own read, is far
+ *  inside the bound.
+ *  shortcut: a fixed bound; measure again if a provider must read before it opens. */
 export const CLICK_GRANT_MS = 3_000
 
 /** Where one show's link or text sits, known to the dashboard only. A frame's
@@ -95,6 +101,8 @@ export interface PreviewFrame {
   /** Which side of its link the card was put on by the latest `place`; null when
    *  docked or dropped where the user dragged it. */
   placement: Placement | null
+  /** The side the latest show's card was last told (in `show`, then `placement`). */
+  toldPlacement: Placement | null
   /** The latest show was the host's own click or tap on the link: that show may
    *  open its app's tab once, until `CLICK_GRANT_MS` after `at` (`performance.now()`). */
   clickGrant: { invocation: number; at: number } | null
@@ -206,6 +214,7 @@ export class FrameHost {
     const ok = await frame.ready
     if (!ok || !frame.el.isConnected || this.showTokens.get(frame) !== token) return false
     frame.anchor = anchor
+    frame.toldPlacement = null
     if (!frame.overlay) {
       frame.moved = false
       frame.dock = null
@@ -224,7 +233,8 @@ export class FrameHost {
       }
     }
     const trigger = extra?.trigger ? { trigger: extra.trigger } : {}
-    const placement = !frame.overlay && frame.placement ? { placement: frame.placement } : {}
+    frame.toldPlacement = frame.overlay ? null : frame.placement
+    const placement = frame.toldPlacement ? { placement: frame.toldPlacement } : {}
     this.post(frame, { type: 'show', invocation: frame.invocation, ...link, rect: anchor, theme: this.opts.theme(), ...(modifiers ? { modifiers } : {}), ...trigger, ...placement })
     return true
   }
@@ -340,7 +350,7 @@ export class FrameHost {
       key, appName, el, state: 'loading', ready, visible: false, pinned: false, moved: false, dock: null,
       left: 0, top: 0, width: DEFAULT_SIZE.width, height: DEFAULT_SIZE.height, anchor: null,
       overlay: false, regions: [], invocation: 0, scopes: new Map(), rate: freshRate(),
-      placement: null, clickGrant: null,
+      placement: null, toldPlacement: null, clickGrant: null,
     }
     const fail = (why: string, cause: FailureCause) => {
       if (frame.state !== 'loading') return
@@ -453,6 +463,12 @@ export class FrameHost {
       width: `${Math.round(w)}px`,
       height: `${Math.round(h)}px`,
     })
+    // The show named a side from the card's size before it had drawn; its own
+    // `resize` (or the window's) may move it to the other one.
+    if (frame.toldPlacement && frame.placement && frame.placement !== frame.toldPlacement && frame.state === 'ready') {
+      frame.toldPlacement = frame.placement
+      this.post(frame, { type: 'placement', invocation: frame.invocation, placement: frame.placement })
+    }
   }
 
   /** Overlay mode: the whole viewport, clipped to the regions the provider draws in.
@@ -513,12 +529,14 @@ export class FrameHost {
   }
 
   /** Spend the frame's click grant: true when it was made for `invocation`, the
-   *  latest show, no more than `CLICK_GRANT_MS` ago. The first `openPanelTab`
-   *  spends it whatever it asks, so one click opens at most one tab. */
+   *  latest show, no more than `CLICK_GRANT_MS` ago. The first `openPanelTab` of
+   *  that show spends it whatever else it asks, so one click opens at most one
+   *  tab; a late one from an earlier show leaves it alone. */
   private takeClickGrant(frame: PreviewFrame, invocation: number): boolean {
     const grant = frame.clickGrant
+    if (!grant || grant.invocation !== invocation) return false
     frame.clickGrant = null
-    if (!grant || grant.invocation !== invocation || invocation !== frame.invocation) return false
+    if (invocation !== frame.invocation) return false
     const age = performance.now() - grant.at
     return age >= 0 && age <= CLICK_GRANT_MS
   }
@@ -576,6 +594,9 @@ export class FrameHost {
         this.place(frame)
         return
       case 'pin':
+        // A pinned card leaves the hover, out of reach of `leave` and dismissal:
+        // it keeps no click grant.
+        if (msg.pinned) frame.clickGrant = null
         frame.pinned = msg.pinned
         if (msg.pinned && this.hover.get(frame.key) === frame) {
           this.hover.delete(frame.key)
