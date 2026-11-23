@@ -6788,7 +6788,9 @@
         "failed_generic_next_ask": "Escolha “Confiar e tentar de novo”. Se falhar de novo, escolha “Perguntar ao agente” para descobrir o motivo.",
         "failed_generic_next_offline": "O {{productName}} não está conectado agora, então “Confiar e tentar de novo” fica desativado até ele reconectar.",
         "failed_desktop_unsupported": "Não é possível instalar o “{{app}}” na versão para desktop do {{productName}}, e nada foi alterado.",
-        "failed_desktop_unsupported_help": "Ele precisa de pacotes Python que a versão de desktop não consegue adicionar; peça ao autor do app para incluí-los com o app, ou abra o {{productName}} em um navegador web em vez da versão de desktop."
+        "failed_desktop_unsupported_help": "Ele precisa de pacotes Python que a versão de desktop não consegue adicionar; peça ao autor do app para incluí-los com o app, ou abra o {{productName}} em um navegador web em vez da versão de desktop.",
+        "open_files_heading": "Ele pode abrir arquivos quando você clica nele",
+        "open_files_desc": "Depois que você clica nele, ele pode abrir um arquivo que escolher no app padrão neste computador. Um script ou um app é executado ao abrir. Os arquivos que o Kiro Crew mantém privados são recusados."
       },
       "registryTier": {
         "curated": "Revisado pela equipe",
@@ -12193,7 +12195,9 @@
         "installed_needs_newer_host": "A versão instalada de {{name}} precisa de um {{productName}} mais recente. Atualize o {{productName}}; seus dados não mudam."
       },
       "grants_reconsent_composer_actions": "Botões do editor: permite que o app adicione estes botões ao menu + do editor. Um clique insere o texto do app no seu rascunho; o app não pode ver o rascunho nem enviá-lo.",
-      "grants_reconsent_selection_actions": "Ações sobre texto selecionado: permite que os itens do app recebam o texto que você seleciona nas respostas do chat e ofereçam um resultado para Copiar ou Abrir."
+      "grants_reconsent_selection_actions": "Ações sobre texto selecionado: permite que os itens do app recebam o texto que você seleciona nas respostas do chat e ofereçam um resultado para Copiar ou Abrir.",
+      "open_files_desc": "Depois que você clica nele, ele pode abrir um arquivo que escolher no app padrão neste computador. Um script ou um app é executado ao abrir. Os arquivos que o Kiro Crew mantém privados são recusados.",
+      "grants_reconsent_open_files": "Abrir um arquivo que ele escolher no app padrão depois que você clica nele. Um script ou um app é executado ao abrir."
     },
     "appPage": {
       "loading_app": "Carregando app…",

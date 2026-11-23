@@ -9731,6 +9731,90 @@ Writers: `webhook_sources.py`, `apps/webhook_source_sdk.py`, `apps/context.py`,
 `apps/builtins/ops_mission_control/tests/test_webhook_governance.py`,
 `website/src/test/TrustAppModalWebhookSource.test.tsx`.
 
+## 43. An app opens a local file on its owner's click (seam level 12)
+
+An app's UI shows file paths, such as a mock it wrote. `useOpenFile()`
+(`website/src/app-sdk/openFile.ts`) lets a click on one open that file the way the
+chat's own "Open with default app" row does. There is no second opener. A served call
+is `revealOrOpen(path, 'open')` (`components/FilePathMenu.tsx`), which is
+`POST /api/reveal` with `action: "open"` (`dashboard/file_api/desktop.py`). The path
+rules are that route's: `is_sensitive_path` answers 403, a remote browser gets a
+clipboard copy in place of a launch (`is_direct_local_request`), only a regular file
+opens, and `platform_compat.open_with_default_app` launches it. After its own three
+checks, the hook asks `useCanOpenFile('file')`, the same gate the row reads, and
+answers `unavailable` without a request when it is false. It opens the default app
+only. No setting chooses where file links open, so the hook does not open the Crew
+viewer.
+
+The default app of a script or a launcher file (`.command`, `.webloc`, `.pkg`) runs it.
+The route allows that for the chat's row today, and this seam keeps the route's rules
+as they are: it adds no list of its own. The owner is told instead. The app page and
+the trust prompt say that the app picks the file, and that a script or an app runs
+when it opens. `openFiles` is its own grant. The image-only `desktopCapabilities`
+`localFiles` grant does not limit it, so in a desktop window an app holding
+`openFiles` opens any file the route allows.
+
+The host (`components/appFileOpen.ts`, mounted by `AppHost` and `SessionControlHost`)
+serves a call only when all three of these hold, in this order:
+
+1. **The owner approved it.** `permissions.openFiles` is a boolean, taken only as the
+   literal `true` (`manifest_sections.Permissions.openFiles`). It is a staged grant
+   family, `openFiles`, with the one entry `"open"` (`apps/open_files.py`).
+   `point_grants.register_permission_grants` registers it with `explicit_only=True`,
+   like `desktopCapabilities`. It is a flag family like `workerAutoApprove`, so the
+   hook-context builders' `approved_manifest_permissions` passes it through as
+   declared and filters only entry lists. Install approves it with the rest of the manifest. An
+   update that adds it waits for the owner on the app detail page, and a set stored
+   before the family approves nothing. The row carries
+   `openFilesGrant: {approved, staged}` (`manager_lookup.list_apps`, `get_app`). The
+   host reads `approved`, and anything else is `not_granted`. The trust prompt
+   (`trustGrants.openFiles`), the catalog (`official_catalog._DISCLOSED_PERMISSIONS`)
+   and the CLI summary (`permissions.py`) name it.
+2. **The path is absolute.** `readOpenFilePath` takes an absolute POSIX path, or a
+   `file://` URL with no host or `localhost` and no query or fragment, decoded. It
+   refuses every other scheme, a relative path (`file:` without `//` too), `~`, a
+   `..` segment, control characters and more than 4096 characters, as
+   `not_absolute`. A `file:` URL is checked for `..`, `%2e` and `\` separators as
+   written, before the URL parser collapses them. This check is about
+   shape only. Which absolute paths are never opened is the route's
+   `is_sensitive_path`, and the host does not keep a second list.
+3. **There was a click.** `AppFileOpenRoot` wraps the app's module and nothing of the
+   host's. In `SessionControlHost` it sits inside the error boundary, so the
+   boundary's retry button never grants. In `AppHost` it wraps the module, not the
+   replaced-bundle notice. Its `onClickCapture` records a real click (`isTrusted`,
+   read in `components/trustedClick.ts`) before the app's own handler asks for it.
+   React carries the click through the app's portals (a `Modal`, a menu) as it does
+   every event. Host components an app renders from the SDK count as its UI. A grant
+   is good for one open within `CLICK_GRANT_MS`, the window a link-preview card's
+   `openPanelTab` spends (`linkPreview/linkPreviewFrames.ts`). Without one, the call
+   is `no_click`. The grant is not tied to the path: one click anywhere in the app
+   lets it open one file of its choosing.
+
+Link-preview cards run in an opaque frame and do not get the hook. The sandbox, the
+frame protocol and the click grant there are unchanged. Like every in-document SDK
+check, these three are a guardrail and not a boundary
+(`docs/architecture/app-platform-trust-model.md`). Code in the dashboard document can
+call `/api/reveal` itself, and the route's own rules are what hold there.
+
+**Seam level.** 12 (`APP_SDK_LEVEL`, both copies). An older host has no `useOpenFile`
+export, so an app reads it through a namespace import.
+
+Writers: `apps/open_files.py`, `apps/manifest_sections.py`, `apps/point_grants.py`,
+`apps/manager_lookup.py`, `apps/official_catalog.py`, `apps/permissions.py`,
+`apps/app_sdk_level.py`, `website/src/app-sdk/openFile.ts`, `website/src/app-sdk/index.ts`,
+`website/src/app-sdk/sdkLevel.ts`, `website/public/vendor/kirocrew-app-sdk.mjs`,
+`website/src/components/appFileOpen.ts`, `website/src/components/trustedClick.ts`,
+`apps/manager_records.py`, `website/src/components/FilePathMenu.tsx`,
+`website/src/components/AppHost.tsx`, `website/src/components/SessionControlHost.tsx`,
+`website/src/hooks/useSessionControls.ts`, `website/src/pages/AppDetailGrantBoxes.tsx`,
+`website/src/pages/AppDetailPage.tsx`, `website/src/pages/appDetailPageStagedGrants.ts`,
+`website/src/components/appstore/TrustAppModal.tsx`,
+`website/src/components/appstore/trustGrants.ts`. Tests: `test/test_app_open_files.py`,
+`website/src/test/appFileOpen.test.tsx`, `website/src/test/appFileOpenHosts.test.tsx`,
+`website/src/test/TrustAppModalOpenFiles.test.tsx`,
+`website/src/test/AppDetailPageCoverage.test.tsx`. Example:
+`docs/app-kit/examples/open-files-app/`.
+
 ## Windows stale-backend cleanup capacity
 
 Stale-backend tree reaping shares the Windows cleanup admission budget with ACP.

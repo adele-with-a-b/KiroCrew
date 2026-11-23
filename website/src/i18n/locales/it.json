@@ -6788,7 +6788,9 @@
         "failed_generic_next_ask": "Scegli «Autorizza e riprova». Se non riesce di nuovo, scegli «Chiedi all'agente» per scoprire il perché.",
         "failed_generic_next_offline": "{{productName}} non è connesso in questo momento, quindi «Autorizza e riprova» resta disattivato finché non si riconnette.",
         "failed_desktop_unsupported": "Non è possibile installare «{{app}}» nella versione desktop di {{productName}}, e nulla è stato modificato.",
-        "failed_desktop_unsupported_help": "Ha bisogno di pacchetti Python che la build desktop non può aggiungere; chiedi all'autore dell'app di includerli con l'app, oppure apri {{productName}} in un browser web invece che nella versione desktop."
+        "failed_desktop_unsupported_help": "Ha bisogno di pacchetti Python che la build desktop non può aggiungere; chiedi all'autore dell'app di includerli con l'app, oppure apri {{productName}} in un browser web invece che nella versione desktop.",
+        "open_files_heading": "Può aprire file quando fai clic al suo interno",
+        "open_files_desc": "Dopo che fai clic al suo interno, può aprire un file a sua scelta nella sua app predefinita su questo computer. Uno script o un'app viene eseguito all'apertura. I file che Kiro Crew mantiene privati vengono rifiutati."
       },
       "registryTier": {
         "curated": "Verificato dal team",
@@ -12193,7 +12195,9 @@
         "installed_needs_newer_host": "La versione installata di {{name}} richiede un {{productName}} più recente. Aggiorna {{productName}}; i tuoi dati restano invariati."
       },
       "grants_reconsent_composer_actions": "Pulsanti dell'editor: consente all'app di aggiungere questi pulsanti al menu + dell'editor. Un clic inserisce il testo dell'app nella tua bozza; l'app non può vedere la bozza né inviarla.",
-      "grants_reconsent_selection_actions": "Azioni sul testo selezionato: gli elementi dell'app ricevono il testo che selezioni nelle risposte della chat e possono offrire un risultato da Copiare o Aprire."
+      "grants_reconsent_selection_actions": "Azioni sul testo selezionato: gli elementi dell'app ricevono il testo che selezioni nelle risposte della chat e possono offrire un risultato da Copiare o Aprire.",
+      "open_files_desc": "Dopo che fai clic al suo interno, può aprire un file a sua scelta nella sua app predefinita su questo computer. Uno script o un'app viene eseguito all'apertura. I file che Kiro Crew mantiene privati vengono rifiutati.",
+      "grants_reconsent_open_files": "Aprire un file a sua scelta nella sua app predefinita dopo che fai clic al suo interno. Uno script o un'app viene eseguito all'apertura."
     },
     "appPage": {
       "loading_app": "Caricamento dell'app…",

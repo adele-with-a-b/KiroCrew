@@ -65,16 +65,16 @@ describe('trustGrants', () => {
   it('carries every disclosed grant, each flag only as a literal true', () => {
     expect(trustGrants({
       sessionApproval: true, memberThreads: true, workerAutoApprove: true, chatSlots: true,
-      hiddenSessions: true, reachableByUserSessions: ['read'], webhookSource: true,
+      hiddenSessions: true, reachableByUserSessions: ['read'], webhookSource: true, openFiles: true,
     })).toEqual({
       sessionApproval: true, memberThreads: true, workerAutoApprove: true, chatSlots: true,
-      hiddenSessions: true, reachableByUserSessions: ['read'], webhookSource: true,
+      hiddenSessions: true, reachableByUserSessions: ['read'], webhookSource: true, openFiles: true,
     })
     const loose = { chatSlots: 'true', workerAutoApprove: 1 } as never
     expect(trustGrants(loose)).toMatchObject({ chatSlots: false, workerAutoApprove: false })
     expect(trustGrants(undefined)).toEqual({
       sessionApproval: false, memberThreads: false, workerAutoApprove: false, chatSlots: false,
-      hiddenSessions: false, reachableByUserSessions: undefined, webhookSource: false,
+      hiddenSessions: false, reachableByUserSessions: undefined, webhookSource: false, openFiles: false,
     })
   })
 })

@@ -15,6 +15,7 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, RefreshCw, PowerOff, AlertTriangle, Package, Bot } from 'lucide-react'
 import { AppApiProvider, type AppUpdate } from '../app-sdk'
+import { AppFileOpenRoot } from './appFileOpen'
 import { Btn, PageHeader } from './ui'
 import AppLoadingFallback from './AppLoadingFallback'
 import { importAppBundle } from './appBundleImport'
@@ -36,6 +37,8 @@ export interface AppHostProps {
   app: {
     /** Declared `ui.frameSources` origins the owner approved, and those an update or edit holds back. */
     frameSourcesGrant?: { approved: string[]; staged: string[] }
+    /** Whether the owner approved `permissions.openFiles`; absent when undeclared. */
+    openFilesGrant?: { approved: boolean; staged?: boolean }
     name: string
     version?: string
     displayName?: string
@@ -435,7 +438,11 @@ function AppHostInner({ app, entry: entryOverride, active = true, sessionKey, on
           {/* A replaced bundle is never imported again. The notice shows while the
               window reloads, and stays with a way to retry when a page's
               unsaved-changes prompt cancels that reload. */}
-          {bundleReplaced ? <ReplacedBundleNotice /> : <LazyApp />}
+          {/* `useOpenFile` for the app, approved by the owner, on a click in its
+              own UI: the root holds the app's module only, never the host's notice. */}
+          {bundleReplaced ? <ReplacedBundleNotice /> : (
+            <AppFileOpenRoot granted={app.openFilesGrant?.approved === true}><LazyApp /></AppFileOpenRoot>
+          )}
         </Suspense>
       </AppApiProvider>
     </AppErrorBoundary>

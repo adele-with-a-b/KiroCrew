@@ -42,11 +42,13 @@ export function stagedGrantsOf(app: AppInfo | null) {
   const stagedDesktopCapabilities = knownDesktopCapabilities(app?.desktopCapabilitiesGrant?.staged)
   // Framed sites (`ui.frameSources`) an update or an edit added wait the same way.
   const stagedFrameSources = app?.frameSourcesGrant?.staged || []
-  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedSessionKey || stagedOpenFullUrl || stagedWorkerAutoApprove
+  // So does an update that added `permissions.openFiles`.
+  const stagedOpenFiles = app?.openFilesGrant?.staged === true
+  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedSessionKey || stagedOpenFullUrl || stagedWorkerAutoApprove || stagedOpenFiles
   return {
     stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey,
     stagedMessageActions, declaredMessageActions, stagedOpenHosts, stagedOpenFullUrl,
     stagedComposerActions, stagedSelection, declaredSelectionActions, stagedWorkerAutoApprove,
-    stagedUserSessionReach, stagedDesktopCapabilities, stagedFrameSources, hasStagedGrants,
+    stagedUserSessionReach, stagedDesktopCapabilities, stagedFrameSources, stagedOpenFiles, hasStagedGrants,
   }
 }

@@ -548,6 +548,7 @@ def _curated_links(entry: dict[str, Any]) -> list[dict[str, str]]:
 _DISCLOSED_PERMISSIONS = (
     "sessionApproval",
     "workerAutoApprove",
+    "openFiles",
     "chatSlots",
     "hiddenSessions",
     "webhookSource",

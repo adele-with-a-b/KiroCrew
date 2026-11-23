@@ -30,6 +30,7 @@ import { AppApiProvider } from '../app-sdk'
 import { SessionControlRequestScope, sessionControlRequestSeq } from '../app-sdk/sessionControlRequest'
 import { CLICK_GRANT_MS } from '../linkPreview/linkPreviewFrames'
 import { clickOpenTimeLeft } from '../linkPreview/linkPreviewNav'
+import { AppFileOpenRoot } from './appFileOpen'
 import { i18nT } from '../i18n/t'
 import { SESSION_CONTROL_WIDTH, type ResolvedSessionControl } from '../hooks/useSessionControls'
 import { MOBILE_BREAKPOINT } from '../hooks/useIsMobile'
@@ -334,10 +335,15 @@ export default function SessionControlHost({
           >
             {/* Keyed on the session: a control holding per-session state must
                 not carry it across a chat switch. The scope tells
-                `useSessionControlRequest()` which chat and control it is. */}
-            <SessionControlRequestScope sessionKey={session.sessionKey} control={control.key}>
-              <LazyControl key={session.sessionKey} session={session} onClose={onClose} />
-            </SessionControlRequestScope>
+                `useSessionControlRequest()` which chat and control it is.
+                `AppFileOpenRoot` serves `useOpenFile`, approved by the owner, on a
+                click in the control itself: the error boundary's retry stays
+                outside it, and a chat switch drops its click. */}
+            <AppFileOpenRoot key={session.sessionKey} granted={control.openFiles}>
+              <SessionControlRequestScope sessionKey={session.sessionKey} control={control.key}>
+                <LazyControl key={session.sessionKey} session={session} onClose={onClose} />
+              </SessionControlRequestScope>
+            </AppFileOpenRoot>
           </Suspense>
         </AppApiProvider>
       </ControlErrorBoundary>

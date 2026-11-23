@@ -86,6 +86,9 @@ export interface ResolvedSessionControl {
   processBacked: boolean
   /** Popover width on a desktop window, in CSS px, within `SESSION_CONTROL_WIDTH`. */
   width: number
+  /** Whether the owner approved `permissions.openFiles` (the row's `openFilesGrant`),
+   *  so the control's `useOpenFile` is served. */
+  openFiles: boolean
 }
 
 /** Chip state an app may report for the active session. */
@@ -132,6 +135,7 @@ interface AppLike {
   version?: string
   displayName?: string
   enabled?: boolean
+  openFilesGrant?: { approved?: boolean }
   manifest?: {
     version?: string
     displayName?: string
@@ -211,6 +215,7 @@ export function resolveSessionControls(apps: AppLike[]): ResolvedSessionControl[
         statusPath: safeStatusPath(ctl.statusPath),
         processBacked: Boolean(app.manifest?.backend?.entryPoint),
         width: controlWidth(ctl.width),
+        openFiles: app.openFilesGrant?.approved === true,
       })
     }
   }

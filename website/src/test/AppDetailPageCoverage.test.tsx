@@ -885,7 +885,7 @@ describe('AppDetailPage — uncovered surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
     await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, {
       api: ['/api/memory'], events: ['log'], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], linkOpenHosts: [], linkOpenFullUrl: [],
-      api: ['/api/memory'], events: ['log'], bots: [], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], composerActions: [], selectionActions: [], workerAutoApprove: [], reachableByUserSessions: [], desktopCapabilities: [], frameSources: [],
+      api: ['/api/memory'], events: ['log'], bots: [], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], composerActions: [], selectionActions: [], workerAutoApprove: [], reachableByUserSessions: [], desktopCapabilities: [], frameSources: [], openFiles: [],
     }))
     expect(await screen.findByText('Approved: /api/memory, log. The app can use them now.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve new permissions' })).not.toBeInTheDocument()
@@ -950,6 +950,36 @@ describe('AppDetailPage — uncovered surfaces', () => {
     expect(screen.getByTestId('desktop-capabilities')).toHaveTextContent('desktopCapabilities')
     fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
     await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ desktopCapabilities: ['gatewayChoice'] })))
+  })
+
+  it('shows an approved permissions.openFiles with no tag and asks nothing', async () => {
+    getApp.mockResolvedValue(installedApp({
+      manifest: { displayName: 'Ledger Lens', permissions: { api: [], events: [], openFiles: true } },
+      approvedGrants: { api: [], events: [] },
+      openFilesGrant: { approved: true, staged: false },
+    }))
+    renderDetail()
+    await loaded()
+    const box = screen.getByTestId('open-files')
+    expect(box).toHaveTextContent('After you click in it, it can open a file it picks')
+    expect(box).toHaveTextContent('A script or an app runs when it opens.')
+    expect(box).toHaveTextContent('openFiles')
+    expect(box).not.toHaveTextContent('not approved')
+    expect(screen.queryByRole('button', { name: 'Approve new permissions' })).toBeNull()
+  })
+
+  it('lists a held-back permissions.openFiles and approves its one entry', async () => {
+    getApp.mockResolvedValue(installedApp({
+      manifest: { displayName: 'Ledger Lens', permissions: { api: [], events: [], openFiles: true } },
+      approvedGrants: { api: [], events: [] },
+      openFilesGrant: { approved: false, staged: true },
+    }))
+    renderDetail()
+    await loaded()
+    expect(screen.getByTestId('staged-open-files')).toHaveTextContent('Opening a file it picks in its default app after you click in it. A script or an app runs when it opens.')
+    expect(screen.getByTestId('open-files')).toHaveTextContent('not approved')
+    fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
+    await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ openFiles: ['open'] })))
   })
 
   it('lists a held-back framed site and approves only that one', async () => {

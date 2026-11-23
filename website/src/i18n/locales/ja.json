@@ -6399,7 +6399,9 @@
         "failed_generic_next_ask": "「信頼して再試行」を選んでください。もう一度失敗した場合は、「エージェントに質問」を選んで理由を確認してください。",
         "failed_generic_next_offline": "{{productName}} は今接続されていないため、再接続するまで「信頼して再試行」は使えません。",
         "failed_desktop_unsupported": "「{{app}}」は {{productName}} のデスクトップ版にはインストールできず、何も変更されませんでした。",
-        "failed_desktop_unsupported_help": "デスクトップ版では追加できない Python パッケージが必要です。アプリの作者にアプリへ同梱してもらうか、デスクトップ版ではなくウェブブラウザーで {{productName}} を開いてください。"
+        "failed_desktop_unsupported_help": "デスクトップ版では追加できない Python パッケージが必要です。アプリの作者にアプリへ同梱してもらうか、デスクトップ版ではなくウェブブラウザーで {{productName}} を開いてください。",
+        "open_files_heading": "アプリ内をクリックするとファイルを開けます",
+        "open_files_desc": "アプリ内をクリックすると、アプリが選んだファイルをこのコンピュータの既定のアプリで開けます。スクリプトやアプリは開くと実行されます。Kiro Crew が非公開にしているファイルは拒否されます。"
       },
       "registryTier": {
         "curated": "チーム確認済み",
@@ -11673,7 +11675,9 @@
         "installed_needs_newer_host": "インストール済みの {{name}} には新しい {{productName}} が必要です。{{productName}} を更新してください。データは変更されていません。"
       },
       "grants_reconsent_composer_actions": "入力欄ボタン：入力欄の + メニューにこれらのボタンを追加できます。クリックするとアプリのテキストが下書きに挿入されます。アプリは下書きを見ることも送信することもできません。",
-      "grants_reconsent_selection_actions": "選択テキストの操作: チャットの返信で選択したテキストがアプリの項目に渡され、コピーまたは開くための結果を返せます。"
+      "grants_reconsent_selection_actions": "選択テキストの操作: チャットの返信で選択したテキストがアプリの項目に渡され、コピーまたは開くための結果を返せます。",
+      "open_files_desc": "アプリ内をクリックすると、アプリが選んだファイルをこのコンピュータの既定のアプリで開けます。スクリプトやアプリは開くと実行されます。Kiro Crew が非公開にしているファイルは拒否されます。",
+      "grants_reconsent_open_files": "アプリ内をクリックしたあとに、アプリが選んだファイルを既定のアプリで開く。スクリプトやアプリは開くと実行されます。"
     },
     "appPage": {
       "loading_app": "アプリを読み込み中…",

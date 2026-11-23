@@ -1,0 +1,21 @@
+{
+  "name": "open-files-example",
+  "version": "0.1.0",
+  "displayName": "Open Files Example",
+  "description": "A session control that shows a file path and opens it in its default app when you click it.",
+  "author": "kirocrew",
+  "permissions": {
+    "openFiles": true
+  },
+  "contributes": {
+    "sessionControls": [
+      {
+        "id": "open-path",
+        "entryPoint": "dist/session-control.mjs",
+        "label": "Open a file",
+        "icon": "Package"
+      }
+    ]
+  },
+  "tags": ["example"]
+}
