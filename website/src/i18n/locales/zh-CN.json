@@ -8755,6 +8755,7 @@
       "save_edit": "保存修改",
       "send_now": "立即发送",
       "wont_survive_a_restart": "重启后会丢失",
+      "restored_held": "重启后已恢复。不会自动发送。",
       "sub_agent_results_ready_other": "{{count}} 个子代理结果已就绪，将在当前轮次结束后处理",
       "queued_count_other": "{{count}} 条已排队"
     },
@@ -10420,6 +10421,10 @@
       "chip_hint_busy": "回复结束后可用。",
       "switching_on": "正在打开 Conductor mode…",
       "switching_off": "正在关闭 Conductor mode…",
+      "midchat_confirm_title": "要为这个聊天打开 Conductor mode 吗？",
+      "midchat_confirm_body": "这个聊天的 Conductor mode 无法关闭。",
+      "midchat_confirm_action": "打开 Conductor mode",
+      "midchat_confirm_dont_show": "不再显示此提示",
       "title": "Conductor mode",
       "tagline_lead": "你定目标。",
       "tagline_strong": "你的团队来干活。",
@@ -10431,6 +10436,7 @@
       "flow_needs_you": "需要你",
       "eyebrow": "Conductor mode",
       "composer_chip_label": "这个对话已开启 Conductor mode",
+      "composer_chip_label_worker": "Conductor mode · Worker",
       "back_to_main_chat": "返回主聊天",
       "parent_row_hint": "正在查看它的一位团队成员",
       "steer_too_long": "发给 {{name}} 的消息最多 {{max}} 个字符。请缩短后再发送。",
@@ -22356,6 +22362,7 @@
   "utils": {
     "agentSwitchFeedback": {
       "turn_in_flight": "当前有一轮对话正在进行 — 等它结束后再试。",
+      "crew_mode_locked": "这个聊天的 Conductor mode 无法关闭，所以已阻止切换到 {{agent}}。",
       "model_deferred": "{{model}} 从你的下一条消息开始接手。这条回复会用开始时的模型完成。",
       "member_needs_new_chat": "{{name}} 有自己的记忆，只能开始新的聊天。此聊天保留当前代理。",
       "open_session": "打开会话",

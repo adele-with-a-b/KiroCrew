@@ -57,6 +57,7 @@ if TYPE_CHECKING:
         context_meter_reading,
         dataclass,
         declared_mcp_not_ready_note,
+        declared_mcp_note_change,
         effective_job_approval_mode,
         engine_attributed_model,
         live,
@@ -71,6 +72,7 @@ if TYPE_CHECKING:
         read_effective_agent,
         read_turn_model,
         rearm_reinjection,
+        record_interaction_event,
         rollback_skill_bodies,
         run_in_embed_pool,
         settle_turn,
@@ -176,9 +178,13 @@ async def _cron_run_sequence(
             return None
 
     result_text = "_No response._"
-    # Each step's missing-server note, kept apart from result_text because the
-    # next step's reply replaces it; the stored result carries all of them.
+    # Each step's spec notices, kept apart from result_text because the next
+    # step's reply replaces it; the stored result carries all of them.
     _seq_mcp_notes: list[str] = []
+    # Each step's (agent, missing-server note): the run keeps one combined
+    # note under the job's key, recorded only once the result is stored, so
+    # a step that raises or a superseded run delivers none.
+    _seq_step_notes: list[tuple[str, str]] = []
     # Run-scoped for the same reason: a refused person-only directive.
     _seq_directive_refusals: list[str] = []
     _seq_downgraded = False
@@ -402,15 +408,16 @@ async def _cron_run_sequence(
                 if _seq_landed:
                     # This step's release confirms what it received inline.
                     note_turn_landed(self.sessions, agent_session_key)
+                    # Per-interaction telemetry, as every landed-turn engine
+                    # reports it: one event per step that landed.
+                    record_interaction_event(client, agent_session_key, "cron")
                     await _seq_hooks.stop(result_text)
                 if not result_text:
                     result_text = _gate.empty_reply_placeholder()
                 result_text = _annotate_model_fallback(
                     result_text, client, stop_reason=_seq_stop["reason"]
                 )
-                _seq_missing = declared_mcp_not_ready_note(client)
-                if _seq_missing:
-                    _seq_mcp_notes.append(f"⚠ {agent}: {_seq_missing}.")
+                _seq_step_notes.append((agent, declared_mcp_not_ready_note(client)))
                 # The spec notices for this step's session, once per agent.
                 _seq_notices = _seq_hooks.notices()
                 if _seq_notices and _seq_notices not in _seq_mcp_notes:
@@ -591,6 +598,10 @@ async def _cron_run_sequence(
                     agent,
                 )
                 raise AcpError(f"{SESSION_NOT_FOUND_GIVE_UP_TEXT} {_seq_snf_err}")
+    _seq_note = "\n".join(f"⚠ {agent}: {note}." for agent, note in _seq_step_notes if note)
+    _seq_missing = declared_mcp_note_change(f"cron:{job.id}", _seq_note, record=False)
+    if _seq_missing:
+        _seq_mcp_notes.insert(0, _seq_missing)
     if _seq_mcp_notes:
         result_text = "\n".join(_seq_mcp_notes) + "\n\n" + result_text
     if _seq_directive_refusals:
@@ -599,6 +610,7 @@ async def _cron_run_sequence(
         result_text = _annotate_model_downgrade(job, result_text)
     result_text = _annotate_partial_block(result_text, _gate)
     job.set_run_result(result_text)
+    declared_mcp_note_change(f"cron:{job.id}", _seq_note)
     # This path owns the same verdict as the single-agent one, so a
     # multi-agent job's failure counter moves in both directions —
     # which is what keeps auto-pause both reachable and clearable.
@@ -966,6 +978,8 @@ async def _cron_run_single(
             # This turn's release confirms what it received inline; a turn the
             # deadline, a stop or a reap ends first never gets here.
             note_turn_landed(self.sessions, session_key)
+            # Per-interaction telemetry, as every landed-turn engine reports it.
+            record_interaction_event(client, session_key, "cron")
             await _hook_turn.stop(result_text)
 
         # Recorded, not inferred from the text: the dedup hash below
@@ -980,9 +994,6 @@ async def _cron_run_single(
         result_text = _annotate_model_fallback(
             result_text, client, stop_reason=_turn_stop["reason"]
         )
-        _missing = declared_mcp_not_ready_note(client)
-        if _missing:
-            result_text = f"⚠ {_missing}.\n\n{result_text}"
         if _directive_refusals:
             result_text = "\n\n".join([*_directive_refusals, result_text])
         # Before set_run_result and the dedup hash below, so the stored
@@ -992,7 +1003,15 @@ async def _cron_run_single(
         result_text = _annotate_partial_block(result_text, _gate)
         # The spec notices for this run's session, as a dashboard chat says them.
         # The same notices lead every run, so the dedup key is taken without them.
-        _dedup_source = result_text
+        # The MCP warning prints only when its set changes, so the key carries
+        # the run's full missing-server note instead: the same answer with the
+        # same missing set is still a duplicate, and a changed set is posted.
+        _mcp_note = declared_mcp_not_ready_note(client)
+        _dedup_source = f"{_mcp_note}\n\n{result_text}" if _mcp_note else result_text
+        # Keyed on the job, not the session: a stateless job's key changes every fire.
+        _missing = declared_mcp_note_change(f"cron:{job.id}", _mcp_note)
+        if _missing:
+            result_text = f"⚠ {_missing}.\n\n{result_text}"
         _notices = _hook_turn.notices()
         if _notices:
             result_text = f"{_notices}\n\n{result_text}"

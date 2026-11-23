@@ -642,7 +642,8 @@ export { useLanguageGeneration } from '../i18n/useLanguageGeneration'
 export { activeLocale, fmtNumber, fmtCurrency, fmtDate, fmtTime, fmtDateTime, fmtRelative, compareText } from '../i18n/format'
 export type { NumberOptions, DateStyleOptions, RelativeStyle } from '../i18n/format'
 // An app's own origin on the dashboard's port, for a backend that frames its own pages (level 8).
-export { appWebOrigin } from './webOrigin'
+export { appWebOrigin, appWebOriginStatus } from './webOrigin'
+export type { AppWebOriginReason, AppWebOriginStatus } from './webOrigin'
 // What this app's side-panel tab was opened with by its own link-preview card
 // (`card.openPanelTab`). Feature-detected by name: an older host has no export.
 export { usePanelTabRequest } from './panelTabRequest'

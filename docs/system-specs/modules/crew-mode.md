@@ -1765,6 +1765,12 @@ DM binding and never makes one, so the slot key, its monitor loops, the work led
 the crew log stay bound. A thread with queued messages or unconsumed steers answers 409
 `slot_queue_pending` before anything is stopped, and again if one arrives during a stop
 wait: a soft stop keeps them, and they would then run on the old conversation.
+A held entry (`is_held_queue_entry`: restored after a restart and not chosen) does not
+refuse it, because it never runs on its own; a restored entry the person chose still
+does. After a `cleared` outcome the route drops each held entry whose user row is
+already in the transcript (`row_already_written`), since its cancel is refused and
+nothing else removes it; the row stays, and the `queue_cancel` frame carries no content.
+A `queued` clear drops nothing, and a held entry with no written row stays queued.
 Otherwise it runs existing paths in order: `stop_slot_turn` on a running turn, a second
 `stop_slot_turn` when the turn has not ended within the wait (its hard-kill escalation,
 which frees a stuck process), then the typed `/clear` path
@@ -3889,7 +3895,11 @@ unchanged.
 What is hidden: rows with role `nudge`, `inject`, `subagent`, `tool`,
 `tool_call`, `tool_result`, `thinking`; and an `assistant` row that is not
 speech — invisible-only content (the bare U+200B the model is instructed to
-answer a quiet patrol with, `isHiddenInvisibleAssistantRow`), a gateway system
+answer a quiet turn with, `isHiddenInvisibleAssistantRow`), a row whose only
+content is something this chat does not draw (the content-less row
+`_attach_file_changes` writes for a quiet turn that only changed files, since
+the chat draws no file chips, or a reply that is only a `[STEERING steer-…]`
+note, since it draws no Steered chip), a gateway system
 notice written under the assistant role (compaction, session reload), or an
 injected workflow completion. A turn that ends without addressing the user is
 therefore a turn whose final assistant text is empty: the model's own silence
@@ -5002,10 +5012,15 @@ definite matches. On a Bot's worker (`kirocrew-mate-worker`) the session-start
 notice (`spec_keys_notice`) says the worker refuses those commands unless they
 are read-only, instead of "no effect" or "runs without a refusal"; an ordinary
 session keeps the old wording.
+A named bundle (`policies`) beside the agent's `rules` is left behind and the
+rules are carried, as the upgrade path reads it: KAS refuses a block that names
+a bundle, and a bundle only expands into allow rules, so leaving it narrows.
 The add is refused,
 with a `detail` naming the field: `template_restrictions_uncarried` when one
 cannot be kept exactly (`uncarried_restrictions`, `toolsSettings.<tool>` for
-one tool's entry), and `template_policy_backend_unsupported` when the
+one tool's entry, `permissions (<why>)` with KAS's own reason for a block it
+would refuse whole, `kas_tool_view.permissions_block_refusal`), and
+`template_policy_backend_unsupported` when the
 Bot's worker backend (`mate_worker.crewmate_worker_backend`) is not KAS. An apply that changes the file's hooks, permissions or tool settings
 reloads the Bot's live workers onto it (`crewmate_worker_reload`, a busy
 one at its turn end), since a live KAS session keeps the batch it registered.
@@ -5195,7 +5210,14 @@ share one Kiro home), so one writer cannot erase a hold another records. A Bot w
 enforces its own limits, so the hold the move recorded for it is cleared again,
 only when the entry still carries the `member_id` it was recorded under
 (`mate_held_rules.drop_held`); the next start that moves it holds them again. A repaired Bot is
-checked once (`migrated.json` `policy_checked`). The two loosenings are cured
+checked once (`migrated.json` `policy_checked`). A `permissions` block that names a
+bundle (`policies`) beside its `rules` is read as those rules alone: KAS expands a
+bundle into allow rules on its own side, so leaving it behind only narrows, and
+each rule is carried or held under its own capability (`mate_held_rules._pieces`).
+An earlier release held such a whole block under every capability (`ANY`), so one
+deny in it made every call of the Bot ask, Trust included; a Bot held on every call
+is checked once more (`migrated.json` `held_every_call_rechecked`), and a hold that
+read no longer needs is dropped after its deny is written into the file. The two loosenings are cured
 first: a server the source switched off is written `{"disabled": true}`, and a
 grant the worker would gain is taken out of the file (`_strip_grants`), so
 nothing the old agent lacked is ever granted; the user gets it only through

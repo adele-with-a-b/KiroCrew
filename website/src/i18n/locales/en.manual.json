@@ -4381,6 +4381,10 @@
       "chip_hint_busy": "Available after the reply.",
       "switching_on": "Turning conductor mode on…",
       "switching_off": "Turning conductor mode off…",
+      "midchat_confirm_title": "Turn on conductor mode for this chat?",
+      "midchat_confirm_body": "Conductor mode can't be turned off for this chat.",
+      "midchat_confirm_action": "Turn on conductor mode",
+      "midchat_confirm_dont_show": "Don't show this notice again",
       "title": "Conductor mode",
       "tagline_lead": "You set the goal.",
       "tagline_strong": "Your crew does the work.",
@@ -4392,6 +4396,7 @@
       "flow_needs_you": "Needs you",
       "eyebrow": "Conductor mode",
       "composer_chip_label": "Conductor mode is on for this chat",
+      "composer_chip_label_worker": "Conductor mode · Worker",
       "back_to_main_chat": "Back to main chat",
       "parent_row_hint": "Showing one of its crew members",
       "steer_too_long": "A message to {{name}} can be at most {{max}} characters. Shorten it to send.",
@@ -11234,6 +11239,7 @@
   "utils": {
     "agentSwitchFeedback": {
       "turn_in_flight": "A turn is running — try again when it finishes.",
+      "crew_mode_locked": "Switching to {{agent}} was blocked because conductor mode can't be turned off for this chat.",
       "model_deferred": "{{model}} takes over from your next message. This reply finishes on the model it started with.",
       "member_needs_new_chat": "{{name}} has its own memory, so it can only start a new chat. This chat keeps its current agent.",
       "open_session": "Open session",

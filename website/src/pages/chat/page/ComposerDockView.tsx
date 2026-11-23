@@ -307,7 +307,7 @@ interface ComposerDockViewProps {
   /** A plain chat that already has messages: the same chip sits right of the
    *  permission button and turns this chat into a conductor mode chat, one way. */
   crewModeMidChatOffered?: boolean
-  turnOnCrewMode: () => void
+  turnOnCrewMode: () => void | Promise<boolean>
   /** Set only while Crew Mode is on and no message is sent yet: the composer's
    *  Crew Mode mark is then a toggle that turns it off. */
   turnOffCrewMode?: () => void
@@ -736,9 +736,12 @@ export default function ComposerDockView({
               // drawn from, so chip, menu and gate cannot disagree.
               modelIsJevRouted={jevRouteOn && isUnpinnedModel(currentSlot?.model)}
               harnessBackend={modelsBackend}
-              // A crew member's footer is the conductor's: the Crew Mode mark (never
-              // a switch there) in place of the agent picker and its label.
-              agentBadge={crewChipPressed ? undefined : agentPickerHidden || steerWorker !== undefined ? <CrewModeComposerChip /> : undefined}
+              // The conductor mode bolt in place of the agent picker. On a crew
+              // member that is not itself a conductor its tip names the role,
+              // Worker, so it does not read as a conductor.
+              agentBadge={crewChipPressed ? undefined
+                : agentPickerHidden ? <CrewModeComposerChip />
+                : steerWorker !== undefined ? <CrewModeComposerChip worker /> : undefined}
               onAgentClick={provider.capabilities.agentTemplates && !agentPickerHidden && !agentSwitchLocked && steerWorker === undefined ? (rect, trigger) => { anchorAgentBtn(rect, trigger); setAgentDropdown(!agentDropdown) } : undefined}
               onModelClick={(rect, trigger, composerHadFocus) => {
                 modelPickerReturnsFocusRef.current = !!composerHadFocus

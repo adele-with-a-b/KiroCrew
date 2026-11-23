@@ -187,7 +187,7 @@ underneath.
 
 | Harness (`acp_backend`) | Mirror | Delivered | Translated | Not delivered, with the class |
 |---|---|---|---|---|
-| `claude` | `claude_code.py` | `mcpServers` [1]; `model`, `availableModels`, `permissions.defaultMode`, in `settings.local.json` [2] | `tools` → the array's allowlist [3]; `disabledTools` → `permissions.deny` rules (`mcp__<server>__<tool>`, each name written as Claude Code writes it, any character outside `[A-Za-z0-9_-]` as `_`), so a narrowed server stays MOUNTED | `autoApprove` — gate-preserving; `prompt` — context-instead; `resources` — no-reader [6]; `hooks` — no channel; `toolsSettings` — no channel [11] |
+| `claude` | `claude_code.py` | `mcpServers` [1]; `availableModels`, `permissions.defaultMode`, in `settings.local.json` [2]; `model` over `session/set_config_option` | `tools` → the array's allowlist [3]; `disabledTools` → `permissions.deny` rules (`mcp__<server>__<tool>`, each name written as Claude Code writes it, any character outside `[A-Za-z0-9_-]` as `_`), so a narrowed server stays MOUNTED | `autoApprove` — gate-preserving; `prompt` — context-instead; `resources` — no-reader [6]; `hooks` — no channel; `toolsSettings` — no channel [11] |
 | `codex` | `codex.py` | `mcpServers`, narrowed three ways [4]; `model` [5] | `tools` → the array's allowlist [3]; `disabledTools` → the server is withheld whole, except Crew's control plane [7] | `availableModels` — harness-owns-the-vocabulary; `permissions.defaultMode` — fixed-by-governance (`mode=read-only`); `autoApprove` — gate-preserving; `prompt` — context-instead; `resources` — no-reader [6]; `hooks` — no channel; `toolsSettings` — no channel [11] |
 | `opencode` | `opencode.py` | `mcpServers`, no transport filter; `model` [5] | `tools` → the array's allowlist [3]; `disabledTools` → a `deny` rule in the seeded `permission` config, server kept mounted; withheld whole only when a lower config source outranks the rule [7]; `hooks` → fired by Crew's turn loop | as `codex` except `hooks`, with `permissions.defaultMode` fixed at `ask` and read back off the harness's own resolved config |
 | `mimocode` | `mimocode.py` (its own projection, the same rules as `opencode`) | as `opencode` | as `opencode`, except `hooks` | as `opencode`, with the config seeded through `MIMOCODE_CONFIG_CONTENT` and read back from `mimo debug config`; `hooks` — withheld, because some of the harness's own tools never ask, so a hook fired from the permission request would miss them |
@@ -1100,7 +1100,7 @@ catalogue and loads one the first time it calls it, as on Crew's default agent,
 so they no longer ride in every request. Only an entry Crew added counts (the
 managed launch, byte for byte); a server your `mcpServers` declares is yours. A
 tool of an added server you name one by one, such as `@kirocrew-core/skill_search`,
-stays direct (a whole-server `@kirocrew-core` is deferred, whoever wrote it), and so does `mcp_server_wait`; every other tool your spec grants,
+stays direct (a whole-server `@kirocrew-core` is deferred, whoever wrote it), and so do `spawn_run`, `spawn_sub_agents`, `spawn_status` and `mcp_server_wait`, also when your `tools` is `"*"` or `@builtin` (which grant the loader), so the agent sees it can start sub-agents without loading a tool first; a tool your `excludedTools` names stays unavailable. Every other tool your spec grants,
 your own servers' included, stays as written. A backend that does not read
 KAS's `neverDefer` list sends them as before.
 Crew's own specs, Bot service agents, an app's agents (their
@@ -1294,6 +1294,9 @@ ref writes one `mcp_tools_added` SEL record. Slash-containing names use the
 concrete mount alias in refs; the offered record keeps the edition's original name.
 A same-named entry in `~/.kiro/settings/mcp.json` never replaces such a server's
 `command`, `args` or `env`; only its `timeout` and `disabled` reach the spec.
+A same-named entry in `~/.kiro/crew/mcp.json` never replaces its `command` or
+`args` either. Its other keys reach the spec, and its `env` keys win over the
+edition's while the edition's other keys stay.
 
 
 What you may safely hand-edit: a spec you authored yourself; a conductor spec's
