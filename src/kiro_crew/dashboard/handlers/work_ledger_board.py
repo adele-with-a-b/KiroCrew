@@ -827,7 +827,16 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     payload = {
         # ``next_pick``: the top of the backlog by the person's rank, which the
         # board marks as what the conductor starts next (``work_plan_vocab``).
-        "conductor": dict(record.to_dict(), next_pick=next_pick(items)),
+        # ``seats_held``: on a board with a recorded goal, the seats that cap's
+        # admission counts, which the page's free-slot line reads when the next pick
+        # is a marked backlog row (pulling one takes a new seat). It can exceed the
+        # stories with a worker: a story with no plan and no worker is a backlog row
+        # yet still holds a seat. ``None`` where no cap is enforced (a queue board).
+        "conductor": dict(
+            record.to_dict(),
+            next_pick=next_pick(items),
+            seats_held=work_ledger.count_seated(items) if record.goal_version > 0 else None,
+        ),
         "conductor_alive": "idle" if conductor_alive else "closed",
         "items": rows,
         "asks": asks,

@@ -151,6 +151,10 @@ export interface WorkBoardConductor {
   /** The backlog item the conductor dispatches next: the lowest rank. Derived
    *  server-side on every read; absent on an older gateway. */
   next_pick?: string | null
+  /** The seats the goal's cap admission counts, which can exceed the stories with a
+   *  worker (a story with no plan and no worker holds one). `null` where no cap is
+   *  enforced; absent on an older gateway. */
+  seats_held?: number | null
 }
 
 export interface WorkBoardResponse {

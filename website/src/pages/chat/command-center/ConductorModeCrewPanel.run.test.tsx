@@ -74,9 +74,23 @@ describe('Conductor mode run line', () => {
       expect.stringContaining('Not done · failed its check'),
       expect.stringContaining('Not done · dropped'),
     ])
-    // Only the accepted one counts as done; the two not done stay in the sprint.
+    // Only the accepted one counts as done; the two not done leave the sprint for
+    // their own fold at the foot, closed until clicked, each row still marked.
     expect(screen.getByTestId('conductor-mode-milestones-done').querySelector('summary')).toHaveTextContent(/^1 done$/)
-    expect(rows.every(r => r.closest('[data-testid="plan-sprint"]'))).toBe(true)
+    const fold = screen.getByTestId('conductor-mode-milestones-not-done') as HTMLDetailsElement
+    expect(fold.querySelector('summary')).toHaveTextContent(/^Not done \(2\)$/)
+    expect(fold.open).toBe(false)
+    expect(rows.every(r => fold.contains(r) && !r.closest('[data-testid="plan-sprint"]'))).toBe(true)
+  })
+
+  it('keeps the sprint for open stories: a board with only closed ones says its sprint is empty', async () => {
+    const rejected = ITEM({ item_id: 'it_b', title: 'Port the gate', state: 'rejected', verdict: 'fail' })
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [rejected], run: RUN({ accepted: 0, not_done: 1 }) })
+    renderPanel()
+    const fold = await screen.findByTestId('conductor-mode-milestones-not-done')
+    expect(fold.querySelector('summary')).toHaveTextContent(/^Not done \(1\)$/)
+    expect(within(screen.getByTestId('plan-sprint')).queryAllByTestId('conductor-mode-milestone')).toEqual([])
+    expect(screen.getByTestId('plan-sprint')).toHaveTextContent('Nothing in this sprint yet.')
   })
 
   it('says Stopped with open milestones, without saying who stopped it', async () => {

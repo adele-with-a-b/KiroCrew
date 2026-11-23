@@ -110,10 +110,11 @@ name is refused: update a release instead of adding one.
   seat is free, so the patrol holds only once every seat is taken.
 - `plan` with `item_id` and `plan` lays the given keys over the item's plan: a
   key given replaces, a key given as `null` clears, a key left out keeps.
-  `{"backlog": false}` (or `null`) pulls the item into the sprint, which takes a
-  seat and is refused with `goal_concurrency_cap_reached` when none is free.
-  `false` is stored and keeps it in the sprint until its worker binds; `null`
-  clears the key, and the item then stays a backlog row until a worker is bound.
+  `{"backlog": false}` pulls the item into the sprint, which takes a seat and is
+  refused with `goal_concurrency_cap_reached` when none is free. `false` is stored
+  and keeps it in the sprint until its worker binds. `null` clears the key: that
+  takes a seat too (refused the same way when none is free), as any unmarked
+  story holds one, but the item stays a backlog row until a worker is bound.
 - `release` with `release={name, state?, note?}` adds a release or updates the
   one it names. Shipping it stamps `shipped_at` once.
 - `work_ledger_read`'s `conductor.next_pick` is the item to pull and dispatch
@@ -121,6 +122,9 @@ name is refused: update a release instead of adding one.
   marked or not (never an epic or a sub-task), unranked ones after ranked ones,
   oldest first. It is derived on every
   read and never stored. A compact read carries each planned row's `plan`.
+  The Board's read also sends `conductor.seats_held`, the seats the cap counts
+  (`null` until a goal is recorded). It can exceed the stories with a worker,
+  because an unmarked story with no worker is a backlog row yet holds a seat.
 
 A planned item's `step` moves by itself on every read (`work_plan_vocab.shown_step`),
 so the conductor writes `todo`, `mocks` and `build` and never the rest:

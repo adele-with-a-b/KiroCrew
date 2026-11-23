@@ -106,6 +106,18 @@ export function seatsBusy(items: readonly WorkBoardItem[]): number {
   return items.filter(i => isOpen(i) && levelOf(i) === 'story' && (i.has_worker ?? !planOf(i).backlog)).length
 }
 
+/** How many more workers can start toward the next pick. A seat not taken by a
+ *  worker or by a story held in the sprint is free, and a waiting story with no
+ *  `backlog` mark already holds its own seat in the store, so starting one takes
+ *  none. Pulling a MARKED row takes a new seat, so when the next pick is one, only
+ *  the seats the store has not handed out count (`held`, `conductor.seats_held`). */
+export function freeSeats(items: readonly WorkBoardItem[], cap: number | undefined, held: number | null | undefined, pick: WorkBoardItem | undefined): number {
+  if (cap == null) return 0
+  const heldInSprint = items.filter(i => isOpen(i) && levelOf(i) === 'story' && i.has_worker === false && i.in_backlog === false).length
+  const open = Math.max(0, cap - seatsBusy(items) - heldInSprint)
+  return pick && planOf(pick).backlog === true && held != null ? Math.min(open, Math.max(0, cap - held)) : open
+}
+
 /** The rank writes a drop of the row at `from` onto `to` (an index in the list
  *  without it) needs, so the server's order then matches the list as shown. The
  *  dragged row takes the midpoint of its new neighbours, one past the end at

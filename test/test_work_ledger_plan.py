@@ -168,9 +168,8 @@ def test_a_bad_plan_key_is_refused_by_name(plan: dict[str, Any], field: str) -> 
     assert caught.value.field == field
 
 
-def test_each_parent_link_goes_exactly_one_level_down(monkeypatch) -> None:
-    # One second per stamp: the store lists items by ``created_at``, so the open task
-    # below is the older child by the clock, not by its random id.
+def _tick_the_clock(monkeypatch) -> None:
+    """One second per stamp, so ``created_at`` orders items by when they were made."""
     from kiro_crew import work_ledger_store, work_ledger_writes
 
     ticks = iter(range(10_000))
@@ -181,6 +180,12 @@ def test_each_parent_link_goes_exactly_one_level_down(monkeypatch) -> None:
 
     for module in (work_ledger_store, work_ledger_writes):
         monkeypatch.setattr(module, "_now_iso", _tick)
+
+
+def test_each_parent_link_goes_exactly_one_level_down(monkeypatch) -> None:
+    # The store lists items by ``created_at``, so the open task below is the older
+    # child by the clock, not by its random id.
+    _tick_the_clock(monkeypatch)
     _board(cap=8)
     epic = _create("epic", {"level": "epic"})
     other = _create("other epic", {"level": "epic"})
@@ -275,10 +280,35 @@ def test_a_person_rank_moves_only_the_rank() -> None:
             wl.apply_person_rank(CONDUCTOR, sprint, 1)
         assert caught.value.field == "plan.backlog"
         assert wl.read_work_item(CONDUCTOR, sprint).plan == before
+    # An epic marked backlog is ranked as it always was: the mark is what it reads.
+    epic = _create("an epic for later", {"level": "epic", "backlog": True})
+    wl.apply_person_rank(CONDUCTOR, epic, 2)
+    assert wl.read_work_item(CONDUCTOR, epic).plan == {"level": "epic", "backlog": True, "rank": 2}
 
 
-def test_a_story_no_worker_is_on_is_a_backlog_row_its_conductor_never_planned() -> None:
+def test_the_board_counts_the_seats_the_cap_admission_counts() -> None:
+    """A story with no plan and no worker is a backlog row, yet it holds a seat."""
+    _board(cap=2)
+    bound = _create("a worker is on it")
+    waiting = _create("waiting, never planned")
+    _create("marked for later", {"backlog": True})
+    _create("an epic", {"level": "epic"})
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=bound, worker_session_key="chat-9-w")
+    items = wl.list_work_items(CONDUCTOR)
+    assert wl.count_seated(items) == 2
+    assert wl.count_seated(items, exclude=waiting) == 1
+    # The count is what the cap refuses on: no third seat, though one worker is on.
+    with pytest.raises(wl.WorkLedgerError) as caught:
+        _create("one more")
+    assert caught.value.code == wl.CODE_GOAL_CONCURRENCY_CAP_REACHED
+
+
+def test_a_story_no_worker_is_on_is_a_backlog_row_its_conductor_never_planned(
+    monkeypatch,
+) -> None:
     """Blick's board: no plan on any row. The waiting stories rank and pick as backlog."""
+    # The unranked pick is the oldest, so each create needs its own second.
+    _tick_the_clock(monkeypatch)
     _board(cap=8)
     first, second, third = _create("first"), _create("second"), _create("third")
     wl.apply_conductor_action(CONDUCTOR, "bind", item_id=first, worker_session_key="chat-9-w")

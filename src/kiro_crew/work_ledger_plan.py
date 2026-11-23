@@ -173,9 +173,18 @@ def seated_open_items(slot_key: str, *, exclude: str | None = None) -> int:
 
     A backlog item, an epic and a sub-task hold none (``counts_toward_concurrency``).
     """
+    return count_seated(list_work_items(slot_key), exclude=exclude)
+
+
+def count_seated(items: list[WorkItem], *, exclude: str | None = None) -> int:
+    """How many of *items* hold a seat: the count the goal's cap admission refuses on.
+
+    The board sends it beside its own worker count, because a story with no plan and
+    no worker is a backlog row on the page yet still holds a seat here.
+    """
     return sum(
         1
-        for item in list_work_items(slot_key)
+        for item in items
         if item.state not in TERMINAL_ITEM_STATES
         and item.item_id != exclude
         and counts_toward_concurrency(item.plan)
@@ -251,7 +260,8 @@ def apply_person_rank(slot_key: str, item_id: str, rank: Any) -> dict[str, Any]:
     The one plan key a person writes: the backlog order is theirs to set, the rest
     of the plan is the conductor's, so an item outside the backlog is refused. A
     story with no worker and no ``backlog`` key is a backlog row (:func:`in_backlog`),
-    so a board whose conductor never planned is ranked as well.
+    so a board whose conductor never planned is ranked as well. Any item marked
+    ``backlog: true`` is ranked too, an epic or a sub-task included.
     Returns ``{"item", "event"}``.
     """
     checked_id = _require_item_id(item_id)
@@ -262,7 +272,9 @@ def apply_person_rank(slot_key: str, item_id: str, rank: Any) -> dict[str, Any]:
         )
     with item_lock(slot_key, checked_id, create=False):
         item = _open_item(slot_key, checked_id)
-        if not in_backlog(item.plan, state=item.state, worker_bound=bool(item.worker_session_key)):
+        marked = (item.plan or {}).get("backlog") is True
+        bound = bool(item.worker_session_key)
+        if not marked and not in_backlog(item.plan, state=item.state, worker_bound=bound):
             raise WorkLedgerError(
                 f"item {checked_id!r} is not in the backlog: only a backlog row is ranked",
                 code=CODE_INVALID_VALUE,

@@ -990,6 +990,7 @@ from kiro_crew.work_ledger_plan import (  # noqa: E402, F401
     apply_plan_write,
     apply_release_write,
     check_parent,
+    count_seated,
     refuse_if_no_seat,
     refuse_unbindable,
     require_plan_change,

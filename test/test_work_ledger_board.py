@@ -189,6 +189,12 @@ async def test_a_story_no_worker_is_on_reads_as_backlog_and_takes_no_seat_on_the
     assert (rows[waiting]["in_backlog"], rows[waiting]["has_worker"]) == (True, False)
     assert (rows[working]["in_backlog"], rows[working]["has_worker"]) == (False, True)
     assert body["conductor"]["next_pick"] == waiting
+    # No cap is enforced until a goal sets one, so no seat count is claimed.
+    assert body["conductor"]["seats_held"] is None
+    wl.apply_conductor_action(CONDUCTOR, "goal", concurrency_cap=4)
+    body, _ = await _call(_state({WORKER: _slot()}), CONDUCTOR)
+    # The free-slot line's count: the waiting row holds a seat, though no worker is on.
+    assert body["conductor"]["seats_held"] == 2
 
 
 @pytest.mark.asyncio
