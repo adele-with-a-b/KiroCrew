@@ -29,7 +29,7 @@ import { currentTheme } from '../appFrame/sandboxFrame'
 import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions, type ShowScope } from './linkPreviewFrames'
 import { resolveTextPreview, setLinkPreviewTextPatterns, setTextPatternsOff } from './textPatterns'
 import { readMessageRef, type PreviewLink, type ShowTrigger } from './linkPreviewProtocol'
-import { sendLinkPreviewNav } from './linkPreviewNav'
+import { sendAppNav, sendLinkPreviewNav, setClickOpenProbe } from './linkPreviewNav'
 
 const HOVER_DELAY_MS = 300
 /** The scope attribute's session key is `dashboard:<slot>` (`MarkdownRenderer`). */
@@ -157,18 +157,20 @@ export default function LinkPreviewLayer() {
       onFramesChanged: (els) => setFrameRefs(els.map((el) => ({ current: el }))),
       // A card's asks reach only the chat its show sat in (`scope.slot`); the chat
       // page acts only when that chat is the one on screen.
-      onOpenPanelTab: (appName, tab, payload, scope) => {
-        if (scope.slot) sendLinkPreviewNav({ kind: 'openPanelTab', slot: scope.slot, appName, tab, payload })
-      },
+      onOpen: (appName, target, payload, scope) =>
+        scope.slot ? sendAppNav({ kind: 'open', slot: scope.slot, appName, target, payload, via: 'link' }) : 'not_on_screen',
       // The chat scrolls away under the card, so a card that is not pinned goes.
       onJump: (_appName, target, scope) => {
         if (scope.slot && sendLinkPreviewNav({ kind: 'jump', slot: scope.slot, target, from: scope.origin })) hideAllRef.current('scroll')
       },
     })
     hostRef.current = host
+    // A popover a press on a label would close waits while that click may still open it.
+    const unprobe = setClickOpenProbe(() => host.clickOpenEnd())
     const themeWatch = new MutationObserver(() => host.setTheme(currentTheme()))
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
     return () => {
+      unprobe()
       themeWatch.disconnect()
       host.disposeAll()
       hostRef.current = null

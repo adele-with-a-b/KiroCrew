@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { FrameHost, type PreviewFrame, type ShowScope } from './linkPreviewFrames'
+import { CLICK_GRANT_MS, FrameHost, type PreviewFrame, type ShowScope } from './linkPreviewFrames'
 import type { FromFrame, ShowTrigger } from './linkPreviewProtocol'
 import { installFrameWindows, sentTo } from '../test/LinkPreviewFramesTestUtils'
 
@@ -12,16 +12,19 @@ const rect = (top: number) => ({ left: 100, top, width: 40, height: 16 })
 let opened: unknown[][] = []
 let host: FrameHost
 
-function makeHost() {
-  return new FrameHost({
+function hostOptions(): ConstructorParameters<typeof FrameHost>[0] {
+  return {
     mint: async () => ({ frame: '/app-frame/refs-app/lp/f/tok', capability: 'cap', ttl: 3600 }),
     theme: () => 'light',
     onFailed() {},
     onTextPatternsOff() {},
     onEscape() {},
     onFramesChanged() {},
-    onOpenPanelTab: (...args) => { opened.push(args) },
-  })
+    onOpen: (...args) => { opened.push(args); return true },
+  }
+}
+function makeHost() {
+  return new FrameHost(hostOptions())
 }
 
 /** A ready hover frame. */
@@ -58,7 +61,7 @@ describe('FrameHost: the click grant', () => {
     await showOpen(frame, 'click')
     askTab(frame)
     askTab(frame)
-    expect(opened).toEqual([['refs-app', 'questions', 1, SCOPE]])
+    expect(opened).toEqual([['refs-app', { kind: 'panelTab', id: 'questions' }, 1, SCOPE]])
   })
 
   it('leave, dismissal and the next show each end it', async () => {
@@ -98,7 +101,7 @@ describe('FrameHost: the click grant', () => {
     askTab(frame, first)
     expect(opened).toEqual([])
     askTab(frame)
-    expect(opened).toEqual([['refs-app', 'questions', 1, SCOPE]])
+    expect(opened).toEqual([['refs-app', { kind: 'panelTab', id: 'questions' }, 1, SCOPE]])
   })
 
   it('in overlay mode, leave and dismissal end it (no show is retired there)', async () => {
@@ -141,6 +144,101 @@ describe('FrameHost: the click grant', () => {
     vi.advanceTimersByTime(3_001)
     askTab(frame)
     expect(opened).toEqual([])
+  })
+})
+
+describe('FrameHost: the click grant opens one target, a tab or a session control', () => {
+  const CONTROL = { kind: 'sessionControl', id: 'questions' }
+  const askControl = (frame: PreviewFrame, request?: number) =>
+    host.handle(frame, { type: 'openSessionControl', invocation: frame.invocation, control: 'questions', payload: { label: '[Q4a]' }, ...(request === undefined ? {} : { request }) })
+  const answers = (frame: PreviewFrame) => sentTo(frame.el).filter((m) => m.type === 'opened')
+
+  it('one click opens the control once; a second open of either target is refused no_click', async () => {
+    const frame = await readyFrame()
+    await showOpen(frame, 'click')
+    askControl(frame, 1)
+    askControl(frame, 2)
+    host.handle(frame, { type: 'openPanelTab', invocation: frame.invocation, tab: 'questions', payload: 1, request: 3 })
+    expect(opened).toEqual([['refs-app', CONTROL, { label: '[Q4a]' }, SCOPE]])
+    expect(answers(frame)).toEqual([
+      expect.objectContaining({ request: 1, ok: true }),
+      expect.objectContaining({ request: 2, ok: false, reason: 'no_click' }),
+      expect.objectContaining({ request: 3, ok: false, reason: 'no_click' }),
+    ])
+  })
+
+  it('a tab first spends the grant, so the control after it is refused', async () => {
+    const frame = await readyFrame()
+    await showOpen(frame, 'tap')
+    askTab(frame)
+    askControl(frame, 7)
+    expect(opened).toEqual([['refs-app', { kind: 'panelTab', id: 'questions' }, 1, SCOPE]])
+    expect(answers(frame)).toEqual([expect.objectContaining({ request: 7, ok: false, reason: 'no_click' })])
+  })
+
+  it('a hover show opens nothing and is told no_click', async () => {
+    const frame = await readyFrame()
+    await showOpen(frame, 'hover')
+    askControl(frame, 4)
+    expect(opened).toEqual([])
+    expect(answers(frame)).toEqual([expect.objectContaining({ request: 4, ok: false, reason: 'no_click' })])
+  })
+
+  it('names why: a hidden card is not_shown, an unapproved one not_approved, the chat page its own refusal', async () => {
+    const frame = await readyFrame()
+    await host.show(frame, { text: '[Q4a]' }, rect(50), undefined, { trigger: 'click', scope: SCOPE })
+    askControl(frame, 1)
+    await host.show(frame, { text: '[Q4a]' }, rect(50), undefined, { trigger: 'click', scope: { ...SCOPE, messages: false } })
+    host.handle(frame, { type: 'open', invocation: frame.invocation })
+    askControl(frame, 2)
+    expect(answers(frame).map((m) => m.reason)).toEqual(['not_shown', 'not_approved'])
+    const refusing = new FrameHost({ ...hostOptions(), onOpen: () => 'not_declared' })
+    const other = refusing.hoverFrame('refs-app:other', 'refs-app')
+    refusing.handle(other, { type: 'ready' })
+    await other.ready
+    expect(await refusing.show(other, { text: '[Q4a]' }, rect(50), undefined, { trigger: 'click', scope: SCOPE })).toBe(true)
+    refusing.handle(other, { type: 'open', invocation: other.invocation })
+    refusing.handle(other, { type: 'openSessionControl', invocation: other.invocation, control: 'nope', payload: null, request: 3 })
+    expect(sentTo(other.el).filter((m) => m.type === 'opened')).toEqual([expect.objectContaining({ request: 3, ok: false, reason: 'not_declared' })])
+    refusing.disposeAll()
+    expect(opened).toEqual([])
+  })
+
+  it('a control payload over 4 KB is refused too_large and leaves the click its open', async () => {
+    const frame = await readyFrame()
+    await showOpen(frame, 'click')
+    host.handle(frame, { type: 'openSessionControl', invocation: frame.invocation, control: 'questions', payload: 'x'.repeat(4096), request: 1 })
+    askControl(frame, 2)
+    expect(answers(frame)).toEqual([
+      expect.objectContaining({ request: 1, ok: false, reason: 'too_large' }),
+      expect.objectContaining({ request: 2, ok: true }),
+    ])
+    expect(opened).toEqual([['refs-app', CONTROL, { label: '[Q4a]' }, SCOPE]])
+  })
+
+  it('says how long a click may still open something: while its frame loads, then the grant', async () => {
+    expect(host.clickOpenEnd()).toBe(0)
+    const frame = host.hoverFrame(KEY, 'refs-app')
+    const shown = host.show(frame, { text: '[Q4a]' }, rect(50), undefined, { trigger: 'click', scope: SCOPE })
+    const loading = host.clickOpenEnd()
+    expect(loading).toBeGreaterThan(performance.now() + CLICK_GRANT_MS)
+    host.handle(frame, { type: 'ready' })
+    await shown
+    const granted = host.clickOpenEnd()
+    expect(granted).toBeLessThanOrEqual(performance.now() + CLICK_GRANT_MS)
+    expect(granted).toBeGreaterThan(performance.now())
+    host.handle(frame, { type: 'open', invocation: frame.invocation })
+    askControl(frame, 1)
+    expect(host.clickOpenEnd()).toBe(0)
+    await host.show(frame, { text: '[Q4a]' }, rect(50), undefined, { trigger: 'hover', scope: SCOPE })
+    expect(host.clickOpenEnd()).toBe(0)
+  })
+
+  it('an open with no request number is not answered (a card built before level 11)', async () => {
+    const frame = await readyFrame()
+    await showOpen(frame, 'hover')
+    askControl(frame)
+    expect(answers(frame)).toEqual([])
   })
 })
 

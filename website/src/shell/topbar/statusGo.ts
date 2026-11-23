@@ -25,6 +25,7 @@ import { api } from '../../api/client'
 import { resumeFromHistory, setSwitchSlotGone, switchSlot } from '../../store/chatSlice'
 import { isChatRoute } from '../nav/routeActive'
 import { sessionDisplayTitle } from '../../utils/sessionDisplayTitle'
+import type { AppOpenTarget } from '../../linkPreview/linkPreviewNav'
 
 /** Most rows a card draws. The card is a glance, not a page: an app with more
  *  says so in its heading and keeps the rest on its own tab. */
@@ -50,8 +51,19 @@ export interface StatusTarget {
   sid: string
   /** A side-panel tab id of the app that answered. */
   panelTab?: string
-  /** What that tab is opened with. */
+  /** Or a session-control id of the app that answered: its chip's popover
+   *  under the message box. Never both: a target naming both keeps `panelTab`,
+   *  as a host without this field reads it. */
+  sessionControl?: string
+  /** What that tab or control is opened with. */
   arg?: unknown
+}
+
+/** The one thing a checked target opens in its chat, or null for the chat alone. */
+export function statusOpenTarget(t: StatusTarget): AppOpenTarget | null {
+  if (t.panelTab) return { kind: 'panelTab', id: t.panelTab }
+  if (t.sessionControl) return { kind: 'sessionControl', id: t.sessionControl }
+  return null
 }
 
 export interface StatusRow {
@@ -110,14 +122,17 @@ function keepArg(arg: unknown): unknown {
 /** The checked target, or null when it names no chat. */
 export function normalizeStatusTarget(raw: unknown): StatusTarget | null {
   if (!raw || typeof raw !== 'object') return null
-  const r = raw as { sid?: unknown; panelTab?: unknown; arg?: unknown }
+  const r = raw as { sid?: unknown; panelTab?: unknown; sessionControl?: unknown; arg?: unknown }
   if (!isCrewLinkKey(r.sid)) return null
   const out: StatusTarget = { sid: r.sid }
-  // The tab must be one this app declares; that is checked where the
-  // declarations are known (the chat page's panel-tab request). Here only its
+  // The tab or control must be one this app declares; that is checked where
+  // the declarations are known (the chat page's open request). Here only its
   // shape: a bad id opens the chat alone.
-  if (typeof r.panelTab === 'string' && TAB_ID_RE.test(r.panelTab)) {
-    out.panelTab = r.panelTab
+  const tab = typeof r.panelTab === 'string' && TAB_ID_RE.test(r.panelTab) ? r.panelTab : ''
+  const control = !tab && typeof r.sessionControl === 'string' && TAB_ID_RE.test(r.sessionControl) ? r.sessionControl : ''
+  if (tab) out.panelTab = tab
+  else if (control) out.sessionControl = control
+  if (tab || control) {
     const arg = keepArg(r.arg)
     if (arg !== undefined) out.arg = arg
   }
@@ -166,8 +181,8 @@ export interface ActiveStatusGo {
   /** The chat the go left, or null when it left a page that is not a chat. */
   from: string | null
   appName: string
-  /** Not yet handed to the landed chat's panel. Cleared once it was taken. */
-  pending: { tab: string; arg: unknown } | null
+  /** Not yet handed to the landed chat (its panel or its composer). Cleared once it was taken. */
+  pending: { target: AppOpenTarget; arg: unknown } | null
   /** True while a closed chat is being reopened: another chat on screen is
    *  then not a walk-away yet. */
   opening?: boolean
@@ -223,11 +238,12 @@ export function useStatusGo(): (appName: string, target: StatusTarget) => void {
       // Not an open tab (closed, or older than the list): reopen it the way the
       // command palette does, which may give the tab another key.
       const reopen = here !== target.sid && !store.getState().dashboard.slots.some(r => r.key === target.sid)
+      const open = statusOpenTarget(target)
       const go: ActiveStatusGo = {
         to: target.sid,
         from,
         appName,
-        pending: target.panelTab ? { tab: target.panelTab, arg: target.arg } : null,
+        pending: open ? { target: open, arg: target.arg } : null,
         ...(reopen ? { opening: true } : {}),
       }
       setActiveStatusGo(go)

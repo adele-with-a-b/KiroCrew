@@ -5238,13 +5238,14 @@ The boundary:
   (leave, Escape, blur, or a scroll that moves the link before its card is
   open) retires the current invocation too, and a ready card
   that was not yet visible is still sent `hide`, so a late `open` never shows a
-  dismissed card. A card's `openPanelTab` and `jump` need `hasGesture` on its
+  dismissed card. A card's `openPanelTab`, `openSessionControl` and `jump` need `hasGesture` on its
   frame (live activation, focus in that iframe), with one exception: a show the
   dashboard's own click or tap handler made (`trigger` `click` or `tap`, set only
   by `LinkPreviewLayer`'s DOM listeners, never read from a frame) stores
-  `clickGrant` on the frame, and the first `openPanelTab` after it passes when
+  `clickGrant` on the frame, and the first open after it (`openPanelTab` or
+  `openSessionControl`: one grant opens ONE target, never both) passes when
   the grant names the latest invocation, the frame is visible and the show is at
-  most `CLICK_GRANT_MS` (3 s) old. That show's first `openPanelTab` spends it
+  most `CLICK_GRANT_MS` (3 s) old. That show's first open of either kind spends it
   whatever it asks (one from an earlier show leaves it); `leave`, dismissal and
   the next show clear it (`cancelShow`), and so does `pin { pinned: true }`,
   which takes the frame out of their reach. Hover shows get none, `jump` and the link bridge keep the
@@ -6096,11 +6097,12 @@ draws it; the app supplies only data.
   of the answer's checks and of where a target goes). The answer may add
   `heading` (48), up to 10 `rows[]` (`lead` 12, `text` 48, `detail` 160, `tone`,
   `target`) and one `go` (`label` 24, `target`); every string goes through the
-  same cleaner as `text`. A target is `{sid, panelTab?, arg?}`: `sid` must pass
-  `isCrewLinkKey` or the target is dropped; `panelTab` must be a tab-id shape
-  or the chat opens alone, and whether THIS app declares it is checked where the
-  declarations are known, the chat page's panel-tab request; `arg` is kept as a
-  JSON copy of at most 4 KB. A card with places is 400 px wide and draws, per
+  same cleaner as `text`. A target is `{sid, panelTab?, sessionControl?, arg?}`:
+  `sid` must pass `isCrewLinkKey` or the target is dropped; `panelTab` or
+  `sessionControl` (level 11, §18n; with both, `panelTab` is kept, as an older
+  host reads it) must be an id shape or the chat opens alone, and whether THIS
+  app declares it is checked where the declarations are known, the chat page's
+  open listener; `arg` is kept as a JSON copy of at most 4 KB. A card with places is 400 px wide and draws, per
   item, the heading, a row button per place (a row whose target was dropped is
   drawn, not a button), the tooltip as a footnote and the go button, with the
   live `status-go` chord as key caps on the desktop bar only. On the phone the go
@@ -6115,8 +6117,9 @@ draws it; the app supplies only data.
   empty chat: the go ends with the pane's "gone" notice, and a failed resume
   with its "failed" one. A go into the chat the last go landed in keeps that
   go's way back. It navigates to `/chat` when elsewhere. The chat page (`pages/chat/useStatusLinks.ts`) hands the tab
-  request to the landed chat's panel, retrying every 200 ms for 5 s while the
-  panel mounts, and ends the go when the operator moves to any other chat. While
+  or control request to the landed chat (`sendAppNav`, `via: 'status'`), retrying
+  every 200 ms for 5 s while the panel or composer mounts; a refusal still
+  standing at 5 s is written to the console with its reason. It ends the go when the operator moves to any other chat. While
   the go's chat is on screen the chat header draws "Back to <title>"
   (`StatusGoBackCrumb`); `useStatusGoBack()` is that way back. The phone replaces
   history on a chat switch (`shouldReplaceSessionUrl`), so there the chip is the
@@ -6192,6 +6195,94 @@ Writers: `dashboard/handlers/app_status_changed.py`, `dashboard/routes/system.py
 `dashboard/ws_event_scope.py`, `apps/manifest.py`, `apps/app_sdk_level.py`,
 `website/src/hooks/websocket/serverState.ts`, `website/src/hooks/useWebSocket.ts`,
 `website/src/app-sdk/appStatusRefresh.ts`, `website/src/apps/coreAppRoutes.ts`.
+
+## 18n. An app opens its own session control, with a payload (seam level 11)
+
+A session control (§ `contributes.sessionControls`) could only be opened by the
+person's click on its chip, so an app's link-preview card or status row could
+send the person to a side-panel tab but not to the control under the message box.
+Now one request shape opens either: `AppOpenTarget = {kind: 'panelTab' |
+'sessionControl', id}`.
+
+- **One hand-off** (`linkPreview/linkPreviewNav.ts`). `{kind: 'open', slot,
+  appName, target, payload, via: 'link' | 'status'}` goes to every chat-page
+  listener through `sendAppNav`, which answers `true` or the first `OpenRefusal`
+  (`no_click`, `not_shown`, `not_approved`, `not_on_screen`, `not_declared`,
+  `too_large`), or
+  `not_on_screen` when no listener has that chat. The panel-tab listener
+  (`pages/chat/linkPreviewPanelTabs.ts`) takes `panelTab`; the composer's
+  (`pages/chat/page/sessionControls.ts`) takes `sessionControl`. Each acts only
+  for the slot on screen and only on `appName`'s own declarations, so an app opens
+  only its own targets. `sendLinkPreviewNav` keeps its boolean for the jump.
+- **From a card** (`linkPreviewFrames.ts`). `openPanelTab` and
+  `openSessionControl` share one path: a control payload over
+  `MAX_OPEN_PAYLOAD_BYTES` (4 KB, the status `arg` cap) is refused `too_large`
+  before anything else, so it spends no grant; then the target is built, the
+  click grant is taken (the first open of either spends it), then the scope check
+  (`not_shown`, `no_click`, `not_approved`), then the page's answer.
+  `readFrameMessage` reads any tab or control id of 1-128 characters, so a
+  misspelled one reaches the page and is answered `not_declared`, never dropped
+  unread; the bootstrap answers an empty, longer or non-string id `not_declared`
+  without sending it. A message carrying a
+  `request` number is answered `opened {request, ok, reason?}`; one without (a
+  provider built on an older bootstrap) is not. The bootstrap (`app_frame.py`)
+  numbers each open, resolves its Promise with that answer, resolves `not_json`
+  for a payload it cannot serialize and `too_large` for a control's over 4 KB
+  without sending either, and `no_answer` after 5 s (an older host, or a message
+  dropped for its size or the burst limit).
+- **From a status target** (`statusGo.ts`). `sessionControl` is an id like
+  `panelTab`; `statusOpenTarget` turns either into the `AppOpenTarget` the go
+  hands over (§18l).
+- **The composer** (`useComposerSessionControls`). The listener finds the control
+  among the chat's drawn ones (`not_declared` when it is not: undeclared,
+  disabled, another app's, or past the 2-control cap) and its chip
+  (`[data-session-control-key]`, `not_on_screen` when absent), stores the request,
+  anchors on the chip and sets `openSessionControl` only when it differs, so an
+  open of the open control changes no state and nothing remounts. Closing the
+  popover, or leaving the chat, drops the request; an open captured for the chat
+  being switched to survives the switch.
+- **The request store** (`app-sdk/sessionControlRequest.ts`). `{seq, payload,
+  via}` keyed by session key and `<app>:<id>`, read by `useSessionControlRequest()`
+  inside `SessionControlRequestScope`, which `SessionControlHost` wraps around the
+  control. A request stored before the lazy module loaded is read on mount.
+  `via` leaves room for a later source (a key pressed again) without a new shape.
+- **An open wins over its own click.** The popover closes on an outside
+  `mousedown`, which comes before the label click that makes the card ask. A press
+  on a label (`[data-link-preview-scope] [data-link-preview-text]`; a link's click
+  follows the link and never shows a click card) holds the close for
+  `CLICK_GRANT_MS`, then, looking again every 250 ms, while the button is still
+  down (its click, and so its show, has not happened) or `clickOpenTimeLeft()`
+  says a click show may still open something, and closes then only if the
+  request `seq` did not move. The short re-check makes the close follow the
+  frame's real ready, never the worst-case bound. `FrameHost.clickOpenEnd()` is that window: a click or tap show waiting for
+  its frame (`clickPendingUntil`, up to `READY_TIMEOUT_MS`, plus the grant's
+  bound), or a live, unspent grant; `LinkPreviewLayer` registers it with
+  `setClickOpenProbe`. Any later press ends the hold (one in the popover keeps it
+  open), and any other outside press, a link's included, closes at once.
+- **Width.** `contributes.sessionControls[].width`, an int in
+  [`SESSION_CONTROL_DEFAULT_WIDTH` 340, `SESSION_CONTROL_MAX_WIDTH` 396]
+  (`apps/manifest_contributes.py`, mirrored by `SESSION_CONTROL_WIDTH` in
+  `hooks/useSessionControls.ts`), refused at install otherwise (an explicit `0` or
+  `null` too, which would read as absent) and clamped again
+  on read. Drawn only at `innerWidth >= MOBILE_BREAKPOINT` (768); below it the
+  popover keeps 340, and any window clamps to `innerWidth - 16`. The cap is the
+  composer's box at a 768 px window, measured on a test Crew in the default
+  layout (icon rail and chat list showing, no side panel): the composer's glass
+  box runs from x 350 to 746 (396 px) inside a 428 px padded input area, and the
+  chip sits at its left edge, so a 396 popover anchored on the chip lines up with
+  the composer's edges; 480 overhung the chat list by 70 px.
+
+Writers: `website/src/linkPreview/linkPreviewNav.ts`,
+`website/src/linkPreview/linkPreviewFrames.ts`,
+`website/src/linkPreview/linkPreviewProtocol.ts`,
+`website/src/linkPreview/LinkPreviewLayer.tsx`,
+`website/src/pages/chat/page/sessionControls.ts`,
+`website/src/pages/chat/linkPreviewPanelTabs.ts`,
+`website/src/pages/chat/useStatusLinks.ts`, `website/src/shell/topbar/statusGo.ts`,
+`website/src/app-sdk/sessionControlRequest.ts`,
+`website/src/components/SessionControlHost.tsx`,
+`website/src/hooks/useSessionControls.ts`, `apps/app_frame.py`,
+`apps/manifest_contributes.py`, `apps/manifest.py`, `apps/app_sdk_level.py`.
 
 ## 19. Spec Builder's backend is composed by lifecycle owner
 

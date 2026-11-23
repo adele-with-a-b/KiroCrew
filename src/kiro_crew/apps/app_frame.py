@@ -937,6 +937,27 @@ def _resolve_link_preview(name: str, provider_id: str) -> FrameEntry | None:
 # point's own (`website/src/linkPreview/linkPreviewProtocol.ts`), not the shared
 # invocation contract.
 _LINK_PREVIEW_POINT = r"""
+// An open's answer (`opened`), by the number it was sent with. A host that never
+// answers (an older one, a message dropped past the size or burst limit)
+// resolves `no_answer` after 5 s. An id that is not a string of 1 to 128
+// characters (no declaration has one), a payload that is not JSON, or a session
+// control's over 4 KB (`MAX_OPEN_PAYLOAD_BYTES`), is refused here unsent, so it
+// never spends the click that showed the card.
+const opens = new Map();
+let openSeq = 0;
+function openTarget(type, invocation, key, id, payload, maxBytes) {
+  if (typeof id !== 'string' || !id || id.length > 128) return Promise.resolve({ ok: false, reason: 'not_declared' });
+  let copy, json;
+  try { json = JSON.stringify(payload === undefined ? null : payload); copy = JSON.parse(json); } catch (_) { return Promise.resolve({ ok: false, reason: 'not_json' }); }
+  if (maxBytes && new TextEncoder().encode(json).length > maxBytes) return Promise.resolve({ ok: false, reason: 'too_large' });
+  openSeq += 1;
+  const request = openSeq;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { opens.delete(request); resolve({ ok: false, reason: 'no_answer' }); }, 5000);
+    opens.set(request, (r) => { clearTimeout(timer); resolve(r); });
+    send(type, { invocation, [key]: id, payload: copy, request });
+  });
+}
 function cardControls(invocation) {
   return Object.freeze({
     open: () => send('open', { invocation }),
@@ -945,12 +966,11 @@ function cardControls(invocation) {
     pin: (pinned) => send('pin', { invocation, pinned: pinned === true }),
     dragBy: (dx, dy) => send('drag', { invocation, dx: clampNum(dx), dy: clampNum(dy) }),
     dock: (edge) => send('dock', { invocation, edge: edge === 'left' || edge === 'right' ? edge : null }),
-    // This app's own side-panel tab, in the chat this show sat in; `payload` must be JSON.
-    openPanelTab: (tab, payload) => {
-      let copy;
-      try { copy = JSON.parse(JSON.stringify(payload === undefined ? null : payload)); } catch (_) { return; }
-      send('openPanelTab', { invocation, tab: String(tab), payload: copy });
-    },
+    // This app's own side-panel tab, or its own session control (the chip's
+    // popover under the message box), in the chat this show sat in; `payload`
+    // must be JSON. Each resolves `{ ok: true }` or `{ ok: false, reason }`.
+    openPanelTab: (tab, payload) => openTarget('openPanelTab', invocation, 'tab', tab, payload),
+    openSessionControl: (control, payload) => openTarget('openSessionControl', invocation, 'control', control, payload, 4096),
     // Scroll this show's chat to one of its messages (`link.message`'s shape).
     jumpTo: (message) => {
       if (!message || typeof message.ts !== 'string') return;
@@ -998,6 +1018,13 @@ const POINT = {
       }
       case 'leave': call('leave'); return;
       case 'hide': call('hide', String(m.reason || 'other')); return;
+      case 'opened': {
+        const done = opens.get(m.request);
+        if (!done) return;
+        opens.delete(m.request);
+        done(m.ok === true ? { ok: true } : { ok: false, reason: typeof m.reason === 'string' ? m.reason : 'refused' });
+        return;
+      }
       case 'placement':
         if (m.placement === 'above' || m.placement === 'below') call('placement', m.placement);
         return;

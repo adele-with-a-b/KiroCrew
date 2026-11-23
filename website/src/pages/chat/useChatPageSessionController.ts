@@ -37,7 +37,7 @@ import { focusComposer } from './composerFocus'
 import { useLaunchedDraftDiscard } from './useLaunchedDraftDiscard'
 import { PENDING_OPEN_LEASE_MS, resumeStillOpening } from '../../store/chatSlice'
 import { isUntitledSession } from '../../utils/sessionDisplayTitle'
-import { openStatusPanelTab, useStatusLinks } from './useStatusLinks'
+import { openStatusTarget, useStatusLinks } from './useStatusLinks'
 
 /** Read a URL-derived key from the close-hold record without traversing its prototype. */
 export function closeHoldForUrl<T>(closing: Record<string, T>, key: string | null): T | undefined {
@@ -1478,7 +1478,7 @@ export function useChatPageSessionController({
   useStatusLinks({
     statusParam: noUrlSync ? null : searchParams.get('status'),
     activeSlot: noUrlSync ? null : activeSlot,
-    openPanelTab: openStatusPanelTab,
+    open: openStatusTarget,
   })
 
   return {

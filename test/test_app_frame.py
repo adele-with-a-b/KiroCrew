@@ -244,9 +244,23 @@ deliver({ type: 'show', invocation: 4, text: '[R4]', rect, theme: 'light', trigg
   sessionKey: 'dashboard:s', message: { ts: 't', id: 'm', extra: 1 } });
 deliver({ type: 'show', invocation: 5, text: '[R5]', rect, theme: 'light', trigger: 'nudge', placement: 'left', message: { ts: 7 } });
 const [a, b] = shows;
-a.card.openPanelTab('questions', { label: '[R4]', at: new Date(0) });
-a.card.openPanelTab('questions', () => 1);
-a.card.openPanelTab('questions');
+const answers = [
+  a.card.openPanelTab('questions', { label: '[R4]', at: new Date(0) }),
+  a.card.openPanelTab('questions', () => 1),
+  a.card.openPanelTab('questions'),
+  a.card.openSessionControl('questions', { label: '[Q4a]' }),
+  a.card.openSessionControl('questions', { big: 'x'.repeat(5000) }),
+  a.card.openPanelTab(''),
+  a.card.openSessionControl(7),
+  a.card.openSessionControl('x'.repeat(129)),
+];
+// The dashboard answers each numbered open: the first opens, the rest are refused.
+const asked = posted.filter((m) => ['openPanelTab', 'openSessionControl'].includes(m.type));
+deliver({ type: 'opened', request: asked[0].request, ok: true });
+deliver({ type: 'opened', request: asked[1].request, ok: false, reason: 'no_click' });
+deliver({ type: 'opened', request: asked[2].request, ok: false, reason: 'not_declared' });
+deliver({ type: 'opened', request: 999, ok: true });
+const results = await Promise.all(answers);
 a.card.jumpTo(a.message);
 a.card.jumpTo({ ts: 't2', id: 9 });
 a.card.jumpTo(null);
@@ -256,7 +270,9 @@ console.log(JSON.stringify({
   sides,
   a: { trigger: a.trigger, placement: a.placement, message: a.message },
   b: { trigger: b.trigger ?? null, placement: b.placement ?? null, message: b.message ?? null },
-  sent: posted.filter((m) => ['openPanelTab', 'jump'].includes(m.type)).map(({ type, invocation, tab, payload, ts, id }) => ({ type, invocation, tab, payload, ts, id })),
+  sent: posted.filter((m) => ['openPanelTab', 'openSessionControl', 'jump'].includes(m.type)).map(({ type, invocation, tab, control, payload, ts, id }) => ({ type, invocation, tab, control, payload, ts, id })),
+  requests: asked.map((m) => m.request),
+  results,
 }));
 """
 
@@ -264,7 +280,8 @@ console.log(JSON.stringify({
 def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown() -> None:
     """``trigger``, ``placement`` and ``message`` reach the provider read field by field, a
     later ``placement`` reaches its ``placement`` hook, and ``card.openPanelTab`` /
-    ``card.jumpTo`` post JSON for this show only.
+    ``card.openSessionControl`` / ``card.jumpTo`` post JSON for this show only; an
+    open resolves with the dashboard's ``opened`` answer to its own number.
 
     The dashboard checks the tab, the chat and the grant (``linkPreviewFrames.ts``);
     the frame only shapes what it sends.
@@ -285,6 +302,21 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
         check=True,
     )
     result = json.loads(out.stdout.strip().splitlines()[-1])
+    # Each open is numbered, and resolves with the dashboard's answer to that number;
+    # a payload that is not JSON, a control's over 4 KB, or an id no declaration
+    # can have (empty, not a string, over 128 characters) is never sent and
+    # resolves at once.
+    assert result["requests"] == [1, 2, 3]
+    assert result["results"] == [
+        {"ok": True},
+        {"ok": False, "reason": "not_json"},
+        {"ok": False, "reason": "no_click"},
+        {"ok": False, "reason": "not_declared"},
+        {"ok": False, "reason": "too_large"},
+        {"ok": False, "reason": "not_declared"},
+        {"ok": False, "reason": "not_declared"},
+        {"ok": False, "reason": "not_declared"},
+    ]
     assert result["a"] == {
         "trigger": "click",
         "placement": "above",
@@ -300,6 +332,7 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
             "payload": {"label": "[R4]", "at": "1970-01-01T00:00:00.000Z"},
         },
         {"type": "openPanelTab", "invocation": 4, "tab": "questions", "payload": None},
+        {"type": "openSessionControl", "invocation": 4, "control": "questions", "payload": {"label": "[Q4a]"}},
         {"type": "jump", "invocation": 4, "ts": "t", "id": "m"},
         {"type": "jump", "invocation": 4, "ts": "t2"},
     ]

@@ -33,6 +33,12 @@ import { SESSION_CONTROL_STATUS_PATH_RE } from '../lib/sessionControlStatusPath'
  */
 export const MAX_INLINE_SESSION_CONTROLS = 2
 
+/** A control's popover width in CSS px: the default, and the widest an app may
+ *  ask for (`contributes.sessionControls[].width`, desktop windows only). Mirrors
+ *  `SESSION_CONTROL_DEFAULT_WIDTH` / `SESSION_CONTROL_MAX_WIDTH` in
+ *  `apps/manifest_contributes.py`, which refuses any other value at install. */
+export const SESSION_CONTROL_WIDTH = { default: 340, max: 396 } as const
+
 /** Query-key root shared by every status probe. */
 export const SESSION_CONTROL_STATUS_KEY = 'session-control-status'
 
@@ -78,6 +84,8 @@ export interface ResolvedSessionControl {
    * which one `statusPath` is resolved against — see `api.appSessionStatus`.
    */
   processBacked: boolean
+  /** Popover width on a desktop window, in CSS px, within `SESSION_CONTROL_WIDTH`. */
+  width: number
 }
 
 /** Chip state an app may report for the active session. */
@@ -134,6 +142,7 @@ interface AppLike {
         label?: string
         icon?: string
         statusPath?: string
+        width?: number
       }[]
     }
     permissions?: { api?: string[]; events?: string[] }
@@ -143,6 +152,12 @@ interface AppLike {
      */
     backend?: { entryPoint?: string }
   }
+}
+
+/** A declared width, held inside the bounds (a stale manifest is not trusted). */
+function controlWidth(raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return SESSION_CONTROL_WIDTH.default
+  return Math.round(Math.min(SESSION_CONTROL_WIDTH.max, Math.max(SESSION_CONTROL_WIDTH.default, raw)))
 }
 
 /**
@@ -195,6 +210,7 @@ export function resolveSessionControls(apps: AppLike[]): ResolvedSessionControl[
         allowedEvents: Array.isArray(perms.events) ? perms.events : [],
         statusPath: safeStatusPath(ctl.statusPath),
         processBacked: Boolean(app.manifest?.backend?.entryPoint),
+        width: controlWidth(ctl.width),
       })
     }
   }

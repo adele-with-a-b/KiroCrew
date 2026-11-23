@@ -5,38 +5,38 @@
  *    card (`shell/topbar/statusCardRequest.ts`). The URL sync drops the
  *    parameter on its next write, so it opens the card once.
  *  - A status go (`shell/topbar/statusGo.ts`) that switched to this chat hands
- *    its tab request over once the chat is on screen, and ends when the operator
- *    leaves that chat any other way.
+ *    its open request (a side-panel tab or a session control) over once the chat
+ *    is on screen, and ends when the operator leaves that chat any other way.
  *
  * @module pages/chat/useStatusLinks
  */
 import { useEffect, useRef } from 'react'
 
-import { sendLinkPreviewNav } from '../../linkPreview/linkPreviewNav'
+import { sendAppNav, type AppOpenTarget, type OpenRefusal } from '../../linkPreview/linkPreviewNav'
 import { requestStatusCard } from '../../shell/topbar/statusCardRequest'
 import { getActiveStatusGo, parseStatusCardParam, setActiveStatusGo, useActiveStatusGo } from '../../shell/topbar/statusGo'
 
-/** Open `tab` of `appName` in chat `slot` with `arg`; true when the panel took it. */
-export type OpenAppPanelTab = (slot: string, appName: string, tab: string, arg: unknown) => boolean
+/** Open `target` of `appName` in chat `slot` with `arg`: true when the chat took it, else why not. */
+export type OpenAppTarget = (slot: string, appName: string, target: AppOpenTarget, arg: unknown) => true | OpenRefusal
 
 /**
- * The same hand-off a link-preview card's `openPanelTab` uses: the chat page
- * takes it only for the chat on screen and a tab `appName` declares, keeps `arg`
- * for `usePanelTabRequest()`, and reveals the tab.
+ * The same hand-off a link-preview card's open uses: the chat page takes it
+ * only for the chat on screen and a tab or control `appName` declares, keeps
+ * `arg` for `usePanelTabRequest()` / `useSessionControlRequest()`, and opens it.
  */
-export const openStatusPanelTab: OpenAppPanelTab = (slot, appName, tab, arg) =>
-  sendLinkPreviewNav({ kind: 'openPanelTab', slot, appName, tab, payload: arg })
+export const openStatusTarget: OpenAppTarget = (slot, appName, target, arg) =>
+  sendAppNav({ kind: 'open', slot, appName, target, payload: arg, via: 'status' })
 
-/** How often, and for how long, a landed go retries a tab request the panel
- *  could not take yet (its tab list is still loading). */
+/** How often, and for how long, a landed go retries an open the chat could
+ *  not take yet (its tab or app list is still loading). */
 const HANDOFF_RETRY_MS = 200
 const HANDOFF_GIVE_UP_MS = 5_000
 
-export function useStatusLinks({ statusParam, activeSlot, openPanelTab }: {
+export function useStatusLinks({ statusParam, activeSlot, open }: {
   /** The URL's `status` parameter. */
   statusParam: string | null
   activeSlot: string | null
-  openPanelTab: OpenAppPanelTab
+  open: OpenAppTarget
 }): void {
   useEffect(() => {
     const key = parseStatusCardParam(statusParam)
@@ -44,8 +44,8 @@ export function useStatusLinks({ statusParam, activeSlot, openPanelTab }: {
   }, [statusParam])
 
   const go = useActiveStatusGo()
-  const openRef = useRef(openPanelTab)
-  openRef.current = openPanelTab
+  const openRef = useRef(open)
+  openRef.current = open
   useEffect(() => {
     // A closed chat still reopening has not landed yet.
     if (!go || !activeSlot || go.opening) return
@@ -59,14 +59,23 @@ export function useStatusLinks({ statusParam, activeSlot, openPanelTab }: {
     const pending = go.pending
     if (!pending) return
     const started = Date.now()
+    let refusal: OpenRefusal | null = null
     const hand = (): boolean => {
       // A newer go replaced this one: it owns its own hand-off.
       if (getActiveStatusGo() !== go) return true
       if (Date.now() - started > HANDOFF_GIVE_UP_MS) {
+        // Refused for good: the chat stays open alone, and the reason is named
+        // where the app's author looks (the route has no way to be told).
+        // eslint-disable-next-line no-console -- an app's refused open is its author's to see
+        console.warn(`[status go] ${go.appName} could not open ${pending.target.kind} "${pending.target.id}": ${refusal ?? 'not_on_screen'}`)
         setActiveStatusGo({ ...go, pending: null })
         return true
       }
-      if (!openRef.current(go.to, go.appName, pending.tab, pending.arg)) return false
+      const r = openRef.current(go.to, go.appName, pending.target, pending.arg)
+      if (r !== true) {
+        refusal = r
+        return false
+      }
       setActiveStatusGo({ ...go, pending: null })
       return true
     }

@@ -144,6 +144,8 @@ export function SessionControlChips({ sessionControls, shelfCompact, onSessionCo
       // host's outside-click closes the popover and the chip's toggle
       // then re-opens it — a flicker instead of a dismissal.
       data-session-control-chip=""
+      // Which control: an app's open request anchors the popover on this chip.
+      data-session-control-key={sc.key}
       title={chipName}
       aria-label={chipName}
     >

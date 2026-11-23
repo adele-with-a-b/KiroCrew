@@ -3,7 +3,9 @@
 Level 9 adds ``permissions.bots``: an app's backend reaches the Bots the owner ticks
 for it with its app token. Level 10 adds ``POST /api/apps/<app>/status-changed`` and
 the SDK's ``useAppStatusRefresh``: an app has the owner's windows re-read its own
-status routes at once.
+status routes at once. Level 11 adds the session-control open: a link-preview card's
+``card.openSessionControl``, a status target's ``sessionControl``, the SDK's
+``useSessionControlRequest``, and the ``opened`` answer to a card's open.
 """
 
-APP_SDK_LEVEL = 10
+APP_SDK_LEVEL = 11

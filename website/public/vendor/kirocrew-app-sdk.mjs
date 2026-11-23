@@ -29,6 +29,8 @@ export const {
   useStatusGoBack,
   // An app re-reads its own status in every owner window (level 10).
   useAppStatusRefresh,
+  // What this app's session control was opened with by its own card or a status go (level 11).
+  useSessionControlRequest,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.

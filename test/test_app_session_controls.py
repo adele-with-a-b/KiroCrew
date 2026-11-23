@@ -11,6 +11,8 @@ import pytest
 
 from kiro_crew.apps.manifest import (
     MAX_SESSION_CONTROLS_PER_APP,
+    SESSION_CONTROL_DEFAULT_WIDTH,
+    SESSION_CONTROL_MAX_WIDTH,
     AppManifest,
     _normalize_status_path,
 )
@@ -264,3 +266,34 @@ class TestSessionControlStatusPath:
         assert any("kebab-case" in e for e in errs)
         assert any("entryPoint" in e for e in errs)
         assert any("statusPath" in e for e in errs)
+
+
+class TestSessionControlWidth:
+    """``width`` asks for a wider popover on a desktop window, capped by core."""
+
+    def _manifest(self, **ctl):
+        return AppManifest.from_dict(
+            {**BASE, "contributes": {"sessionControls": [{"id": "c", "entryPoint": "dist/c.mjs", **ctl}]}}
+        )
+
+    def test_absent_is_the_default_and_omitted_from_output(self):
+        m = self._manifest()
+        assert m.contributes.sessionControls[0].width == 0
+        assert "width" not in m.to_dict()["contributes"]["sessionControls"][0]
+        assert m.validate(None) == []
+
+    @pytest.mark.parametrize("ok", [SESSION_CONTROL_DEFAULT_WIDTH, 380, SESSION_CONTROL_MAX_WIDTH])
+    def test_a_width_in_bounds_validates_and_round_trips(self, ok):
+        m = self._manifest(width=ok)
+        assert m.validate(None) == []
+        again = AppManifest.from_dict(m.to_dict())
+        assert again.contributes.sessionControls[0].width == ok
+
+    @pytest.mark.parametrize(
+        "bad",
+        [SESSION_CONTROL_DEFAULT_WIDTH - 1, SESSION_CONTROL_MAX_WIDTH + 1, -5, 0, None, True, "396", 380.5, [396]],
+    )
+    def test_anything_else_is_refused_at_install_naming_the_bounds(self, bad):
+        errs = [e for e in self._manifest(width=bad).validate(None) if "width" in e]
+        assert errs, f"expected {bad!r} to be refused"
+        assert f"{SESSION_CONTROL_DEFAULT_WIDTH} to {SESSION_CONTROL_MAX_WIDTH}" in errs[0]

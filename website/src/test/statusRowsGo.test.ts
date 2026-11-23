@@ -116,28 +116,29 @@ describe('?status=<app>:<item>', () => {
   })
 
   it('the chat page hands the URL parameter to the bar', () => {
-    renderHookWithProviders(() => useStatusLinks({ statusParam: 'ref-links:waiting', activeSlot: null, openPanelTab: () => false }))
+    renderHookWithProviders(() => useStatusLinks({ statusParam: 'ref-links:waiting', activeSlot: null, open: () => 'not_on_screen' }))
     expect(takeStatusCardRequest(['ref-links:waiting'])).toBe('ref-links:waiting')
   })
 })
 
 describe('a go landing on its chat', () => {
-  const go = { to: target.sid, from: 'chat-1-1', appName: 'ref-links', pending: { tab: 'questions', arg: target.arg } }
+  const go = { to: target.sid, from: 'chat-1-1', appName: 'ref-links', pending: { target: { kind: 'panelTab' as const, id: 'questions' }, arg: target.arg } }
 
   it('hands its tab request over once, then keeps the way back', () => {
     const open = vi.fn(() => true)
     setActiveStatusGo(go)
-    renderHookWithProviders(() => useStatusLinks({ statusParam: null, activeSlot: target.sid, openPanelTab: open }))
+    renderHookWithProviders(() => useStatusLinks({ statusParam: null, activeSlot: target.sid, open }))
     expect(open).toHaveBeenCalledTimes(1)
-    expect(open).toHaveBeenCalledWith(target.sid, 'ref-links', 'questions', target.arg)
+    expect(open).toHaveBeenCalledWith(target.sid, 'ref-links', { kind: 'panelTab', id: 'questions' }, target.arg)
     expect(getActiveStatusGo()).toEqual({ ...go, pending: null })
   })
 
   it('retries while the panel cannot take it yet, and gives up', () => {
     vi.useFakeTimers()
-    const open = vi.fn(() => false)
+    const open = vi.fn(() => 'not_on_screen' as const)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     setActiveStatusGo(go)
-    renderHookWithProviders(() => useStatusLinks({ statusParam: null, activeSlot: target.sid, openPanelTab: open }))
+    renderHookWithProviders(() => useStatusLinks({ statusParam: null, activeSlot: target.sid, open }))
     act(() => { vi.advanceTimersByTime(1000) })
     expect(open.mock.calls.length).toBeGreaterThan(1)
     act(() => { vi.advanceTimersByTime(5000) })
@@ -145,11 +146,13 @@ describe('a go landing on its chat', () => {
     const calls = open.mock.calls.length
     act(() => { vi.advanceTimersByTime(1000) })
     expect(open.mock.calls.length).toBe(calls)
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
   })
 
   it('ends when another chat is on screen', () => {
     setActiveStatusGo(go)
-    renderHookWithProviders(() => useStatusLinks({ statusParam: null, activeSlot: 'chat-9-9', openPanelTab: () => true }))
+    renderHookWithProviders(() => useStatusLinks({ statusParam: null, activeSlot: 'chat-9-9', open: () => true }))
     expect(getActiveStatusGo()).toBeNull()
   })
 })
