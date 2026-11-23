@@ -75,7 +75,8 @@ export function useCrewModeSwitch({ currentSlot, defaultAgent, hasUserMessage, s
     && (crewModeOn || (currentSlot?.agent_kind !== 'member' && isDefaultAgentName(currentSlot?.agent ?? '', defaultAgent)))
   // The gateway's stamp is read only on a chat that runs Crew Mode: a released
   // chat's birth `created_by` stays, so the birth fields alone would hold it a
-  // worker for good. A child nothing released carries no stamp, as before.
+  // worker for good. The gateway stamps every row it lists: a child still held is
+  // `crew_mode_root: false`, so only the birth fields can make it a root.
   const isRoot = isRootSession(currentSlot) || (crewModeOn && crewModeRoot(currentSlot))
   const taskBoardOffered = (crewModeEligible || crewModeOn) && isRoot
   // The welcome page's Board button: the panel on the Board tab (`workers`), in
