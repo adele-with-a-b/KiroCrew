@@ -29,7 +29,7 @@ import { currentTheme } from '../appFrame/sandboxFrame'
 import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions, type ShowScope } from './linkPreviewFrames'
 import { resolveTextPreview, setLinkPreviewTextPatterns, setTextPatternsOff } from './textPatterns'
 import { readMessageRef, type PreviewLink, type ShowTrigger } from './linkPreviewProtocol'
-import { sendAppNav, sendLinkPreviewNav } from './linkPreviewNav'
+import { sendAppNav, sendLinkPreviewNav, setClickOpenProbe } from './linkPreviewNav'
 
 const HOVER_DELAY_MS = 300
 /** The scope attribute's session key is `dashboard:<slot>` (`MarkdownRenderer`). */
@@ -165,9 +165,12 @@ export default function LinkPreviewLayer() {
       },
     })
     hostRef.current = host
+    // A popover a press on a label would close waits while that click may still open it.
+    const unprobe = setClickOpenProbe(() => host.clickOpenEnd())
     const themeWatch = new MutationObserver(() => host.setTheme(currentTheme()))
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
     return () => {
+      unprobe()
       themeWatch.disconnect()
       host.disposeAll()
       hostRef.current = null

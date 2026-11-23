@@ -108,15 +108,14 @@ class SessionControlContribution:
             label=str(data.get("label", "")),
             icon=str(data.get("icon", "")),
             statusPath=_normalize_status_path(data.get("statusPath", "")),  # noqa: N815
-            width=_session_control_width(data.get("width", 0)),
+            width=_session_control_width(data["width"]) if "width" in data else 0,
         )
 
 
 def _session_control_width(raw: Any) -> int:
-    """A declared ``width`` as an int, or -1 when it is not a plain int (a bool is not)."""
-    if raw is None:
-        return 0
-    return raw if isinstance(raw, int) and not isinstance(raw, bool) else -1
+    """A declared ``width`` as an int, or -1 for anything ``validate`` must refuse:
+    not a plain int (a bool, ``null``), or ``0``, which would read as "absent"."""
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) and raw != 0 else -1
 
 
 # A contributed command's id keys the Command Bar row and its usage record, so the

@@ -50,7 +50,11 @@
  *   its chip's popover under the message box of the chat that show came from,
  *   handing it `payload` (`useSessionControlRequest`). The same rules as
  *   `openPanelTab`, and the same click grant: one click on a link opens ONE
- *   target, a tab or a control, never both.
+ *   target, a tab or a control, never both. A payload over
+ *   `MAX_OPEN_PAYLOAD_BYTES` is answered `too_large`.
+ *   For both opens any tab or control id up to 128 characters is read, so the
+ *   chat page answers a wrong one `not_declared` (the bootstrap answers an
+ *   empty, longer or non-string one so without sending it).
  * - `jump { invocation, ts, id? }` scroll the chat that show came from to one of its
  *   messages and light it, with a Back pill. Only for an app approved for
  *   `sessionKey`, while that chat is on screen, right after a click in the card.
@@ -140,12 +144,15 @@ export type FromFrame =
   | { type: 'openSessionControl'; invocation: number; control: string; payload: unknown; request?: number }
   | { type: 'jump'; invocation: number; target: MessageRef }
 
-/** A `panelTabs[].id`: the slug the manifest allows (`_PANEL_TAB_ID_RE`). */
-const TAB_ID = /^[a-z][a-z0-9_-]{0,63}$/
-/** A `sessionControls[].id`: a kebab slug (`APP_ITEM_ID_RE`), as long as a tab id. */
-const CONTROL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
-/** Longest message `ts` or `mid` a frame may name. */
+/** Longest message `ts` or `mid` a frame may name, and longest tab or control id. */
 const MAX_ID_CHARS = 128
+
+/** A frame's tab or control id: any short string. The chat page compares it with
+ *  the app's own declarations, so a wrong one is answered `not_declared`, never
+ *  dropped unread. */
+function readOpenId(raw: unknown): string | null {
+  return typeof raw === 'string' && raw && raw.length <= MAX_ID_CHARS ? raw : null
+}
 
 /** A frame's `{ ts, id? }`, or null when `ts` is not a short string. */
 export function readMessageRef(ts: unknown, id: unknown): MessageRef | null {
@@ -212,14 +219,14 @@ export function readFrameMessage(data: unknown): FromFrame | null {
       return { type: 'regions', rects }
     }
     case 'openPanelTab': {
-      if (typeof m.tab !== 'string' || !TAB_ID.test(m.tab)) return null
-      const payload = jsonCopy(m.payload)
-      return payload === undefined ? null : { type: 'openPanelTab', invocation, tab: m.tab, payload, ...requestOf(m.request) }
+      const tab = readOpenId(m.tab)
+      const payload = tab === null ? undefined : jsonCopy(m.payload)
+      return tab === null || payload === undefined ? null : { type: 'openPanelTab', invocation, tab, payload, ...requestOf(m.request) }
     }
     case 'openSessionControl': {
-      if (typeof m.control !== 'string' || !CONTROL_ID.test(m.control)) return null
-      const payload = jsonCopy(m.payload)
-      return payload === undefined ? null : { type: 'openSessionControl', invocation, control: m.control, payload, ...requestOf(m.request) }
+      const control = readOpenId(m.control)
+      const payload = control === null ? undefined : jsonCopy(m.payload)
+      return control === null || payload === undefined ? null : { type: 'openSessionControl', invocation, control, payload, ...requestOf(m.request) }
     }
     case 'jump': {
       const target = readMessageRef(m.ts, m.id)

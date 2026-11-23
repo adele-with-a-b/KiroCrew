@@ -12,7 +12,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 import { renderHookWithProviders } from './helpers'
 import { api } from '../api/client'
-import { sendAppNav, type AppOpenTarget } from '../linkPreview/linkPreviewNav'
+import { sendAppNav, setClickOpenProbe, type AppOpenTarget } from '../linkPreview/linkPreviewNav'
 import { CLICK_GRANT_MS } from '../linkPreview/linkPreviewFrames'
 import { useComposerSessionControls } from '../pages/chat/page/sessionControls'
 import {
@@ -193,6 +193,8 @@ describe('SessionControlHost: an open request wins over the outside click that a
   }
   const host = (onClose: () => void) =>
     render(<MemoryRouter><SessionControlHost control={control} session={session} anchorRect={rect} onClose={onClose} /></MemoryRouter>)
+  /** A whole press: the button goes down and comes back up. */
+  const press = (el: Element) => { fireEvent.mouseDown(el); fireEvent.mouseUp(el) }
 
   it('a press on a preview label holds the close; a new open in the bound keeps it mounted, none closes it', () => {
     vi.useFakeTimers()
@@ -200,20 +202,77 @@ describe('SessionControlHost: an open request wins over the outside click that a
     host(onClose)
     const dialog = screen.getByRole('dialog')
     const label = message()
-    fireEvent.mouseDown(label)
+    press(label)
     act(() => { putSessionControlRequest('dashboard:chat-1', KEY, { label: 'Q5b' }, 'link') })
     act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS + 1) })
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog')).toBe(dialog)
-    fireEvent.mouseDown(label)
+    press(label)
     act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS + 1) })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('any other outside press still closes at once', () => {
+  it('any other outside press still closes at once, a press on a chat link too', () => {
     const onClose = vi.fn()
     host(onClose)
     fireEvent.mouseDown(document.body)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    const scope = document.createElement('div')
+    scope.setAttribute('data-link-preview-scope', '')
+    const link = document.createElement('a')
+    link.href = 'https://example.com/'
+    scope.appendChild(link)
+    document.body.appendChild(scope)
+    fireEvent.mouseDown(link)
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('a press back in the popover ends the hold, so it does not close later', () => {
+    vi.useFakeTimers()
+    const onClose = vi.fn()
+    host(onClose)
+    press(message())
+    press(screen.getByRole('dialog'))
+    act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS * 3) })
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('the hold lasts while a click may still open (a card whose frame is loading), and closes soon after it no longer may', () => {
+    vi.useFakeTimers()
+    // The worst-case bound while a frame loads: its ready timeout, then the grant.
+    let end = performance.now() + 13_000
+    const unprobe = setClickOpenProbe(() => end)
+    try {
+      const onClose = vi.fn()
+      host(onClose)
+      press(message())
+      act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS + 1) })
+      expect(onClose).not.toHaveBeenCalled()
+      act(() => { vi.advanceTimersByTime(1_500) })
+      expect(onClose).not.toHaveBeenCalled()
+      // The frame was ready and its card opened nothing: no open is possible any more.
+      end = 0
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      unprobe()
+    }
+  })
+
+  it('a press held past the grant keeps the popover until the button comes up (the click shows the card)', () => {
+    vi.useFakeTimers()
+    const onClose = vi.fn()
+    host(onClose)
+    const label = message()
+    fireEvent.mouseDown(label)
+    act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS + 2_000) })
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.mouseUp(label)
+    act(() => { putSessionControlRequest('dashboard:chat-1', KEY, { label: 'Q5b' }, 'link') })
+    act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS) })
+    expect(onClose).not.toHaveBeenCalled()
+    press(label)
+    act(() => { vi.advanceTimersByTime(CLICK_GRANT_MS + 300) })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

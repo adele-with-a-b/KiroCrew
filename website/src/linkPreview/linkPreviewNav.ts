@@ -27,10 +27,25 @@ export type AppOpenTarget =
  *  - `not_approved`: the owner did not approve this app for `sessionKey`;
  *  - `not_on_screen`: the chat is not the one on screen, or the target's chip is not drawn;
  *  - `not_declared`: this app has no such tab or control in that chat (not
- *    declared, disabled, or past the composer's cap).
- *  The bootstrap adds `no_answer` when a host never answers (an older host, a
- *  dropped message). */
-export type OpenRefusal = 'no_click' | 'not_shown' | 'not_approved' | 'not_on_screen' | 'not_declared'
+ *    declared, disabled, or past the composer's cap);
+ *  - `too_large`: a session control's payload is over `MAX_OPEN_PAYLOAD_BYTES`.
+ *  The bootstrap adds `not_json`, and `no_answer` when a host never answers (an
+ *  older host, a message dropped past the frame's size or burst limit). */
+export type OpenRefusal = 'no_click' | 'not_shown' | 'not_approved' | 'not_on_screen' | 'not_declared' | 'too_large'
+
+/** Largest payload a session control is opened with, as UTF-8 JSON: the same
+ *  4 KB a status target's `arg` keeps. */
+export const MAX_OPEN_PAYLOAD_BYTES = 4096
+
+/** UTF-8 JSON size of `value`, or Infinity when it is not JSON. */
+export function jsonBytes(value: unknown): number {
+  try {
+    const json = JSON.stringify(value === undefined ? null : value)
+    return json === undefined ? Infinity : new TextEncoder().encode(json).length
+  } catch {
+    return Infinity
+  }
+}
 
 export type LinkPreviewNav =
   /** Open `target` of `appName` and hand it `payload`; `via` says who asked (a card's click, a status go). */
@@ -60,6 +75,26 @@ export function sendAppNav(req: LinkPreviewNav): true | OpenRefusal {
     else if (r && !refusal) refusal = r
   }
   return taken ? true : refusal ?? 'not_on_screen'
+}
+
+// How long a click on a link-preview label may still lead to an open: while its
+// show waits for the frame, and then for the click grant's bound. The layer that
+// owns the frames reports it (`FrameHost.clickOpenEnd`); a popover that a press
+// on a label would close holds the close that long, so the open that press
+// asked for wins.
+let clickOpenProbe: (() => number) | null = null
+
+/** Report the end (`performance.now()` time) of the window a label click may still
+ *  open something in; returns the unregister. */
+export function setClickOpenProbe(fn: () => number): () => void {
+  clickOpenProbe = fn
+  return () => { if (clickOpenProbe === fn) clickOpenProbe = null }
+}
+
+/** Milliseconds a label click may still open something in, 0 when none. */
+export function clickOpenTimeLeft(): number {
+  const end = clickOpenProbe?.() ?? 0
+  return Math.max(0, end - performance.now())
 }
 
 /** Hand `req` to the chat page; true when one took it. */

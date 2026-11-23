@@ -33,7 +33,7 @@ import {
   type ShowTrigger,
   type ToFrame,
 } from './linkPreviewProtocol'
-import type { AppOpenTarget, OpenRefusal } from './linkPreviewNav'
+import { MAX_OPEN_PAYLOAD_BYTES, jsonBytes, type AppOpenTarget, type OpenRefusal } from './linkPreviewNav'
 
 export { FRAME_SANDBOX, type Minted } from '../appFrame/sandboxFrame'
 /** Waiting for the module to activate; a frame that has not said `ready` by then failed. */
@@ -107,6 +107,9 @@ export interface PreviewFrame {
   /** The latest show was the host's own click or tap on the link: that show may
    *  open its app's tab once, until `CLICK_GRANT_MS` after `at` (`performance.now()`). */
   clickGrant: { invocation: number; at: number } | null
+  /** A click or tap show is waiting for the frame to be ready: until when, at most
+   *  (`performance.now()`), so a popover holding its close knows an open may come. */
+  clickPendingUntil: number
 }
 
 export interface FrameHostOptions {
@@ -214,7 +217,10 @@ export class FrameHost {
     extra?: { trigger?: ShowTrigger; scope?: ShowScope },
   ): Promise<boolean> {
     const token = this.cancelShow(frame)
+    const asked = extra?.trigger === 'click' || extra?.trigger === 'tap'
+    if (asked) frame.clickPendingUntil = performance.now() + READY_TIMEOUT_MS
     const ok = await frame.ready
+    if (this.showTokens.get(frame) === token) frame.clickPendingUntil = 0
     if (!ok || !frame.el.isConnected || this.showTokens.get(frame) !== token) return false
     frame.anchor = anchor
     frame.toldPlacement = null
@@ -226,7 +232,6 @@ export class FrameHost {
     frame.invocation += 1
     // Only the host's own click or tap handler names these triggers; nothing a
     // frame sends can set one.
-    const asked = extra?.trigger === 'click' || extra?.trigger === 'tap'
     frame.clickGrant = asked ? { invocation: frame.invocation, at: performance.now() } : null
     if (extra?.scope) {
       frame.scopes.set(frame.invocation, extra.scope)
@@ -252,6 +257,7 @@ export class FrameHost {
   /** Invalidate a pending show, and the click grant of the shown one; returns the new token. */
   private cancelShow(frame: PreviewFrame): number {
     frame.clickGrant = null
+    frame.clickPendingUntil = 0
     const next = (this.showTokens.get(frame) ?? 0) + 1
     this.showTokens.set(frame, next)
     return next
@@ -353,7 +359,7 @@ export class FrameHost {
       key, appName, el, state: 'loading', ready, visible: false, pinned: false, moved: false, dock: null,
       left: 0, top: 0, width: DEFAULT_SIZE.width, height: DEFAULT_SIZE.height, anchor: null,
       overlay: false, regions: [], invocation: 0, scopes: new Map(), rate: freshRate(),
-      placement: null, toldPlacement: null, clickGrant: null,
+      placement: null, toldPlacement: null, clickGrant: null, clickPendingUntil: 0,
     }
     const fail = (why: string, cause: FailureCause) => {
       if (frame.state !== 'loading') return
@@ -541,6 +547,19 @@ export class FrameHost {
     return scope.messages ? scope : 'not_approved'
   }
 
+  /** The end (`performance.now()`) of the window a click or tap show may still open
+   *  something in: a show waiting for its frame (then the grant's bound after it),
+   *  or a live, unspent grant. 0 when there is none. */
+  clickOpenEnd(): number {
+    let end = 0
+    for (const frame of this.hover.values()) {
+      if (frame.clickPendingUntil) end = Math.max(end, frame.clickPendingUntil + CLICK_GRANT_MS)
+      const g = frame.clickGrant
+      if (g && g.invocation === frame.invocation) end = Math.max(end, g.at + CLICK_GRANT_MS)
+    }
+    return end
+  }
+
   /** Spend the frame's click grant: true when it was made for `invocation`, the
    *  latest show, no more than `CLICK_GRANT_MS` ago. The first open of that show
    *  (`openPanelTab` or `openSessionControl`) spends it whatever it asks, so one
@@ -573,8 +592,12 @@ export class FrameHost {
       const target: AppOpenTarget = msg.type === 'openPanelTab'
         ? { kind: 'panelTab', id: msg.tab }
         : { kind: 'sessionControl', id: msg.control }
-      const granted = this.takeClickGrant(frame, msg.invocation)
-      const scope = this.openScope(frame, msg.invocation, granted)
+      // A control's payload is capped like a status target's arg. Refused before
+      // the grant is taken, so an oversized ask leaves the click its open (the
+      // bootstrap refuses it before sending; this is for a frame that does not).
+      const tooLarge = target.kind === 'sessionControl' && jsonBytes(msg.payload) > MAX_OPEN_PAYLOAD_BYTES
+      const granted = !tooLarge && this.takeClickGrant(frame, msg.invocation)
+      const scope = tooLarge ? 'too_large' as const : this.openScope(frame, msg.invocation, granted)
       const result = typeof scope === 'string' ? scope
         : scope.slot ? this.opts.onOpen?.(frame.appName, target, msg.payload, scope) ?? 'not_on_screen'
           : 'not_on_screen'

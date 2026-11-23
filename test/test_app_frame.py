@@ -249,6 +249,10 @@ const answers = [
   a.card.openPanelTab('questions', () => 1),
   a.card.openPanelTab('questions'),
   a.card.openSessionControl('questions', { label: '[Q4a]' }),
+  a.card.openSessionControl('questions', { big: 'x'.repeat(5000) }),
+  a.card.openPanelTab(''),
+  a.card.openSessionControl(7),
+  a.card.openSessionControl('x'.repeat(129)),
 ];
 // The dashboard answers each numbered open: the first opens, the rest are refused.
 const asked = posted.filter((m) => ['openPanelTab', 'openSessionControl'].includes(m.type));
@@ -299,12 +303,18 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
     )
     result = json.loads(out.stdout.strip().splitlines()[-1])
     # Each open is numbered, and resolves with the dashboard's answer to that number;
-    # a payload that is not JSON is never sent and resolves at once.
+    # a payload that is not JSON, a control's over 4 KB, or an id no declaration
+    # can have (empty, not a string, over 128 characters) is never sent and
+    # resolves at once.
     assert result["requests"] == [1, 2, 3]
     assert result["results"] == [
         {"ok": True},
         {"ok": False, "reason": "not_json"},
         {"ok": False, "reason": "no_click"},
+        {"ok": False, "reason": "not_declared"},
+        {"ok": False, "reason": "too_large"},
+        {"ok": False, "reason": "not_declared"},
+        {"ok": False, "reason": "not_declared"},
         {"ok": False, "reason": "not_declared"},
     ]
     assert result["a"] == {

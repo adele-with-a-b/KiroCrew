@@ -436,7 +436,7 @@ each replaced field with its old and new value (a WARNING line ending in
 | `contributes.sessionControls[].label` | string | | Accessible name, and the chip's tooltip |
 | `contributes.sessionControls[].icon` | string | | Icon name. Only `Shield`, `Bot`, `Search`, `Tag`, `Users`, `Zap`, `Star`, `Package`, `Cat`, `AudioLines` and `Mic` are rendered; any other name falls back to `Package`. Use `AudioLines` for a control that starts a voice conversation and `Mic` only for voice input: the composer's own dictation button already draws `Mic`, so a conversation chip with that glyph reads as a second dictation button |
 | `contributes.sessionControls[].statusPath` | string | | Optional backend route reporting per-session chip state (see below) |
-| `contributes.sessionControls[].width` | integer | | Optional popover width in CSS px on a desktop window, from 340 (the default) to 396; refused at install outside that range. A window under 768 px wide keeps 340 |
+| `contributes.sessionControls[].width` | integer | | Optional popover width in CSS px on a desktop window, from 340 (the default) to 396; any other value (`0` and `null` included) is refused at install. A window under 768 px wide keeps 340 |
 | `contributes.statusItems[].id` | string | | Item id, kebab-case; addressed as `<appName>:<id>` |
 | `contributes.statusItems[].label` | string | | Accessible name and the detail card's row heading, at most 40 characters, with no control, format or separator character (the zero-width joiners are allowed); never drawn on the pill |
 | `contributes.statusItems[].icon` | string | | Icon name from the app icon set listed under `contributes.panelTabs`; any other name draws the generic panel glyph |
@@ -747,9 +747,12 @@ same payload twice still reads as new; `null` when the person opened the chip by
 hand. It lasts until the popover closes, and a request sent before the module
 loaded is still there when it mounts. An open while the popover is already open
 keeps it mounted (no remount, no lost draft) and only hands over the new payload.
-A press on a link or label a link-preview card answers does not close the popover
-at once: it waits the 3 seconds the card has to open it, and closes then only if
-no open came in. Needs `APP_SDK_LEVEL >= 11`.
+A press on a label a link-preview card answers (a `textPatterns` match) does not
+close the popover at once: it waits 3 seconds, and longer while the button is
+still down or that click's card may still open it (its frame is still loading, or
+its allowance is unspent), and closes soon after, only if no open came in. A press back in the popover ends the wait,
+and any other press outside it, a link included, closes it at once. Needs
+`APP_SDK_LEVEL >= 11`.
 
 **Two caps, and the second one drops.** The backend allows at most **2** controls
 per app. The dashboard renders at most **2** across all apps, and controls past
@@ -1187,7 +1190,7 @@ export function activate(ctx: {
     }
   }): void
   // OpenResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' |
-  //   'not_approved' | 'not_on_screen' | 'not_declared' | 'not_json' | 'no_answer' }
+  //   'not_approved' | 'not_on_screen' | 'not_declared' | 'too_large' | 'not_json' | 'no_answer' }
   leave(): void              // the pointer left the link; the card may hold itself open
   hide(reason: string): void // 'scroll' | 'escape' | 'blur' | 'click' | 'other-provider' | 'disabled'
   theme?(theme: 'dark' | 'light'): void
@@ -1259,15 +1262,20 @@ click in the card:
   `'link'`); see [`contributes.sessionControls`](#contributessessioncontrols--a-per-chat-control-in-the-composer).
   Another app's control, one the app does not declare, or one the composer does
   not draw in that chat is refused. Asking again while the popover is open keeps
-  it open and hands it the new payload.
+  it open and hands it the new payload. The payload is at most 4 KB as JSON, the
+  same cap as a status target's `arg`; a larger one is refused `too_large` before
+  it is sent, so the click's allowance is kept for a smaller open.
 - Both opens resolve with what the dashboard did: `{ ok: true }`, or `{ ok: false,
   reason }`, where `reason` is `no_click` (no click in the card and no allowance
   left: a hover show, a second open, or past the 3 seconds), `not_shown` (the card
   is not showing, or the call is from an earlier show), `not_approved` (no
   approved `sessionKey`), `not_on_screen` (that chat is not on screen, or the
   control's chip is not drawn), `not_declared` (no such tab or control of this app
-  in that chat), `not_json` (the payload is not JSON; nothing was sent) or
-  `no_answer` (no answer within 5 seconds: a dashboard older than level 11).
+  in that chat; a misspelled id reads this too), `too_large` (a session control's
+  payload over 4 KB; nothing was sent), `not_json` (the payload is not JSON;
+  nothing was sent) or `no_answer` (no answer within 5 seconds: a dashboard older
+  than level 11, or a message the dashboard dropped unread for its size or the
+  burst limit below).
 - `card.jumpTo({ ts, id? })` scrolls to that message in the same chat (paging back
   for one not loaded yet, as a `?msg=` link does) and lights it. Any `ts` or `id` of
   that chat may be named (each at most 128 characters); one that is not there shows

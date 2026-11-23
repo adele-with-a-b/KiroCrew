@@ -6207,20 +6207,29 @@ Now one request shape opens either: `AppOpenTarget = {kind: 'panelTab' |
 - **One hand-off** (`linkPreview/linkPreviewNav.ts`). `{kind: 'open', slot,
   appName, target, payload, via: 'link' | 'status'}` goes to every chat-page
   listener through `sendAppNav`, which answers `true` or the first `OpenRefusal`
-  (`no_click`, `not_shown`, `not_approved`, `not_on_screen`, `not_declared`), or
+  (`no_click`, `not_shown`, `not_approved`, `not_on_screen`, `not_declared`,
+  `too_large`), or
   `not_on_screen` when no listener has that chat. The panel-tab listener
   (`pages/chat/linkPreviewPanelTabs.ts`) takes `panelTab`; the composer's
   (`pages/chat/page/sessionControls.ts`) takes `sessionControl`. Each acts only
   for the slot on screen and only on `appName`'s own declarations, so an app opens
   only its own targets. `sendLinkPreviewNav` keeps its boolean for the jump.
 - **From a card** (`linkPreviewFrames.ts`). `openPanelTab` and
-  `openSessionControl` share one path: the target is built, the click grant is
-  taken (the first open of either spends it), then the scope check (`not_shown`,
-  `no_click`, `not_approved`), then the page's answer. A message carrying a
+  `openSessionControl` share one path: a control payload over
+  `MAX_OPEN_PAYLOAD_BYTES` (4 KB, the status `arg` cap) is refused `too_large`
+  before anything else, so it spends no grant; then the target is built, the
+  click grant is taken (the first open of either spends it), then the scope check
+  (`not_shown`, `no_click`, `not_approved`), then the page's answer.
+  `readFrameMessage` reads any tab or control id of 1-128 characters, so a
+  misspelled one reaches the page and is answered `not_declared`, never dropped
+  unread; the bootstrap answers an empty, longer or non-string id `not_declared`
+  without sending it. A message carrying a
   `request` number is answered `opened {request, ok, reason?}`; one without (a
   provider built on an older bootstrap) is not. The bootstrap (`app_frame.py`)
   numbers each open, resolves its Promise with that answer, resolves `not_json`
-  for a payload it cannot serialize without sending it, and `no_answer` after 5 s.
+  for a payload it cannot serialize and `too_large` for a control's over 4 KB
+  without sending either, and `no_answer` after 5 s (an older host, or a message
+  dropped for its size or the burst limit).
 - **From a status target** (`statusGo.ts`). `sessionControl` is an id like
   `panelTab`; `statusOpenTarget` turns either into the `AppOpenTarget` the go
   hands over (§18l).
@@ -6238,14 +6247,23 @@ Now one request shape opens either: `AppOpenTarget = {kind: 'panelTab' |
   control. A request stored before the lazy module loaded is read on mount.
   `via` leaves room for a later source (a key pressed again) without a new shape.
 - **An open wins over its own click.** The popover closes on an outside
-  `mousedown`, which comes before the link click that makes the card ask. A press
-  on a link-preview target (`[data-link-preview-scope] a[href]` or
-  `[data-link-preview-text]`) holds the close for `CLICK_GRANT_MS` and closes then
-  only if the request `seq` did not move; any other outside press closes at once.
+  `mousedown`, which comes before the label click that makes the card ask. A press
+  on a label (`[data-link-preview-scope] [data-link-preview-text]`; a link's click
+  follows the link and never shows a click card) holds the close for
+  `CLICK_GRANT_MS`, then, looking again every 250 ms, while the button is still
+  down (its click, and so its show, has not happened) or `clickOpenTimeLeft()`
+  says a click show may still open something, and closes then only if the
+  request `seq` did not move. The short re-check makes the close follow the
+  frame's real ready, never the worst-case bound. `FrameHost.clickOpenEnd()` is that window: a click or tap show waiting for
+  its frame (`clickPendingUntil`, up to `READY_TIMEOUT_MS`, plus the grant's
+  bound), or a live, unspent grant; `LinkPreviewLayer` registers it with
+  `setClickOpenProbe`. Any later press ends the hold (one in the popover keeps it
+  open), and any other outside press, a link's included, closes at once.
 - **Width.** `contributes.sessionControls[].width`, an int in
   [`SESSION_CONTROL_DEFAULT_WIDTH` 340, `SESSION_CONTROL_MAX_WIDTH` 396]
   (`apps/manifest_contributes.py`, mirrored by `SESSION_CONTROL_WIDTH` in
-  `hooks/useSessionControls.ts`), refused at install otherwise and clamped again
+  `hooks/useSessionControls.ts`), refused at install otherwise (an explicit `0` or
+  `null` too, which would read as absent) and clamped again
   on read. Drawn only at `innerWidth >= MOBILE_BREAKPOINT` (768); below it the
   popover keeps 340, and any window clamps to `innerWidth - 16`. The cap is the
   composer's box at a 768 px window, measured on a test Crew in the default

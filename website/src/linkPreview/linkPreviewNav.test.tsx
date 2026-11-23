@@ -365,16 +365,30 @@ describe('link-preview cards: a click on the span may open the tab once', () => 
 
 describe('linkPreviewProtocol: openPanelTab and jump', () => {
   const t = { [APP_FRAME_TAG]: 1 }
-  it('reads a tab slug and a JSON copy of the payload, and nothing else', () => {
+  it('reads any short tab id and a JSON copy of the payload, and nothing else', () => {
     const payload = { a: [1, 'x'] }
     const read = readFrameMessage({ ...t, type: 'openPanelTab', invocation: 3, tab: 'questions', payload })
     expect(read).toEqual({ type: 'openPanelTab', invocation: 3, tab: 'questions', payload })
     expect(read && 'payload' in read && read.payload).not.toBe(payload)
     expect(readFrameMessage({ ...t, type: 'openPanelTab', invocation: 3, tab: 'questions' })).toMatchObject({ payload: null })
-    for (const tab of ['app:other:tab', 'Questions', '', 'x'.repeat(65), 7]) {
+    // A misspelled or foreign id is read, so the chat page answers it not_declared.
+    for (const tab of ['app:other:tab', 'Questions', '1tab', 'x'.repeat(128)]) {
+      expect(readFrameMessage({ ...t, type: 'openPanelTab', invocation: 3, tab, request: 4 })).toEqual({ type: 'openPanelTab', invocation: 3, tab, payload: null, request: 4 })
+    }
+    for (const tab of ['', 'x'.repeat(129), 7]) {
       expect(readFrameMessage({ ...t, type: 'openPanelTab', invocation: 3, tab })).toBeNull()
     }
     expect(readFrameMessage({ ...t, type: 'openPanelTab', invocation: 3, tab: 'q', payload: 10n })).toBeNull()
+  })
+
+  it('reads any short control id, so a wrong one is answered not_declared rather than dropped', () => {
+    for (const control of ['Questions', 'my_control', 'x'.repeat(128)]) {
+      expect(readFrameMessage({ ...t, type: 'openSessionControl', invocation: 3, control, payload: 1, request: 2 }))
+        .toEqual({ type: 'openSessionControl', invocation: 3, control, payload: 1, request: 2 })
+    }
+    for (const control of ['', 'x'.repeat(129), 7]) {
+      expect(readFrameMessage({ ...t, type: 'openSessionControl', invocation: 3, control, payload: 1 })).toBeNull()
+    }
   })
 
   it('reads a jump as a short ts and an optional short id', () => {

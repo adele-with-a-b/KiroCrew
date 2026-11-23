@@ -29,13 +29,17 @@ import { useDocumentImeLatch } from '../hooks/useImeGuard'
 import { AppApiProvider } from '../app-sdk'
 import { SessionControlRequestScope, sessionControlRequestSeq } from '../app-sdk/sessionControlRequest'
 import { CLICK_GRANT_MS } from '../linkPreview/linkPreviewFrames'
+import { clickOpenTimeLeft } from '../linkPreview/linkPreviewNav'
 import { i18nT } from '../i18n/t'
 import { SESSION_CONTROL_WIDTH, type ResolvedSessionControl } from '../hooks/useSessionControls'
 import { MOBILE_BREAKPOINT } from '../hooks/useIsMobile'
 import { withBase } from '@/lib/basePath'
 
-/** What a link-preview card answers in a chat message: a link, or a matched label. */
-const LINK_PREVIEW_TARGET = '[data-link-preview-scope] a[href], [data-link-preview-scope] [data-link-preview-text]'
+/** A matched label in a chat message: a click on one shows its card, which may
+ *  open this popover (a link's click follows the link, and never does). */
+const LINK_PREVIEW_LABEL = '[data-link-preview-scope] [data-link-preview-text]'
+/** How often a held close looks again whether a label press may still open. */
+const HOLD_RECHECK_MS = 250
 
 // ---------------------------------------------------------------------------
 // Session identity handed to the control
@@ -173,13 +177,17 @@ export default function SessionControlHost({
   // while its Crew is hidden behind a remote one (components/overlayRoot): closing
   // discards the draft, and those keys belong to the Crew in front.
   const crewHidden = useLocalCrewHidden()
-  // A press on a link or label a link-preview card answers may be the person
-  // asking this app to open this popover again: the card's open arrives after
-  // the click has shown it. So that press holds the close for the click
-  // grant's bound (`CLICK_GRANT_MS`), and the popover closes then only if no
-  // new open came in: an open request wins, and the control is never
-  // unmounted between two of them. Refs, since `onClose` is new every render.
+  // A press on a label a link-preview card answers may be the person asking
+  // this app to open this popover again: the card's open arrives after the
+  // click has shown it, and the show may first wait for its frame. So that press
+  // holds the close for `CLICK_GRANT_MS`, then, looking every
+  // `HOLD_RECHECK_MS`, while the button is still down or a click show may
+  // still open something (`clickOpenTimeLeft`), and closes only if no new open
+  // came in: an open request wins, and the control is never unmounted between
+  // two of them. Any later press (in the popover, on its chip) ends the hold.
+  // Refs, since `onClose` is new every render.
   const hold = useRef<number | undefined>(undefined)
+  const pressing = useRef(false)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
   useEffect(() => () => window.clearTimeout(hold.current), [])
@@ -187,17 +195,26 @@ export default function SessionControlHost({
     if (crewHidden) return
     const onDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null
+      window.clearTimeout(hold.current)
       // The triggering chip is not "outside". mousedown fires before click, so
       // closing here would let the chip's own toggle re-open it — clicking an
       // open chip would flicker rather than dismiss.
       if (target?.closest?.('[data-session-control-chip]')) return
       if (!popRef.current || popRef.current.contains(e.target as Node)) return
-      window.clearTimeout(hold.current)
-      if (target?.closest?.(LINK_PREVIEW_TARGET)) {
+      if (target?.closest?.(LINK_PREVIEW_LABEL)) {
         const seen = sessionControlRequestSeq(session.sessionKey, control.key)
-        hold.current = window.setTimeout(() => {
-          if (sessionControlRequestSeq(session.sessionKey, control.key) === seen) closeRef.current()
-        }, CLICK_GRANT_MS)
+        pressing.current = true
+        const wait = (ms: number) => {
+          hold.current = window.setTimeout(() => {
+            if (sessionControlRequestSeq(session.sessionKey, control.key) !== seen) return
+            // The button still down: the click, and so its show, has not
+            // happened yet. Otherwise look again soon while a show may still
+            // open something, so the close follows the frame's real ready.
+            if (pressing.current || clickOpenTimeLeft() > 0) wait(HOLD_RECHECK_MS)
+            else closeRef.current()
+          }, ms)
+        }
+        wait(CLICK_GRANT_MS)
         return
       }
       onClose()
@@ -212,10 +229,13 @@ export default function SessionControlHost({
       if (!imeLatch.claimKey(e)) return
       onClose()
     }
+    const onUp = () => { pressing.current = false }
     document.addEventListener('mousedown', onDown)
+    document.addEventListener('mouseup', onUp, true)
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('mouseup', onUp, true)
       document.removeEventListener('keydown', onKey)
     }
   }, [onClose, imeLatch, crewHidden, session.sessionKey, control.key])

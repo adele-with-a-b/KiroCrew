@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { FrameHost, type PreviewFrame, type ShowScope } from './linkPreviewFrames'
+import { CLICK_GRANT_MS, FrameHost, type PreviewFrame, type ShowScope } from './linkPreviewFrames'
 import type { FromFrame, ShowTrigger } from './linkPreviewProtocol'
 import { installFrameWindows, sentTo } from '../test/LinkPreviewFramesTestUtils'
 
@@ -202,6 +202,36 @@ describe('FrameHost: the click grant opens one target, a tab or a session contro
     expect(sentTo(other.el).filter((m) => m.type === 'opened')).toEqual([expect.objectContaining({ request: 3, ok: false, reason: 'not_declared' })])
     refusing.disposeAll()
     expect(opened).toEqual([])
+  })
+
+  it('a control payload over 4 KB is refused too_large and leaves the click its open', async () => {
+    const frame = await readyFrame()
+    await showOpen(frame, 'click')
+    host.handle(frame, { type: 'openSessionControl', invocation: frame.invocation, control: 'questions', payload: 'x'.repeat(4096), request: 1 })
+    askControl(frame, 2)
+    expect(answers(frame)).toEqual([
+      expect.objectContaining({ request: 1, ok: false, reason: 'too_large' }),
+      expect.objectContaining({ request: 2, ok: true }),
+    ])
+    expect(opened).toEqual([['refs-app', CONTROL, { label: '[Q4a]' }, SCOPE]])
+  })
+
+  it('says how long a click may still open something: while its frame loads, then the grant', async () => {
+    expect(host.clickOpenEnd()).toBe(0)
+    const frame = host.hoverFrame(KEY, 'refs-app')
+    const shown = host.show(frame, { text: '[Q4a]' }, rect(50), undefined, { trigger: 'click', scope: SCOPE })
+    const loading = host.clickOpenEnd()
+    expect(loading).toBeGreaterThan(performance.now() + CLICK_GRANT_MS)
+    host.handle(frame, { type: 'ready' })
+    await shown
+    const granted = host.clickOpenEnd()
+    expect(granted).toBeLessThanOrEqual(performance.now() + CLICK_GRANT_MS)
+    expect(granted).toBeGreaterThan(performance.now())
+    host.handle(frame, { type: 'open', invocation: frame.invocation })
+    askControl(frame, 1)
+    expect(host.clickOpenEnd()).toBe(0)
+    await host.show(frame, { text: '[Q4a]' }, rect(50), undefined, { trigger: 'hover', scope: SCOPE })
+    expect(host.clickOpenEnd()).toBe(0)
   })
 
   it('an open with no request number is not answered (a card built before level 11)', async () => {
