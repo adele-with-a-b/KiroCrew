@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 
 import ErrorNotice from '../../components/ErrorNotice'
+import { KeyCapSequence } from '../../components/ShortcutsModal'
 import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover'
 import { appIcon } from '../../apps/appIcons'
 import { useAppStatusItems, type StatusItemGroup, type StatusItemReading, type StatusItemTone } from '../../hooks/useAppStatusItems'
+import { formatChordCaps, useShortcutBindings } from '../../hooks/useKeyboardShortcuts'
+import { useShortcutsEnabled } from '../../hooks/useNavShortcutHint'
 import { fmtList, fmtRelative } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 import { errMessage } from '../../utils/thunkError'
+import { takeStatusCardRequest, usePendingStatusCard } from './statusCardRequest'
+import { setPrimaryStatusGo, useStatusGo, type StatusGo, type StatusRow, type StatusTarget } from './statusGo'
 
 /**
  * App-contributed top-bar readouts (`contributes.statusItems`): small pills on
@@ -18,6 +23,12 @@ import { errMessage } from '../../utils/thunkError'
  * answered (`{text, tone, tooltip}`) inside host chrome: the icon comes from the
  * fixed app icon set, the colour from one of four tones, and the label from the
  * manifest. An app cannot draw its own markup here.
+ *
+ * An answer may also list places (`heading`, `rows[]`) and one primary `go`.
+ * The card then draws them as a list a tap goes to, oldest or most urgent
+ * first as the app orders them, with the go button under it; the global
+ * `status-go` key fires the first item's go in bar order. Where a target goes
+ * is `statusGo.ts`.
  */
 
 /** Theme token each tone tints with. `muted` draws the plain elevated chip. */
@@ -96,6 +107,94 @@ function CardRow({ reading }: { reading: StatusItemReading }) {
   )
 }
 
+type GoTo = (appName: string, target: StatusTarget) => void
+
+/** One listed place: the lead in the item's tone, the name, then the line under it. */
+function PlaceRow({ row, icon, onGo }: { row: StatusRow; icon: string; onGo: (() => void) | null }) {
+  const style = { '--c': TONE_VAR[row.tone] } as CSSProperties
+  const body = (
+    <>
+      <span
+        style={style}
+        data-tone={row.tone}
+        className={`row-span-2 self-start mt-px inline-flex items-center gap-1 h-5 px-1.5 rounded-full border text-[11px] font-semibold tabular-nums whitespace-nowrap text-[var(--c)] [&_svg]:size-3 ${row.tone === 'muted' ? 'bg-bg-elevated border-border' : 'bg-[color-mix(in_srgb,var(--c)_14%,var(--bg-elevated))] border-[var(--c)]'}`}
+      >
+        <span aria-hidden="true" className="inline-flex">{appIcon(icon)}</span>
+        {row.lead && <span>{row.lead}</span>}
+      </span>
+      {row.text && <span className="min-w-0 truncate font-semibold text-text-strong">{row.text}</span>}
+      {row.detail && <span className="col-start-2 min-w-0 line-clamp-2 break-words text-[12px] text-muted">{row.detail}</span>}
+    </>
+  )
+  const layout = 'grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 w-full items-center text-left rounded-[var(--radius-md)] px-1.5 py-1.5'
+  if (!onGo) return <div className={layout} data-testid="app-status-place">{body}</div>
+  return (
+    <button
+      type="button"
+      data-testid="app-status-place"
+      className={`${layout} bg-transparent border-none cursor-pointer hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent`}
+      onClick={onGo}
+    >
+      {body}
+    </button>
+  )
+}
+
+/** The key that fires the primary go, as caps, while it is on and bound. */
+function useStatusGoCaps(): string[] | null {
+  const enabled = useShortcutsEnabled()
+  const chord = useShortcutBindings()['status-go']?.primary ?? null
+  return enabled && chord ? formatChordCaps(chord, 'status-go') : null
+}
+
+/** The go button, with its key on the computer. */
+function GoButton({ go, keyCaps, onGo }: { go: StatusGo; keyCaps: string[] | null; onGo: () => void }) {
+  return (
+    <button
+      type="button"
+      data-testid="app-status-go"
+      className="inline-flex shrink-0 items-center gap-1.5 h-7 px-3 rounded-[var(--radius-md)] border-none bg-accent text-accent-fg text-[12px] font-semibold cursor-pointer hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      onClick={onGo}
+    >
+      <span>{go.label || i18nT('app.status_item_go')}</span>
+      {keyCaps && <span aria-hidden="true" className="flex items-center gap-0.5 [&_kbd]:h-5 [&_kbd]:min-w-[20px] [&_kbd]:text-[11px]"><KeyCapSequence caps={keyCaps} plus /></span>}
+    </button>
+  )
+}
+
+/** A reading that lists places: heading, the rows, then its note and the go. */
+function PlacesBlock({ reading, keyCaps, goTo, size }: { reading: StatusItemReading; keyCaps: string[] | null; goTo: GoTo; size: 'md' | 'sm' }) {
+  const v = reading.value!
+  const { appName, icon } = reading.item
+  const goButton = v.go && <GoButton go={v.go} keyCaps={keyCaps} onGo={() => goTo(appName, v.go!.target)} />
+  // On the phone the go sits by the heading, in reach of the thumb before the
+  // list; on a computer it closes the card, with its key.
+  const goOnTop = size === 'sm' && !!goButton
+  return (
+    <div className="my-1" data-testid="app-status-places">
+      {(v.heading || goOnTop) && (
+        <div className="flex items-center justify-between gap-2 px-1.5 pt-0.5 pb-1.5">
+          <span className="min-w-0 font-semibold text-text-strong">{v.heading}</span>
+          {goOnTop && goButton}
+        </div>
+      )}
+      {v.rows.map((row, i) => (
+        <PlaceRow key={i} row={row} icon={icon} onGo={row.target ? () => goTo(appName, row.target!) : null} />
+      ))}
+      {(v.tooltip || (v.go && !goOnTop)) && (
+        <div className="flex items-center justify-between gap-2 px-1.5 pt-2">
+          <span className="min-w-0 text-[12px] text-muted">{v.tooltip}</span>
+          {!goOnTop && goButton}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function hasPlaces(r: StatusItemReading): boolean {
+  return !!r.value && (r.value.rows.length > 0 || !!r.value.heading || !!r.value.go)
+}
+
 /** Clock for "Updated N s ago": ticks only while the card is open. */
 function useNowWhile(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -108,7 +207,7 @@ function useNowWhile(active: boolean): number {
   return now
 }
 
-function AppStatusButton({ groups, size }: { groups: StatusItemGroup[]; size: 'md' | 'sm' }) {
+function AppStatusButton({ groups, size, goTo }: { groups: StatusItemGroup[]; size: 'md' | 'sm'; goTo: GoTo }) {
   const [open, setOpen] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // A hover-opened card is a glance: it neither takes focus on open nor hands it
@@ -135,6 +234,25 @@ function AppStatusButton({ groups, size }: { groups: StatusItemGroup[]; size: 'm
     closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_MS)
   }
   const readings = groups.flatMap(g => g.readings)
+  // The phone has no key to teach.
+  const goCaps = useStatusGoCaps()
+  const keyCaps = size === 'md' ? goCaps : null
+  // `/chat?status=<app>:<item>` asks for this card. It opens once that item has
+  // something to show; a click open, so focus moves into the card.
+  const pending = usePendingStatusCard()
+  const keys = readings.map(r => r.item.key).join('\n')
+  useEffect(() => {
+    if (!pending || !takeStatusCardRequest(keys.split('\n'))) return
+    cancelClose()
+    viaHover.current = false
+    setOpen(true)
+  }, [pending, keys])
+  const go: GoTo = (appName, target) => {
+    cancelClose()
+    setOpen(false)
+    goTo(appName, target)
+  }
+  const wide = readings.some(hasPlaces)
   // `short`, not `narrow`: a narrow unit list joins with a bare space (or with
   // nothing, in ja), which runs "label: value" pairs together when read aloud.
   const label = fmtList(
@@ -167,7 +285,7 @@ function AppStatusButton({ groups, size }: { groups: StatusItemGroup[]; size: 'm
       <PopoverContent
         align="end"
         sideOffset={6}
-        className="w-[300px] max-w-[calc(100vw-1rem)] rounded-[var(--radius-lg)] border-border-strong px-3.5 py-3 text-[13px] shadow-lg"
+        className={`${wide ? 'w-[400px]' : 'w-[300px]'} max-w-[calc(100vw-1rem)] rounded-[var(--radius-lg)] border-border-strong px-3.5 py-3 text-[13px] shadow-lg`}
         data-testid="app-status-card"
         aria-label={cardName}
         onPointerEnter={hoverOpen}
@@ -184,7 +302,9 @@ function AppStatusButton({ groups, size }: { groups: StatusItemGroup[]; size: 'm
             <div className="flex items-center gap-1.5 mb-1">
               {g.readings.map(r => <Pill key={r.item.key} reading={r} size="md" />)}
             </div>
-            {g.readings.map(r => <CardRow key={r.item.key} reading={r} />)}
+            {g.readings.map(r => hasPlaces(r)
+              ? <PlacesBlock key={r.item.key} reading={r} keyCaps={keyCaps} goTo={go} size={size} />
+              : <CardRow key={r.item.key} reading={r} />)}
           </section>
         ))}
         {updatedAt > 0 && (
@@ -203,6 +323,18 @@ function AppStatusButton({ groups, size }: { groups: StatusItemGroup[]; size: 'm
  */
 export default function AppStatusItems({ size = 'md' }: { size?: 'md' | 'sm' }) {
   const groups = useAppStatusItems()
+  const goTo = useStatusGo()
+  // The go the key fires: the first item's, in bar order, that offers one.
+  const first = groups.flatMap(g => g.readings).find(r => r.value?.go)
+  const primaryApp = first?.item.appName ?? null
+  const primaryTarget = first?.value?.go?.target ?? null
+  const primaryKey = primaryTarget ? JSON.stringify(primaryTarget) : ''
+  useEffect(() => {
+    if (!primaryApp || !primaryTarget) return
+    return setPrimaryStatusGo(() => goTo(primaryApp, primaryTarget))
+    // `primaryKey` stands for the target: a new poll answer is a new object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goTo, primaryApp, primaryKey])
   if (groups.length === 0) return null
   return (
     // Shrinkable, and the pills' values truncate, so the row gives way before
@@ -211,7 +343,7 @@ export default function AppStatusItems({ size = 'md' }: { size?: 'md' | 'sm' }) 
     // once the last rung leaves the group too wide. On the phone it takes at
     // most 65% of the centre cell, the title keeping the rest.
     <div className={`flex items-center gap-1.5 min-w-0 overflow-hidden${size === 'sm' ? ' max-w-[65%]' : ''}`} data-testid="app-status-items-bar">
-      <AppStatusButton groups={groups} size={size} />
+      <AppStatusButton groups={groups} size={size} goTo={goTo} />
     </div>
   )
 }

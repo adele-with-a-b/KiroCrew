@@ -342,7 +342,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Aktualisiert {{ago}}",
     "status_item_unknown_value": "Unbekannt",
-    "status_item_failed": "{{label}} konnte nicht gelesen werden"
+    "status_item_failed": "{{label}} konnte nicht gelesen werden",
+    "status_item_go": "Los"
   },
   "appSdk": {
     "chatSession": {
@@ -11513,6 +11514,7 @@
       "walk_back_mru_history": "MRU-Verlauf zurückgehen",
       "stop_speaking": "Vorlesen stoppen",
       "toggle_focus_mode": "Fokusmodus umschalten",
+      "status_go": "Dorthin gehen, wohin die Statusleiste zeigt",
       "toggle_left_sidebar": "Linke Seitenleiste umschalten",
       "toggle_session_panel": "Sitzungsbereich umschalten",
       "toggle_side_panel": "Seitenpanel umschalten",
@@ -12588,6 +12590,9 @@
       "topic": "Thema"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "Zurück zu {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "Nur der Dashboard-Besitzer kann Projekt-Hooks ändern. Melde dich als Besitzer an und versuche es erneut.",
         "err_full": "Crew hat die höchste Zahl an Ordnerentscheidungen gespeichert, daher wurde diese nicht gespeichert. Entferne alte Einträge aus project_hooks_consent.json und versuche es erneut.",

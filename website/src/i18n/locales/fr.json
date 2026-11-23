@@ -357,7 +357,8 @@
     "status_item_reading": "{{label}}\u202f: {{value}}",
     "status_item_updated": "Mis à jour {{ago}}",
     "status_item_unknown_value": "Inconnu",
-    "status_item_failed": "Impossible de lire {{label}}"
+    "status_item_failed": "Impossible de lire {{label}}",
+    "status_item_go": "Y aller"
   },
   "appSdk": {
     "chatSession": {
@@ -11771,6 +11772,7 @@
       "walk_back_mru_history": "Remonter l’historique MRU",
       "stop_speaking": "Arrêter la lecture",
       "toggle_focus_mode": "Activer/désactiver le mode concentration",
+      "status_go": "Aller là où pointe la barre d’état",
       "toggle_left_sidebar": "Afficher/masquer la barre latérale gauche",
       "toggle_session_panel": "Afficher/masquer le panneau de sessions",
       "toggle_side_panel": "Afficher/masquer le panneau latéral",
@@ -12863,6 +12865,9 @@
       "topic": "Sujet"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "Revenir à {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "Seul le propriétaire du tableau de bord peut modifier les hooks du projet. Connecte-toi en tant que propriétaire, puis réessaie.",
         "err_full": "Crew a enregistré le nombre maximal de choix de dossier, donc celui-ci n'a pas été enregistré. Supprime d'anciennes entrées de project_hooks_consent.json, puis réessaie.",

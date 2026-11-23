@@ -357,7 +357,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Atualizado {{ago}}",
     "status_item_unknown_value": "Desconhecido",
-    "status_item_failed": "Não foi possível ler {{label}}"
+    "status_item_failed": "Não foi possível ler {{label}}",
+    "status_item_go": "Ir"
   },
   "appSdk": {
     "chatSession": {
@@ -11771,6 +11772,7 @@
       "walk_back_mru_history": "Voltar no histórico MRU",
       "stop_speaking": "Parar de falar",
       "toggle_focus_mode": "Alternar o modo de foco",
+      "status_go": "Ir para onde a barra de status aponta",
       "toggle_left_sidebar": "Alternar barra lateral esquerda",
       "toggle_session_panel": "Alternar painel de sessões",
       "toggle_side_panel": "Alternar painel lateral",
@@ -12863,6 +12865,9 @@
       "topic": "Assunto"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "Voltar para {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "Só o proprietário do painel pode alterar os hooks do projeto. Entre como proprietário e tente de novo.",
         "err_full": "O Crew já salvou o máximo de escolhas de pasta, então esta não foi salva. Remova entradas antigas de project_hooks_consent.json e tente de novo.",

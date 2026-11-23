@@ -44,6 +44,7 @@ import { isEditableTarget } from '../utils/editableTarget'
 import { closeShownCrewWindow, crewWindowShown } from '../pages/chat/crew-window/crewWindowStore'
 import { stepTurn } from '../pages/chat/turnStep'
 import { noteEscapeStoppedSpeech } from '../utils/speechStopKey'
+import { firePrimaryStatusGo } from '../shell/topbar/statusGo'
 
 /** Shortcuts scoped to the session on screen (see the crew-window guard). */
 const CREW_WINDOW_SCOPED: ReadonlySet<string> = new Set([
@@ -302,6 +303,7 @@ export const SHORTCUT_LABEL_KEY: Record<string, string> = {
   'cycle-model': 'hooks.useKeyboardShortcuts.cycle_model',
   'cycle-prev-model': 'hooks.useKeyboardShortcuts.previous_model',
   'toggle-focus-mode': 'hooks.useKeyboardShortcuts.toggle_focus_mode',
+  'status-go': 'hooks.useKeyboardShortcuts.status_go',
   // Reused: the chat header button this chord fires.
   'pop-out-session': 'pages.chatPage.pop_out_session_to_its_own_window',
   // Reused: the ChatInput control this chord fires.
@@ -1035,6 +1037,9 @@ export function useKeyboardShortcuts({ onToggleShortcutsModal, onNewChat, onCycl
         'cycle-model': () => onCycleModel?.(),
         'cycle-prev-model': () => onCyclePrevModel?.(),
         'toggle-focus-mode': () => onToggleFocusMode?.(),
+        // Claimed with no go on offer so ⌥⇧G never types ˝ into the draft, as
+        // reject-approval does. A held chord's auto-repeat is not another press.
+        'status-go': () => { if (!e.repeat) firePrimaryStatusGo() },
         // ⌘O / Ctrl+O: the chat header's pop-out button, for the active
         // session. A held chord's auto-repeat is not another press.
         'pop-out-session': () => { if (!e.repeat) onPopOutSession?.() },

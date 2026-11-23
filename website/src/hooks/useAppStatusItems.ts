@@ -14,6 +14,14 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { safeStatusPath } from './useSessionControls'
+import {
+  cleanStatusText,
+  MAX_STATUS_HEADING,
+  normalizeStatusGo,
+  normalizeStatusRows,
+  type StatusGo,
+  type StatusRow,
+} from '../shell/topbar/statusGo'
 
 /** Hard cap on status items DRAWN across ALL apps.
  *
@@ -38,7 +46,7 @@ export const STATUS_ITEM_POLL_MS = 60_000
 /** Query-key root shared by every status-item probe. */
 export const APP_STATUS_ITEM_KEY = 'app-status-item'
 
-/** Longest pill text drawn, in code points. The pill shares a row with the
+/** Longest pill text drawn, in grapheme clusters. The pill shares a row with the
  *  readout capsule, so the value must stay a glance: `54m`, `↓ 38m left`. */
 export const MAX_STATUS_TEXT = 24
 
@@ -69,6 +77,12 @@ export interface StatusItemValue {
   text: string
   tone: StatusItemTone
   tooltip: string
+  /** The card's line over the rows ("3 questions waiting"); empty = none. */
+  heading: string
+  /** Places the card lists, each optionally a way to go there. */
+  rows: StatusRow[]
+  /** The one primary place to go, which the go key fires; null = none. */
+  go: StatusGo | null
 }
 
 interface AppLike {
@@ -105,7 +119,7 @@ export function resolveStatusItems(apps: AppLike[]): ResolvedStatusItem[] {
     for (const item of declared) {
       if (!item || typeof item !== 'object') continue
       const id = typeof item.id === 'string' ? item.id : ''
-      const label = cleanText(item.label, Infinity)
+      const label = cleanStatusText(item.label, Infinity)
       const statusPath = safeStatusPath(item.statusPath)
       // All three are required server-side. Without a route there is no value to
       // draw, and without a label the pill has no accessible name.
@@ -133,22 +147,6 @@ export function resolveStatusItems(apps: AppLike[]): ResolvedStatusItem[] {
   return out
 }
 
-/** Strip what could reorder or hide text (the Unicode C category and the
- *  line/paragraph separators), keeping the zero-width joiner and non-joiner
- *  that Bengali, Hindi and emoji sequences need, then cap at `max` grapheme
- *  clusters so a character never splits. */
-const STRIP = /(?![\u200c\u200d])[\p{C}\p{Zl}\p{Zp}]/gu
-const graphemes = typeof Intl !== 'undefined' && 'Segmenter' in Intl
-  ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-  : null
-function cleanText(raw: unknown, max: number): string {
-  if (typeof raw !== 'string') return ''
-  const text = raw.replace(STRIP, '').trim()
-  if (!Number.isFinite(max)) return text
-  const parts = graphemes ? Array.from(graphemes.segment(text), g => g.segment) : Array.from(text)
-  return parts.slice(0, max).join('')
-}
-
 /**
  * Normalize one route answer, or `null` when it has nothing to draw.
  *
@@ -157,11 +155,18 @@ function cleanText(raw: unknown, max: number): string {
  * "nothing worth showing" that way, rather than with a blank pill.
  */
 export function normalizeStatusItemValue(raw: unknown): StatusItemValue | null {
-  const r = (raw ?? {}) as { text?: unknown; tone?: unknown; tooltip?: unknown }
-  const text = cleanText(r.text, MAX_STATUS_TEXT)
+  const r = (raw ?? {}) as { text?: unknown; tone?: unknown; tooltip?: unknown; heading?: unknown; rows?: unknown; go?: unknown }
+  const text = cleanStatusText(r.text, MAX_STATUS_TEXT)
   if (!text) return null
   const tone = typeof r.tone === 'string' && KNOWN_TONES.has(r.tone) ? (r.tone as StatusItemTone) : 'muted'
-  return { text, tone, tooltip: cleanText(r.tooltip, MAX_STATUS_TOOLTIP) }
+  return {
+    text,
+    tone,
+    tooltip: cleanStatusText(r.tooltip, MAX_STATUS_TOOLTIP),
+    heading: cleanStatusText(r.heading, MAX_STATUS_HEADING),
+    rows: normalizeStatusRows(r.rows),
+    go: normalizeStatusGo(r.go),
+  }
 }
 
 /** One item with its latest answer. */

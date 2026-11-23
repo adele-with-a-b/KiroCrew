@@ -5142,6 +5142,7 @@
       "walk_back_mru_history": "Walk back MRU history",
       "stop_speaking": "Stop speaking",
       "toggle_focus_mode": "Toggle focus mode",
+      "status_go": "Go where the status bar points",
       "jump_to_chat_letters": "Jump to chat 10 and beyond (hold the modifier to see each chat’s letter; on macOS, not while a text field is focused)",
       "toggle_left_sidebar": "Toggle left sidebar",
       "toggle_session_panel": "Toggle session panel",
@@ -5720,6 +5721,9 @@
       "clear_context_cleared_roles": "Cleared for {{roles}}."
     },
     "chat": {
+      "statusGoBack": {
+        "label": "Back to {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "Only the dashboard owner can change project hooks. Sign in as the owner, then try again.",
         "err_full": "Crew has saved the most folder choices it can, so this one was not saved. Remove old entries from project_hooks_consent.json, then try again.",
