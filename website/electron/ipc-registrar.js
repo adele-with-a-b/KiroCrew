@@ -73,6 +73,10 @@ function createIpcRegistrar({
   // the user armed an update (best effort; see runtime/update/gateway-arm.js).
   fetchGatewayAuth = null,
   cookieHeader = null,
+  // Tells quit-intent.js that the quit which follows is a restart, not the user's
+  // Quit, so the trust given in Kiro Crew is kept. Restart now on an armed update
+  // quits with no app.relaunch, so nothing else would announce it.
+  noteRestart = () => {},
 } = {}) {
   if (!electron) throw new Error("createIpcRegistrar: electron is required");
   if (!store) throw new Error("createIpcRegistrar: store is required");
@@ -1744,6 +1748,7 @@ function createIpcRegistrar({
       } catch {
         return { ok: false, error: "relaunch is only available from the local dashboard" };
       }
+      noteRestart("Restart now");
       if (typeof updater.relaunch === "function") {
         updater.relaunch();
       } else {

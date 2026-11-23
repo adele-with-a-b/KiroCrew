@@ -840,6 +840,11 @@ async def apply_approval_mode(
         yolo = safety_override().is_active() and state.yolo_reaches(slot)
         policy = "auto" if trust_reaches_subagents(slot) or yolo else ""
         state.sessions.set_approval_policy(effective_session_key(slot), policy)
+    # On disk before this answers, so a crash right after a revoke cannot bring the
+    # mode back. Imported here: this function runs on ``chat_handlers``' globals.
+    from kiro_crew.dashboard import chat_trust_restart
+
+    await asyncio.to_thread(chat_trust_restart.record, state)
 
     state.push_slots_update()
     return web.json_response({"ok": True, "mode": mode})

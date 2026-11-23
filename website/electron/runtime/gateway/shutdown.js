@@ -14,6 +14,43 @@ const { secretCandidates } = require("../../home-dir");
 // hard deadline, so this covers a full graceful stop with margin.
 const ADOPTED_UPDATE_STOP_TIMEOUT_MS = 30_000;
 
+// The explicit-stop mark the gateway's next boot reads (Python `kiro_crew.kept_trust`):
+// Quit is the user ending Kiro Crew, so the trust they gave ends with it. A stop
+// for an update does not write it, so trust is kept across the update.
+const KEPT_TRUST_DIR = "kept-trust";
+const OWNER_STOP_FILE = "owner-stop";
+
+/**
+ * Leave the owner-stop mark in `home`. Never throws: Quit must still stop when the
+ * mark cannot be written, and then the next boot keeps trust as after a restart.
+ * An existing mark is left as it is (`wx`), and a linked directory is refused.
+ */
+function markOwnerStop(fs, path, home, log) {
+  try {
+    const dir = path.join(home, KEPT_TRUST_DIR);
+    try {
+      if (fs.lstatSync(dir).isSymbolicLink()) {
+        log?.(`quit: not marking the owner stop: ${dir} is a link`);
+        return false;
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      fs.writeFileSync(path.join(dir, OWNER_STOP_FILE), "desktop quit", { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      // An earlier stop's mark: left as it is.
+      if (error?.code === "EEXIST") return false;
+      throw error;
+    }
+    return true;
+  } catch (error) {
+    log?.(`quit: could not mark the owner stop; trust will be kept: ${error?.message}`);
+    return false;
+  }
+}
+
 /**
  * Stopping the gateway: the graceful stop of the child this app spawned (on
  * quit and before an update), the pre-update stop of an adopted gateway that
@@ -78,7 +115,7 @@ function createShutdown({
    * fails, the recovery hook must know it is allowed to respawn the child that
    * the updater deliberately stopped.
    */
-  async function stopGatewayGracefully({ timeoutMs = 15000 } = {}) {
+  async function stopGatewayGracefully({ timeoutMs = 15000, ownerStop = false } = {}) {
     const gateway = getGatewayProcess();
     if (!gateway || gateway.exitCode !== null) {
       setGatewayProcess(null);
@@ -90,6 +127,8 @@ function createShutdown({
     // there. postShutdown sends only the entry for the listener BACKEND_URL
     // dials, never the home-wide `.local_secret`.
     const currentHome = path.dirname(secretCandidates()[0]);
+    // Quit only, and before the stop, so the mark is down whatever the stop does.
+    if (ownerStop) markOwnerStop(fs, path, currentHome, glog);
     await stopGatewayProcessGracefully(gateway, {
       backendUrl: BACKEND_URL,
       kirocrewHome: currentHome,
@@ -244,4 +283,4 @@ function createShutdown({
   };
 }
 
-module.exports = { createShutdown };
+module.exports = { createShutdown, markOwnerStop };

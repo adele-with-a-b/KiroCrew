@@ -439,6 +439,27 @@ def _config_dir_owner(port: int | None = None) -> tuple[int, bool] | None:
     return holder.pid, platform_compat.BUNDLED_BACKEND_DIST_DIRNAME in segments[:-1]
 
 
+def _stops_this_homes_gateway(cli_port: int | None) -> bool:
+    """Whether ``kirocrew stop`` would stop the gateway of this CLI's own data home.
+
+    The owner-stop mark (``kiro_crew.kept_trust``) lands in this home, so it is
+    left only when this home's gateway is running and, given ``--port``, listens
+    on that port: a stop of another home's gateway must not clear this home's
+    trust at its next restart. Any probe failure answers False, and trust is kept.
+    """
+    try:
+        port = resolve_client_port(cli_port)
+        found = _config_dir_owner(port)
+        if found is None:
+            return False
+        return cli_port is None or found[0] in platform_compat.find_listening_pids(port)
+    except Exception:
+        logging.getLogger("kiro_crew.cli_server").debug(
+            "Could not tell whether the stop targets this home's gateway", exc_info=True
+        )
+        return False
+
+
 #: How many ancestors of the gateway are read to find the desktop app. The app
 #: spawns the bundled interpreter directly; the slack covers a launcher shim
 #: inside the bundle.

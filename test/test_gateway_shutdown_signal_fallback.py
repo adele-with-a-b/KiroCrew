@@ -15,6 +15,7 @@ real signal is raised or installed, and nothing waits.
 from __future__ import annotations
 
 import asyncio
+import functools
 import signal
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from kiro_crew import platform_compat, session
+from kiro_crew import kept_trust, platform_compat, session
 from kiro_crew.slack.gateway import GatewayOrchestrator
 
 
@@ -49,7 +50,7 @@ class _StubLoop:
     def call_soon_threadsafe(self, callback: Callable[..., object], *args: object) -> None:
         if self.closed:
             raise RuntimeError("Event loop is closed")
-        self.scheduled.append(callback)
+        self.scheduled.append(functools.partial(callback, *args))
 
 
 @dataclass
@@ -61,6 +62,7 @@ class _Installed:
     attempts: list[int] = field(default_factory=list)
     registrations: list[tuple[int, Any]] = field(default_factory=list)
     cancelled_applies: list[str] = field(default_factory=list)
+    owner_stops: list[str] = field(default_factory=list)
 
     def handler_for(self, sig: signal.Signals) -> Callable[..., object]:
         handlers = [handler for signum, handler in self.registrations if signum == sig]
@@ -91,6 +93,8 @@ def _install(
     monkeypatch.setattr(
         platform_compat, "cancel_wheel_applies_in_flight", installed.cancelled_applies.append
     )
+    # Ctrl-C is an explicit stop and leaves the owner-stop mark: recorded, not written.
+    monkeypatch.setattr(kept_trust, "mark_owner_stop", installed.owner_stops.append)
     # A second signal force-exits the process (reaping orphaned sessions first);
     # these cases send one signal at most, so reaching that path fails the test.
     monkeypatch.setattr(platform_compat, "hard_exit", _refuse_force_exit)
@@ -132,6 +136,7 @@ class TestLoopWithoutSignalSupport:
 
         assert installed.stopping.is_set()
         assert installed.cancelled_applies == ["shutdown"]
+        assert installed.owner_stops == ["ctrl-c"]
 
     def test_a_closed_loop_sets_the_shutdown_event_directly(
         self, monkeypatch: pytest.MonkeyPatch
@@ -143,6 +148,7 @@ class TestLoopWithoutSignalSupport:
         assert installed.loop.scheduled == []
         assert installed.stopping.is_set()
         assert installed.cancelled_applies == ["shutdown"]
+        assert installed.owner_stops == ["ctrl-c"]
 
     @pytest.mark.parametrize("refusal", [ValueError, OSError])
     def test_a_refused_signal_signal_is_silent(

@@ -61,10 +61,15 @@ logger = logging.getLogger(__name__)
 
 def describe_dropped_grant(dropped: DroppedGrant) -> str:
     """One channel-neutral line telling the operator what they lost."""
+    left = (
+        "had no expiry"
+        if dropped.permanent
+        else f"had {fmt_grant_duration(dropped.remaining_secs)} left"
+    )
     return (
         f"Auto-approve (YOLO) is OFF: the grant from {dropped.source or 'an earlier session'} "
-        f"had {fmt_grant_duration(dropped.remaining_secs)} left when Kiro Crew restarted. "
-        "Grants live in memory only, so a restart ends them. Re-enable it if you still want it."
+        f"{left} when Kiro Crew restarted, and your organization's policy no longer allows "
+        "it, so it was not turned back on."
     )
 
 
@@ -198,7 +203,7 @@ def grant_declared_yolo(source: str = SafetyOverride._DECLARED_SOURCE) -> Activa
 
 # ── User-facing grant-lifetime text (channel-neutral) ──
 
-NO_EXPIRY_TEXT = "stays on until Kiro Crew restarts"
+NO_EXPIRY_TEXT = "stays on until you stop Kiro Crew"
 
 
 def fmt_grant_duration(secs: int) -> str:

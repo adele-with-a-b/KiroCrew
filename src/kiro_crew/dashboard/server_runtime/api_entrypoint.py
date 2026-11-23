@@ -139,6 +139,15 @@ async def start_api_server(
     state._hook_store = ScriptHookStore()
     set_global_hook_store(state._hook_store)
 
+    # The kept-trust rule holds here too (``kiro_crew.kept_trust``): a Slack YOLO
+    # grant comes back after an exit the user did not choose, and an explicit stop
+    # clears the record. Headless has no dashboard chats, so only the grant.
+    from kiro_crew import kept_trust
+    from kiro_crew.dashboard.server_runtime.safety_grants import _notify_restart_dropped_grant
+
+    await asyncio.to_thread(kept_trust.take_owner_stop)
+    await _notify_restart_dropped_grant(state)
+
     # API-only gateways share the orchestrator's context builder. Standalone
     # callers may omit it; try the task runner's loader before reporting a miss.
     if not register_skill_read_observer(state.context_builder, getattr(task_runner, "_ctx", None)):

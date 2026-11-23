@@ -1074,9 +1074,11 @@ function createGatewaySupervisor({
     resolve(true);
   }
 
-  function stopGatewayOnQuit() {
+  // `ownerStop`: the user's own Quit, which ends the trust they gave. A relaunch,
+  // an update or a system shutdown quits too, and keeps it (quit-intent.js).
+  function stopGatewayOnQuit({ ownerStop = false } = {}) {
     tunnelKeeper.stop();
-    stopGatewayGracefully()
+    stopGatewayGracefully({ ownerStop })
       .catch((error) => console.error("Gateway stop failed:", error?.message));
   }
 

@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from kiro_crew import cli as cli_mod
-from kiro_crew import eventlog_hooks
+from kiro_crew import eventlog_hooks, kept_trust
 from kiro_crew import session as session_mod
 from kiro_crew import skill_usage
 from kiro_crew.slack import gateway as gw
@@ -51,6 +51,9 @@ def seams(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(session_mod, "cleanup_orphaned_sessions", found.cleanup)
     monkeypatch.setattr(eventlog_hooks, "drain_for_shutdown", found.drain)
     monkeypatch.setattr(cli_mod, "_stop_log_queue_listener", found.stop_log)
+    # Ctrl-C leaves the owner-stop mark (``kept_trust``): recorded here, not written.
+    found.owner_stops = []
+    monkeypatch.setattr(kept_trust, "mark_owner_stop", found.owner_stops.append)
     # The real threading module, with every thread and timer the handler starts
     # recorded: the force-exit thread can finish before a test could find it by
     # enumerating live threads.
@@ -158,6 +161,20 @@ async def test_ctrl_c_still_force_exits_a_sigterm_shutdown(monkeypatch, seams) -
     assert orch._force_exit_claimed.is_set()
     _join_force_exit(seams)
     seams.compat.hard_exit.assert_called_once_with(0)
+
+
+@pytest.mark.asyncio
+async def test_ctrl_c_is_an_owner_stop_and_sigterm_is_not(monkeypatch, seams) -> None:
+    """Ctrl-C is the user ending Kiro Crew, so it clears the trust they gave at the
+    next boot. A SIGTERM keeps it: a service manager, an install and a reboot all
+    send one, and so does ``kirocrew restart``."""
+    monkeypatch.setattr(gw, "shutdown_event", threading.Event())
+    _install(monkeypatch)[signal.SIGTERM]()
+    assert seams.owner_stops == []
+
+    monkeypatch.setattr(gw, "shutdown_event", threading.Event())
+    _install(monkeypatch)[signal.SIGINT]()
+    assert seams.owner_stops == ["ctrl-c"]
 
 
 @pytest.mark.asyncio

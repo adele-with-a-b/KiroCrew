@@ -85,8 +85,16 @@ custom-rules:
       - Auto-approve / YOLO mode: an AD-HOC activation (Slack command, dashboard
         picker, API) MUST auto-expire — either on a timed TTL capped at the
         SafetyOverride 24h ceiling, or, when the operator selects the
-        `until_shutdown` duration, when the process stops. Never persist an
-        ad-hoc grant across a restart. A grant the operator DECLARED in
+        `until_shutdown` duration, when the user stops Crew. An ad-hoc grant,
+        like a chat's Trust or Read mode, is KEPT across every exit the user
+        did not choose (a restart, an update re-exec, a crash, a watchdog or
+        OOM kill, a host reboot, a service-manager stop) with its original
+        expiry, re-armed through the SafetyOverride ceiling, and every restore
+        and clear is audited (kirodotdev/KiroCrew#12275 ruling, 2026-11-18).
+        Only an explicit stop (`kirocrew stop`, the desktop Quit, Ctrl+C)
+        clears it, through the owner-stop mark in the sealed `kept-trust/`
+        directory (kept_trust.py). Never keep a grant anywhere an agent can
+        write. A grant the operator DECLARED in
         owner-only config (`agent.dangerously_skip_permissions`; the camelCase and legacy `yolo` spellings are also read) MAY
         persist without expiry and IS re-established at each startup: it is a
         standing instruction, is held in memory only (never written to disk), is

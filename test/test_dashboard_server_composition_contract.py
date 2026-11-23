@@ -376,7 +376,8 @@ def test_the_shared_state_keeps_its_identity() -> None:
 #: file had it: inside the function that needs it.
 _LAZY_IMPORTS = {
     "kiro_crew": (
-        "_hist_mod _rs crew_pause crewmate_harness_notice mcp_listing_gateway model_registry stt"
+        "_hist_mod _rs crew_pause crewmate_harness_notice kept_trust mcp_listing_gateway "
+        "model_registry stt"
     ),
     "kiro_crew.agent": "rebuild_agent_config rebuild_agent_config_reporting",
     "kiro_crew.agent_sdk.chat_runtime_sharing": "chat_runtime_sharing_enabled",
@@ -452,6 +453,7 @@ _LAZY_IMPORTS = {
     "kiro_crew.dashboard.handlers_system": "_get_owner_hash _get_static_system_info",
     "kiro_crew.dashboard.routes.system": "RELEASED_BUILTIN_PACKAGES",
     "kiro_crew.dashboard.member_slot_retry": "schedule_member_slot_retry",
+    "kiro_crew.dashboard.server_runtime.safety_grants": "_notify_restart_dropped_grant",
     "kiro_crew.dashboard.slot_queue_repository": "drain_restored_parked_sends",
     "kiro_crew.dashboard.workflow_inject": "inject_bound_workflow_result",
     "kiro_crew.dashboard.workflow_session_port": "WorkflowSessionPort",

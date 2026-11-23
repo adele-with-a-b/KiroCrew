@@ -602,8 +602,9 @@ def _seed_member_approval(state: DashboardState, slot: Any, mode: str) -> None:
     chose one, and the thread opens in ``trust``. A slot that already holds a
     grant keeps it, and the seed runs once per in-memory slot, so a later change
     on this slot (the profile's own write, an approval card's "trust this
-    session") stands. Slot trust is not persisted: a restart seeds again from
-    the record, which is where the profile writes the user's choice.
+    session") stands. A restart carries a held mode over (``chat_trust_restart``)
+    and seeds a thread that held none again from the record, which is where the
+    profile writes the user's choice.
     """
     if slot._member_approval_seeded:
         return

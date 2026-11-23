@@ -1,0 +1,2 @@
++8
+The kept-trust directory joins the file-tool fence: it holds the chats' Trust modes, the YOLO grant a restart keeps, and the owner-stop mark, so no agent file tool may plant a grant or remove the mark. It is sandbox-sealed read-only as well.

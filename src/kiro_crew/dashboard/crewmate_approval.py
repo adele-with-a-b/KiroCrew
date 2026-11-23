@@ -1,7 +1,8 @@
 """A crewmate's Profile Permissions, applied to its conductor chat and its workers.
 
-The mode is ``agents.<name>.approval_mode``. Slot trust is in memory only, so it
-is seeded at each turn start (:func:`seed_for_turn`) and on a Profile change
+The mode is ``agents.<name>.approval_mode``. A restart carries a slot's mode over
+(``chat_trust_restart``), but a chat that held none comes back asking, so it is
+seeded at each turn start (:func:`seed_for_turn`) and on a Profile change
 (:func:`apply_to_live_sessions`). The crewmate comes from the session's attested
 execution record. POLICY ∩ PROFILE still decides every call.
 """

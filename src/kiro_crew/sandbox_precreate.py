@@ -193,6 +193,12 @@ _CREW_PRECREATE_READONLY_DIR_LEAVES: tuple[str, ...] = (
     # Without this entry the name is one an agent could create to forge the record that
     # lets a changed config.json pass the pin.
     "config-provenance",
+    # The kept-trust records (``kept_trust``), on the ``profiles`` argument. (1) Its
+    # boot read takes a missing record as nothing kept, exactly as it takes an
+    # absent directory. (2) The bind is live, so every later save is seen. Without
+    # this entry the name is one an agent could create to keep Trust for its own
+    # chat at the next restart.
+    "kept-trust",
 )
 #: Read-only directory leaves whose NAME must remain the mounted name. A resolving
 #: symlink is unsafe here: the mount follows its target and leaves the lexical name
@@ -220,6 +226,7 @@ _CREW_NOFOLLOW_READONLY_DIR_LEAVES: tuple[str, ...] = (
     "skill-projection",
     "seed-provenance",
     "config-provenance",
+    "kept-trust",
 )
 assert set(_CREW_NOFOLLOW_READONLY_DIR_LEAVES) <= set(_CREW_PRECREATE_READONLY_DIR_LEAVES)
 #: Read-only FILE leaves whose NAME must remain the sealed name, for the same reason
@@ -334,6 +341,10 @@ _DELEGATED_OVERLAP_LEAF_REASONS: "dict[str, tuple[str, str]]" = {
         "sealed config publication record",
         "the agent could forge the record that lets a substituted config.json pass the "
         "launcher's identity check",
+    ),
+    "kept-trust": (
+        "sealed kept-trust records",
+        "the agent could keep Trust or YOLO for itself across the next restart",
     ),
     "app-agent-launch": (
         "sealed app-agent launch directory",

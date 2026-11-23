@@ -612,6 +612,8 @@ class TestLeafOnlyPopulationIsRecorded:
         "<crew>/gateway_id": (3, "standard cc strict"),
         "<crew>/host-exec-grants": (3, "standard cc strict"),
         "<crew>/import-staging": (3, "standard cc strict"),
+        # The kept-trust records and the owner-stop mark: a data-home root leaf.
+        "<crew>/kept-trust": (3, "standard cc strict"),
         "<crew>/inbound-spool": (3, "standard cc strict"),
         "<crew>/kas": (3, "standard cc strict"),
         "<crew>/kas-mcp-launch": (3, "standard cc strict"),

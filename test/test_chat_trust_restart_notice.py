@@ -1,11 +1,10 @@
-"""A restart ends a chat's approval mode, and the owner is told so.
+"""A chat that comes back from a restart without its approval mode, and the notice.
 
-Trust and Read live in memory only, so a restarted gateway rebuilds every chat
-without them. That is the design, and nothing here restores a mode. What these
-tests pin is the notice: the shutdown save every restart runs, and the periodic
-flush that a crash leaves behind, record which open chats held a mode, and the
-next boot's restore posts a bell note and a chat row for each one that came back
-without it.
+A restart gives each restored chat the mode it held (``chat_trust_restart.restore``,
+pinned by ``test_chat_trust_survives_restart.py``). What these tests pin is the
+notice for a chat it could not give one back, because the approval-modes policy
+denies the mode now, or because an older build's record named it: the next boot's
+restore posts a bell note and a chat row for each such chat.
 
 A restart here is two dashboard states over one data home. The first boots
 through the gateway's restore seam, gets Trust on a chat and stops the way a
@@ -44,7 +43,18 @@ from kiro_crew.testing.wait import await_until
 KEY = "chat-1-nightly"
 TITLE = "Nightly monitor loop"
 #: Where the gateway records which chats held a mode (``chat_trust_restart``).
-RECORD_FILE = "chat_trust_held.json"
+RECORD_FILE = "kept-trust/chats.json"
+
+
+@pytest.fixture
+def mode_denied(monkeypatch: pytest.MonkeyPatch):
+    """The approval-modes policy denies Trust and Read from the next boot on."""
+    from kiro_crew.dashboard.state_parts import chat_slot
+
+    def deny() -> None:
+        monkeypatch.setattr(chat_slot, "session_mode_permitted", lambda mode: mode == "normal")
+
+    return deny
 
 
 def _cfg() -> SimpleNamespace:
@@ -73,6 +83,10 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 async def _boot(home: Path):
     """A gateway's boot: a fresh state restored through the dashboard restore seam."""
+    from kiro_crew import kept_trust
+
+    # A new process: the owner-stop verdict is read again.
+    kept_trust.reset_for_tests()
     state = _make_state(home / "sessions")
     await await_until(
         asyncio.ensure_future(srv._restore_dashboard_sessions(state, _cfg())),
@@ -124,18 +138,19 @@ async def _settle(state) -> None:
 
 class TestTheRestartIsReported:
     @pytest.mark.asyncio
-    async def test_a_trusted_chat_restored_by_a_restart_gets_a_note_and_a_row(
-        self, home: Path
+    async def test_a_trusted_chat_the_policy_now_denies_gets_a_note_and_a_row(
+        self, home: Path, mode_denied
     ) -> None:
         before = await _booted_with_mode(home, "trust")
         # Every restart path (the in-place re-exec, ``kirocrew restart``'s SIGTERM,
         # an update) runs this save before the process goes.
         chat_persistence.save_all_slots_to_history(before)
 
+        mode_denied()
         after = await _boot(home)
         try:
             slot = after.get_slot(KEY)
-            # The mode itself does not come back.
+            # The policy refuses the mode, so it does not come back.
             assert slot._trust is False
             [note] = _notes_for(after)
             assert note["kind"] == "agent"
@@ -153,11 +168,14 @@ class TestTheRestartIsReported:
             await _settle(after)
 
     @pytest.mark.asyncio
-    async def test_a_crash_after_the_periodic_flush_is_reported_too(self, home: Path) -> None:
+    async def test_a_crash_after_the_periodic_flush_is_reported_too(
+        self, home: Path, mode_denied
+    ) -> None:
         before = await _booted_with_mode(home, "trust")
         # No shutdown save: the process dies after a flush tick.
         before._flush_dirty_slots()
 
+        mode_denied()
         after = await _boot(home)
         try:
             assert after.get_slot(KEY)._trust is False
@@ -167,10 +185,11 @@ class TestTheRestartIsReported:
             await _settle(after)
 
     @pytest.mark.asyncio
-    async def test_read_mode_is_reported_by_its_own_name(self, home: Path) -> None:
+    async def test_read_mode_is_reported_by_its_own_name(self, home: Path, mode_denied) -> None:
         before = await _booted_with_mode(home, "trust_reads")
         chat_persistence.save_all_slots_to_history(before)
 
+        mode_denied()
         after = await _boot(home)
         try:
             assert after.get_slot(KEY)._trust_reads is False
@@ -181,14 +200,15 @@ class TestTheRestartIsReported:
             await _settle(after)
 
     @pytest.mark.asyncio
-    async def test_one_restart_is_reported_once(self, home: Path) -> None:
+    async def test_one_restart_is_reported_once(self, home: Path, mode_denied) -> None:
         before = await _booted_with_mode(home, "trust")
         chat_persistence.save_all_slots_to_history(before)
+        mode_denied()
         after = await _boot(home)
         await _settle(after)
         assert len(_rows_about_mode(after)) == 1
-        # The boot took the record, and this gateway never trusted the chat, so
-        # its own stop records nothing.
+        # The chat came back without the mode, so this gateway's first write
+        # records nothing, and nor does its own stop.
         assert not (home / RECORD_FILE).exists()
         chat_persistence.save_all_slots_to_history(after)
         assert not (home / RECORD_FILE).exists()
@@ -234,18 +254,19 @@ class TestNothingIsOwed:
     async def test_a_chat_a_live_auto_approve_grant_reaches_gets_no_notice(
         self, home: Path, grant: str
     ) -> None:
-        # Trust on the chat, then the operator declares auto-approve and restarts:
-        # the grant is back before the restore, so the chat's tools ask for nothing.
-        # A note saying they ask would be false, and its remedy (Trust on this one
-        # chat) would end a declared grant for every other chat.
-        before = await _booted_with_mode(home, "trust")
-        chat_persistence.save_all_slots_to_history(before)
+        # A recorded chat that came back without Trust, under a grant the boot armed
+        # again before the restore: its tools ask for nothing. A note saying they ask
+        # would be false, and its remedy (Trust on this one chat) would end a
+        # declared grant for every other chat.
+        from kiro_crew.dashboard import chat_trust_restart
 
-        _arm_startup_grant(before, grant)
+        _arm_startup_grant(await _boot(home), grant)
         after = await _boot(home)
         slot = after.get_slot(KEY)
         assert slot._trust is False
         assert after.is_yolo_active() and after.yolo_reaches(slot)
+        await chat_trust_restart.report(after, (chat_trust_restart.HeldMode(KEY, "trust"),))
+        await _settle(after)
         assert _notes_for(after) == []
         assert _rows_about_mode(after) == []
 

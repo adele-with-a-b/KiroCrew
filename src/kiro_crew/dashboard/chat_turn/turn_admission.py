@@ -803,8 +803,8 @@ async def _turn_admit(turn: _ChatTurn) -> _Flow | None:
             bindings.execution_context = tightened_execution
         # A crewmate's conductor chat and each of its workers take the
         # crewmate's Profile Permissions before the provider is claimed, so a
-        # session restored after a restart (slot trust is in memory only) does
-        # not fall back to asking for every tool.
+        # session restored after a restart without a mode of its own does not
+        # fall back to asking for every tool.
         from kiro_crew.dashboard.crewmate_approval import seed_for_turn
 
         seed_for_turn(state, slot, loaded_cfg, execution_context)

@@ -1,12 +1,13 @@
-"""A safety-override grant dropped by a restart must not vanish silently.
+"""An ad-hoc safety-override grant is kept across a restart the user did not choose.
 
-Grants live in memory, so a restart ends them -- that is the design and these
-tests do not challenge it. What they pin is the NOTICE: a timed grant that still
-had time left when the process went down is reported to the operator once, and
-the three cases that owe no notice stay quiet.
+The rule (``kiro_crew.kept_trust``): a timed grant comes back with the time it had
+left, an ``until_shutdown`` grant with no expiry, and only an explicit stop clears
+it. The breadcrumb the live grant keeps is what the next boot reads
+(``take_dropped_grant``) and re-arms (``SafetyOverride.restore_kept``), through the
+policy ceiling; a restore the policy refuses is audited and owed the notice.
 
-The whole surface is a pure function of a small file plus the wall clock, so no
-restart is simulated: writing the record and then reading it back through
+The read is a pure function of a small file plus the wall clock, so no restart is
+simulated: writing the record and then reading it back through
 ``take_dropped_grant`` IS the restart, from the reader's point of view.
 """
 
@@ -91,18 +92,14 @@ class TestTheNoticeIsOwed:
         assert "slack" in text
         assert "restart" in text.lower()
 
-    def test_the_drop_is_audited(self, _isolated_breadcrumb: Path, monkeypatch) -> None:
-        calls: list[dict] = []
-
-        class _Sel:
-            def log_api_access(self, **kw):
-                calls.append(kw)
-
-        monkeypatch.setattr(so, "sel", lambda: _Sel())
-        _write(_isolated_breadcrumb, source="dashboard", offset_secs=600)
-        assert so.take_dropped_grant() is not None
-        ops = [c["operation"] for c in calls]
-        assert "safety_override:dropped_by_restart" in ops
+    def test_an_until_shutdown_grant_is_taken_as_one_with_no_expiry(
+        self, _isolated_breadcrumb: Path
+    ) -> None:
+        # It lasts until the user stops Kiro Crew, and a restart is not that.
+        _write(_isolated_breadcrumb, source="dashboard", offset_secs=0, permanent=True)
+        dropped = so.take_dropped_grant()
+        assert dropped is not None and dropped.permanent is True
+        assert dropped.source == "dashboard"
 
     def test_an_audit_failure_still_yields_the_notice(
         self, _isolated_breadcrumb: Path, monkeypatch
@@ -126,11 +123,28 @@ class TestNoNoticeIsOwed:
         _write(_isolated_breadcrumb, source="dashboard", offset_secs=-1)
         assert so.take_dropped_grant() is None
 
-    def test_a_grant_with_no_expiry_is_silent(self, _isolated_breadcrumb: Path) -> None:
-        # A declared grant is re-established from config on this same startup,
-        # and an until_shutdown grant is already contracted as ending here.
-        _write(_isolated_breadcrumb, source="config", offset_secs=99999, permanent=True)
+    @pytest.mark.parametrize("source", ["config", "cli"])
+    def test_a_grant_the_boot_arms_again_is_not_taken(
+        self, _isolated_breadcrumb: Path, source: str
+    ) -> None:
+        # A declared grant and the ``gateway --approval yolo`` one are re-armed by
+        # this same startup from config and argv, never from the record.
+        _write(_isolated_breadcrumb, source=source, offset_secs=99999, permanent=True)
         assert so.take_dropped_grant() is None
+
+    def test_an_owner_stop_takes_nothing_and_removes_the_record(self) -> None:
+        # ``kirocrew stop``, Quit or Ctrl+C: the user ended Kiro Crew.
+        from kiro_crew import kept_trust
+
+        record = kept_trust.kept_path(kept_trust.YOLO_FILE)
+        record.parent.mkdir(parents=True, exist_ok=True)
+        _write(record, source="dashboard", offset_secs=3600)
+        assert kept_trust.mark_owner_stop("kirocrew stop") is True
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(so, "_breadcrumb_path", lambda: record)
+            assert so.take_dropped_grant() is None
+        assert not record.exists()
+        assert not kept_trust.kept_path(kept_trust.OWNER_STOP_FILE).exists()
 
     def test_a_corrupt_record_is_silent_and_removed(self, _isolated_breadcrumb: Path) -> None:
         _isolated_breadcrumb.write_text("{not json", encoding="utf-8")
@@ -462,11 +476,13 @@ class TestOneRecordPerHomeIsSafe:
         # Built from the module constant rather than from ``_breadcrumb_path()``,
         # which the autouse fixture redirects into tmp_path -- asserting on the
         # patched accessor would only test the fixture.
-        real_record = config_dir() / so._BREADCRUMB_FILE
-        # Same directory, so the lock that admits one gateway per home is the
+        from kiro_crew import kept_trust
+
+        real_record = kept_trust.kept_path(so._BREADCRUMB_FILE)
+        # Under the same home, so the lock that admits one gateway per home is the
         # same boundary that admits one writer of this record.
-        assert real_record.parent == config_dir()
-        assert (config_dir() / gateway_lock.LOCK_FILENAME).parent == real_record.parent
+        assert real_record.parent == config_dir() / kept_trust.KEPT_DIR
+        assert (config_dir() / gateway_lock.LOCK_FILENAME).parent == real_record.parent.parent
 
     def test_a_second_gateway_on_the_same_home_is_refused(self, tmp_path: Path) -> None:
         # The invariant itself, exercised rather than asserted from the docstring:
@@ -582,3 +598,144 @@ class TestTheGrantLifecycleMaintainsTheRecord:
         assert override.activate("dashboard").active is True
         override.deactivate("dashboard")
         assert override.is_active() is False
+
+
+class TestTheBootRestoresTheGrant:
+    """``restore_kept``: the boot's half, through the same commit every grant takes."""
+
+    @pytest.fixture
+    def audits(self, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+        calls: list[dict] = []
+
+        class _Sel:
+            def log_api_access(self, **kw):
+                calls.append(kw)
+
+        monkeypatch.setattr(so, "sel", lambda: _Sel())
+        return calls
+
+    def test_a_timed_grant_comes_back_with_the_time_it_had_left(self, audits) -> None:
+        override = so.safety_override()
+        assert override.restore_kept("dashboard", 1800, permanent=False) is True
+        assert override.is_active() is True and override._source == "dashboard"
+        assert 1790 <= override.remaining_secs() <= 1800
+        ops = [c["operation"] for c in audits]
+        assert "safety_override:activate" in ops and "safety_override:restored" in ops
+
+    def test_an_until_shutdown_grant_comes_back_with_no_expiry(self, audits) -> None:
+        override = so.safety_override()
+        assert override.restore_kept("slack", 0, permanent=True) is True
+        assert override.is_active() is True and override.is_permanent is True
+
+    def test_a_policy_that_denies_yolo_now_refuses_it_and_says_so(
+        self, audits, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Through the facade, which reaches every owner holding the name.
+        monkeypatch.setattr(so, "yolo_policy_permits", lambda: False)
+        override = so.safety_override()
+        assert override.restore_kept("dashboard", 1800, permanent=False) is False
+        assert override.is_active() is False
+        assert "safety_override:dropped_by_restart" in [c["operation"] for c in audits]
+
+    def test_a_grant_the_boot_already_armed_is_left_alone(self, audits) -> None:
+        override = so.safety_override()
+        override.activate_declared()
+        assert override.restore_kept("dashboard", 1800, permanent=False) is False
+        assert override.is_declared is True
+
+    def test_a_restored_grant_is_kept_again_by_the_next_restart(
+        self, _isolated_breadcrumb: Path, audits
+    ) -> None:
+        override = so.safety_override()
+        override.restore_kept("dashboard", 1800, permanent=False)
+        # Written by this image, so read as a live grant here, and as a kept one
+        # by the next process.
+        record = _record(_isolated_breadcrumb)
+        record["image"] = "a-previous-process-image"
+        _isolated_breadcrumb.write_text(json.dumps(record), encoding="utf-8")
+        so.reset_singleton()
+        dropped = so.take_dropped_grant()
+        assert dropped is not None and 1790 <= dropped.remaining_secs <= 1800
+
+    def test_an_until_shutdown_grant_the_policy_now_forbids_is_not_restored(
+        self, audits, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A new grant gets no untimed duration under this policy, so a kept one
+        # does not come back untimed either.
+        monkeypatch.setattr(so, "until_shutdown_permitted", lambda: False)
+        override = so.safety_override()
+        assert override.restore_kept("slack", 0, permanent=True) is False
+        assert override.is_active() is False
+        [dropped] = [c for c in audits if c["operation"] == "safety_override:dropped_by_restart"]
+        assert "policy forbids until_shutdown" in dropped["resources"]
+
+    def test_the_policy_cap_bounds_a_restored_timed_grant(
+        self, audits, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(so, "yolo_ttl_cap", lambda: 600)
+        override = so.safety_override()
+        assert override.restore_kept("dashboard", 1800, permanent=False) is True
+        assert override.remaining_secs() <= 600
+
+    def test_a_restore_a_live_grant_skips_is_audited(self, audits) -> None:
+        override = so.safety_override()
+        override.activate_declared()
+        assert override.restore_kept("dashboard", 1800, permanent=False) is False
+        [dropped] = [c for c in audits if c["operation"] == "safety_override:dropped_by_restart"]
+        assert "a grant is already live" in dropped["resources"]
+
+
+def test_a_revoke_is_on_disk_when_it_returns(
+    _isolated_breadcrumb: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restart keeps a recorded grant, so a revoke still queued at a crash would
+    bring it back. ``deactivate`` waits for its publish; here the worker is slow."""
+    import time
+
+    from kiro_crew import safety_override_breadcrumb as bc
+
+    override = so.safety_override()
+    override.activate("dashboard", ttl=1800)
+    assert _published(_isolated_breadcrumb)
+    threads: list[threading.Thread] = []
+
+    def slow_enqueue(job) -> None:
+        with bc._breadcrumb_pending_lock:
+            bc._breadcrumb_pending += 1
+            bc._breadcrumb_idle.clear()
+
+        def run() -> None:
+            time.sleep(0.2)
+            try:
+                job()
+            finally:
+                with bc._breadcrumb_pending_lock:
+                    bc._breadcrumb_pending -= 1
+                    if bc._breadcrumb_pending <= 0:
+                        bc._breadcrumb_pending = 0
+                        bc._breadcrumb_idle.set()
+
+        thread = threading.Thread(target=run)
+        threads.append(thread)
+        thread.start()
+
+    monkeypatch.setattr(so, "_enqueue_breadcrumb", slow_enqueue)
+    try:
+        override.deactivate("dashboard")
+        assert not _published(_isolated_breadcrumb)
+    finally:
+        for thread in threads:
+            thread.join(5)
+
+
+def test_a_headless_gateway_reads_the_stop_then_restores_the_grant() -> None:
+    """``--slack-only`` never runs ``start_dashboard``, and Slack YOLO is its main
+    use: its boot reads the explicit-stop verdict, then restores, before it serves."""
+    import inspect
+
+    from kiro_crew.dashboard.server_runtime import api_entrypoint
+
+    source = inspect.getsource(api_entrypoint.start_api_server)
+    take = source.index("kept_trust.take_owner_stop")
+    restore = source.index("await _notify_restart_dropped_grant(state)")
+    assert take < restore < source.index("web.Application(")

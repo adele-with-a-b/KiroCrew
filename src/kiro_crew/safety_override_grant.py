@@ -30,8 +30,14 @@ from kiro_crew.safety_override_breadcrumb import (
     _clear_breadcrumb,
     _enqueue_breadcrumb,
     _write_breadcrumb,
+    flush_breadcrumb_writes,
 )
-from kiro_crew.safety_override_permits import _YOLO_MODE, approval_mode_permitted, yolo_ttl_cap
+from kiro_crew.safety_override_permits import (
+    _YOLO_MODE,
+    approval_mode_permitted,
+    until_shutdown_permitted,
+    yolo_ttl_cap,
+)
 from kiro_crew.safety_override_records import (
     POLICY_REVOKED_SOURCE,
     ActivationResult,
@@ -115,8 +121,8 @@ class SafetyOverride:
         # Ad-hoc TTL in force, seeded from ``agent.yolo_duration`` at startup.
         self._adhoc_ttl: int = self._ADHOC_TTL_DEFAULT
         # True when ``agent.yolo_duration`` is ``until_shutdown``: an ad-hoc grant
-        # then has no timed expiry and lasts until the process stops. Still
-        # in-memory, so it cannot survive a restart the way a DECLARED grant does.
+        # then has no timed expiry and lasts until the user stops Kiro Crew: a
+        # restart keeps it (``restore_kept``), an explicit stop clears it.
         self._adhoc_until_shutdown: bool = False
         # Resolves the ad-hoc duration from LIVE config at activation time.
         # Installed in production by ``install_duration_resolver``; ``None`` in
@@ -347,8 +353,8 @@ class SafetyOverride:
 
         Every ad-hoc surface gets the SAME duration — see ``_ADHOC_TTL_DEFAULT``.
         When ``agent.yolo_duration`` is ``until_shutdown`` an ad-hoc grant has no
-        timed expiry and lasts until the process stops (still in-memory, so a
-        restart clears it). For the operator's declared
+        timed expiry and lasts until the user stops Kiro Crew (a restart keeps
+        it, :meth:`restore_kept`). For the operator's declared
         ``dangerouslySkipPermissions`` grant, which is re-established on every
         startup, use :meth:`activate_declared` instead.
 
@@ -367,6 +373,56 @@ class SafetyOverride:
                 return self._commit_activation(source, ttl=0, permanent=True)
         ttl = min(ttl, self._MAX_TTL)
         return self._commit_activation(source, ttl=ttl, permanent=False)
+
+    def restore_kept(self, source: str, remaining_secs: int, permanent: bool) -> bool:
+        """Restore the ad-hoc grant the previous process held. True when it is live.
+
+        The startup's half of the kept-trust rule (``kiro_crew.kept_trust``): an exit
+        the user did not choose keeps an ad-hoc grant with its original expiry, and an
+        ``until_shutdown`` grant until the user stops Kiro Crew. The grant goes
+        through :meth:`_commit_activation` like any other, so an ``approval_modes``
+        deny refuses it and the policy cap bounds it, and it is audited twice: the
+        activation, and ``safety_override:restored`` naming it a restore. An
+        ``until_shutdown`` grant also needs the ``yolo_duration`` policy to allow
+        that duration now (``until_shutdown_permitted``), as a new one does. A grant
+        already live (a declared one boot armed) is left alone. A refused or skipped
+        restore is audited ``safety_override:dropped_by_restart`` and returns False,
+        so the caller can tell the operator.
+
+        shortcut: the 24 h renew life cap (``_past_life_cap``) restarts from the
+        restore, so renewals can run past 24 h from the first grant; carry the
+        first activation's wall clock in the record if that ever matters.
+        """
+        remaining = "none" if permanent else f"{int(remaining_secs)}s"
+
+        def dropped(reason: str) -> bool:
+            self._log_sel(
+                caller="safety_override",
+                operation="safety_override:dropped_by_restart",
+                outcome="expired",
+                resources=f"source:{source}, remaining:{remaining}, reason:{reason}",
+            )
+            return False
+
+        if self.is_active():
+            return dropped("a grant is already live")
+        if permanent:
+            if not until_shutdown_permitted():
+                return dropped("policy forbids until_shutdown")
+            result = self._commit_activation(source, ttl=0, permanent=True)
+        else:
+            result = self._commit_activation(
+                source, ttl=min(max(1, int(remaining_secs)), self._MAX_TTL), permanent=False
+            )
+        if not result.active:
+            return dropped("refused by policy")
+        self._log_sel(
+            caller="safety_override",
+            operation="safety_override:restored",
+            outcome="enabled",
+            resources=f"source:{source}, remaining:{remaining}",
+        )
+        return True
 
     def activate_declared(self, source: str = _DECLARED_SOURCE) -> ActivationResult:
         """Activate a NON-EXPIRING override for an operator-declared grant.
@@ -713,10 +769,14 @@ class SafetyOverride:
             self._expires_at = 0.0
             self._breadcrumb_gen += 1
 
-        # The operator said off, so no restart notice is owed. Published outside
-        # the lock for the same reason the SEL write below is: no I/O while
-        # holding the state lock.
+        # The operator said off, so the kept record goes. Published outside the
+        # lock for the same reason the SEL write below is: no I/O while holding
+        # the state lock. Waited for, briefly: a restart keeps a recorded grant
+        # (``kiro_crew.kept_trust``), so a revoke still queued when the process
+        # dies would bring the grant back. Bounded, so a stalled filesystem
+        # delays the revoke's answer by a second at most, never the revoke.
         self._sync_breadcrumb()
+        flush_breadcrumb_writes(timeout=1.0)
 
         # SEL write happens OUTSIDE the lock (same rule as renew(): never hold
         # the state lock across I/O). This is a REVOCATION, not a grant, so it

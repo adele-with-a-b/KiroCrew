@@ -315,9 +315,13 @@ def _reset_safety_override_between_tests():
     governance — which tests share an xdist worker decides whether the stale flag is
     present. Resetting it here makes the next reader resolve the ceiling actually
     installed.
+
+    The kept-trust verdict (``kept_trust.take_owner_stop``, read once per process)
+    is reset with them: every test boots as a fresh process would.
     """
     _reset_safety_override()
     _reset_yolo_policy_state()
+    _reset_kept_trust()
     yield
     # Drained BEFORE the reset below, and (by pytest's fixture teardown order --
     # finalizers run in reverse of setup order, so a fixture set up AFTER this
@@ -333,6 +337,14 @@ def _reset_safety_override_between_tests():
     drain_breadcrumb_writes()
     _reset_safety_override()
     _reset_yolo_policy_state()
+    _reset_kept_trust()
+
+
+def _reset_kept_trust() -> None:
+    # Read from ``sys.modules``, never imported: a module nobody loaded holds no verdict.
+    mod = sys.modules.get("kiro_crew.kept_trust")
+    if mod is not None:
+        mod.reset_for_tests()
 
 
 @pytest.fixture(autouse=True)

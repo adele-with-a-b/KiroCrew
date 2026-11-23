@@ -582,6 +582,14 @@ def _install_shutdown_signal_handlers(self: GatewayOrchestrator) -> None:
                 _force_exit()
             return
         _shutting_down = True
+        if sig == signal.SIGINT:
+            # Ctrl+C on a foreground gateway is the user ending Kiro Crew, so it
+            # ends the trust they gave (``kept_trust``). A SIGTERM keeps it: a
+            # service manager, an install or a reboot sends that one too. One tiny
+            # write, before the event, so it lands whatever the shutdown does.
+            from kiro_crew import kept_trust
+
+            kept_trust.mark_owner_stop("ctrl-c")
         shutdown_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -595,9 +603,9 @@ def _install_shutdown_signal_handlers(self: GatewayOrchestrator) -> None:
 
                 def _sigint_fallback(*_a: object) -> None:
                     try:
-                        loop.call_soon_threadsafe(_on_signal)
+                        loop.call_soon_threadsafe(_on_signal, signal.SIGINT)
                     except RuntimeError:
-                        _on_signal()  # loop already closed
+                        _on_signal(signal.SIGINT)  # loop already closed
 
                 try:
                     signal.signal(sig, _sigint_fallback)
