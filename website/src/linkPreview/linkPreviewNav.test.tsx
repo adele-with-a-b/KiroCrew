@@ -7,6 +7,7 @@ import { APP_FRAME_TAG } from '../appFrame/frameProtocol'
 import { hasTextPatterns, resetTextPatternsForTest, setTextPatternWorkerFactoryForTest } from './textPatterns'
 import { scanTexts, type FromWorker, type ToWorker } from './textPatternScan'
 import { readFrameMessage } from './linkPreviewProtocol'
+import { CLICK_GRANT_MS } from './linkPreviewFrames'
 import { onLinkPreviewNav, type LinkPreviewNav } from './linkPreviewNav'
 import { framesIn, fromFrame, installFrameWindows, sentTo } from '../test/LinkPreviewFramesTestUtils'
 
@@ -166,10 +167,14 @@ describe('link-preview cards: which message the span is in', () => {
 })
 
 describe('link-preview cards: open the app tab, jump to a message', () => {
-  async function shown(apps: unknown[], props?: Parameters<typeof mount>[1]) {
+  /** A card shown and opened, then clicked in. A clicked span's card may open its
+   *  tab once on its own (the click grant), so the gesture rule is shown on a hover. */
+  async function shown(apps: unknown[], props?: Parameters<typeof mount>[1], how: 'click' | 'hover' = 'click') {
     const span = await mount(apps, props)
-    fireEvent.click(span)
+    if (how === 'click') fireEvent.click(span)
+    else fireEvent.pointerOver(span)
     const frame = await ready()
+    if (how === 'hover') await act(async () => { await vi.advanceTimersByTimeAsync(400) })
     fromFrame(frame, 'open')
     clickIn(frame)
     return frame
@@ -185,7 +190,7 @@ describe('link-preview cards: open the app tab, jump to a message', () => {
   })
 
   it('a card asks nothing without the person\'s click in it: no activation, or focus elsewhere', async () => {
-    const frame = await shown([app(true)])
+    const frame = await shown([app(true)], undefined, 'hover')
     Reflect.deleteProperty(navigator, 'userActivation')
     ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
     ask(frame, 'jump', { ts: TS })
@@ -268,6 +273,82 @@ describe('link-preview cards: open the app tab, jump to a message', () => {
     frame = await shown([app(true)], { messageTs: TS })
     ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
     ask(frame, 'jump', { ts: TS })
+    expect(heard).toEqual([])
+  })
+})
+
+describe('link-preview cards: a click on the span may open the tab once', () => {
+  /** Show [R4] by a click (or tap, or hover) and open its card; no click in the card. */
+  async function opened(how: 'click' | 'tap' | 'hover') {
+    const span = await mount([app(true)])
+    if (how === 'click') fireEvent.click(span)
+    else if (how === 'tap') {
+      fireEvent.pointerDown(span, { pointerType: 'touch' })
+      fireEvent.pointerUp(span, { pointerType: 'touch' })
+    } else fireEvent.pointerOver(span)
+    const frame = await ready()
+    if (how === 'hover') await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    fromFrame(frame, 'open')
+    return frame
+  }
+  const tab = { kind: 'openPanelTab', slot: SLOT, appName: 'refs-app', tab: 'questions', payload: 1 }
+
+  it('a clicked or tapped card opens its tab with no click in it, once', async () => {
+    for (const how of ['click', 'tap'] as const) {
+      heard = []
+      const frame = await opened(how)
+      expect(shows(frame).at(-1)?.trigger).toBe(how)
+      ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+      ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+      expect(heard).toEqual([tab])
+      document.body.replaceChildren()
+      resetTextPatternsForTest()
+    }
+  })
+
+  it('a hover card gets no grant', async () => {
+    const frame = await opened('hover')
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    expect(heard).toEqual([])
+  })
+
+  it('the grant ends with its bound', async () => {
+    const frame = await opened('click')
+    await act(async () => { await vi.advanceTimersByTimeAsync(CLICK_GRANT_MS + 1) })
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    expect(heard).toEqual([])
+  })
+
+  it('a jump is not covered, and does not spend the grant', async () => {
+    const frame = await opened('click')
+    ask(frame, 'jump', { ts: TS })
+    expect(heard).toEqual([])
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    expect(heard).toEqual([tab])
+  })
+
+  it('a card that is not open yet, or asks for an older show, spends it for nothing', async () => {
+    const span = await mount([app(true)])
+    fireEvent.click(span)
+    let frame = await ready()
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    fromFrame(frame, 'open')
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    expect(heard).toEqual([])
+    document.body.replaceChildren()
+    resetTextPatternsForTest()
+    frame = await opened('click')
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1, invocation: 0 })
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
+    expect(heard).toEqual([])
+  })
+
+  it('a frame cannot make a grant of its own: what it sends never counts as a click', async () => {
+    const frame = await opened('hover')
+    const at = shows(frame).at(-1)?.invocation
+    for (const type of ['show', 'click', 'tap', 'trigger', 'clickGrant']) fromFrame(frame, type, { invocation: at, trigger: 'click' })
+    fromFrame(frame, 'open')
+    ask(frame, 'openPanelTab', { tab: 'questions', payload: 1 })
     expect(heard).toEqual([])
   })
 })

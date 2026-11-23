@@ -10,9 +10,11 @@
  *
  * - `init { capability, theme }` once the frame has loaded
  * - `capability { capability }` a renewed capability for `ctx.fetch`
- * - `show { invocation, url? | text?, rect, theme, modifiers, trigger, sessionKey?, message? }`
+ * - `show { invocation, url? | text?, rect, theme, modifiers, trigger, placement?, sessionKey?, message? }`
  *   the hovered link or text, where it is, the modifier keys held when the hover
- *   began, and how the card was asked for (`hover`, a mouse `click`, a touch `tap`).
+ *   began, how the card was asked for (`hover`, a mouse `click`, a touch `tap`),
+ *   and which side of the link the card is put on (`above` or `below`; absent in
+ *   overlay mode).
  *   For an app the owner approved for `sessionKey`: the chat and the message
  *   (`{ ts, id? }`) the link or text sits in.
  *   `invocation` numbers the shows of one frame; a card message (`open`, `close`,
@@ -36,7 +38,8 @@
  *   `tab` (a `contributes.panelTabs[].id`) in the chat that show came from, and hand
  *   the tab `payload` (`usePanelTabRequest`). Only for an app approved for
  *   `sessionKey` (the tab is told its chat), while that chat is on screen, right
- *   after the person's click in the card.
+ *   after the person's click in the card, or once, within `CLICK_GRANT_MS`, for
+ *   the show a click or tap on the link made while its card is up.
  * - `jump { invocation, ts, id? }` scroll the chat that show came from to one of its
  *   messages and light it, with a Back pill. Only for an app approved for
  *   `sessionKey`, while that chat is on screen, right after a click in the card.
@@ -83,6 +86,9 @@ export interface MessageRef {
 /** How a card was asked for: the hover delay ran out, a mouse click, a touch tap. */
 export type ShowTrigger = 'hover' | 'click' | 'tap'
 
+/** Which side of its link the dashboard put the card on. */
+export type Placement = 'above' | 'below'
+
 /** What one hover shows: a link's URL or a pattern's matched text, and, for an app
  *  the owner approved for it, the session key of the chat the message is in and
  *  that message. */
@@ -96,7 +102,7 @@ export type PreviewLink = {
 export type ToFrame =
   | { type: 'init'; capability: string | null; theme: 'dark' | 'light' }
   | { type: 'capability'; capability: string | null }
-  | ({ type: 'show'; invocation: number; rect: AnchorRect; theme: 'dark' | 'light'; modifiers?: Modifiers; trigger?: ShowTrigger } & PreviewLink)
+  | ({ type: 'show'; invocation: number; rect: AnchorRect; theme: 'dark' | 'light'; modifiers?: Modifiers; trigger?: ShowTrigger; placement?: Placement } & PreviewLink)
   | { type: 'leave' }
   | { type: 'hide'; reason: string }
   | { type: 'theme'; theme: 'dark' | 'light' }

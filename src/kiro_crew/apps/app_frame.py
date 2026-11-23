@@ -987,6 +987,7 @@ const POINT = {
           if (typeof m.message.id === 'string') link.message.id = m.message.id;
         }
         if (m.trigger === 'hover' || m.trigger === 'click' || m.trigger === 'tap') link.trigger = m.trigger;
+        if (m.placement === 'above' || m.placement === 'below') link.placement = m.placement;
         if (m.modifiers && typeof m.modifiers === 'object') {
           const k = m.modifiers;
           link.modifiers = { alt: k.alt === true, shift: k.shift === true, ctrl: k.ctrl === true, meta: k.meta === true };

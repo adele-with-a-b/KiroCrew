@@ -29,6 +29,7 @@ import {
   type MessageRef,
   type Modifiers,
   type PreviewLink,
+  type Placement,
   type ShowTrigger,
   type ToFrame,
 } from './linkPreviewProtocol'
@@ -45,6 +46,10 @@ const GAP = 6
 const DEFAULT_SIZE = { width: 360, height: 200 }
 const MIN_SIZE = { width: 40, height: 24 }
 const MAX_SIZE = { width: 720, height: 800 }
+/** How long a card a click or tap showed may open its app's own tab without a
+ *  click inside it: the label click is the person's ask (see `takeClickGrant`).
+ *  shortcut: a fixed bound; measure again if a provider's first read gets slower. */
+export const CLICK_GRANT_MS = 3_000
 
 /** Where one show's link or text sits, known to the dashboard only. A frame's
  *  `openPanelTab` and `jump` act on this chat and nothing else. */
@@ -87,6 +92,12 @@ export interface PreviewFrame {
   scopes: Map<number, ShowScope>
   /** Burst allowance left, and when it was last refilled. */
   rate: RateState
+  /** Which side of its link the card was put on by the latest `place`; null when
+   *  docked or dropped where the user dragged it. */
+  placement: Placement | null
+  /** The latest show was the host's own click or tap on the link: that show may
+   *  open its app's tab once, until `CLICK_GRANT_MS` after `at` (`performance.now()`). */
+  clickGrant: { invocation: number; at: number } | null
 }
 
 export interface FrameHostOptions {
@@ -119,9 +130,9 @@ const providerIdOf = (frame: { key: string; appName: string }): string => frame.
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(n, Math.max(lo, hi)))
 /** A card `h` tall goes below its anchor when it fits, otherwise above it. */
-const topBeside = (a: AnchorRect, h: number, vh: number) => {
+const beside = (a: AnchorRect, h: number, vh: number): { top: number; side: Placement } => {
   const below = a.top + a.height + GAP
-  return below + h <= vh - MARGIN ? below : a.top - GAP - h
+  return below + h <= vh - MARGIN ? { top: below, side: 'below' } : { top: a.top - GAP - h, side: 'above' }
 }
 
 export class FrameHost {
@@ -179,7 +190,7 @@ export class FrameHost {
     const vw = window.innerWidth
     const vh = window.innerHeight
     const w = clamp(DEFAULT_SIZE.width, MIN_SIZE.width, Math.min(MAX_SIZE.width, vw - 2 * MARGIN))
-    const top = topBeside(anchor, height, vh)
+    const { top } = beside(anchor, height, vh)
     return { left: clamp(anchor.left, MARGIN, vw - w - MARGIN), top: clamp(top, MARGIN, vh - height - MARGIN), width: w }
   }
 
@@ -201,6 +212,10 @@ export class FrameHost {
       this.place(frame)
     }
     frame.invocation += 1
+    // Only the host's own click or tap handler names these triggers; nothing a
+    // frame sends can set one.
+    const asked = extra?.trigger === 'click' || extra?.trigger === 'tap'
+    frame.clickGrant = asked ? { invocation: frame.invocation, at: performance.now() } : null
     if (extra?.scope) {
       frame.scopes.set(frame.invocation, extra.scope)
       for (const k of frame.scopes.keys()) {
@@ -209,7 +224,8 @@ export class FrameHost {
       }
     }
     const trigger = extra?.trigger ? { trigger: extra.trigger } : {}
-    this.post(frame, { type: 'show', invocation: frame.invocation, ...link, rect: anchor, theme: this.opts.theme(), ...(modifiers ? { modifiers } : {}), ...trigger })
+    const placement = !frame.overlay && frame.placement ? { placement: frame.placement } : {}
+    this.post(frame, { type: 'show', invocation: frame.invocation, ...link, rect: anchor, theme: this.opts.theme(), ...(modifiers ? { modifiers } : {}), ...trigger, ...placement })
     return true
   }
 
@@ -220,8 +236,9 @@ export class FrameHost {
     if (frame.state === 'ready') this.post(frame, { type: 'leave' })
   }
 
-  /** Invalidate a pending show; returns the new token. */
+  /** Invalidate a pending show, and the click grant of the shown one; returns the new token. */
   private cancelShow(frame: PreviewFrame): number {
+    frame.clickGrant = null
     const next = (this.showTokens.get(frame) ?? 0) + 1
     this.showTokens.set(frame, next)
     return next
@@ -323,6 +340,7 @@ export class FrameHost {
       key, appName, el, state: 'loading', ready, visible: false, pinned: false, moved: false, dock: null,
       left: 0, top: 0, width: DEFAULT_SIZE.width, height: DEFAULT_SIZE.height, anchor: null,
       overlay: false, regions: [], invocation: 0, scopes: new Map(), rate: freshRate(),
+      placement: null, clickGrant: null,
     }
     const fail = (why: string, cause: FailureCause) => {
       if (frame.state !== 'loading') return
@@ -417,10 +435,15 @@ export class FrameHost {
     const { width: w, height: h } = frame
     if (frame.dock) {
       frame.left = frame.dock === 'left' ? MARGIN : vw - w - MARGIN
+      frame.placement = null
     } else if (!frame.moved && frame.anchor) {
       const a = frame.anchor
+      const at = beside(a, h, vh)
       frame.left = a.left
-      frame.top = topBeside(a, h, vh)
+      frame.top = at.top
+      frame.placement = at.side
+    } else if (frame.moved) {
+      frame.placement = null
     }
     frame.left = clamp(frame.left, MARGIN, vw - w - MARGIN)
     frame.top = clamp(frame.top, MARGIN, vh - h - MARGIN)
@@ -479,13 +502,25 @@ export class FrameHost {
 
   /** The scope of the show `invocation` answers, while its card is on screen and
    *  right after the person's own click or key in it (`hasGesture`: so a card can
-   *  never open a tab or move the chat on its own): in card mode the latest show of
-   *  a visible frame only; in overlay mode any of the recent shows, since the
-   *  provider's own windows outlive their hover. */
-  private scopeOf(frame: PreviewFrame, invocation: number): ShowScope | undefined {
-    if (!frame.visible || !hasGesture(frame.el)) return undefined
+   *  never open a tab or move the chat on its own), or, for `granted`, right after
+   *  the click on its link that showed it (`takeClickGrant`): in card mode the
+   *  latest show of a visible frame only; in overlay mode any of the recent shows,
+   *  since the provider's own windows outlive their hover. */
+  private scopeOf(frame: PreviewFrame, invocation: number, granted = false): ShowScope | undefined {
+    if (!frame.visible || !(granted || hasGesture(frame.el))) return undefined
     if (!frame.overlay && invocation !== frame.invocation) return undefined
     return frame.scopes.get(invocation)
+  }
+
+  /** Spend the frame's click grant: true when it was made for `invocation`, the
+   *  latest show, no more than `CLICK_GRANT_MS` ago. The first `openPanelTab`
+   *  spends it whatever it asks, so one click opens at most one tab. */
+  private takeClickGrant(frame: PreviewFrame, invocation: number): boolean {
+    const grant = frame.clickGrant
+    frame.clickGrant = null
+    if (!grant || grant.invocation !== invocation || invocation !== frame.invocation) return false
+    const age = performance.now() - grant.at
+    return age >= 0 && age <= CLICK_GRANT_MS
   }
 
   /** Act on one message from `frame`. Public for tests. */
@@ -500,8 +535,11 @@ export class FrameHost {
     if (frame.state !== 'ready') return
     if (msg.type === 'openPanelTab' || msg.type === 'jump') {
       // Both need the owner's `sessionKey` approval: a tab body is told its chat,
-      // so opening one from a card says which chat the card's text was in.
-      const scope = this.scopeOf(frame, msg.invocation)
+      // so opening one from a card says which chat the card's text was in. A
+      // `jump` always needs a click in the card; a tab may also be the click on
+      // the link the card was shown for.
+      const granted = msg.type === 'openPanelTab' && this.takeClickGrant(frame, msg.invocation)
+      const scope = this.scopeOf(frame, msg.invocation, granted)
       if (!scope?.slot || !scope.messages) return
       if (msg.type === 'openPanelTab') this.opts.onOpenPanelTab?.(frame.appName, msg.tab, msg.payload, scope)
       else this.opts.onJump?.(frame.appName, msg.target, scope)
