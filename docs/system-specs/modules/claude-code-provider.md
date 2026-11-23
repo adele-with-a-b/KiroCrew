@@ -722,6 +722,17 @@ file that sets either therefore refuses the exclusion
 withheld, as before this path existed. The startup re-read treats a file that gained
 either key the same way, and stops the harness.
 
+The user's own `settings.json` is not a project file, even where it sits at one's path.
+A session whose work folder is the home directory has the user's Claude config
+directory as its `.claude`, so its project `settings.json` is the very file the `user`
+source loads. Leaving the project tiers out drops nothing from it: it still loads as
+the user tier, hooks and sandbox included, as it does for a session in any other
+folder. So `_project_settings_restrictions` reads it as carrying nothing
+(`_is_user_settings_file`: the same file, by `os.path.samefile`, as the `settings.json`
+in `CLAUDE_CONFIG_DIR` or `~/.claude`), and a home-folder session takes the exclusion
+and keeps its servers. The home folder's `settings.local.json` is still the project's
+own file and is examined like any other.
+
 Two smaller residuals. The adapter's own `SettingsManager` still reads
 `availableModels` from every tier for its model picker, so a project file can shape
 the picker even though the CLI loads Crew's inline allowlist; this is cosmetic for

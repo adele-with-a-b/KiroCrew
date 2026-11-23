@@ -37,6 +37,7 @@ from kiro_crew.acp.claude_agent_options import (
 )
 from kiro_crew.acp.claude_settings_sources import (
     CLAUDE_SETTINGS_MAX_BYTES,
+    claude_config_dir,
     read_claude_settings_bytes,
 )
 from kiro_crew.acp.client_permissions import _scrub_observed
@@ -238,6 +239,25 @@ _CLAUDE_CARRIED_PERMISSION_KEYS: tuple[str, ...] = ("deny", "ask")
 _CLAUDE_PROJECT_SETTINGS_MAX_BYTES = CLAUDE_SETTINGS_MAX_BYTES
 
 
+def _is_user_settings_file(path: Path) -> bool:
+    """Whether *path* is the user's own ``settings.json``, the file the ``user`` source loads.
+
+    A session whose work folder is the home directory has the user's Claude config
+    directory as its ``.claude``, so its project ``settings.json`` is that same file.
+    Leaving the project tiers out drops nothing from it: the ``user`` source still
+    loads it, its hooks and sandbox settings included, exactly as it does for a
+    session in any other folder. So it neither refuses the exclusion nor needs its
+    rules carried inline.
+    """
+    config_dir = claude_config_dir()
+    if config_dir is None:
+        return False
+    try:
+        return os.path.samefile(path, config_dir / "settings.json")
+    except OSError:
+        return False
+
+
 def _project_settings_restrictions(path: Path) -> list[tuple[str, str]] | None:
     """The ``(kind, rule)`` pairs a project settings file restricts with.
 
@@ -261,7 +281,11 @@ def _project_settings_restrictions(path: Path) -> list[tuple[str, str]] | None:
     and non-blocking. A file that changes after this read can only
     have GAINED a rule Crew did not carry; it can never add an allow, because the
     tier still does not load.
+
+    ``[]`` too for the user's own ``settings.json`` (:func:`_is_user_settings_file`).
     """
+    if _is_user_settings_file(path):
+        return []
     try:
         raw = read_claude_settings_bytes(path, follow_links=False)
     except FileNotFoundError:
