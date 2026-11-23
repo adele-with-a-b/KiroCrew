@@ -8,5 +8,6 @@
  * `POST /api/apps/<app>/status-changed`: an app re-reads its own status chips and top-bar items at once.
  * Level 11 adds the session-control open: `card.openSessionControl`, a status target's
  * `sessionControl`, `useSessionControlRequest`, and the `opened` answer to a card's open.
+ * Level 12 adds `permissions.openFiles` and `useOpenFile`: an app opens a local file on a click.
  */
-export const APP_SDK_LEVEL = 11
+export const APP_SDK_LEVEL = 12

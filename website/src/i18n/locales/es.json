@@ -6788,7 +6788,9 @@
         "failed_generic_next_ask": "Elige “Confiar y reintentar”. Si vuelve a fallar, elige “Preguntar al agente” para averiguar por qué.",
         "failed_generic_next_offline": "{{productName}} no está conectado ahora mismo, así que “Confiar y reintentar” queda desactivado hasta que se reconecte.",
         "failed_desktop_unsupported": "No se puede instalar “{{app}}” en la versión de escritorio de {{productName}}, y no se cambió nada.",
-        "failed_desktop_unsupported_help": "Necesita paquetes de Python que la versión de escritorio no puede añadir; pide al autor de la app que los incluya con la app, o abre {{productName}} en un navegador web en lugar de la versión de escritorio."
+        "failed_desktop_unsupported_help": "Necesita paquetes de Python que la versión de escritorio no puede añadir; pide al autor de la app que los incluya con la app, o abre {{productName}} en un navegador web en lugar de la versión de escritorio.",
+        "open_files_heading": "Puede abrir archivos cuando haces clic en ella",
+        "open_files_desc": "Después de que hagas clic en ella, puede abrir un archivo que elija en su app predeterminada en este ordenador. Un script o una app se ejecuta al abrirse. Se rechazan los archivos que Kiro Crew mantiene privados."
       },
       "registryTier": {
         "curated": "Revisado por el equipo",
@@ -12193,7 +12195,9 @@
         "installed_needs_newer_host": "La versión instalada de {{name}} necesita un {{productName}} más reciente. Actualiza {{productName}}; tus datos no cambian."
       },
       "grants_reconsent_composer_actions": "Botones del editor: permite que la app añada estos botones al menú + del editor. Un clic inserta el texto de la app en tu borrador; la app no puede ver el borrador ni enviarlo.",
-      "grants_reconsent_selection_actions": "Acciones sobre texto seleccionado: permite que los elementos de la app reciban el texto que seleccionas en las respuestas del chat y ofrezcan un resultado para Copiar o Abrir."
+      "grants_reconsent_selection_actions": "Acciones sobre texto seleccionado: permite que los elementos de la app reciban el texto que seleccionas en las respuestas del chat y ofrezcan un resultado para Copiar o Abrir.",
+      "open_files_desc": "Después de que hagas clic en ella, puede abrir un archivo que elija en su app predeterminada en este ordenador. Un script o una app se ejecuta al abrirse. Se rechazan los archivos que Kiro Crew mantiene privados.",
+      "grants_reconsent_open_files": "Abrir un archivo que elija en su app predeterminada después de que hagas clic en ella. Un script o una app se ejecuta al abrirse."
     },
     "appPage": {
       "loading_app": "Cargando la app…",

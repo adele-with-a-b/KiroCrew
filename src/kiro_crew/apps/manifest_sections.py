@@ -683,6 +683,10 @@ class Permissions:
     #: ``apps/desktop_capabilities.py``). Empty = none, which is the default. Shown at
     #: the trust prompt and held back on a widening update like a new API path.
     desktopCapabilities: list[str] = field(default_factory=list)  # noqa: N815
+    #: May open a local file in the OS default app from its dashboard UI, on the
+    #: person's click (``useOpenFile``; ``apps/open_files.py``). Shown at the trust
+    #: prompt and held back on a widening update like a new API path.
+    openFiles: bool = False  # noqa: N815
     #: Takes inbound webhook deliveries on its own routes, governed as the
     #: ``webhooks`` source named by the app's name (``webhook_sources``) and asked
     #: through ``ctx.webhook_source``. Reaches nothing new: it lets the policy
@@ -736,6 +740,8 @@ class Permissions:
             d["reachableByUserSessions"] = self.reachableByUserSessions
         if self.desktopCapabilities:
             d["desktopCapabilities"] = self.desktopCapabilities
+        if self.openFiles:
+            d["openFiles"] = True
         if self.webhookSource:
             d["webhookSource"] = True
         if self.bots:
@@ -776,6 +782,7 @@ class Permissions:
             workerAutoApprove=data.get("workerAutoApprove") is True,  # noqa: N815
             reachableByUserSessions=declared_verbs(data.get("reachableByUserSessions")),
             desktopCapabilities=declared_capabilities(data.get("desktopCapabilities")),
+            openFiles=data.get("openFiles") is True,  # noqa: N815
             webhookSource=data.get("webhookSource") is True,  # noqa: N815
             bots=_bot_scopes(data.get("bots")),
             exposeToApps=_granted_list(data.get("exposeToApps")),  # noqa: N815

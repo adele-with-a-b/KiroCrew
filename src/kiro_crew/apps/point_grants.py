@@ -203,6 +203,18 @@ from kiro_crew.apps.desktop_capabilities import (  # noqa: E402
 register_permission_grants(
     DESKTOP_CAPABILITY_GRANT_FAMILIES, desktop_capability_grant_entries, explicit_only=True
 )
+
+
+def _open_files_grant_entries(permissions: Any) -> dict[str, list[str]]:
+    # Deferred, like ``frame_sources`` below: off an MCP server's pre-list module budget.
+    from kiro_crew.apps.open_files import open_files_grant_entries  # noqa: PLC0415
+
+    return open_files_grant_entries(permissions)
+
+
+#: ``open_files.GRANT_FAMILY``, named here so registering it imports nothing.
+register_permission_grants(("openFiles",), _open_files_grant_entries, explicit_only=True)
+
 # ``permissions.bots`` (``apps.bot_grants``): the Bot scopes an app holds. Explicit-only,
 # so a stored set that never named a scope approves none, whatever the manifest declares.
 from kiro_crew.apps.manifest_sections import (  # noqa: E402

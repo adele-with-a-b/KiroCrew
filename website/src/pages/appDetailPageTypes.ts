@@ -84,6 +84,8 @@ type AppInfo = Pick<RegistryApp, '_registry' | 'provenance'> & {
   desktopCapabilitiesGrant?: { approved: string[]; staged: string[] }
   /** `ui.frameSources` origins the owner approved, and the ones an update or edit holds back; absent when undeclared. */
   frameSourcesGrant?: { approved: string[]; staged: string[] }
+  /** Whether the owner approved `permissions.openFiles`; absent when undeclared. */
+  openFilesGrant?: { approved: boolean; staged: boolean }
   managed?: string
   source?: string
   installedAt?: string
@@ -123,6 +125,7 @@ interface AppPermissions {
   sessionApproval?: boolean
   memberThreads?: boolean
   workerAutoApprove?: boolean
+  openFiles?: boolean
   chatSlots?: boolean
   hiddenSessions?: boolean
   reachableByUserSessions?: string[]

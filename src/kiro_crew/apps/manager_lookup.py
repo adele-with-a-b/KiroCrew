@@ -435,8 +435,9 @@ def missing_agent_reason(agent: str, *, member: str = "") -> str:
 
 def list_apps() -> list[dict[str, Any]]:
     """Return metadata for all installed apps."""
-    # Deferred: frame_sources stays off an MCP server's pre-list import budget.
+    # Deferred: frame_sources and open_files stay off an MCP server's pre-list import budget.
     from kiro_crew.apps.frame_sources import frame_sources_grant_row  # noqa: PLC0415
+    from kiro_crew.apps.open_files import open_files_grant_row  # noqa: PLC0415
 
     root = apps_dir()
     if not root.is_dir():
@@ -501,6 +502,7 @@ def list_apps() -> list[dict[str, Any]]:
             **worker_auto_approve_grant_row(entry.name, manifest_data),
             **user_session_reach_grant_row(entry.name, manifest_data),
             **desktop_capabilities_grant_row(entry.name, manifest_data),
+            **open_files_grant_row(entry.name, manifest_data),
             **frame_sources_grant_row(entry.name, manifest_data),
             "manifest": manifest_data,
         }
@@ -518,8 +520,9 @@ def list_apps() -> list[dict[str, Any]]:
 
 def get_app(name: str) -> dict[str, Any] | None:
     """Return full metadata for a single installed app, or None."""
-    # Deferred: frame_sources stays off an MCP server's pre-list import budget.
+    # Deferred: frame_sources and open_files stay off an MCP server's pre-list import budget.
     from kiro_crew.apps.frame_sources import frame_sources_grant_row  # noqa: PLC0415
+    from kiro_crew.apps.open_files import open_files_grant_row  # noqa: PLC0415
 
     meta = _read_installed(name)
     if not meta:
@@ -550,6 +553,7 @@ def get_app(name: str) -> dict[str, Any] | None:
         **worker_auto_approve_grant_row(name, manifest_data),
         **user_session_reach_grant_row(name, manifest_data),
         **desktop_capabilities_grant_row(name, manifest_data),
+        **open_files_grant_row(name, manifest_data),
         **frame_sources_grant_row(name, manifest_data),
         "manifest": manifest_data,
     }

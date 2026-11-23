@@ -31,6 +31,8 @@ export const {
   useAppStatusRefresh,
   // What this app's session control was opened with by its own card or a status go (level 11).
   useSessionControlRequest,
+  // An app opens a local file in the default app, on a click (level 12).
+  useOpenFile,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.

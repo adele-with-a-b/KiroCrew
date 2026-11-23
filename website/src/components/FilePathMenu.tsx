@@ -98,12 +98,15 @@ type FilePathKind = 'file' | 'dir'
  * (the `errors-use-error-notice` rule) — there is no blocking `alert()` path any
  * more. `useRevealFailure` below is the ready-made state for a caller that has
  * nothing else to hang it on.
+ *
+ * It also resolves to what happened (`RevealOutcome`), for a caller that answers
+ * someone other than the person, such as an app's `useOpenFile` (`appFileOpen.ts`).
  */
 export async function revealOrOpen(
   filePath: string,
   action: 'open' | 'reveal',
   { onError }: { onError: (message: string) => void },
-): Promise<void> {
+): Promise<RevealOutcome> {
   try {
     const r = await api.revealPath(filePath, action)
     if (r.copy) {
@@ -111,7 +114,9 @@ export async function revealOrOpen(
       onError(i18nT(copied
         ? 'components.filePathMenu.reveal_copied_instead'
         : 'components.filePathMenu.reveal_failed'))
+      return copied ? 'copied' : 'failed'
     }
+    return 'done'
   } catch (err) {
     // eslint-disable-next-line no-console -- surface reveal failures for diagnostics
     console.error('revealPath failed', err)
@@ -119,8 +124,13 @@ export async function revealOrOpen(
     onError(i18nT(blockedByPolicy
       ? 'components.filePathMenu.reveal_blocked'
       : 'components.filePathMenu.reveal_failed'))
+    return blockedByPolicy ? 'blocked' : 'failed'
   }
 }
+
+/** What `revealOrOpen` came to: the action happened, the path was copied in its
+ *  place, the path is one the gateway refuses, or neither happened. */
+export type RevealOutcome = 'done' | 'copied' | 'blocked' | 'failed'
 
 /**
  * The failure state a `revealOrOpen` caller renders: pass `onError` to the

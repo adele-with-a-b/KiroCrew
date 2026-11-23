@@ -654,5 +654,9 @@ export type { SessionControlRequest } from './sessionControlRequest'
 // The way back after a status item's go sent the operator to this tab's chat.
 // Feature-detected by name, as `usePanelTabRequest` is.
 export { useStatusGoBack } from './statusGoBack'
+// Open a local file in the OS default app, on the person's click, behind
+// `permissions.openFiles` (level 12). The host's opener is `AppFileOpenScope`'s, off this barrel.
+export { useOpenFile } from './openFile'
+export type { OpenFile, OpenFileResult, OpenFileRefusal } from './openFile'
 // The App Kit seam level; an app feature-detects the seams above by it.
 export { APP_SDK_LEVEL } from './sdkLevel'

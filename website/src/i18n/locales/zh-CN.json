@@ -6436,7 +6436,9 @@
         "failed_generic_next_ask": "请选择“信任并重试”。如果再次失败，请选择“询问代理”了解原因。",
         "failed_generic_next_offline": "{{productName}} 当前未连接，重新连接前无法使用“信任并重试”。",
         "failed_desktop_unsupported": "“{{app}}”无法安装到 {{productName}} 桌面版中，且没有做任何更改。",
-        "failed_desktop_unsupported_help": "它需要桌面版无法添加的 Python 软件包；请让应用作者将其随应用一同提供，或改为在网页浏览器中打开 {{productName}}，而不是使用桌面版。"
+        "failed_desktop_unsupported_help": "它需要桌面版无法添加的 Python 软件包；请让应用作者将其随应用一同提供，或改为在网页浏览器中打开 {{productName}}，而不是使用桌面版。",
+        "open_files_heading": "你在其中点击时，它可以打开文件",
+        "open_files_desc": "你在其中点击后，它可以在这台电脑上用默认应用打开它选择的一个文件。脚本或应用在打开时会运行。Kiro Crew 保密的文件会被拒绝。"
       },
       "registryTier": {
         "curated": "团队已审核",
@@ -11673,7 +11675,9 @@
         "installed_needs_newer_host": "已安装的 {{name}} 需要更新的 {{productName}}。请更新 {{productName}}；你的数据不受影响。"
       },
       "grants_reconsent_composer_actions": "输入框按钮：允许应用在输入框的 + 菜单中添加这些按钮。点击后会把应用的文字插入你的草稿；应用看不到草稿，也不能发送。",
-      "grants_reconsent_selection_actions": "选中文字操作：允许应用的条目拿到你在聊天回复中选中的文字，并提供结果供复制或打开。"
+      "grants_reconsent_selection_actions": "选中文字操作：允许应用的条目拿到你在聊天回复中选中的文字，并提供结果供复制或打开。",
+      "open_files_desc": "你在其中点击后，它可以在这台电脑上用默认应用打开它选择的一个文件。脚本或应用在打开时会运行。Kiro Crew 保密的文件会被拒绝。",
+      "grants_reconsent_open_files": "你在其中点击后，用默认应用打开它选择的文件。脚本或应用在打开时会运行。"
     },
     "appPage": {
       "loading_app": "加载应用…",

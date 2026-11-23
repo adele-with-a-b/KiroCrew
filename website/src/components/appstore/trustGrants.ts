@@ -11,11 +11,12 @@ export interface DisclosedPermissions {
   reachableByUserSessions?: string[]
   desktopCapabilities?: string[]
   webhookSource?: boolean
+  openFiles?: boolean
 }
 
 type TrustGrants = Pick<
   TrustAppTarget,
-  'sessionApproval' | 'memberThreads' | 'workerAutoApprove' | 'chatSlots' | 'hiddenSessions' | 'reachableByUserSessions' | 'desktopCapabilities' | 'api' | 'webhookSource'
+  'sessionApproval' | 'memberThreads' | 'workerAutoApprove' | 'chatSlots' | 'hiddenSessions' | 'reachableByUserSessions' | 'desktopCapabilities' | 'api' | 'webhookSource' | 'openFiles'
 >
 
 /**
@@ -35,5 +36,6 @@ export function trustGrants(permissions: DisclosedPermissions | undefined): Trus
     desktopCapabilities: permissions?.desktopCapabilities,
     api: permissions?.api,
     webhookSource: permissions?.webhookSource === true,
+    openFiles: permissions?.openFiles === true,
   }
 }

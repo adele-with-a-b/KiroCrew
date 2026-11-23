@@ -1022,6 +1022,66 @@ const req = useSessionControlRequest?.()
 useEffect(() => { if (req) showQuestion(req.payload) }, [req?.seq])
 ```
 
+## Opening a local file
+
+`useOpenFile()` returns a function that opens a local file in the operator's default app
+when they click a path your UI shows. The function goes through the route the chat's own
+"Open with default app" row uses (`POST /api/reveal` with `action: "open"`). It works in
+your pages, side-panel tabs, desktop windows and session controls. It does not work in
+link-preview cards, which run in a sandboxed frame. Declare
+[`permissions.openFiles: true`](manifest-reference.md#permissions--declared-capabilities),
+then call it from the click handler of something you drew:
+
+```tsx
+import * as sdk from '@kirocrew/app-sdk'
+
+type OpenFileResult = { ok: true } | { ok: false; reason: string; message?: string }
+const useOpenFile = (sdk as Record<string, unknown>).useOpenFile as
+  (() => (path: string) => Promise<OpenFileResult>) | undefined
+
+function MockLink({ path }: { path: string }) {
+  const openFile = useOpenFile?.()
+  const [note, setNote] = useState('')
+  if (!openFile) return <code>{path}</code>
+  return (
+    <>
+      <button type="button" onClick={async () => {
+        const r = await openFile(path)
+        setNote(r.ok ? '' : (r.message ?? r.reason))
+      }}>{path}</button>
+      {note && <span>{note}</span>}
+    </>
+  )
+}
+```
+
+`openFile(path)` takes an absolute path (`/Users/me/mocks/look.html`) or a `file://` URL
+of one on this machine (`file:///Users/me/My%20Mocks/look.html`, or with the host
+`localhost`). It resolves to `{ ok: true }` once the gateway has handed the file to the
+OS. Otherwise it resolves to `{ ok: false, reason, message? }`, where `message` is the
+dashboard's own text for the operator, in their language, when there is one. It never
+throws. The reasons:
+
+| `reason` | When |
+|---|---|
+| `not_granted` | The owner has not approved `permissions.openFiles` for your app. This includes an update that adds it, which waits for approval on the app's page. Also returned by a surface that does not serve the call. |
+| `not_absolute` | The path is relative or starts with `~`, has a `..` segment (`%2e%2e` too) or control characters, is a URL of any other scheme (`https:`, `javascript:`, a `file:` URL with another host, without `//`, with a query or a fragment), or is over 4096 characters. |
+| `no_click` | No real click inside your app's own UI in the last `CLICK_GRANT_MS` (3 seconds), or that click has already opened a file. One click opens one file. A click in your own portal (a `Modal`, a menu) counts; a click in the host's chrome around your UI does not. |
+| `unavailable` | This browser is not on the gateway's machine, the machine cannot open apps right now, or the gateway runs Windows. When the gateway offers the path instead, it is copied to the clipboard and `message` says so. |
+| `blocked` | The gateway never opens this path: its sensitive-path rule (credential folders, the data home's private files, `.env`) refuses it with `403`. |
+| `failed` | Anything else, such as a missing file or a directory. |
+
+The path rules belong to the gateway's route, and the hook adds none of its own. It
+opens the file in the default app only: it does not open the Kiro Crew file viewer. The
+default app of a script or a launcher file runs it, as it does from the chat, and the
+owner is told so when they approve the permission. The click is not tied to the path:
+open the one the person clicked. `openFiles` is its own grant: in a desktop window,
+`desktopCapabilities` `localFiles` does not limit it. Like
+every `useAppApi` check, this one runs in the dashboard document, so it guards an app that
+follows the rules but does not isolate it from other code in the dashboard
+([trust model](../architecture/app-platform-trust-model.md)). Needs `APP_SDK_LEVEL >= 12`.
+Read it off a namespace import, as above, when your UI must also load on an older host.
+
 ## Chat Marker Protocol
 
 An agent encodes UI affordances inline in the prose it streams. A surface that renders a transcript
@@ -2116,10 +2176,12 @@ directory entries in `credentialMasks` (`"state/"`), the dashboard's
 `permissions.bots`, which an app's backend uses with its app token
 ([Bots](#bots-permissionsbots-from-your-backend)), and level 10 adds
 [app status refresh](#app-status-refresh) (`useAppStatusRefresh`,
-`POST /api/apps/<app>/status-changed`), and level 11 adds
+`POST /api/apps/<app>/status-changed`), level 11 adds
 [session control requests](#session-control-requests) (`useSessionControlRequest`,
 `link.card.openSessionControl`, a status target's `sessionControl`, the answer an open
-resolves with) and `contributes.sessionControls[].width`; each level
+resolves with) and `contributes.sessionControls[].width`, and level 12 adds the
+manifest's `permissions.openFiles` with the dashboard's
+[`useOpenFile`](#opening-a-local-file); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

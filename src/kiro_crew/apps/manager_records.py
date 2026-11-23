@@ -37,7 +37,6 @@ from kiro_crew.apps.point_grants import (
     grant_source,
     point_grant_families,
 )
-from kiro_crew.apps.worker_auto_approve import WORKER_AUTO_APPROVE_GRANT_FAMILIES
 from kiro_crew.apps.worker_auto_approve import revoke_app as revoke_worker_auto_approve
 from kiro_crew.atomic_write import atomic_write
 from kiro_crew.config.loader import config_dir
@@ -1308,10 +1307,11 @@ def approved_manifest_permissions(app_info: dict[str, Any]) -> dict[str, Any]:
     manifest = app_info.get("manifest") or {}
     permissions = dict(manifest.get("permissions") or {})
     for family in STAGED_GRANT_FAMILIES:
-        if family not in permissions or family in WORKER_AUTO_APPROVE_GRANT_FAMILIES:
-            # ``permissions.workerAutoApprove`` is a flag, not an entry list: it stays
-            # as declared, because every grant re-reads the owner's approval itself
-            # (``worker_auto_approve.app_holds_worker_auto_approve``).
+        if family not in permissions or isinstance(permissions[family], bool):
+            # A flag family (``workerAutoApprove``, ``openFiles``) is not an entry
+            # list: it stays as declared, because every grant re-reads the owner's
+            # approval itself (``worker_auto_approve.app_holds_worker_auto_approve``,
+            # the ``openFilesGrant`` row).
             continue
 
         def _read(family: str = family) -> list[str] | None:

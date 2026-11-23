@@ -374,6 +374,11 @@ def format_permissions_summary(manifest: AppManifest) -> str:
     if perms.desktopCapabilities:
         words = ", ".join(_DESKTOP_CAPABILITY_WORDS[c] for c in perms.desktopCapabilities)
         lines.append(f"  Desktop:   may {words}")
+    if perms.openFiles:
+        lines.append(
+            "  Files:     opens a file it picks in its default app after you click in it;"
+            " a script or an app runs when it opens"
+        )
     if perms.webhookSource:
         lines.append(
             f"  Webhooks:  accepts requests from outside services, which can start work"

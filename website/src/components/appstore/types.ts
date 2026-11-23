@@ -115,7 +115,7 @@ export type RegistryApp = {
     // global shortcuts, tray). A UX gate only — the marker is client-side.
     requiresDesktopApp?: boolean }
   manifest?: {
-    permissions?: { api?: string[]; sessionApproval?: boolean; memberThreads?: boolean; workerAutoApprove?: boolean; chatSlots?: boolean; hiddenSessions?: boolean; reachableByUserSessions?: string[]; desktopCapabilities?: string[]; webhookSource?: boolean }
+    permissions?: { api?: string[]; sessionApproval?: boolean; memberThreads?: boolean; workerAutoApprove?: boolean; openFiles?: boolean; chatSlots?: boolean; hiddenSessions?: boolean; reachableByUserSessions?: string[]; desktopCapabilities?: string[]; webhookSource?: boolean }
     mcpServers?: Record<string, McpServerView>
     platform?: { requiresDesktopApp?: boolean }
   }
@@ -178,6 +178,8 @@ export type InstalledApp = {
   desktopCapabilitiesGrant?: { approved: string[]; staged: string[] }
   /** `ui.frameSources` origins the owner approved, and the ones an update or edit holds back; absent when undeclared. */
   frameSourcesGrant?: { approved: string[]; staged: string[] }
+  /** Whether the owner approved `permissions.openFiles`; absent when undeclared. */
+  openFilesGrant?: { approved: boolean; staged: boolean }
   installedAt: string
   source?: string
   origin?: string     // "builtin" | "registry" | "local" | "external"
@@ -259,6 +261,7 @@ export type InstalledApp = {
       sessionApproval?: boolean
       memberThreads?: boolean
       workerAutoApprove?: boolean
+      openFiles?: boolean
       chatSlots?: boolean
       hiddenSessions?: boolean
       reachableByUserSessions?: string[]
@@ -455,7 +458,7 @@ export function storePermissions(v: unknown): Record<string, unknown> | undefine
   const list = (x: unknown) => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : [])
   const out: Record<string, unknown> = { ...p }
   for (const k of ['api', 'events', 'mcpTools', 'reachableByUserSessions']) out[k] = list(p[k])
-  for (const k of ['storage', 'network', 'cron', 'sessionApproval', 'memberThreads', 'workerAutoApprove']) out[k] = p[k] === true
+  for (const k of ['storage', 'network', 'cron', 'sessionApproval', 'memberThreads', 'workerAutoApprove', 'openFiles']) out[k] = p[k] === true
   out.memory = typeof p.memory === 'string' ? p.memory : ''
   return out
 }
