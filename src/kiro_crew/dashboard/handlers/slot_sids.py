@@ -20,12 +20,18 @@ async def api_chat_slot_sids(request: web.Request) -> web.Response:
 
     ``history`` is oldest first and never holds ``sid``; ``full`` says the cap
     dropped older ids. ``title`` is the sidebar's title (``NEW_SESSION_TITLE`` while
-    untitled). A slot that is not live is the uniform 404.
+    untitled), redacted as the slot list redacts it. A slot that is not live is the
+    uniform 404.
     """
+    # circular import: chat_utils_display imports dashboard.state.
+    from kiro_crew.dashboard.chat_utils_display import _redact_for_display
+
     state = request.app["state"]
     slot = state._slots.get(request.match_info["slot"])
     if slot is None or checkpoint_slot_replaced(request, slot):
         return slot_not_found()
     key = effective_session_key(slot)
     record = state.sessions._session_map.sid_record(key)
-    return web.json_response({"key": key, "title": slot.display_title, **record})
+    # The same display redaction the slot list's title passes (slot_transcript._redact).
+    title = _redact_for_display(slot.display_title)
+    return web.json_response({"key": key, "title": title, **record})

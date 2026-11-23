@@ -1,7 +1,8 @@
 """The past native session ids of one ``session_map.json`` row, oldest first.
 
 A chat moves to a new native session on a context-cap trim, a reset, a provider
-switch, a poisoned-conversation discard or a stale repair. The row's ``sid`` then
+switch, a poisoned-conversation discard or a stale repair of a row that is kept
+(a row still on its first session is removed whole). The row's ``sid`` then
 names only the newest one, and ``discarded_sid`` only the last one emptied in
 place, so an app that keyed data on an older id (a question asked before the move)
 loses it. :data:`SID_HISTORY_FIELD` keeps every id that left ``sid``, capped at
@@ -115,6 +116,11 @@ def record_departure(entry: dict, sid: object) -> None:
         del history[: len(history) - SID_HISTORY_CAP]
         entry[SID_HISTORY_FULL_FIELD] = True
     entry[SID_HISTORY_FIELD] = history
+
+
+def has_history(entry: dict) -> bool:
+    """Whether *entry* holds a past id, the reason the stale paths keep its row."""
+    return bool(_stored(entry))
 
 
 def past_sids(entry: dict) -> tuple[str, list[dict[str, str]], bool]:

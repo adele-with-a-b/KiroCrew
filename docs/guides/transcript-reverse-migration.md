@@ -177,15 +177,16 @@ If `SessionMap.get` already ran under the reverted `KIRO_HOME` (a resume attempt
 a session list load, or a gateway start all trigger it), the effect depends on
 the entry:
 
-- **Regular session** (no channel binding, no durable or privacy flag):
+- **Regular session** (no channel binding, no durable or privacy flag, no
+  past session id in `sid_history`):
   `_repair_or_remove_stale` removes the entry from
   `~/.kiro/crew/session_map.json` entirely.  Moving the transcript files at
   that point restores them to disk under `~/.kiro/sessions/cli/`, but the
   session no longer appears in the session list.
 
-- **Session with a channel binding or a durable/privacy flag**: the entry is
-  kept but `_stash_and_clear_sid` moves the `sid` into `discarded_sid` and
-  clears the `sid` field.  The binding and history metadata survive; the session
+- **Session with a channel binding, a durable/privacy flag or a past session
+  id**: the entry is kept but `_stash_and_clear_sid` moves the `sid` into
+  `discarded_sid` (and onto `sid_history`) and clears the `sid` field.  The binding and history metadata survive; the session
   can be resumed with a code fix that re-populates `sid` from `discarded_sid`,
   but there is no operator-accessible command for this yet.
 

@@ -1278,8 +1278,8 @@ chat's whole list. Call it with your app token from your backend:
 `history` is oldest first and never holds `sid`. A reset's id stays in it. Past
 `cap` the oldest is dropped and `full` reads `true`. A row from before this field
 lists its one older id with an empty `provider` and `until`. `title` is the
-sidebar's title, `New Session…` while untitled; a rename is not pushed, so read
-it again.
+sidebar's title, `New Session…` while untitled, with credentials masked as in
+the slot list; a rename is not pushed, so read it again.
 
 Grants: `permissions.api` covering `/api/chat/slots`, and a slot scope that shows
 the chat, as the slot list does: your own chats, `"events": ["slots:user"]` for

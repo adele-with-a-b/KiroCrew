@@ -3595,8 +3595,14 @@ empties it, so a reset's id stays in the list. The writer is
 id already listed keeps its first place and is not added again; an id that fails
 `bounded_session_id` is not recorded. The current `sid` is never listed, even
 when a row returns to an older id. Past `SID_HISTORY_CAP` (32) the oldest entry
-is dropped and `sid_history_full: true` is set on the row. The list lives and
-dies with its row.
+is dropped and `sid_history_full: true` is set on the row. A row holding a past
+id is one `_survives_prune` keeps, so the startup prune and the per-read stale
+repair clear only its dead `sid` (pushing it onto the list) instead of removing
+the row: a reset followed by a restart keeps the chat's ids. A row still on its
+first session, with no past id and nothing else `_survives_prune` keeps, is
+removed whole by a stale path, so its dead id is not recorded. A row with a past
+id stays until it is removed by name, as when the chat is deleted; that is the
+cost of keeping the ids, one small row per chat that moved.
 
 `discarded_sid` keeps its meaning and writer, and its readers are unchanged. A
 row written before the field existed reads its `discarded_sid` as its one past
@@ -4410,7 +4416,7 @@ prunes on directly and `session_files_resumable(sid, provider)` wraps together w
 the `.json` and provider checks for a reader outside the module (the sub-agent
 orphan notice's resume hint), so the two cannot drift. Both stale paths (`get()`
 and `prune()`) ask `_keeps_entry`: an entry carrying a durable setting,
-a generation floor, a channel binding (`_survives_prune`), or a `temporary` /
+a generation floor, a channel binding, a past session id (`_survives_prune`), or a `temporary` /
 `incognito` privacy flag loses only its dead `sid` and keeps the rest -- with no
 transcript read, because both run under the map lock on the event loop. A
 privacy-flagged row is removed by NO path, whatever its transcript header says:

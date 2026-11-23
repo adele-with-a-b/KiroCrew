@@ -773,9 +773,14 @@ def _deny_outside_slot_scope(
 
     if slot is None:
         return slot_not_found()
+    reason = "slot outside the app's slot scope"
     if scope is not None and ws_event_scope.app_sees_slot(slot, request_app, scope, state):
-        return None
-    audit_app_slot_denial(request_app, operation, name, "slot outside the app's slot scope")
+        # An app's slot linked to a conversation no app owns answers for that
+        # conversation, which the scope that showed the slot never granted.
+        reason = _foreign_binding_reason(slot) if getattr(slot, "_app", "") else ""
+        if not reason:
+            return None
+    audit_app_slot_denial(request_app, operation, name, reason)
     return slot_not_found()
 
 

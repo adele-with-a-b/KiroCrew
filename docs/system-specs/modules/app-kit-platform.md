@@ -3241,10 +3241,13 @@ this checkpoint. It applies whether or not a handler carries a check of its own.
 - `GET .../sids` is `SLOT_SCOPE`: any live slot the app's approved slot scope
   shows it, by the same rule as the slot list and the `/api/ws` slots frame
   (`ws_event_scope.app_sees_slot`): its own slots, `slots:user` for a person's
-  chats, `slots:all`, `slots:app:<x>` with x's opt-in. A disabled app reads none.
-  The declarations are read once, off the loop, before the slot is looked up
-  (`_declared_slot_scope`). The route answers the chat's title, which that list
-  already shows the app, and its native session ids, which carry no content
+  chats, `slots:all`, `slots:app:<x>` with x's opt-in. A disabled app reads none,
+  and neither does an app whose own slot (or x's) is linked to a conversation or
+  transcript that is not the slot's own (`_foreign_binding_reason`, as on `OWNER`
+  routes): the ids would be that conversation's. The declarations are read once,
+  off the loop, before the slot is looked up (`_declared_slot_scope`). The route
+  answers the chat's title, which that list already shows the app, through the
+  same display redaction (`_redact_for_display`), and its native session ids, which carry no content
   ([session](session.md#past-session-ids-sid_history)). It loads no rows.
 
 The question routes (`GET .../question`, `POST .../question/answer`,

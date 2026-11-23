@@ -179,8 +179,9 @@ KAS_MEMORY_FIELD = "kas_memory"
 # that nothing holds back. Losing it there would lose it in precisely the case it
 # exists for — clear the pointer, restart the gateway, reinstall — so the flag would
 # be decorative. The forever-row cost does not apply to it either: the flag is
-# ONE-SHOT, so the row it keeps alive is collectable again as soon as the first
-# cold start consumes it. (The privacy flags below are retained on separate
+# ONE-SHOT, so the flag alone stops holding the row once the first cold start
+# consumes it (a past session id in ``sid_history`` still keeps it; see
+# :func:`_survives_prune`). (The privacy flags below are retained on separate
 # grounds and bounded by a count; their own comment says why.)
 _DURABLE_FLAGS = frozenset({MIRROR_OPT_OUT_FLAG, SUPPRESS_REPLAY_FLAG})
 
@@ -344,9 +345,10 @@ def _header_records_privacy_mode(key: str, flagged: list[str]) -> bool:
 def _survives_prune(entry: dict) -> bool:
     """True iff *entry* holds state that must outlive its native session.
 
-    Durable settings, an explicit generation floor, and channel bindings all
-    outlive a provider session. The generation floor prevents a restart from
-    reusing a history key after ``/new`` was acknowledged before the first turn.
+    Durable settings, an explicit generation floor, channel bindings and past
+    session ids all outlive a provider session. The generation floor prevents a
+    restart from reusing a history key after ``/new`` was acknowledged before the
+    first turn; the past ids are the chat's only record of the sessions it ran on.
     Entry-only, no I/O; :func:`_keeps_entry` adds the privacy-flag rule.
     """
     floor = entry.get(GENERATION_FLOOR_FIELD)
@@ -356,6 +358,7 @@ def _survives_prune(entry: dict) -> bool:
         or has_generation_floor
         or entry.get("slack_thread_ts")
         or entry.get("mirror")
+        or _sid_history.has_history(entry)
     )
 
 

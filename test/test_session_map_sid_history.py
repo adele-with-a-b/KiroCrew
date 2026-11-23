@@ -127,3 +127,19 @@ def test_the_list_survives_a_restart(home) -> None:
             {"sid": "s1", "provider": "claude_code", "until": UNTIL}
         ]
         assert SessionMap().conversation_sids(KEY) == ["s1", "s2"]
+
+
+def test_a_reset_then_a_restart_keeps_the_ids_on_a_kiro_cli_row(home, monkeypatch) -> None:
+    """The stale paths clear a dead ``sid`` on a row with past ids, never drop the row."""
+    monkeypatch.setattr("kiro_crew.session_map._KIRO_SESSIONS_DIR", home / "kiro")
+    smap = SessionMap()
+    smap.set(KEY, "s1")
+    smap.set(KEY, "s2")
+    smap.clear_sid(KEY)
+    assert smap.prune() == 0
+    smap.set(KEY, "s3")
+    assert smap.get(KEY) is None  # s3 has no transcript: the per-read repair
+    assert smap.sid_record(KEY)["sid"] == ""
+    assert smap.conversation_sids(KEY) == ["s1", "s2", "s3"]
+    smap.set("dashboard:no-past", "x")
+    assert smap.prune() == 1

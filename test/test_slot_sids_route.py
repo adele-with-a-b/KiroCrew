@@ -20,7 +20,10 @@ from kiro_crew.dashboard.state import SlotOrigin
 from kiro_crew.dashboard.state_parts.slot_session import NEW_SESSION_TITLE
 from kiro_crew.session_map import SessionMap
 
-_EVENTS = "kiro_crew.dashboard.ws_event_scope.load_declared_events_for_connect"
+#: The manifest read under the scope loader, so the loader primes the cache the
+#: own-slot revocation check reads, as it does in production.
+_EVENTS = "kiro_crew.dashboard.ws_event_scope._read_declared_events"
+_CACHE = "kiro_crew.dashboard.ws_event_scope._declared_cache"
 
 
 @pytest.fixture()
@@ -38,7 +41,7 @@ def _client(state, caller: str | None) -> TestClient:
 
 
 async def _get(state, caller: str | None, slot: str, events=(True, frozenset())):
-    with patch(_EVENTS, return_value=events):
+    with patch(_EVENTS, return_value=events), patch.dict(_CACHE, clear=True):
         async with _client(state, caller) as client:
             resp = await client.get(f"/api/chat/slots/{slot}/sids")
             return resp.status, await resp.json()
@@ -72,6 +75,20 @@ async def test_an_untitled_chat_reads_as_new_session(state, smap, sel_spy) -> No
 
 
 @pytest.mark.asyncio
+async def test_a_renamed_title_is_redacted_as_in_the_slot_list(state, smap, sel_spy) -> None:
+    """A stub redactor proves the route runs the slot list's, not its patterns."""
+    slot = state.get_or_create_slot("u3", origin=SlotOrigin.USER)
+    slot.title, slot._titled = "deploy SECRET", True
+    with patch(
+        "kiro_crew.dashboard.chat_utils_display._redact_for_display",
+        lambda text: text.replace("SECRET", "<RED>"),
+    ):
+        status, body = await _get(state, "", "u3")
+        listed = slot.to_dict()["title"]
+    assert (status, body["title"], listed) == (200, "deploy <RED>", "deploy <RED>")
+
+
+@pytest.mark.asyncio
 async def test_an_app_with_slots_user_reads_a_person_chat(state, smap, sel_spy) -> None:
     _user_chat(state, smap)
     status, body = await _get(state, APP, "u1", (True, frozenset({"slots:user"})))
@@ -101,3 +118,17 @@ async def test_another_apps_chat_needs_its_opt_in(state, smap, sel_spy) -> None:
     state.get_or_create_slot("theirs", app="other-app")
     scope = (True, frozenset({"slots:app:other-app"}))
     assert await _get(state, APP, "theirs", scope) == (404, _NOT_FOUND)
+
+
+@pytest.mark.asyncio
+async def test_an_apps_slot_linked_to_a_person_conversation_is_refused(
+    state, smap, sel_spy
+) -> None:
+    """Its ids would be the linked conversation's, which no slot scope grants."""
+    state.get_or_create_slot("mine-linked", app=APP).linked_session_key = "slack:1.2"
+    smap.set("slack:1.2", "person-sid", provider="claude_code")
+    for scope in (frozenset(), frozenset({"slots:user", "slots:all"})):
+        assert await _get(state, APP, "mine-linked", (True, scope)) == (404, _NOT_FOUND)
+    assert [row.get("error") for row in sel_spy.denials()] == [
+        "app does not own the session this slot is linked to"
+    ] * 2
