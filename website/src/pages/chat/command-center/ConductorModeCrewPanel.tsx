@@ -318,8 +318,12 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
   let sub: JSX.Element | string = ''
   if (state === 'done') {
     const link = artifactEntries(item).find(([, v]) => /^https?:\/\//.test(v))
+    // Reported done but not accepted yet: it stays in the sprint, so it says Done.
+    const open = item.state !== 'accepted'
+    const said = firstSentence(item.summary)
     sub = <>
-      <span className={WRAP}>{firstSentence(item.summary)}</span>
+      {open && <span className="shrink-0">{i18nT('components.crewMode.conductor_mode_run_done')}</span>}
+      {said && <span className={WRAP}>{open ? `· ${said}` : said}</span>}
       {item.pr != null && <span className="shrink-0 conductor-mode-accent">{i18nT('components.crewMode.conductor_mode_ms_pr', { n: item.pr })}</span>}
       {link && <a className="shrink-0 conductor-mode-accent hover:underline" href={link[1]} target="_blank" rel="noreferrer">· {link[0]}</a>}
     </>
@@ -369,10 +373,11 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
   )
 }
 
-/** The time since a story's last report, a running turn's too; a closed one's whole run. */
+/** The time since a story's last report, a running turn's too, and an open one
+ *  reported done; a closed one's whole run. */
 function milestoneAge(item: WorkBoardItem, state: MilestoneState, now: number): string {
   return state === 'next' ? i18nT('components.crewMode.conductor_mode_ms_next')
-    : state === 'done' || state === 'not_done' ? fmtMinutes(minutesBetween(item.created_at, item.closed_at || item.last_report_at))
+    : (state === 'done' || state === 'not_done') && item.closed_at ? fmtMinutes(minutesBetween(item.created_at, item.closed_at || item.last_report_at))
       : fmtMinutes(minutesBetween(item.last_report_at || item.created_at, now))
 }
 
@@ -798,8 +803,9 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
         </RadioChipGroup>
       </div>
       {view === 'board' ? (
-        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={needCount}
-          overview={overview} run={runState ? <RunWord state={runState} run={board.data?.run} /> : null} runDetail={runDetail(runState, board.data?.run)} pulse={pulse} loaded={board.isSuccess} />
+        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={runState === 'waiting' ? 0 : needCount}
+          overview={overview} run={runState ? <RunWord state={runState} run={board.data?.run} /> : null} runDetail={runDetail(runState, board.data?.run)} pulse={pulse}
+          loaded={board.isSuccess || (board.isError && isNotFoundError(board.error))} />
       ) : (
         <div className="relative flex-1 min-h-0 flex flex-col">
         {showSearch && <CrewWorkerSearch query={query} onChange={setQuery} />}

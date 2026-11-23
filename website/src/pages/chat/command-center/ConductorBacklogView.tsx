@@ -136,7 +136,8 @@ function StoryRow({ item, plan, row, onOpen, lead, estimate, withLine, rowState 
                 {isMerged(task) ? <SquareCheck size={13} aria-hidden="true" className="shrink-0 mt-0.5 crew-tone-ok" /> : <Square size={13} aria-hidden="true" className="shrink-0 mt-0.5 text-muted" />}
                 <span className="flex-1 min-w-0 space-y-0.5">
                   <span className="flex flex-wrap items-center gap-1"><span className={`text-text ${WRAP}`}>{task.title}</span><StepTag step={planOf(task).step} /></span>
-                  {rowState?.(task.item_id)?.line}
+                  {/* A sub-task is never bound to a worker, so without a report of its own its step says it all. */}
+                  {task.last_report_at && rowState?.(task.item_id)?.line}
                 </span>
               </li>
             ))}
@@ -421,8 +422,8 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
             i18nT('components.crewMode.plan_sprint_round', { n: round }),
             cap != null ? i18nT('components.crewMode.plan_slots_busy', { busy, cap }) : null,
           ].filter(Boolean).join(' · ')}
-          {/* The run word already says "Waiting for you"; the count stands alone only without it. */}
-          {!run && needCount > 0 && <span className="crew-tone-warn font-semibold">{` · ${i18nT('components.crewMode.plan_needs_you_count', { n: needCount })}`}</span>}
+          {/* The panel sends 0 while the run word already says "Waiting for you". */}
+          {needCount > 0 &&<span className="crew-tone-warn font-semibold">{` · ${i18nT('components.crewMode.plan_needs_you_count', { n: needCount })}`}</span>}
         </p>
         {runDetail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{runDetail}</p>}
       </section>

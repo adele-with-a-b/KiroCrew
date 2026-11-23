@@ -541,6 +541,42 @@ describe('Conductor mode Crew tab', () => {
     await waitFor(() => expect(screen.getByTestId('conductor-mode-milestone').getAttribute('data-state')).toBe('running'), { timeout: CREW_WORKERS_PUSH_COALESCE_MS + 2000 })
   })
 
+  it('Board: a sub-task with no report of its own shows its step, never "Not started"', async () => {
+    api.crewWorkers.mockResolvedValue(WORKERS)
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [
+      ITEM({ item_id: 'it_0000000a', title: 'Menu', plan: { level: 'story' } }),
+      ITEM({ item_id: 'it_0000000b', title: 'Tea list', status: null, last_report_at: null, plan: { level: 'task', parent: 'it_0000000a', step: 'merged' } }),
+      ITEM({ item_id: 'it_0000000c', title: 'Prices', status: 'progress', summary: 'Half priced.', plan: { level: 'task', parent: 'it_0000000a', step: 'build' } }),
+    ] })
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
+    fireEvent.click(await screen.findByTestId('plan-story-tasks-toggle'))
+    const [tea, prices] = screen.getAllByTestId('plan-story-task')
+    expect(tea).toHaveTextContent('Tea list')
+    expect(tea).not.toHaveTextContent('Not started')
+    expect(within(tea).queryByTestId('conductor-mode-milestone')).toBeNull()
+    expect(within(prices).getByTestId('conductor-mode-milestone')).toHaveTextContent('Half priced.')
+  })
+
+  it('Board: a story reported done but not accepted says Done in the sprint, aged from its report', async () => {
+    api.crewWorkers.mockResolvedValue(WORKERS)
+    const reported = new Date(Date.now() - 5 * 60_000).toISOString()
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'd2', title: 'Menu', status: 'done', summary: 'Menu drafted. All of it.', pr: 7, created_at: '2026-10-30T00:00:00Z', last_report_at: reported })] })
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
+    const row = await screen.findByTestId('plan-story')
+    expect(row.closest('[data-testid="plan-sprint"]')).not.toBeNull()
+    expect(within(row).getByTestId('conductor-mode-milestone')).toHaveTextContent(/^Done· Menu drafted\.· PR #7$/)
+    expect(within(row).getByTestId('plan-story-age')).toHaveTextContent('5m')
+    expect(screen.queryByTestId('conductor-mode-milestones-done')).toBeNull()
+  })
+
+  it('Board: a Conductor with no ledger yet says its sprint is empty', async () => {
+    api.crewWorkers.mockResolvedValue(WORKERS)
+    api.crewBoard.mockRejectedValue(new ApiError(404, 'no ledger', ''))
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
+    expect(await screen.findByText('Nothing in this sprint yet.')).toBeInTheDocument()
+    expect(screen.queryByText('no ledger')).toBeNull()
+  })
+
   it('Board: a finished crew shows no pulse', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'b', state: 'accepted', terminal: true })] })
