@@ -333,6 +333,11 @@ _OWNER_ONLY_EVENTS = MEMBER_LOG_EVENTS | frozenset({
     # failed in the background (``chat_api.crew_steer.CREW_STEER_UNRECORDED_FRAME``,
     # ``broadcast_ws_owners``). Only the owner's own sends are steers.
     "crew_steer_unrecorded",
+    # An app said its own status changed
+    # (``handlers/app_status_changed.APP_STATUS_CHANGED_FRAME``,
+    # ``broadcast_ws_owners``): the owner's windows re-read that app's status
+    # routes. The app that caused it has no use for it back.
+    "app_status_changed",
 })
 
 

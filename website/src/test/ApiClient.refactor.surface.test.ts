@@ -200,7 +200,7 @@ const API_KEY_ORDER = [
   'saveWeixinConfig', 'weixinQrStart', 'weixinQrStatus', 'getWhatsAppConfig',
   'saveWhatsAppConfig', 'whatsAppQrStart', 'whatsAppQrStatus', 'whatsAppUnlink',
   'getWhatsAppGroups', 'researchValidate', 'researchGrillExpand', 'appSessionStatus',
-  'researchCampaigns', 'researchCampaign', 'researchCreate', 'researchAction',
+  'appStatusChanged', 'researchCampaigns', 'researchCampaign', 'researchCreate', 'researchAction',
   'researchGrillTree', 'researchNudge', 'researchAddQuestion', 'researchToKnowledge',
   'researchKnowledgeStatus', 'researchToArtifact', 'researchReportStatus', 'researchReport',
   'researchDelete', 'invokeFileMenuItem', 'artifactTeardown', 'publishProviders',

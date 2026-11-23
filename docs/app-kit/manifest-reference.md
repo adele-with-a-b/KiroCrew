@@ -759,8 +759,18 @@ not retried, and an unrecognized payload is treated as `none`.
 
 **When the status is re-asked.** Once when the chat opens, again when the user
 closes the control's popover, and again each time a turn in that chat finishes.
-A change the app makes between turns (a cron job, another session) shows on the
-next of those moments, not before: there is no polling interval.
+There is no polling interval. A change the app makes between turns (the person
+answers in the app's own tab, a cron job, another session) shows at once only
+when the app says so: its page calls `useAppStatusRefresh()` from
+`@kirocrew/app-sdk`, or its backend calls
+`POST /api/apps/<app>/status-changed` with its app token, optionally with
+`{"session_key": "dashboard:chat-7"}` to name one chat. Every owner window then
+re-reads that app's status for that chat (or for every chat, with no
+`session_key`). An app can only refresh its own: the token must be the named
+app's, and the dashboard re-reads no other app's routes. Every call is
+delivered, with no dedupe. Needs `APP_SDK_LEVEL >= 10`; an older host answers
+the route `404`. See
+[api-reference.md](api-reference.md#app-status-refresh).
 
 The route base follows how the app serves its backend, and the dashboard derives
 it -- an app declaring `backend.entryPoint` runs its own process and is
@@ -857,6 +867,14 @@ drawn muted with `?`, and its row in the card says the read failed, with the
 error; it never keeps showing the last good value. A failed route is not retried
 until the next poll, but returning to the tab re-reads any value older than a
 minute.
+
+**A change between polls.** When the app changes what the route answers (the
+person answers in the app's own tab, a cron job), it can have the pill re-read at
+once instead of at the next poll: its page calls `useAppStatusRefresh()` from
+`@kirocrew/app-sdk`, or its backend calls `POST /api/apps/<app>/status-changed`
+with its app token. Every owner window then re-reads all of that app's items
+(and its session-control chips). Needs `APP_SDK_LEVEL >= 10`. See
+[api-reference.md](api-reference.md#app-status-refresh).
 
 ### `contributes.fileMenuItems` — Rows in File / Tree / Folder Menus
 

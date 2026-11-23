@@ -30,6 +30,7 @@ export const CORE_APP_ROUTE_SEGMENTS = new Set([
   'manifest',
   'migrate-cleanup',
   'open',
+  'status-changed',
   'token',
   'uninstall',
   'update',

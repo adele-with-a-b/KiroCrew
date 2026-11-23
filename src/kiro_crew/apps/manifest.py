@@ -280,7 +280,7 @@ def cron_permission_error(manifest: AppManifest) -> str:
 #:   verbs ``uninstall`` (whose ``uninstall/preview`` child is covered by the segment),
 #:   ``update``, ``enable``, ``disable``, ``open``, ``dev``, ``migrate-cleanup``,
 #:   ``bot-grants``
-#: * ``dashboard/routes/system.py`` -- ``token``
+#: * ``dashboard/routes/system.py`` -- ``token``, ``status-changed``
 #: * ``apps/job_routes.py`` -- ``_jobs``
 #:
 #: A NEW core route mounted under ``/api/apps/{name}/`` MUST be added here in the same
@@ -300,6 +300,7 @@ CORE_APP_ROUTE_SEGMENTS = frozenset(
         "manifest",
         "migrate-cleanup",
         "open",
+        "status-changed",
         "token",
         "uninstall",
         "update",

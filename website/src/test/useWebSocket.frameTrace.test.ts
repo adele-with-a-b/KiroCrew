@@ -329,6 +329,7 @@ const FRAME_CASES: Array<[string, Frame[], Frame[]]> = [
   ['session_summary', [], [{ type: 'session_summary', data: { key: ACTIVE } }, { type: 'session_summary', data: {} }]],
   ['pins_changed', [], [{ type: 'pins_changed', data: { slot_key: ACTIVE } }, { type: 'pins_changed', data: {} }]],
   ['crew_steer_unrecorded', [], [{ type: 'crew_steer_unrecorded', data: { slot: ACTIVE, reason: 'not_recorded' } }, { type: 'crew_steer_unrecorded', data: {} }]],
+  ['app_status_changed', [], [{ type: 'app_status_changed', data: { app: 'ref-links', session_key: ACTIVE } }, { type: 'app_status_changed', data: {} }]],
   ['artifact_update', [], [{ type: 'artifact_update', data: { slug: 'doc' } }]],
   ['artifact_update deleted', [], [{ type: 'artifact_update', data: { slug: 'doc', deleted: true } }, { type: 'artifact_update', data: {} }]],
   ['resume_all_done', [], [{ type: 'resume_all_done', data: { run_id: 'run-1', total: 1, resumed: [ACTIVE], skipped: [], failed: [] } }]],
@@ -1112,6 +1113,10 @@ const EXPECTED_FRAMES: Record<string, string[]> = {
   // Sets the worker composer's own note (`crewSteerNotice`), not a Redux or
   // query effect; the notice is checked in its own spec below.
   "crew_steer_unrecorded": [],
+  // One narrowed re-read for the named app; a frame with no app moves nothing.
+  "app_status_changed": [
+    'query invalidateQueries undefined <predicate>',
+  ],
   "artifact_update": [
     'query invalidateQueries ["artifact","doc"]',
     'query invalidateQueries ["artifact-versions","doc"]',

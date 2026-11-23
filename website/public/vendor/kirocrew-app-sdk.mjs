@@ -27,6 +27,8 @@ export const {
   usePanelTabRequest,
   // The way back after a status item's go sent the operator to this tab's chat.
   useStatusGoBack,
+  // An app re-reads its own status in every owner window (level 10).
+  useAppStatusRefresh,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.

@@ -4,6 +4,7 @@
  * the two equal. An app bundle reads it (namespace import, feature-detected) to
  * tell an older host from one that has the seams it was built against. Level 9
  * adds `permissions.bots`: an app's backend reaches the Bots the owner ticks for it
- * with its app token.
+ * with its app token. Level 10 adds `useAppStatusRefresh` and
+ * `POST /api/apps/<app>/status-changed`: an app re-reads its own status chips and top-bar items at once.
  */
-export const APP_SDK_LEVEL = 9
+export const APP_SDK_LEVEL = 10

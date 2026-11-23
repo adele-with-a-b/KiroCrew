@@ -25,6 +25,7 @@ import { GUIDE_PENDING_QUERY_KEY } from '../../api/guide'
 import { CHANGE_CARDS_QUERY_PREFIX } from '../../api/cards'
 import { slotChangeUrls } from '../../utils/pullRequestLinks'
 import { dashboardSessionKey, SESSION_CONTROL_STATUS_KEY } from '../useSessionControls'
+import { APP_STATUS_ITEM_KEY } from '../useAppStatusItems'
 import type { ChatSlot, PullRequestStatusBatch } from '../../types'
 import { emitArtifactDeleted } from './browserEvents'
 import type { FrameData } from './frames'
@@ -621,6 +622,31 @@ export function refreshSessionControlStatusesAfterTurn(queryClient: QueryClient,
   void queryClient.invalidateQueries({
     queryKey: [SESSION_CONTROL_STATUS_KEY, sessionKey],
     refetchType: isActive ? 'active' : 'none',
+  })
+}
+
+/** One app said its own status changed (`app_status_changed`, an owner-only frame
+ *  the gateway sends for `POST /api/apps/<app>/status-changed`). Re-ask only THAT
+ *  app's probes: all of its top-bar status items (they are not per chat), and its
+ *  session-control chips for one chat when the frame names a session, else for
+ *  every chat. Another app's probes are never touched, whatever the frame says,
+ *  because the match is on each key's own app slot. Mounted probes refetch now; a
+ *  background chat's are only marked stale, as at a turn end. */
+export function handleAppStatusChanged(queryClient: QueryClient, data: unknown): void {
+  const { app, session_key: sessionKey } = (data ?? {}) as { app?: unknown; session_key?: unknown }
+  if (typeof app !== 'string' || !app) return
+  const oneSession = typeof sessionKey === 'string' && sessionKey ? sessionKey : null
+  // A status item's key slot 1 is `${appName}:${itemId}`, and an app name holds
+  // no `:` (`APP_NAME_RE`), so the prefix names exactly one app.
+  const itemPrefix = `${app}:`
+  void queryClient.invalidateQueries({
+    predicate: q => {
+      const k = q.queryKey
+      // [APP_STATUS_ITEM_KEY, itemKey, statusPath, processBacked]
+      if (k[0] === APP_STATUS_ITEM_KEY) return typeof k[1] === 'string' && k[1].startsWith(itemPrefix)
+      // [SESSION_CONTROL_STATUS_KEY, sessionKey, controlKey, appName, ...]
+      return k[0] === SESSION_CONTROL_STATUS_KEY && k[3] === app && (oneSession === null || k[1] === oneSession)
+    },
   })
 }
 

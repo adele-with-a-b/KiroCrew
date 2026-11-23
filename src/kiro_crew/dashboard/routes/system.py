@@ -338,3 +338,8 @@ def register(app: web.Application) -> None:
 
     # App token exchange (App Kit §5.1 — must be before auth middleware bypass)
     app.router.add_post("/api/apps/{name}/token", handlers.api_app_token)
+    # An app says its own status changed; owner windows re-read it (App Kit
+    # "statusPath"). ``status-changed`` is in ``CORE_APP_ROUTE_SEGMENTS``.
+    from kiro_crew.dashboard.handlers.app_status_changed import api_app_status_changed
+
+    app.router.add_post("/api/apps/{name}/status-changed", api_app_status_changed)
