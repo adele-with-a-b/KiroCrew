@@ -1,8 +1,9 @@
 """The keepers directory: each keeper's record and key, read and written by the gateway.
 
 ``<data home>/chat-keepers/`` (0700) holds, per keeper instance, ``<id>.json`` (the
-record: nothing secret), ``<id>.key`` (the shared secret, 0600) and ``<id>.s`` (the socket) and
-``<id>.log``, which the keeper itself creates. The keeper removes all four when it
+record: nothing secret), ``<id>.key`` (the shared secret, 0600), ``<id>.token`` (the
+session token the adapter's environment carries, 0600) and ``<id>.s`` (the socket) and
+``<id>.log``, which the keeper itself creates. The keeper removes all five when it
 ends. A record is LIVE when its keeper pid exists and still carries the start
 identity recorded for it, so a recycled pid never reads as a keeper.
 """
@@ -26,7 +27,7 @@ logger = logging.getLogger("kiro_crew.chat_keeper")
 MAX_SOCKET_PATH = 103
 
 #: The suffixes of one keeper's files.
-_SUFFIXES = (SOCKET_SUFFIX, ".json", ".key", ".log")
+_SUFFIXES = (SOCKET_SUFFIX, ".json", ".key", ".token", ".log")
 
 
 @dataclass(frozen=True)
@@ -112,8 +113,8 @@ def write_key(instance: str, secret: bytes, home: Path | None = None) -> None:
     _write_private(keepers_dir(home) / f"{instance}.key", secret.hex().encode("ascii"))
 
 
-def read_key(instance: str, home: Path | None = None) -> bytes | None:
-    path = keepers_dir(home) / f"{instance}.key"
+def _read_private(path: Path) -> bytes | None:
+    """A short regular file this uid owns, never through a symlink; None otherwise."""
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     except OSError:
@@ -122,13 +123,54 @@ def read_key(instance: str, home: Path | None = None) -> bytes | None:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
             return None
-        raw = os.read(fd, 256)
+        return os.read(fd, 256)
     finally:
         os.close(fd)
+
+
+def read_key(instance: str, home: Path | None = None) -> bytes | None:
+    raw = _read_private(keepers_dir(home) / f"{instance}.key")
+    if raw is None:
+        return None
     try:
         return bytes.fromhex(raw.decode("ascii").strip())
     except (UnicodeDecodeError, ValueError):
         return None
+
+
+#: A session token as ``mcp_gateway.claim.mint_stub_session_token`` mints it.
+_SESSION_TOKEN_HEX_DIGITS = 64
+
+
+def write_session_token(instance: str, token: str, home: Path | None = None) -> None:
+    """Keep the session token the keeper's adapter was launched with, for an adopter.
+
+    The adapter and every MCP server under it carry this token in their environment
+    for the life of the process, and only the gateway that minted it knew it. The
+    gateway that adopts the keeper reads it here to vouch for those processes again
+    (``acp.client_keeper.restore_launch_state``).
+    """
+    _write_private(keepers_dir(home) / f"{instance}.token", token.encode("ascii"))
+
+
+def read_session_token(record: KeeperRecord) -> str:
+    """The session token kept for *record*'s keeper, or "" when there is none.
+
+    Read from the directory the record's socket was made in. A keeper started by a
+    build that kept no token has none, and a file that is not a token reads as none.
+    """
+    if not record.instance.isalnum():
+        return ""
+    raw = _read_private(Path(record.socket).parent / f"{record.instance}.token")
+    if raw is None:
+        return ""
+    try:
+        token = raw.decode("ascii").strip()
+    except UnicodeDecodeError:
+        return ""
+    if len(token) != _SESSION_TOKEN_HEX_DIGITS or token.strip("0123456789abcdef"):
+        return ""
+    return token
 
 
 def write_record(record: KeeperRecord, home: Path | None = None) -> None:

@@ -19,7 +19,7 @@ Instance fields written: ``_keeper_adopt_spent``, ``_keeper_adopting``,
 ``_resume_session_id``, ``_session_id``, ``_resumed``, ``_next_id``, ``_buffer``,
 ``_can_load_session``, ``_agent_accepts_image``, ``_agent_version``,
 ``_agent_version_read``, ``_steering_advertised``, ``_initialize_result``,
-``_last_activity``, ``on_agent_turn``.
+``_last_activity``, ``on_agent_turn``, ``_stub_session_token``.
 """
 
 from __future__ import annotations
@@ -259,6 +259,7 @@ async def keeper_spawn_for(client: AcpClient, launch_id: str) -> KeeperSpawn | N
         adopt_secs=chat_keeper.ADOPT_SECS,
         stdout_limit=_STDOUT_BUFFER_LIMIT,
         process_instance=launch_id,  # pid-owner-ok: keeper launch id
+        session_token=client._stub_session_token,
     )
     if not await asyncio.to_thread(spawn.prepare):
         return None
@@ -366,10 +367,12 @@ def restore_launch_state(client: AcpClient, record: Any) -> None:
     """Set on *client* what the launching gateway's ``launch()`` set on its own.
 
     A scratch directory swept since is not restored: the client then has none, as
-    after a launch whose allocation failed.
+    after a launch whose allocation failed. Blocking: it reads the keepers directory
+    and publishes the session token's mapping (:func:`_restore_session_token`).
     """
     from pathlib import Path
 
+    _restore_session_token(client, record)
     state = record.launch
     scratch = str(state.get("scratch_dir") or "")
     client._scratch_dir = Path(scratch) if scratch and Path(scratch).is_dir() else None
@@ -386,6 +389,44 @@ def restore_launch_state(client: AcpClient, record: Any) -> None:
             if isinstance(pair, list) and len(pair) == 2
         )
         setattr(client, "_claude_shipped_restrictions", restrictions)  # noqa: B010
+
+
+def _restore_session_token(client: AcpClient, record: Any) -> None:
+    """Make *client* name the session token its kept adapter carries, and vouch for it.
+
+    The adapter and every MCP server under it hold, in their environment, the token
+    the launching gateway minted for this chat (``client_spawn_env``). This client
+    minted another, which no process of the chat holds, and a gateway publishes only
+    its client's own token (at each turn's start, ``messaging.identity``). Left so,
+    the kept chat's servers present a token nothing maps once the launching gateway's
+    mapping is gone (it was never written for a chat with no turn under that gateway,
+    and it is pruned a week after its last write), and every identity-bound tool
+    call is refused as ``identity_unattested``.
+
+    The token comes from the keeper's own files, which only a gateway writes, for a
+    record whose session key is this client's; the attach before this proved the
+    keeper serves that key. A token already vouched for another chat is never moved
+    to this one, so no chat comes to answer for another's servers. A keeper whose
+    launcher kept no token leaves the client its own.
+    """
+    from kiro_crew.chat_keeper import records
+    from kiro_crew.session_token_sig import publish_session_token, verify_session_token
+
+    session_key = getattr(client, "_session_key", None) or ""
+    if not session_key or record.session_key != session_key:
+        return
+    token = records.read_session_token(record)
+    if not token:
+        return
+    vouched = verify_session_token(token)
+    if vouched and vouched != session_key:
+        logger.warning(
+            "chat keeper %s: its session token is vouched for another chat; not restored",
+            record.instance,
+        )
+        return
+    client._stub_session_token = token
+    publish_session_token(token, session_key)
 
 
 #: The launch-state key holding the deny and ask rules the session was created with.
