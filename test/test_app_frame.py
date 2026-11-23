@@ -163,8 +163,9 @@ const listeners = {};
 const parent = { postMessage: (m) => posted.push(m) };
 globalThis.window = { parent, addEventListener: (t, f) => { (listeners[t] ||= []).push(f); } };
 globalThis.location = { pathname: '/app-frame/a/linkPreviews/c/f/t', href: 'http://gw/app-frame/a/linkPreviews/c/f/t' };
-const lateProvider = 'export function activate(ctx) { return { show(link) { globalThis.shows.push(link); } }; }';
+const lateProvider = 'export function activate(ctx) { return { show(link) { globalThis.shows.push(link); }, placement(side) { globalThis.sides.push(side); } }; }';
 globalThis.shows = [];
+globalThis.sides = [];
 globalThis.document = {
   activeElement: null,
   body: {},
@@ -239,9 +240,9 @@ const deliver = (data) => (listeners.message || []).forEach((f) => f({ source: p
 deliver({ type: 'init', capability: 'c' });
 for (let i = 0; i < 50 && !posted.some((m) => m.type === 'ready'); i++) await new Promise((r) => setTimeout(r, 10));
 const rect = { left: 0, top: 0, width: 1, height: 1 };
-deliver({ type: 'show', invocation: 4, text: '[R4]', rect, theme: 'light', trigger: 'click',
+deliver({ type: 'show', invocation: 4, text: '[R4]', rect, theme: 'light', trigger: 'click', placement: 'above',
   sessionKey: 'dashboard:s', message: { ts: 't', id: 'm', extra: 1 } });
-deliver({ type: 'show', invocation: 5, text: '[R5]', rect, theme: 'light', trigger: 'nudge', message: { ts: 7 } });
+deliver({ type: 'show', invocation: 5, text: '[R5]', rect, theme: 'light', trigger: 'nudge', placement: 'left', message: { ts: 7 } });
 const [a, b] = shows;
 a.card.openPanelTab('questions', { label: '[R4]', at: new Date(0) });
 a.card.openPanelTab('questions', () => 1);
@@ -249,16 +250,21 @@ a.card.openPanelTab('questions');
 a.card.jumpTo(a.message);
 a.card.jumpTo({ ts: 't2', id: 9 });
 a.card.jumpTo(null);
+deliver({ type: 'placement', invocation: 5, placement: 'below' });
+deliver({ type: 'placement', invocation: 5, placement: 'left' });
 console.log(JSON.stringify({
-  a: { trigger: a.trigger, message: a.message }, b: { trigger: b.trigger ?? null, message: b.message ?? null },
+  sides,
+  a: { trigger: a.trigger, placement: a.placement, message: a.message },
+  b: { trigger: b.trigger ?? null, placement: b.placement ?? null, message: b.message ?? null },
   sent: posted.filter((m) => ['openPanelTab', 'jump'].includes(m.type)).map(({ type, invocation, tab, payload, ts, id }) => ({ type, invocation, tab, payload, ts, id })),
 }));
 """
 
 
 def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown() -> None:
-    """``trigger`` and ``message`` reach the provider read field by field, and
-    ``card.openPanelTab`` / ``card.jumpTo`` post JSON for this show only.
+    """``trigger``, ``placement`` and ``message`` reach the provider read field by field, a
+    later ``placement`` reaches its ``placement`` hook, and ``card.openPanelTab`` /
+    ``card.jumpTo`` post JSON for this show only.
 
     The dashboard checks the tab, the chat and the grant (``linkPreviewFrames.ts``);
     the frame only shapes what it sends.
@@ -279,8 +285,13 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
         check=True,
     )
     result = json.loads(out.stdout.strip().splitlines()[-1])
-    assert result["a"] == {"trigger": "click", "message": {"ts": "t", "id": "m"}}
-    assert result["b"] == {"trigger": None, "message": None}
+    assert result["a"] == {
+        "trigger": "click",
+        "placement": "above",
+        "message": {"ts": "t", "id": "m"},
+    }
+    assert result["b"] == {"trigger": None, "placement": None, "message": None}
+    assert result["sides"] == ["below"]
     assert result["sent"] == [
         {
             "type": "openPanelTab",

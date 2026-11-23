@@ -1132,6 +1132,10 @@ export function activate(ctx: {
     // 'hover': the hover delay ran out; 'click': a mouse click on a text span;
     // 'tap': a touch tap on a text span.
     trigger?: 'hover' | 'click' | 'tap'
+    // Card mode: which side of the link the dashboard put the card on, from the
+    // card's size at the time of the show; `placement` below says when the card's
+    // own size moves it to the other side. Absent in overlay mode.
+    placement?: 'above' | 'below'
     rect: { left: number; top: number; width: number; height: number }
     modifiers?: { alt: boolean; shift: boolean; ctrl: boolean; meta: boolean }
     // Card mode: the controls for THIS show's card, placed next to its link.
@@ -1153,6 +1157,8 @@ export function activate(ctx: {
   leave(): void              // the pointer left the link; the card may hold itself open
   hide(reason: string): void // 'scroll' | 'escape' | 'blur' | 'click' | 'other-provider' | 'disabled'
   theme?(theme: 'dark' | 'light'): void
+  // Card mode: the latest show's card now sits on this side of its link.
+  placement?(side: 'above' | 'below'): void
   dispose?(): void           // the app was disabled
 }
 ```
@@ -1192,7 +1198,17 @@ approved for `sessionKey`. Each also needs the person's own click in the card a
 moment before: the dashboard has a live user activation and its focus is in the
 card's frame. So call them from a button's click handler. A call on hover, or with
 no click in the card, is dropped, and so is one made from a key the dashboard
-passes to the card (focus is then not in the frame):
+passes to the card (focus is then not in the frame).
+
+One exception, for `openPanelTab` only: a show whose `trigger` is `'click'` or
+`'tap'` was the person's own click or tap on the link, so that show may open a
+tab once with no click in the card. Call `card.open()` first (the card must be
+showing), then `card.openPanelTab`, within 3 seconds of the show: before any
+slow read, since the 3 seconds count from the show. The first `openPanelTab`
+call of that show that reaches the dashboard uses the allowance up whether it
+opens a tab or not; so do `leave`, `hide`, pinning the card and the next show.
+A hover show has no allowance, and `jumpTo` and links in the card always need a
+click in the card:
 
 - `card.openPanelTab(tab, payload)` opens `tab`, one of this app's own
   `contributes.panelTabs`, in that chat's side panel. Another app's tab, or a tab the

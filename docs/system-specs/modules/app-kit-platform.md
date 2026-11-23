@@ -5238,7 +5238,26 @@ The boundary:
   (leave, Escape, blur, or a scroll that moves the link before its card is
   open) retires the current invocation too, and a ready card
   that was not yet visible is still sent `hide`, so a late `open` never shows a
-  dismissed card. An unnamed text pattern is named by its declaration index before
+  dismissed card. A card's `openPanelTab` and `jump` need `hasGesture` on its
+  frame (live activation, focus in that iframe), with one exception: a show the
+  dashboard's own click or tap handler made (`trigger` `click` or `tap`, set only
+  by `LinkPreviewLayer`'s DOM listeners, never read from a frame) stores
+  `clickGrant` on the frame, and the first `openPanelTab` after it passes when
+  the grant names the latest invocation, the frame is visible and the show is at
+  most `CLICK_GRANT_MS` (3 s) old. That show's first `openPanelTab` spends it
+  whatever it asks (one from an earlier show leaves it); `leave`, dismissal and
+  the next show clear it (`cancelShow`), and so does `pin { pinned: true }`,
+  which takes the frame out of their reach. Hover shows get none, `jump` and the link bridge keep the
+  gesture rule, and every scope check (own tab, chat on screen, `sessionKey`)
+  still runs. The bound counts from the show, which on a cold frame waits for
+  the module. Measured on a test Crew with Ref Links' label card: 7-34 ms from
+  show to its card's `open` on a chat it had read; its server's first read of a
+  never-read 43 MB chat took 2.9-4.0 s, so a provider opens the tab before such
+  a read. A card-mode `show` also carries `placement` (`above` | `below`), from
+  the same decision `place` makes (`beside`); when a later `place` of that show
+  (its `resize`, the window's) puts the card on the other side, the frame is
+  sent `placement { invocation, placement }`. Absent in overlay mode, and for a
+  docked or dragged card. An unnamed text pattern is named by its declaration index before
   the grant filter runs, so a pattern waiting for approval never renames a later
   one or its off switch.
 - **Failure.** A frame that does not say `ready` within `READY_TIMEOUT_MS`, says

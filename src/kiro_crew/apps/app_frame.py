@@ -987,6 +987,7 @@ const POINT = {
           if (typeof m.message.id === 'string') link.message.id = m.message.id;
         }
         if (m.trigger === 'hover' || m.trigger === 'click' || m.trigger === 'tap') link.trigger = m.trigger;
+        if (m.placement === 'above' || m.placement === 'below') link.placement = m.placement;
         if (m.modifiers && typeof m.modifiers === 'object') {
           const k = m.modifiers;
           link.modifiers = { alt: k.alt === true, shift: k.shift === true, ctrl: k.ctrl === true, meta: k.meta === true };
@@ -997,6 +998,9 @@ const POINT = {
       }
       case 'leave': call('leave'); return;
       case 'hide': call('hide', String(m.reason || 'other')); return;
+      case 'placement':
+        if (m.placement === 'above' || m.placement === 'below') call('placement', m.placement);
+        return;
       case 'key': {
         if (typeof m.key !== 'string' || m.key.length !== 1) return;
         const init = { key: m.key, code: typeof m.code === 'string' ? m.code : '', shiftKey: m.shift === true, bubbles: true, composed: true, cancelable: true };
