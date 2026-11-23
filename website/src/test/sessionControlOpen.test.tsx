@@ -181,10 +181,16 @@ describe('useSessionControlJump', () => {
     const page = chatPage('chat-1', true)
     try {
       const jump = renderHook(() => useSessionControlJump(), { wrapper: scoped('dashboard:chat-1') }).result.current!
-      for (const bad of [{ ts: '' }, { ts: 7 }, { ts: 'x'.repeat(129) }, { ts: 't4', id: 9 }, null]) {
+      for (const bad of [{ ts: '' }, { ts: 7 }, { ts: 'x'.repeat(129) }, { id: 'm4' }, null]) {
         await expect(jump(bad as never)).resolves.toEqual({ ok: false, reason: 'not_found' })
       }
       expect(page.seen).toEqual([])
+      // As the card's jump reads it: an id that is not a usable string is left out.
+      for (const id of [null, '', 9]) {
+        await expect(jump({ ts: 't4', id } as never)).resolves.toEqual({ ok: true })
+      }
+      expect(page.seen.map(r => r.kind === 'jump' && r.target)).toEqual([{ ts: 't4' }, { ts: 't4' }, { ts: 't4' }])
+      page.seen.length = 0
       const elsewhere = renderHook(() => useSessionControlJump(), { wrapper: scoped('dashboard:chat-2') }).result.current!
       await expect(elsewhere({ ts: 't4' })).resolves.toEqual({ ok: false, reason: 'not_on_screen' })
       const notDashboard = renderHook(() => useSessionControlJump(), { wrapper: scoped('slack:C1') }).result.current!

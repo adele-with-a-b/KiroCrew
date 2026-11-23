@@ -321,9 +321,14 @@ export function useTranscriptPins({
     // AROUND a message id; until that exists, paging is the honest behaviour.
     pinnedJumpPageLoadsRef.current += 1
     if (inspectorOn()) devLog('OLDER', `jump p${pinnedJumpPageLoadsRef.current}`)
-    let cancelled = false
+    // The page's own dispatch flips `loadingOlder`, a dependency, so this effect
+    // run is cleaned up before the page settles: an effect-run flag would drop
+    // every answer (and a failed page would be asked for again and again). The
+    // page acts while the jump that asked for it is still the one pending.
+    const mine = pendingPinnedJump
+    const stillMine = () => lastPendingRef.current === mine
     void dispatch(loadOlderMessages()).unwrap().then(result => {
-      if (!cancelled && result === null) {
+      if (stillMine() && result === null) {
         pinnedJumpPageLoadsRef.current = 0
         if (pendingPinnedJump.done) pendingPinnedJump.done('not_found')
         else setPinNotice(notFoundNotice)
@@ -333,14 +338,13 @@ export function useTranscriptPins({
       // Cancelled or refused means the user switched chat, not that the pin is
       // unreachable.
       if (isSupersededPagingRejection(err)) return
-      if (!cancelled) {
+      if (stillMine()) {
         pinnedJumpPageLoadsRef.current = 0
         if (pendingPinnedJump.done) pendingPinnedJump.done('load_failed')
         else setPinLoadError(loadFailedNotice)
         setPendingPinnedJump(null)
       }
     })
-    return () => { cancelled = true }
   }, [
     activeSlot,
     activeViewIsBoundedPage,

@@ -6294,23 +6294,35 @@ Back pill. It is one route, not a second scroller:
   returns `jumpTo(message)` inside a session control, `null` outside one. The
   chat is the one `SessionControlRequestScope` names, so a control can jump only
   its own chat. `message` is the card's shape, `{ ts, id? }`, read with the card's
-  `readMessageRef`; a `ts` or `id` that is not a string of 1-128 characters is
-  answered `not_found` unsent (a given but unreadable `id` never falls back to
-  `ts`, which can name a same-tick twin).
+  `readMessageRef`, as the card's jump reads it: a `ts` that is not a string of
+  1-128 characters is answered `not_found` unsent, and an `id` that is not one (a
+  backend's `null` for a row with no mid) is left out, so `ts` names the message.
 - **The hand-off.** `jumpTo` sends `{kind: 'jump', slot, target, from: 'view',
   onDone}` through `sendAppNav`; no listener taking it (another chat on screen,
   Split View, a session key that is not `dashboard:<slot>`) is `not_on_screen` at
   once. The transcript's jump listener (`transcriptJumps.ts`) takes it as it takes
   a card's and calls `handleJumpToPinnedMessage` (`transcriptPins.ts`), the
   pins', quotes' and `?msg=` links' jump, which pages older history in for a
-  message not loaded.
+  message not loaded. A refusal is an answer, not a wait: once the cursor is the
+  chat's own (during a switch the rows can still be the chat left, and the jump
+  is handed on to wait for it), a target not loaded is `not_found` at once,
+  unsent, when the chat has no older history or the target's `ts` is later than
+  the oldest loaded message's (the loaded rows run unbroken to the newest, so it
+  is in no page still to load). The `ts` must be the message's own, as a card's
+  is, even when an `id` is given. Only a target older than the
+  window pages, so a reply of another chat with an older `ts` reads this chat's
+  history to its start before `not_found`.
 - **The answer.** `handleJumpToPinnedMessage` takes an optional `onDone`, called
   once (`JumpOutcome`): `true` when the message is on screen (at once, or when a
   paged page brings it), `not_found` when the chat has no such message (no older
   history at once, or after paging to its start), `load_failed` when a page
   failed, `not_on_screen` when the chat was left first, `replaced` when a newer
   jump, or any other writer of the pending jump, took its place. The answer is
-  never a timer: it comes when the jump itself ends. The control's Promise
+  never a timer: it comes when the jump itself ends. A page settles for the jump
+  that asked for it while that jump is still the pending one, not for the effect
+  run that sent it: the page's own dispatch flips `loadingOlder`, a dependency,
+  so a run-scoped flag dropped every page's answer and asked a failed page again
+  and again (a pin's load error had the same hole). The control's Promise
   resolves `{ ok: true }` or `{ ok: false, reason }` with those names. A jump
   with an `onDone` writes no chat notice (`pinStatus` / `pinError`): the caller
   says the refusal in its own words, and the dead-link notice would claim a reply
@@ -6321,11 +6333,18 @@ Back pill. It is one route, not a second scroller:
   Back returns the chat there. A spot taken while the view rested at the bottom
   (a card's too) is marked `bottom`, and Back calls the chat's own `scrollBottom`
   (the jump-to-bottom pill's), so the chat follows new replies again; a row offset
-  restored near the bottom landed 86-173 px short, the bottom band's height. A control's jumps run from one box, so a second
-  jump keeps the spot the first left from (Back returns to where the person was
-  before they began) and only re-aims the arrow; a target that is not there moves
-  nothing and leaves the pill as it was. The rest is the card's: switching chats,
-  or scrolling to the bottom by hand, drops the pill.
+  restored near the bottom landed 86-173 px short, the bottom band's height. A
+  control's spot is measured before the jump and kept only when the jump lands
+  (`true`): one that does not moves nothing and leaves the pill as it was. Its
+  jumps run from one box, so a second one keeps the spot already held, a card's
+  included (Back returns to where the person was before they began), and only
+  re-aims the arrow, unless the person has moved the view by hand since (wheel,
+  touch, or a scroll key either way with focus on the page or in the transcript,
+  never in a field; a click moves nothing): then it leaves from the view they
+  moved to. Only the transcript's own row wrappers count (`isTranscriptRow`), for
+  a card's spot too; message content may carry `data-display-index`. The
+  rest is the card's: switching chats, or scrolling to the bottom by hand, drops
+  the pill.
 - **The popover stays open.** A card is hidden on its jump because it floats over
   the transcript it moved; the popover is the box the person is working in, and
   its draft would be lost. A press on the Back pill is not an outside press either

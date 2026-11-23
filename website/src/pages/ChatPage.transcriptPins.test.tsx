@@ -240,6 +240,33 @@ describe('a jump that asked to be told how it ended (a session control’s)', ()
     expect(broken.result.current.pinError).toBeNull()
   })
 
+  it('a failed page answers load_failed once and is not asked for again, though its own dispatch flips loadingOlder', async () => {
+    let fail: (e: Error) => void = () => {}
+    const dispatch = pagingDispatch(() => new Promise((_, reject) => { fail = reject }))
+    const base = { slotHasMore: true, slotOldestIndex: 40, dispatch: dispatch as never }
+    const { result, rerender } = renderHook((over: Partial<Props>) => useTranscriptPins(props({ ...base, ...over })), {
+      initialProps: {} as Partial<Props>, wrapper: withQueryClient(),
+    })
+    const done = vi.fn()
+    const pages = () => dispatch.mock.calls.filter(([a]) => typeof a === 'function').length
+    act(() => { result.current.handleJumpToPinnedMessage('old', 'm_old', { origin: 'link', onDone: done }) })
+    await waitFor(() => expect(pages()).toBe(1))
+    // The store marks the page in flight, which re-runs (and cleans up) the effect.
+    rerender({ loadingOlder: true })
+    await act(async () => { fail(new Error('502')) })
+    rerender({ loadingOlder: false })
+    await waitFor(() => expect(done).toHaveBeenCalledWith('load_failed'))
+    expect(done).toHaveBeenCalledTimes(1)
+    expect(pages()).toBe(1)
+    // A pin's jump, the same path without an answer, shows its load error.
+    act(() => { result.current.handleJumpToPin('old', 'm_old') })
+    await waitFor(() => expect(pages()).toBe(2))
+    rerender({ loadingOlder: true })
+    await act(async () => { fail(new Error('502')) })
+    rerender({ loadingOlder: false })
+    await waitFor(() => expect(result.current.pinError).not.toBeNull())
+  })
+
   it('a pending jump answers replaced when a newer jump takes over, and not_on_screen when the chat is left', async () => {
     const dispatch = pagingDispatch(() => new Promise(() => {}))
     const { result, rerender } = renderHook((over: Partial<Props>) => useTranscriptPins(props({ slotHasMore: true, slotOldestIndex: 40, dispatch: dispatch as never, ...over })), {

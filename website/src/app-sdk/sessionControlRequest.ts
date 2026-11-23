@@ -111,10 +111,10 @@ export function useSessionControlJump(): ((message: { ts: string; id?: string })
     const slot = where.sessionKey.startsWith('dashboard:') ? where.sessionKey.slice('dashboard:'.length) : ''
     return (message: { ts: string; id?: string }) => new Promise<SessionControlJumpResult>((resolve) => {
       const m = message as { ts?: unknown; id?: unknown } | null | undefined
+      // Read as the card's jump reads it: an `id` that is not a usable string (a
+      // backend's `null` for a row with no mid) is left out, and `ts` names it.
       const target = m && typeof m === 'object' ? readMessageRef(m.ts, m.id) : null
-      // An `id` that is given but unreadable must not fall back to `ts`, which can
-      // name a same-tick twin.
-      if (!target || (m?.id !== undefined && target.id === undefined)) { resolve({ ok: false, reason: 'not_found' }); return }
+      if (!target) { resolve({ ok: false, reason: 'not_found' }); return }
       if (!slot) { resolve({ ok: false, reason: 'not_on_screen' }); return }
       const taken = sendAppNav({
         kind: 'jump', slot, target, from: 'view',

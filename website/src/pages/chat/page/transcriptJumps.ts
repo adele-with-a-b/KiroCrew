@@ -6,6 +6,7 @@ import type { ChatMessage } from '../../../types'
 import { pickSearchScrollBehavior, scrollCurrentMatchIntoView } from '../../../utils/searchScroll'
 import { resolveMsgIndex } from '../../../utils/shareUrl'
 import { drawnSuccessorIdx } from './transcriptPins'
+import { isTranscriptRow } from '../usePinnedPrompt'
 import { onLinkPreviewNav, type JumpOutcome } from '../../../linkPreview/linkPreviewNav'
 import type { MessageRef } from '../../../linkPreview/linkPreviewProtocol'
 
@@ -25,12 +26,22 @@ export interface BackSpot {
 
 /** Keys that scroll the transcript by hand. */
 const SCROLL_KEYS = new Set(['ArrowDown', 'PageDown', 'End', ' '])
+/** Keys that move the transcript by hand, either way. */
+const MOVE_KEYS = new Set([...SCROLL_KEYS, 'ArrowUp', 'PageUp', 'Home'])
 
 /** The index of `ref` in `messages`: by `mid` when it has one, else by `ts`. */
 function indexOf(messages: ChatMessage[], ref: MessageRef): number {
   return ref.id
     ? messages.findIndex(m => (m.meta as Record<string, unknown> | undefined)?.mid === ref.id)
     : messages.findIndex(m => m.ts === ref.ts)
+}
+
+/** `ts` is later than the oldest loaded message's (both read as dates). */
+function newerThanWindow(messages: ChatMessage[], ts: string): boolean {
+  const oldest = messages.find(m => m.ts)?.ts
+  const t = Date.parse(ts)
+  const o = oldest ? Date.parse(oldest) : NaN
+  return Number.isFinite(t) && Number.isFinite(o) && t > o
 }
 
 /** The reply the view in `sc` shows now, as `{ message index, row }`: the last row
@@ -42,6 +53,8 @@ function viewRow(sc: HTMLElement, toDisplay: Map<number, number>): { idx: number
   let topIn: { idx: number; row: HTMLElement; top: number } | null = null
   let spanning: { idx: number; row: HTMLElement } | null = null
   for (const row of sc.querySelectorAll<HTMLElement>('[data-display-index]')) {
+    // Only the transcript's own row wrappers: message content may carry the attribute.
+    if (!isTranscriptRow(row, sc)) continue
     const idx = byDisplay.get(Number(row.dataset.displayIndex))
     if (idx === undefined) continue
     const { top, bottom } = row.getBoundingClientRect()
@@ -230,24 +243,37 @@ export function useTranscriptJumps({
   messagesRef.current = messages
   const moreRef = useRef(slotHasMore && cursorIsForActiveSlot)
   moreRef.current = slotHasMore && cursorIsForActiveSlot
+  const settledRef = useRef(cursorIsForActiveSlot)
+  settledRef.current = cursorIsForActiveSlot
   const [backSpot, setBackSpot] = useState<BackSpot | null>(null)
   useEffect(() => { setBackSpot(null) }, [activeSlot])
   // Only the person's own scroll counts: a jump that lands in the last screenful
   // reaches the bottom too, and keeps its pill.
   const byHandRef = useRef(false)
+  // The view was moved by hand, either way, since the spot was set: a session
+  // control's next jump then leaves from where the person is. Narrower than
+  // `byHandRef`: a click scrolls nothing, and keys count only where they scroll
+  // the transcript (focus on the page or in it, never in a field).
+  const movedRef = useRef(false)
   useEffect(() => {
     byHandRef.current = false
+    movedRef.current = false
     const sc = scrollerRef.current
     if (!backSpot || !sc) return
     const mark = () => { byHandRef.current = true }
-    const onKey = (e: KeyboardEvent) => { if (SCROLL_KEYS.has(e.key)) mark() }
-    sc.addEventListener('wheel', mark, { passive: true })
-    sc.addEventListener('touchmove', mark, { passive: true })
+    const moved = () => { byHandRef.current = true; movedRef.current = true }
+    const onKey = (e: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(e.key)) mark()
+      const t = e.target
+      if (MOVE_KEYS.has(e.key) && (t === document.body || (t instanceof Node && sc.contains(t) && !(t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))))) movedRef.current = true
+    }
+    sc.addEventListener('wheel', moved, { passive: true })
+    sc.addEventListener('touchmove', moved, { passive: true })
     sc.addEventListener('pointerdown', mark)
     window.addEventListener('keydown', onKey)
     return () => {
-      sc.removeEventListener('wheel', mark)
-      sc.removeEventListener('touchmove', mark)
+      sc.removeEventListener('wheel', moved)
+      sc.removeEventListener('touchmove', moved)
       sc.removeEventListener('pointerdown', mark)
       window.removeEventListener('keydown', onKey)
     }
@@ -275,28 +301,41 @@ export function useTranscriptJumps({
       ? fromMsg?.ts ? { ts: fromMsg.ts, ...(typeof fromMsg.meta?.mid === 'string' ? { id: fromMsg.meta.mid } : {}) } : undefined
       : req.from
     const di = fromIdx < 0 ? undefined : messageToDisplayIdxRef.current.get(fromIdx)
-    const row = seen ? seen.row : di === undefined ? null : sc?.querySelector<HTMLElement>(`[data-display-index="${di}"]`)
+    const row = seen ? seen.row : di === undefined || !sc ? null
+      : [...sc.querySelectorAll<HTMLElement>(`[data-display-index="${di}"]`)].find(n => isTranscriptRow(n, sc)) ?? null
     const toIdx = indexOf(list, req.target)
     // A target neither loaded nor older than the window is not there: the jump
-    // only says so, and leaves no way back to offer. A session control's jumps
-    // run from one box, so a second one keeps the spot the first left from: Back
-    // returns to where the person was before they began, and a target that is
-    // not there moves nothing and leaves the pill as it was.
+    // only says so, and leaves no way back to offer.
     const there = toIdx >= 0 || moreRef.current
-    const kept = req.from === 'view' ? backSpotRef.current : null
-    if (req.from === 'view' && (kept || !there)) {
-      if (kept && there) setBackSpot({ ...kept, down: toIdx < 0 || toIdx < indexOf(list, kept.from) })
-    } else if (from && sc && row && there) {
-      setBackSpot({
-        from,
-        offset: row.getBoundingClientRect().top - sc.getBoundingClientRect().top,
-        // A target not loaded yet is older than the whole window.
-        down: toIdx < 0 || toIdx < fromIdx,
-        ...(atBottomRef.current ? { bottom: true } : {}),
+    const fresh: BackSpot | null = from && sc && row ? {
+      from,
+      offset: row.getBoundingClientRect().top - sc.getBoundingClientRect().top,
+      // A target not loaded yet is older than the whole window.
+      down: toIdx < 0 || toIdx < fromIdx,
+      ...(atBottomRef.current ? { bottom: true } : {}),
+    } : null
+    if (req.from === 'view') {
+      // A session control's refusal is an answer, not a wait: the loaded rows run
+      // unbroken to the newest, so a target newer than the oldest of them that is
+      // not among them is in no page still to load. Only once the cursor is this
+      // chat's: during a switch the rows can still be the chat left, and the pins'
+      // jump waits for it to settle.
+      if (toIdx < 0 && settledRef.current && (!moreRef.current || newerThanWindow(list, req.target.ts))) { req.onDone?.('not_found'); return true }
+      // Its jumps run from one box, so a second one keeps the spot the first left
+      // from (Back returns to where the person was before they began) unless the
+      // person has moved the view by hand since. The spot is measured now, before
+      // the scroll, and kept only if the jump lands: one that does not moves
+      // nothing and leaves the pill as it was.
+      const kept = movedRef.current ? null : backSpotRef.current
+      const spot = kept ? { ...kept, down: toIdx < 0 || toIdx < indexOf(list, kept.from) } : fresh
+      const answer = req.onDone
+      handleJumpToPinnedMessage(req.target.ts, req.target.id, {
+        origin: 'link',
+        onDone: (o) => { if (o === true) setBackSpot(spot); answer?.(o) },
       })
-    } else {
-      setBackSpot(null)
+      return true
     }
+    setBackSpot(fresh && there ? fresh : null)
     handleJumpToPinnedMessage(req.target.ts, req.target.id, { origin: 'link', ...(req.onDone ? { onDone: req.onDone } : {}) })
     return true
   }), [activeSlot, handleJumpToPinnedMessage, messageToDisplayIdxRef, scrollerRef])

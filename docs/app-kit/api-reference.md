@@ -1088,8 +1088,11 @@ Read it off a namespace import, as above, when your UI must also load on an olde
 of that chat's messages and light it, as a link-preview card's `card.jumpTo` does. It
 returns `jumpTo(message)`, or `null` outside a session control. `message` is the
 card's shape, `{ ts, id? }` (a card's `link.message`, or one your backend kept); the
-`id` is the message's `mid` and wins over `ts` when given. Only the control's own
-chat can be named.
+`id` is the message's `mid` and wins over `ts` when given; one that is not a string
+(a `null` for a row with no mid) is left out, as the card's jump does. Pass the
+message's own `ts` with its `id`: it decides at once whether the message can be in
+this chat. Only the
+control's own chat can be named.
 
 `jumpTo` resolves once the jump has ended, never on a timer. A refusal is yours to
 say: the chat shows no notice of its own for it.
@@ -1097,16 +1100,16 @@ say: the chat shows no notice of its own for it.
 | Answer | When |
 |---|---|
 | `{ ok: true }` | the message is on screen and lit; one older than the loaded window is paged in first |
-| `{ ok: false, reason: 'not_found' }` | this chat has no such message: one of another chat, a `ts` or `id` that is not a string of 1 to 128 characters, or the chat's history read to its start without it. Nothing moves |
+| `{ ok: false, reason: 'not_found' }` | this chat has no such message: a `ts` that is not a string of 1 to 128 characters, one newer than the oldest loaded message but not loaded (answered at once, as for a chat with no older history), or one older than that once the chat's history is read to its start without it. Nothing moves |
 | `{ ok: false, reason: 'load_failed' }` | a page of older history failed to load |
 | `{ ok: false, reason: 'not_on_screen' }` | the control's chat is not the one drawn (Split View), or it was left before the message landed |
 | `{ ok: false, reason: 'replaced' }` | a newer jump (yours or any other) took its place before it landed |
 
 The popover stays open, so whatever the person typed in it is kept. A pill above the
 message box offers "Back to where you were" and returns the chat to the view it showed
-before the first jump (the bottom, following new replies again, if it rested there);
-further jumps from the control keep that spot, and a press on the pill leaves the
-popover open. A popover as wide as the message box covers the pill, which shows once
+before the first jump (the bottom, following new replies again, if it rested there).
+Further jumps keep that spot unless the person moved the chat by hand since, a jump that does
+not land leaves the pill as it was, and a press on the pill leaves the popover open. A popover as wide as the message box covers the pill, which shows once
 the popover closes. Switching chats, or scrolling back to the bottom by hand, drops
 the pill. Needs `APP_SDK_LEVEL >= 13`; read it off the namespace import:
 
