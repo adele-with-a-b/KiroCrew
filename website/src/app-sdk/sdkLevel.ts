@@ -9,5 +9,7 @@
  * Level 11 adds the session-control open: `card.openSessionControl`, a status target's
  * `sessionControl`, `useSessionControlRequest`, and the `opened` answer to a card's open.
  * Level 12 adds `permissions.openFiles` and `useOpenFile`: an app opens a local file on a click.
+ * Level 13 adds `useSessionControlJump`: a session control scrolls its own chat to
+ * one of its messages, with the Back pill.
  */
-export const APP_SDK_LEVEL = 12
+export const APP_SDK_LEVEL = 13

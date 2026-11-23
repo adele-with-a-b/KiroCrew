@@ -754,6 +754,11 @@ its allowance is unspent), and closes soon after, only if no open came in. A pre
 and any other press outside it, a link included, closes it at once. Needs
 `APP_SDK_LEVEL >= 11`.
 
+**Scrolling its chat to a reply.** The control can scroll the chat it is open in
+to one of its messages, with the Back pill a card's `jumpTo` gives, and stay open:
+the SDK's `useSessionControlJump()`, in the
+[API reference](api-reference.md#session-control-jump). Needs `APP_SDK_LEVEL >= 13`.
+
 **Two caps, and the second one drops.** The backend allows at most **2** controls
 per app. The dashboard renders at most **2** across all apps, and controls past
 that are dropped rather than moved into an overflow menu -- the bar shares one row

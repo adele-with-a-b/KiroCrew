@@ -7,7 +7,9 @@ status routes at once. Level 11 adds the session-control open: a link-preview ca
 ``card.openSessionControl``, a status target's ``sessionControl``, the SDK's
 ``useSessionControlRequest``, and the ``opened`` answer to a card's open. Level 12
 adds ``permissions.openFiles`` and the SDK's ``useOpenFile``: an app's UI opens a
-local file in the default app on a click.
+local file in the default app on a click. Level 13 adds the SDK's
+``useSessionControlJump``: a session control scrolls its own chat to one of its
+messages, with the Back pill.
 """
 
-APP_SDK_LEVEL = 12
+APP_SDK_LEVEL = 13
