@@ -96,6 +96,7 @@ _MEMBERS: dict[str, tuple[str, bool, str, str]] = {
     "clear_sid_unlanded": ("function", False, "1eda252b53bd", "session_map"),
     "clear_slack_link": ("function", False, "1eda252b53bd", "session_map_links"),
     "clear_slack_link_if": ("function", False, "c9d53f91d7af", "session_map_links"),
+    "conversation_sids": ("function", False, "349ed17a0181", "session_map_sid_history"),
     "delete": ("function", False, "c52498e8a791", "session_map"),
     "delete_if_sid": ("function", False, "70e3d61c5764", "session_map"),
     "find_key_by_sid": ("function", False, "08155f86f770", "session_map"),
@@ -144,6 +145,8 @@ _MEMBERS: dict[str, tuple[str, bool, str, str]] = {
     "set_slack_link": ("function", False, "3d8214a87052", "session_map_links"),
     "set_slack_paused": ("function", False, "f83180910a99", "session_map_links"),
     "sid_head_pending": ("function", False, "1eda252b53bd", "session_map"),
+    "sid_history": ("function", False, "5fa392b1c494", "session_map_sid_history"),
+    "sid_record": ("function", False, "d87e719b4845", "session_map_sid_history"),
     "sid_unlanded_pending": ("function", False, "1eda252b53bd", "session_map"),
     "slack_link_nonce": ("function", False, "f1d40e624ae4", "session_map_links"),
     "stamp_privacy_headers": ("function", True, "fa6cfecd5574", "session_map"),
@@ -171,7 +174,7 @@ set_unbind_listener split_dm_session_key
 """.split())
 
 #: The names the split added to the facade: the owner aliases and the binding glue.
-_ADDED = frozenset({"_links", "_store", "_OWNERS", "_own_methods"})
+_ADDED = frozenset({"_links", "_store", "_sid_history", "_OWNERS", "_own_methods"})
 
 #: Module-level names the one-module ``session_map.py`` bound that the facade does not bind:
 #: standard-library and typing imports that only moved code reads, plus ``_serialized`` --

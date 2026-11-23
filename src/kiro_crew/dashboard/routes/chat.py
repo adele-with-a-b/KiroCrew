@@ -22,6 +22,7 @@ from kiro_crew.dashboard import (
     session_transfer,
 )
 from kiro_crew.dashboard.attach_conversation import api_chat_slot_attach_conversation
+from kiro_crew.dashboard.handlers import slot_sids
 from kiro_crew.dashboard.handlers._shared import require_owner_dashboard_request
 from kiro_crew.dashboard.handlers.chat_steering import (
     api_chat_slot_steering,
@@ -138,6 +139,9 @@ def register(app: web.Application) -> None:
     # the tunnel's send, so it is not a pure read of the disk.
     app.router.add_get("/api/chat/slots/{slot}/export", session_export.api_chat_slot_export)
     app.router.add_get("/api/chat/slots/{slot}/summary", chat.api_chat_slot_summary)
+    # The chat's title and every native session id it ran on, for an app that
+    # keys data on a session id (``handlers/slot_sids``).
+    app.router.add_get("/api/chat/slots/{slot}/sids", slot_sids.api_chat_slot_sids)
     # Remote dispatch (Feature Preview): a hub reads and steers the work item this
     # crew's slot was born bound to. 404 with the preview off.
     app.router.add_get("/api/chat/slots/{slot}/work-item", api_chat_slot_work_item_get)

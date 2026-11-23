@@ -143,6 +143,7 @@ class TestEveryPerSlotRouteIsDecided:
         assert {k: v[0] for k, v in SLOT_ROUTE_POLICIES.items()} == {
             ("POST", "/api/chat/slots/{slot}/approve"): SlotRoutePolicy.SESSION_GRANT,
             ("POST", "/api/chat/slots/{slot}/resume"): SlotRoutePolicy.HANDLER,
+            ("GET", "/api/chat/slots/{slot}/sids"): SlotRoutePolicy.SLOT_SCOPE,
         }
 
     def test_the_checkpoint_sits_inner_to_token_auth_in_both_server_chains(self) -> None:
@@ -189,6 +190,12 @@ def _concrete(path: str, slot: str) -> str:
     return re.sub(r"\{[^}]+\}", "x", path)
 
 
+#: An app's declared slot scope, which ``SLOT_SCOPE`` routes read through the
+#: real loader, so the cache the own-slot revocation check reads is primed.
+_EVENTS = "kiro_crew.dashboard.ws_event_scope._read_declared_events"
+_CACHE = "kiro_crew.dashboard.ws_event_scope._declared_cache"
+
+
 def _seed_family(state) -> None:
     state.get_or_create_slot("u1", origin=SlotOrigin.USER)
     state.get_or_create_slot("mine", app=APP)
@@ -223,13 +230,18 @@ class TestTheLiveTableRefusesANonOwnerApp:
         _seed_family(state)
         reached: list[str] = []
         failures: list[str] = []
-        with patch(_GRANT, return_value=False):
+        enabled_no_scope = (True, frozenset())
+        with (
+            patch(_GRANT, return_value=False),
+            patch(_EVENTS, return_value=enabled_no_scope),
+            patch.dict(_CACHE, clear=True),
+        ):
             async with _sweep_client(state, family_routes, reached) as client:
                 for method, path in family_routes:
                     policy = slot_route_policy(method, path)
                     before = len(sel_spy.denials())
                     refused = ["u1", "theirs", "absent"]
-                    if policy is SlotRoutePolicy.OWNER:
+                    if policy in (SlotRoutePolicy.OWNER, SlotRoutePolicy.SLOT_SCOPE):
                         refused.append("mine-linked")
                     for slot in refused:
                         reached.clear()

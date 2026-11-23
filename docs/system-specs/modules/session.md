@@ -3581,6 +3581,42 @@ or writes an entry read out of them, must call `_save()` or `_touch()`, apart fr
 and the helpers `_evict_rival_claimants` and `_rebuild_thread_index`, whose callers save or
 touch after them.
 
+### Past session ids (`sid_history`)
+
+A row's `sid` names only its current native session and `discarded_sid` only the
+last one emptied in place, so a chat that moved (a context-cap trim, a reset, a
+provider switch, a poisoned discard, a stale repair) loses the ids it ran on
+before. `sid_history` keeps them, oldest first, each `{"sid", "provider",
+"until"}`: the id, the row's provider while it was current, and the UTC time it
+stopped being current. One entry is pushed whenever a non-empty `sid` leaves the
+field, whether `set()` replaces it with a different id or `_stash_and_clear_sid`
+empties it, so a reset's id stays in the list. The writer is
+`session_map_sid_history.record_departure`, called before the field changes. An
+id already listed keeps its first place and is not added again; an id that fails
+`bounded_session_id` is not recorded. The current `sid` is never listed, even
+when a row returns to an older id. Past `SID_HISTORY_CAP` (32) the oldest entry
+is dropped and `sid_history_full: true` is set on the row. A row holding a past
+id is one `_survives_prune` keeps, so the startup prune and the per-read stale
+repair clear only its dead `sid` (pushing it onto the list) instead of removing
+the row: a reset followed by a restart keeps the chat's ids. A row still on its
+first session, with no past id and nothing else `_survives_prune` keeps, is
+removed whole by a stale path, so its dead id is not recorded. A row with a past
+id stays until it is removed by name, as when the chat is deleted; that is the
+cost of keeping the ids, one small row per chat that moved.
+
+`discarded_sid` keeps its meaning and writer, and its readers are unchanged. A
+row written before the field existed reads its `discarded_sid` as its one past
+id, with an empty provider and time; nothing is rewritten on load, and the first
+push folds it into the stored list. An older build ignores the field.
+
+`SessionMap.sid_record(key)` reads `{sid, provider, history, cap, full}` under
+the map lock as one unit, alias-folded like `mapped_sid`. `sid_history(key)` is
+its `history`; `conversation_sids(key)` is every id oldest first, the current one
+last. Apps read it through `GET /api/chat/slots/{slot}/sids`
+(`dashboard/handlers/slot_sids.py`), which adds the slot's session `key` and its
+sidebar `title` (`display_title`); who may call it is the `SLOT_SCOPE` row of
+`SLOT_ROUTE_POLICIES` ([app-kit-platform](app-kit-platform.md)).
+
 ### Asking for a fresh conversation on a slot that stays open
 
 `POST /api/chat/slots/{slot}/reset-conversation` drops one slot's resume pointer
@@ -4380,7 +4416,7 @@ prunes on directly and `session_files_resumable(sid, provider)` wraps together w
 the `.json` and provider checks for a reader outside the module (the sub-agent
 orphan notice's resume hint), so the two cannot drift. Both stale paths (`get()`
 and `prune()`) ask `_keeps_entry`: an entry carrying a durable setting,
-a generation floor, a channel binding (`_survives_prune`), or a `temporary` /
+a generation floor, a channel binding, a past session id (`_survives_prune`), or a `temporary` /
 `incognito` privacy flag loses only its dead `sid` and keeps the rest -- with no
 transcript read, because both run under the map lock on the event loop. A
 privacy-flagged row is removed by NO path, whatever its transcript header says:

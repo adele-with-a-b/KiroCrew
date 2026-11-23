@@ -90,6 +90,12 @@ class SlotRoutePolicy(enum.Enum):
     #: The route addresses a slot that is usually not live yet, so there is no
     #: slot object to judge here; the handler makes the ownership decision.
     HANDLER = "handler"
+    #: Any live slot the app's declared slot scope shows it: its own, ``slots:user``
+    #: for a person's chats, ``slots:all``, ``slots:app:<x>`` with x's opt-in. The
+    #: same rule as the slot list and the ``/api/ws`` slots frame
+    #: (``ws_event_scope.app_sees_slot``), for a read that tells the app nothing
+    #: that list does not.
+    SLOT_SCOPE = "slot_scope"
 
 
 #: Every per-slot route that does NOT take the :attr:`SlotRoutePolicy.OWNER`
@@ -105,6 +111,11 @@ SLOT_ROUTE_POLICIES: dict[tuple[str, str], tuple[SlotRoutePolicy, str]] = {
         "resume opens a persisted transcript that usually has no live slot; "
         "resume_slot_from_history checks the live slot, the key it publishes under "
         "and the transcript it loads",
+    ),
+    ("GET", "/api/chat/slots/{slot}/sids"): (
+        SlotRoutePolicy.SLOT_SCOPE,
+        "the chat's title and native session ids: the title is already in the slot "
+        "list the app's declared slot scope shows it, and the ids carry no content",
     ),
 }
 
@@ -715,15 +726,62 @@ async def slot_route_denial(request: web.Request) -> web.Response | None:
         # decision below reuses this read, so nothing suspends between the
         # lookup and the verdict.
         await session_grant(request, request_app)
+    scope_route = policy is SlotRoutePolicy.SLOT_SCOPE
+    scope = await _declared_slot_scope(request_app) if scope_route else None
     slot = getattr(state, "_slots", {}).get(name)
     request[CHECKPOINT_SLOT_KEY] = slot
     if grant_route:
         denied = await deny_app_session_control(request, request_app, slot, name, operation)
+    elif scope_route:
+        denied = _deny_outside_slot_scope(request_app, slot, name, operation, scope, state)
     else:
         denied = deny_app_slot_session_access(request_app, slot, name, operation)
     if denied is None and slot is not None:
         _record_isolation_allow(request_app, operation, name)
     return denied
+
+
+async def _declared_slot_scope(request_app: str) -> frozenset[str] | None:
+    """*request_app*'s approved ``permissions.events``, or None when it is disabled.
+
+    Read off the loop BEFORE the slot lookup, as the grant read is, so nothing
+    suspends between the lookup and the verdict. An unreadable manifest declares
+    nothing, as on the slot list.
+    """
+    from kiro_crew.dashboard import ws_event_scope
+
+    try:
+        enabled, events = await asyncio.to_thread(
+            ws_event_scope.load_declared_events_for_connect, request_app
+        )
+    except Exception:  # noqa: BLE001 - no scope read is no declared scope
+        logger.debug("slot scope: no declared events for app %r", request_app, exc_info=True)
+        return frozenset()
+    return events if enabled else None
+
+
+def _deny_outside_slot_scope(
+    request_app: str,
+    slot: Any,
+    name: str,
+    operation: str,
+    scope: frozenset[str] | None,
+    state: Any,
+) -> web.Response | None:
+    """The :attr:`SlotRoutePolicy.SLOT_SCOPE` decision: None to proceed, else the 404."""
+    from kiro_crew.dashboard import ws_event_scope
+
+    if slot is None:
+        return slot_not_found()
+    reason = "slot outside the app's slot scope"
+    if scope is not None and ws_event_scope.app_sees_slot(slot, request_app, scope, state):
+        # An app's slot linked to a conversation no app owns answers for that
+        # conversation, which the scope that showed the slot never granted.
+        reason = _foreign_binding_reason(slot) if getattr(slot, "_app", "") else ""
+        if not reason:
+            return None
+    audit_app_slot_denial(request_app, operation, name, reason)
+    return slot_not_found()
 
 
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
@@ -736,8 +794,8 @@ async def load_routed_slot_window(request: web.Request) -> None:
     something reads them, and almost every handler under ``/api/chat/slots/``
     reads them: opening the tab, forking, regenerating, rewinding, editing the
     queue, exporting. Awaiting the load here, once for the whole family, keeps
-    each of those first reads off the event loop. Closing the tab is the one
-    route that does not read a row, so it does not pay for a load.
+    each of those first reads off the event loop. Closing the tab and reading its
+    session ids are the routes that do not read a row, so they do not pay for a load.
     """
     resource = request.match_info.route.resource
     canonical = resource.canonical if resource is not None else ""
@@ -745,6 +803,9 @@ async def load_routed_slot_window(request: web.Request) -> None:
     if param is None:
         return
     if request.method == "DELETE" and canonical == f"/api/chat/slots/{{{param}}}":
+        return
+    if request.method == "GET" and canonical == f"/api/chat/slots/{{{param}}}/sids":
+        # Reads the session map and the title, never a row.
         return
     if (
         request.method == "GET"
