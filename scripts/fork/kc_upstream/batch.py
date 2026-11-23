@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Callable, Optional
 
-from . import UPSTREAM, ledger, prepare
+from . import UPSTREAM, journal, ledger, prepare
 from .changes import Run, run_git
 
 SEND_VERDICTS = ("UPSTREAM", "SPLIT")
@@ -100,6 +101,14 @@ def asked_again(number: int, rows: Optional[list[dict]] = None) -> set[int]:
     }
 
 
+def voided(number: int, rows: Optional[list[dict]] = None) -> bool:
+    """True once ``reask`` replaced this batch: its yes, if it had one, no longer counts."""
+    return any(
+        row.get("kind") == "void" and row.get("batch") == number
+        for row in (_rows() if rows is None else rows)
+    )
+
+
 def held_slugs() -> dict[str, str]:
     """Items a batch still holds, with why: they cannot go into a new batch."""
     rows = _rows()
@@ -107,16 +116,30 @@ def held_slugs() -> dict[str, str]:
     for number in numbers():
         answer = answer_of(number, rows)
         again = asked_again(number, rows)
+        void = voided(number, rows)
+        out = journal.sent_positions(journal.rows(number))
         for entry in manifest(number)["items"]:
-            if answer is None:
-                held[entry["slug"]] = f"batch {number} is waiting for an answer"
+            if entry["n"] in out:
+                held[entry["slug"]] = f"sent in batch {number}"
+            elif answer is None:
+                if not void:
+                    held[entry["slug"]] = f"batch {number} is waiting for an answer"
             elif entry["n"] in answer["send"]:
-                held[entry["slug"]] = f"batch {number} has a yes for it"
+                if not void:
+                    held[entry["slug"]] = f"batch {number} has a yes for it"
             elif entry["n"] not in again:
                 held[entry["slug"]] = (
                     f"kept back in batch {number}; `ask-again {number} {entry['n']}` frees it"
                 )
     return held
+
+
+def target_repo() -> str:
+    """Where a new batch will file. ``KC_UPSTREAM_REPO`` points a rehearsal elsewhere.
+
+    A rehearsal keeps its own ``KC_UPSTREAM_STATE``: a fix sent there counts as sent.
+    """
+    return os.environ.get("KC_UPSTREAM_REPO") or UPSTREAM
 
 
 def _unjudged(item: prepare.Item) -> list[str]:
@@ -127,6 +150,12 @@ def _unjudged(item: prepare.Item) -> list[str]:
         if len(hits) != 1 or hits[0]["verdict"] not in SEND_VERDICTS:
             bad.append(sha)
     return bad
+
+
+def _signed(names: str) -> str:
+    """The author on the commit, and the committer too when it is someone else."""
+    author, _, committer = names.strip().partition("\n")
+    return author if committer in ("", author) else f"{author}; committed by {committer}"
 
 
 def make(
@@ -183,7 +212,9 @@ def make(
                 "worktree": str(item.worktree),
                 "changes": list(item.changes),
                 "head": prepare.head(git),
+                "author": _signed(git(["log", "-1", "--format=%an <%ae>%n%cn <%ce>"])),
                 "patch_id": diff_id,
+                "code": code_of([parts[-1]]),
                 "files": prepare.files_changed(git),
                 "checks": [asdict(check) for check in checks],
             }
@@ -193,7 +224,7 @@ def make(
         "code": code_of(parts),
         "made_at": now(),
         "account": fork_owner,
-        "upstream": UPSTREAM,
+        "upstream": target_repo(),
         "items": entries,
     }
     (folder / "manifest.json").write_text(json.dumps(made, indent=2) + "\n", encoding="utf-8")
@@ -238,6 +269,8 @@ def read_answer(words: str, number: int, code: str, count: int) -> list[int]:
 def answer(number: int, words: str, *, run: Run = run_git, now: Clock = time.time) -> dict:
     """Record the owner's answer to a batch. Nothing is sent."""
     made = manifest(number)
+    if voided(number):
+        raise ValueError(f"batch {number} was replaced: answer the newer batch")
     if answer_of(number) is not None:
         raise ValueError(f"batch {number} already has an answer")
     live = current_code(number, run)
@@ -283,6 +316,25 @@ def _append(row: dict) -> None:
         handle.write(json.dumps(row) + "\n")
 
 
+def reask(number: int, *, now: Clock = time.time) -> list[str]:
+    """Replace a batch whose question no longer stands. Returns the items it frees.
+
+    A fix already sent stays sent and a fix the owner kept back stays kept back; the
+    rest are free for the next batch, which gets a new code and a new question.
+    """
+    made = manifest(number)
+    if voided(number):
+        raise ValueError(f"batch {number} was already replaced")
+    given = answer_of(number)
+    out = journal.sent_positions(journal.rows(number))
+    wanted = [e["n"] for e in made["items"]] if given is None else given["send"]
+    freed = [e["slug"] for e in made["items"] if e["n"] in wanted and e["n"] not in out]
+    if not freed:
+        raise ValueError(f"batch {number} has nothing left to ask about again")
+    _append({"kind": "void", "batch": number, "at": now()})
+    return freed
+
+
 def status_line(fork_owner: str, *, run: Run = run_git, form: Optional[prepare.Form] = None) -> str:
     """One line for a daily message: what is being made ready and what waits on a yes."""
     held = held_slugs()
@@ -297,8 +349,15 @@ def status_line(fork_owner: str, *, run: Run = run_git, form: Optional[prepare.F
         else:
             getting += 1
     rows = _rows()
-    waiting = [n for n in numbers() if answer_of(n, rows) is None]
-    unsent = [n for n in numbers() if (a := answer_of(n, rows)) and a["send"]]
+    live = [n for n in numbers() if not voided(n, rows)]
+    waiting = [n for n in live if answer_of(n, rows) is None]
+    unsent, stopped = [], []
+    for n in live:
+        given = answer_of(n, rows)
+        done = journal.rows(n)
+        if given is None or set(given["send"]) <= journal.sent_positions(done):
+            continue
+        (stopped if journal.stopped(done) else unsent).append(n)
     parts = []
     if getting:
         parts.append(f"{getting} being made ready")
@@ -306,4 +365,5 @@ def status_line(fork_owner: str, *, run: Run = run_git, form: Optional[prepare.F
         parts.append(f"{ready} ready for the next batch")
     parts += [f"batch {n} waiting for a yes" for n in waiting]
     parts += [f"batch {n} has a yes, not sent yet" for n in unsent]
+    parts += [f"batch {n} changed after the yes and needs a new question" for n in stopped]
     return "Fixes for the original: " + ("; ".join(parts) if parts else "nothing in progress") + "."
