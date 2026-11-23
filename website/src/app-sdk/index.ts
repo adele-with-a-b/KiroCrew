@@ -652,6 +652,9 @@ export type { PanelTabRequest } from './panelTabRequest'
 // link-preview card (`card.openSessionControl`) or a status go (level 11).
 export { useSessionControlRequest } from './sessionControlRequest'
 export type { SessionControlRequest } from './sessionControlRequest'
+// A session control scrolls its own chat to one of its messages, with the Back pill (level 13).
+export { useSessionControlJump } from './sessionControlRequest'
+export type { SessionControlJumpResult } from './sessionControlRequest'
 // The way back after a status item's go sent the operator to this tab's chat.
 // Feature-detected by name, as `usePanelTabRequest` is.
 export { useStatusGoBack } from './statusGoBack'

@@ -33,6 +33,8 @@ export const {
   useSessionControlRequest,
   // An app opens a local file in the default app, on a click (level 12).
   useOpenFile,
+  // A session control scrolls its own chat to one of its messages (level 13).
+  useSessionControlJump,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.
