@@ -35,7 +35,7 @@ import { decideApprovalPath } from '../api/client/approvals'
 import { ApiError, isTerminalApprovalRefusal } from '../api/apiError'
 import { defaultAgentQuery } from '../api/defaultAgentQuery'
 import { queryClient as dashboardQueryClient } from '../api/queryClient'
-import { sendTurn, type SendReceiptStatus } from '../chat-core/transport/sendTurn'
+import { mintSendId, sendTurn, type SendReceiptStatus } from '../chat-core/transport/sendTurn'
 import { recencyEpoch } from '../components/commandPalette/providers/recentsProvider'
 import { alreadyResolvedDecision, settledElsewhereLine } from '../components/chat-input/sharedDecision'
 import { i18nT } from '../i18n/t'
@@ -222,7 +222,9 @@ export function useHostSessions(): HostSessions {
   const send = useCallback(async (sessionKey: string, message: string, opts?: { steer?: boolean }) => {
     const refused = firstRefused(HOST_SESSIONS_PATHS.send)
     if (refused) throw refuse(refused)
-    const receipt = await sendTurn({ message, slot: sessionKey, steer: !!opts?.steer })
+    // No composer drew this row, so a `sendId` asks the gateway to echo it to
+    // every open tab, this one included, the way a typed send appears.
+    const receipt = await sendTurn({ message, slot: sessionKey, steer: !!opts?.steer, meta: { sendId: mintSendId() } })
     return receipt.reason !== undefined ? { status: receipt.status, reason: receipt.reason } : { status: receipt.status }
   }, [firstRefused, refuse])
 

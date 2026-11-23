@@ -5881,7 +5881,9 @@ It is host code. `sessions` projects `selectSlotsWithLiveLastTs` newest first by
 `agentOrDefaultLabel` gives against the dashboard's own shared `['default-agent']` entry
 (read with the dashboard's query client, which its socket keeps current, not the app's),
 the live state, the message count and the newest message. `send` is chat-core's `sendTurn`
-over the dashboard wire, `decide` is `api.decideApproval` and `create` is
+over the dashboard wire with a fresh `meta.sendId`: no composer drew that row, and the
+gateway echoes a `?ws=1` user row to open tabs only when it carries a `sendId`, so without
+one the person's own message would not show until a re-read. `decide` is `api.decideApproval` and `create` is
 `api.createChatSlot()`, so a session the app shows reads and behaves as the sidebar's row
 does. The scoped transport alone could not: its `POST /api/chat/slots` names the app
 (`embed_app`), which makes a session the app owns rather than the person's, and the live
