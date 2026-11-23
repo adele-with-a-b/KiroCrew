@@ -327,7 +327,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "{{ago}} 업데이트됨",
     "status_item_unknown_value": "알 수 없음",
-    "status_item_failed": "{{label}}을(를) 읽을 수 없습니다"
+    "status_item_failed": "{{label}}을(를) 읽을 수 없습니다",
+    "status_item_go": "이동"
   },
   "appSdk": {
     "chatSession": {
@@ -11255,6 +11256,7 @@
       "walk_back_mru_history": "MRU 기록 되돌아가기",
       "stop_speaking": "말하기 중지",
       "toggle_focus_mode": "집중 모드 전환",
+      "status_go": "상태 표시줄이 가리키는 곳으로 이동",
       "toggle_left_sidebar": "왼쪽 사이드바 표시 전환",
       "toggle_session_panel": "세션 패널 표시 전환",
       "toggle_side_panel": "사이드 패널 표시 전환",
@@ -12313,6 +12315,9 @@
       "topic": "주제"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "{{title}}(으)로 돌아가기"
+      },
       "projectHooksNotice": {
         "err_owner": "대시보드 소유자만 프로젝트 훅을 변경할 수 있습니다. 소유자로 로그인한 뒤 다시 시도하세요.",
         "err_full": "Crew가 저장할 수 있는 폴더 선택 수가 한도에 도달해 이번 선택은 저장되지 않았습니다. project_hooks_consent.json에서 오래된 항목을 지운 뒤 다시 시도하세요.",

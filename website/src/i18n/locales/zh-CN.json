@@ -327,7 +327,8 @@
     "status_item_reading": "{{label}}：{{value}}",
     "status_item_updated": "更新于{{ago}}",
     "status_item_unknown_value": "未知",
-    "status_item_failed": "无法读取{{label}}"
+    "status_item_failed": "无法读取{{label}}",
+    "status_item_go": "前往"
   },
   "appSdk": {
     "chatSession": {
@@ -11255,6 +11256,7 @@
       "walk_back_mru_history": "回溯 MRU 历史",
       "stop_speaking": "停止朗读",
       "toggle_focus_mode": "切换专注模式",
+      "status_go": "前往状态栏所指的位置",
       "toggle_left_sidebar": "切换左侧边栏",
       "toggle_session_panel": "切换会话面板",
       "toggle_side_panel": "切换侧边面板",
@@ -12313,6 +12315,9 @@
       "topic": "主题"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "返回 {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "只有仪表板所有者才能更改项目 hooks。请以所有者身份登录后重试。",
         "err_full": "Crew 能保存的文件夹选择已达上限，这次的选择没有保存。请从 project_hooks_consent.json 中删除旧条目后重试。",

@@ -977,6 +977,25 @@ const req = usePanelTabRequest?.()
 useEffect(() => { if (req) focusQuestion(req.payload) }, [req?.seq])
 ```
 
+A status item's row or `go` (`contributes.statusItems`, see
+[the route's places](manifest-reference.md#contributesstatusitems--a-readout-in-the-top-bar))
+opens a tab the same way: its `target.arg` arrives as the `payload`.
+
+`useStatusGoBack()` returns the way back after such a go: a function while the chat it
+went to is on screen and it left another chat, else `null`. Call it once the tab has done
+what it was opened for (say, the question was answered); the dashboard switches back to
+the chat the operator left, as the "Back to <chat>" chip in the chat header does. Read it
+off the namespace import too:
+
+```tsx
+const useStatusGoBack = (sdk as Record<string, unknown>).useStatusGoBack as
+  (() => (() => void) | null) | undefined
+
+const back = useStatusGoBack?.() ?? null
+// After the answer was sent:
+back?.()
+```
+
 ## Chat Marker Protocol
 
 An agent encodes UI affordances inline in the prose it streams. A surface that renders a transcript

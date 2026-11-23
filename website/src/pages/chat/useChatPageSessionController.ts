@@ -37,6 +37,7 @@ import { focusComposer } from './composerFocus'
 import { useLaunchedDraftDiscard } from './useLaunchedDraftDiscard'
 import { PENDING_OPEN_LEASE_MS, resumeStillOpening } from '../../store/chatSlice'
 import { isUntitledSession } from '../../utils/sessionDisplayTitle'
+import { openStatusPanelTab, useStatusLinks } from './useStatusLinks'
 
 /** Read a URL-derived key from the close-hold record without traversing its prototype. */
 export function closeHoldForUrl<T>(closing: Record<string, T>, key: string | null): T | undefined {
@@ -1185,6 +1186,8 @@ export function useChatPageSessionController({
     next.delete('autoSend')
     next.delete('newSession')
     next.delete('msg')
+    // `?status=` opens a status card once (useStatusLinks read it).
+    next.delete('status')
     // Never write the credential boot took off the address bar back
     // (session deep links arrive as `/chat?sid=…&token=…`).
     next.delete('token')
@@ -1202,7 +1205,7 @@ export function useChatPageSessionController({
         navigate(url, { replace: true })
         return
       }
-    } else if (sp.get('sid') === activeSlot && locationPathname === expectedPath) return
+    } else if (sp.get('sid') === activeSlot && locationPathname === expectedPath && !sp.has('status')) return
     // `current` is the key the entry we stand on names, legacy `?slot=` included,
     // so close eligibility below reads the same key as the POP reader. The no-op
     // bail above compares the canonical `?sid=` alone: a legacy URL naming the
@@ -1469,6 +1472,14 @@ export function useChatPageSessionController({
       }
     } catch { /* resume failed — keep current slot */ }
   }, [activeSlot, dispatch, drafts, fileDrafts, pasteDrafts, prevSlot, saveDrafts, store])
+
+  // App status items: `?status=` and a go landing here. Only the page that owns
+  // the URL: an embedded chat neither reads it nor ends a go.
+  useStatusLinks({
+    statusParam: noUrlSync ? null : searchParams.get('status'),
+    activeSlot: noUrlSync ? null : activeSlot,
+    openPanelTab: openStatusPanelTab,
+  })
 
   return {
     closeSessionTab,

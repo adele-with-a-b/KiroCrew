@@ -357,7 +357,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Aggiornato {{ago}}",
     "status_item_unknown_value": "Sconosciuto",
-    "status_item_failed": "Impossibile leggere {{label}}"
+    "status_item_failed": "Impossibile leggere {{label}}",
+    "status_item_go": "Vai"
   },
   "appSdk": {
     "chatSession": {
@@ -11771,6 +11772,7 @@
       "walk_back_mru_history": "Torna indietro nella cronologia MRU",
       "stop_speaking": "Interrompi lettura",
       "toggle_focus_mode": "Attiva/disattiva la modalità concentrazione",
+      "status_go": "Vai dove punta la barra di stato",
       "toggle_left_sidebar": "Attiva/disattiva la barra laterale sinistra",
       "toggle_session_panel": "Attiva/disattiva il pannello delle sessioni",
       "toggle_side_panel": "Attiva/disattiva il pannello laterale",
@@ -12863,6 +12865,9 @@
       "topic": "Argomento"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "Torna a {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "Solo il proprietario della dashboard può modificare gli hook del progetto. Accedi come proprietario e riprova.",
         "err_full": "Crew ha salvato il numero massimo di scelte per cartella, quindi questa non è stata salvata. Rimuovi le voci vecchie da project_hooks_consent.json e riprova.",

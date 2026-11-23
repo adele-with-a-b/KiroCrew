@@ -808,6 +808,44 @@ The host draws the pill: the icon comes from the fixed app icon set, the colour
 from one of the four tones and the accessible name from `label`. An app cannot put
 its own markup in the bar.
 
+**Places to go.** The same answer may list places the card offers, and one
+primary place the operator's go key (`⌥⇧G` / `Alt+Shift+G` by default,
+rebindable in Settings → Shortcuts) takes them to:
+
+```json
+{
+  "text": "Blick 1h 12m +3",
+  "tone": "danger",
+  "tooltip": "Tap a row to answer it there.",
+  "heading": "Waiting on you · 4",
+  "rows": [
+    { "lead": "1h 12m", "text": "Blick Q3a", "detail": "Ship Blick 0.9 tonight?", "tone": "danger",
+      "target": { "sid": "chat-4", "panelTab": "questions", "arg": { "view": "waiting", "label": "Q4a" } } }
+  ],
+  "go": { "label": "Go to oldest", "target": { "sid": "chat-4", "panelTab": "questions" } }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `heading` | The card's line over the rows, cut to 48 characters |
+| `rows[]` | At most 10, drawn in the order given. `lead` (12) is drawn in the row's `tone` with the item's icon, `text` (48) bold, `detail` (160) under it on one line. A row with neither `text` nor `detail` is skipped |
+| `rows[].target`, `go.target` | `sid`: the chat's session key, as `/chat?sid=` takes it. `panelTab`: optional, a side-panel tab id THIS app declares in `contributes.panelTabs`; `arg`: what that tab is opened with, any JSON value of at most 4 KB serialized. A target with a bad `sid` is dropped (the row is drawn, not clickable); a bad tab id opens the chat alone; an oversized `arg` opens the tab with none |
+| `go` | `{label, target}`: the button under the rows, and what the go key fires. `label` is cut to 24 characters; empty draws the host's own "Go". The key fires the first item's `go`, in bar order, that offers one |
+
+A tap on a row or the button closes the card and switches to the target's chat,
+behind the same unsaved-draft guard as any "go to chat" button, then opens the
+tab: the tab reads `arg` with `usePanelTabRequest()`, as a tab opened from a link
+preview does. The chat the operator left is kept, and the chat header shows a
+"Back to <chat>" chip; `useStatusGoBack()` returns that way back to a tab that
+wants its own button, or `null`. A target chat that is closed is reopened from
+its history; one with no history is not opened, and the operator is told it is
+gone.
+
+**A link that opens the card.** `/chat?sid=<key>&status=<appName>:<id>` opens
+that chat and then the item's card, once the item has something to show (it waits
+at most 15 seconds). It only ever opens the card; a URL never fires a go.
+
 **One control, and two caps.** Every app's items share ONE button, so the bar
 gains one control however many apps declare items; the card lists them all, a
 section per app. The backend allows at most **2** items per app. The dashboard

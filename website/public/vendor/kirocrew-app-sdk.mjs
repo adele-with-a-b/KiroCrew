@@ -25,6 +25,8 @@ export const {
   useHostSessions,
   // What this app's side-panel tab was opened with by its own link-preview card.
   usePanelTabRequest,
+  // The way back after a status item's go sent the operator to this tab's chat.
+  useStatusGoBack,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.

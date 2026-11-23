@@ -357,7 +357,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Actualizado {{ago}}",
     "status_item_unknown_value": "Desconocido",
-    "status_item_failed": "No se pudo leer {{label}}"
+    "status_item_failed": "No se pudo leer {{label}}",
+    "status_item_go": "Ir"
   },
   "appSdk": {
     "chatSession": {
@@ -11771,6 +11772,7 @@
       "walk_back_mru_history": "Retroceder por el historial MRU",
       "stop_speaking": "Dejar de hablar",
       "toggle_focus_mode": "Activar o desactivar el modo de concentración",
+      "status_go": "Ir adonde apunta la barra de estado",
       "toggle_left_sidebar": "Mostrar u ocultar la barra lateral izquierda",
       "toggle_session_panel": "Mostrar u ocultar el panel de sesiones",
       "toggle_side_panel": "Mostrar u ocultar el panel lateral",
@@ -12863,6 +12865,9 @@
       "topic": "Tema"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "Volver a {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "Solo el propietario del panel puede cambiar los hooks del proyecto. Inicia sesión como propietario y vuelve a intentarlo.",
         "err_full": "Crew ya guardó el máximo de elecciones de carpeta, así que esta no se guardó. Quita entradas antiguas de project_hooks_consent.json y vuelve a intentarlo.",

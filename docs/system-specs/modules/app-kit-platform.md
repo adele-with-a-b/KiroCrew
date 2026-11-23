@@ -6060,6 +6060,46 @@ draws it; the app supplies only data.
   (the chat page and Crewmates). The row is shrinkable and the values
   truncate, so it gives way before the bell or the session title; the desktop
   collapse ladder measures max-content widths, so its rungs fold first.
+- **Places and the go** (`website/src/shell/topbar/statusGo.ts`, the one owner
+  of the answer's checks and of where a target goes). The answer may add
+  `heading` (48), up to 10 `rows[]` (`lead` 12, `text` 48, `detail` 160, `tone`,
+  `target`) and one `go` (`label` 24, `target`); every string goes through the
+  same cleaner as `text`. A target is `{sid, panelTab?, arg?}`: `sid` must pass
+  `isCrewLinkKey` or the target is dropped; `panelTab` must be a tab-id shape
+  or the chat opens alone, and whether THIS app declares it is checked where the
+  declarations are known, the chat page's panel-tab request; `arg` is kept as a
+  JSON copy of at most 4 KB. A card with places is 400 px wide and draws, per
+  item, the heading, a row button per place (a row whose target was dropped is
+  drawn, not a button), the tooltip as a footnote and the go button, with the
+  live `status-go` chord as key caps on the desktop bar only. On the phone the go
+  button sits beside the heading instead of under the rows. A tap closes the
+  card and calls `useStatusGo`: behind `useGuardedLeave`, it records the go in a
+  module store (where it went, the chat it left when the page was a chat, the tab
+  request still to hand over), dispatches `switchSlot` for an open tab, or for a
+  closed one probes `api.sessionMeta(sid)` and `resumeFromHistory` on the key
+  and title it answers, as the command palette does (the go waits, `opening`,
+  until that lands, and follows the key it lands on). A target with no
+  transcript is never resumed, since a resume of an unknown key starts a new
+  empty chat: the go ends with the pane's "gone" notice, and a failed resume
+  with its "failed" one. A go into the chat the last go landed in keeps that
+  go's way back. It navigates to `/chat` when elsewhere. The chat page (`pages/chat/useStatusLinks.ts`) hands the tab
+  request to the landed chat's panel, retrying every 200 ms for 5 s while the
+  panel mounts, and ends the go when the operator moves to any other chat. While
+  the go's chat is on screen the chat header draws "Back to <title>"
+  (`StatusGoBackCrumb`); `useStatusGoBack()` is that way back. The phone replaces
+  history on a chat switch (`shouldReplaceSessionUrl`), so there the chip is the
+  only way back; on a computer the browser's Back reaches the same chat.
+- **Go key.** Registry entry `status-go` (`lib/shortcutRegistry.ts`), default
+  `STATUS_GO_CHORD` (⌥⇧G / Alt+Shift+G), matched by physical key (`KeyG`) so the
+  layout does not matter, rebindable. It fires the first reading's `go` in bar
+  order, which the mounted bar registers (`setPrimaryStatusGo`, whose undo clears
+  only its own registration). The key is claimed even when no item offers a go,
+  so ⌥⇧G never types its Option-layer character (`˝` on a US Mac) into the
+  composer.
+- **Card link.** `/chat?status=<appName>:<id>` (with `sid` as usual) asks for the
+  item's card (`shell/topbar/statusCardRequest.ts`); the param is consumed from
+  the URL on the next sync. The mounted bar opens the card, with focus, once that
+  item has a reading, and drops a request older than 15 s. A URL never fires a go.
 - **Failure.** The app list failing on its FIRST load draws nothing in the bar:
   with no list there is no item to attribute the failure to, and an error in
   every operator's top bar, most of whom have no status app, would be a new
@@ -6073,7 +6113,10 @@ draws it; the app supplies only data.
 
 Writers: `apps/manifest_status_items.py`, `apps/manifest_route_grammar.py`,
 `apps/manifest_contributes.py`, `website/src/hooks/useAppStatusItems.ts`,
-`website/src/shell/topbar/AppStatusItems.tsx`, `website/src/shell/topbar/shellHeader.tsx`.
+`website/src/shell/topbar/AppStatusItems.tsx`, `website/src/shell/topbar/shellHeader.tsx`,
+`website/src/shell/topbar/statusGo.ts`, `website/src/shell/topbar/statusCardRequest.ts`,
+`website/src/pages/chat/useStatusLinks.ts`, `website/src/pages/chat/page/StatusGoBackCrumb.tsx`,
+`website/src/app-sdk/statusGoBack.ts`.
 
 ## 19. Spec Builder's backend is composed by lifecycle owner
 

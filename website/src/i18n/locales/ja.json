@@ -327,7 +327,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "{{ago}}に更新",
     "status_item_unknown_value": "不明",
-    "status_item_failed": "{{label}}を読み取れませんでした"
+    "status_item_failed": "{{label}}を読み取れませんでした",
+    "status_item_go": "移動"
   },
   "appSdk": {
     "chatSession": {
@@ -11255,6 +11256,7 @@
       "walk_back_mru_history": "MRU履歴を戻る",
       "stop_speaking": "読み上げを停止",
       "toggle_focus_mode": "フォーカスモードを切り替え",
+      "status_go": "ステータスバーが示す場所へ移動",
       "toggle_left_sidebar": "左サイドバーの表示を切り替え",
       "toggle_session_panel": "セッションパネルの表示を切り替え",
       "toggle_side_panel": "サイドパネルの表示を切り替え",
@@ -12313,6 +12315,9 @@
       "topic": "トピック"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "{{title}} に戻る"
+      },
       "projectHooksNotice": {
         "err_owner": "プロジェクトフックを変更できるのはダッシュボードの所有者だけです。所有者としてサインインしてから、もう一度試してください。",
         "err_full": "Crew が保存できるフォルダーの選択数が上限に達したため、この選択は保存されませんでした。project_hooks_consent.json から古い項目を削除してから、もう一度試してください。",

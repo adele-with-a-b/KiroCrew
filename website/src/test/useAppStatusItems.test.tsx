@@ -97,7 +97,21 @@ describe('resolveStatusItems', () => {
 describe('normalizeStatusItemValue', () => {
   it('keeps a well-formed answer', () => {
     expect(normalizeStatusItemValue({ text: '54 GB', tone: 'ok', tooltip: 'Fine.' }))
-      .toEqual({ text: '54 GB', tone: 'ok', tooltip: 'Fine.' })
+      .toEqual({ text: '54 GB', tone: 'ok', tooltip: 'Fine.', heading: '', rows: [], go: null })
+  })
+
+  it('keeps the card heading, its rows and the one go', () => {
+    const target = { sid: 'chat-4', panelTab: 'questions', arg: { view: 'waiting', label: 'Q4a' } }
+    const v = normalizeStatusItemValue({
+      text: '3 waiting',
+      tone: 'warn',
+      heading: '3 questions waiting',
+      rows: [{ lead: '2h', text: 'Release chat', detail: 'Merge now?', tone: 'danger', target }],
+      go: { label: 'Go to oldest', target },
+    })
+    expect(v?.heading).toBe('3 questions waiting')
+    expect(v?.rows).toEqual([{ lead: '2h', text: 'Release chat', detail: 'Merge now?', tone: 'danger', target }])
+    expect(v?.go).toEqual({ label: 'Go to oldest', target })
   })
 
   it('draws an unknown tone muted', () => {

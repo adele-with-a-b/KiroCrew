@@ -107,6 +107,17 @@ export interface ShortcutEntry {
   n?: number
 }
 
+/**
+ * The status-go default, ⌥⇧G / Alt+Shift+G: G for "go", and free (no entry,
+ * alias, panel code or jump letter here claims it, and the desktop menu binds
+ * no accelerator on it). Matched by position (`KeyG`), so the layout and the
+ * character macOS Option would type do not matter: on a US Mac ⌥⇧G types "˝", a
+ * plain character that the claimed keydown cancels, never a dead key that
+ * leaves an accent behind (those are the unshifted ⌥E/I/U/N/`). Rebindable like
+ * every registry chord.
+ */
+export const STATUS_GO_CHORD: Chord = { key: 'g', alt: true, shift: true }
+
 const mac = (chord: Chord | null, other: Chord | null = chord): ShortcutEntry['defaults'] => ({ mac: chord, other })
 const both = (chord: Chord): ShortcutEntry['defaults'] => ({ mac: chord, other: chord })
 const alias = (...chords: Chord[]): ShortcutEntry['aliases'] => ({ mac: chords, other: chords })
@@ -228,6 +239,10 @@ export const SHORTCUT_REGISTRY: readonly ShortcutEntry[] = [
   // keydown.preventDefault() cannot cancel a composed character — this chord
   // fires from inside the composer, so it must not be able to leave one behind.
   { id: 'toggle-focus-mode', group: 'actions', dispatch: 'registry', defaults: both({ key: 'm', alt: true, shift: true }) },
+  // Go where the status bar's first item with a go points (an app's
+  // `contributes.statusItems` answer: "the oldest question", say). See
+  // STATUS_GO_CHORD for the key.
+  { id: 'status-go', group: 'actions', dispatch: 'registry', defaults: both(STATUS_GO_CHORD) },
   // ⌘O / Ctrl+O ("out") — pop the current session out to its own window, or
   // focus that window when it is already out (#28521): the keyboard twin of the
   // chat header's pop-out button. Not browser-reserved: a browser tab hands the

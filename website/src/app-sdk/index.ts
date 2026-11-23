@@ -644,5 +644,8 @@ export { appWebOrigin } from './webOrigin'
 // (`card.openPanelTab`). Feature-detected by name: an older host has no export.
 export { usePanelTabRequest } from './panelTabRequest'
 export type { PanelTabRequest } from './panelTabRequest'
+// The way back after a status item's go sent the operator to this tab's chat.
+// Feature-detected by name, as `usePanelTabRequest` is.
+export { useStatusGoBack } from './statusGoBack'
 // The App Kit seam level; an app feature-detects the seams above by it.
 export { APP_SDK_LEVEL } from './sdkLevel'

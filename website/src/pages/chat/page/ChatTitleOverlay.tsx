@@ -16,6 +16,7 @@ import { CodeChannelBadge, SlackThreadLink } from '../../../components/CodeChann
 import { PinnedPrompt } from '..'
 import { pinCandidateKey } from '../usePinnedPrompt'
 import SessionTitleControl from '../SessionTitleControl'
+import StatusGoBackCrumb from './StatusGoBackCrumb'
 import { EdgeFade } from '../../../app-sdk/ChatScrollChrome'
 import { SidePanelGlyph } from '../../../components/SidePanelGlyph'
 import Clickable from '../../../components/Clickable'
@@ -169,6 +170,8 @@ export default function ChatTitleOverlay({
           )}
           {embedMode !== 'chat' && isMobile && mobileSessionsToggle}
           {headerColorStyle && <span className="chat-header-dot" aria-hidden="true" />}
+          {/* An app status item sent the operator here: the chat it left, first. */}
+          {embedMode !== 'chat' && <StatusGoBackCrumb />}
           <div className="group/header flex min-w-0 items-stretch gap-0.5 pointer-events-auto">
           <div className="flex items-center rounded-l-md rounded-r-[2px] px-1.5 py-0.5 group-hover/header:bg-bg-hover transition-colors">
           <ChatHeaderMenu

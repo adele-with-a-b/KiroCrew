@@ -372,7 +372,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "Обновлено {{ago}}",
     "status_item_unknown_value": "Неизвестно",
-    "status_item_failed": "Не удалось прочитать {{label}}"
+    "status_item_failed": "Не удалось прочитать {{label}}",
+    "status_item_go": "Перейти"
   },
   "appSdk": {
     "chatSession": {
@@ -12029,6 +12030,7 @@
       "walk_back_mru_history": "Назад по истории MRU",
       "stop_speaking": "Остановить речь",
       "toggle_focus_mode": "Переключить режим фокусировки",
+      "status_go": "Перейти туда, куда указывает строка состояния",
       "toggle_left_sidebar": "Показать или скрыть левую боковую панель",
       "toggle_session_panel": "Показать или скрыть панель сессий",
       "toggle_side_panel": "Показать или скрыть боковую панель",
@@ -13138,6 +13140,9 @@
       "topic": "Тема"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "Назад к {{title}}"
+      },
       "projectHooksNotice": {
         "err_owner": "Менять хуки проекта может только владелец панели. Войди как владелец и попробуй снова.",
         "err_full": "Crew уже сохранил максимум выборов для папок, поэтому этот выбор не сохранён. Удали старые записи из project_hooks_consent.json и попробуй снова.",

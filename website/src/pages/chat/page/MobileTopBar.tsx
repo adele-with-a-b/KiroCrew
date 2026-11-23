@@ -23,6 +23,7 @@ import SessionTitleControl from '../SessionTitleControl'
 import MilestonesIndicator from '../../../components/milestones/MilestonesIndicator'
 import MilestonesMenuItem from '../../../components/milestones/MilestonesMenuItem'
 import { useExplorePreview } from '../../../hooks/usePreviewFlag'
+import StatusGoBackCrumb from './StatusGoBackCrumb'
 
 // Lazy for the same reason App.tsx lazy-loads the pill: the update chunk is
 // off the app-core budget, and the phone menu needs it only while an update exists.
@@ -114,6 +115,8 @@ export default function MobileTopBar({
     {topbarSlot && createPortal(
       <>
         {embedMode !== 'chat' && topbarSessionsToggle}
+        {/* An app status item sent the operator here: the chat it left, first. */}
+        {embedMode !== 'chat' && <StatusGoBackCrumb />}
         {activeSlot && !(splitMode && splitFeatureEnabled) && (
           <div className="group/header flex min-w-0 flex-1 items-center gap-0.5" data-testid="mobile-topbar-title">
             {/* ONE control for title + menu: the session menu's trigger carries

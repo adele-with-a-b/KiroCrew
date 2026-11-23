@@ -342,7 +342,8 @@
     "status_item_reading": "{{label}}: {{value}}",
     "status_item_updated": "{{ago}} अपडेट किया गया",
     "status_item_unknown_value": "अज्ञात",
-    "status_item_failed": "{{label}} पढ़ा नहीं जा सका"
+    "status_item_failed": "{{label}} पढ़ा नहीं जा सका",
+    "status_item_go": "जाएँ"
   },
   "appSdk": {
     "chatSession": {
@@ -11513,6 +11514,7 @@
       "walk_back_mru_history": "MRU इतिहास में पीछे जाएँ",
       "stop_speaking": "बोलना बंद करें",
       "toggle_focus_mode": "फ़ोकस मोड टॉगल करें",
+      "status_go": "स्टेटस बार जहाँ दिखाए, वहाँ जाओ",
       "toggle_left_sidebar": "बायाँ साइडबार दिखाएँ/छिपाएँ",
       "toggle_session_panel": "सत्र पैनल दिखाएँ/छिपाएँ",
       "toggle_side_panel": "साइड पैनल दिखाएँ/छिपाएँ",
@@ -12588,6 +12590,9 @@
       "topic": "विषय"
     },
     "chat": {
+      "statusGoBack": {
+        "label": "{{title}} पर वापस जाओ"
+      },
       "projectHooksNotice": {
         "err_owner": "सिर्फ़ डैशबोर्ड का मालिक प्रोजेक्ट हुक बदल सकता है। मालिक के तौर पर साइन इन करो, फिर दोबारा कोशिश करो।",
         "err_full": "Crew जितने फ़ोल्डर चुनाव सहेज सकता है, उतने सहेज चुका है, इसलिए यह चुनाव नहीं सहेजा गया। project_hooks_consent.json से पुरानी एंट्री हटाओ, फिर दोबारा कोशिश करो।",
