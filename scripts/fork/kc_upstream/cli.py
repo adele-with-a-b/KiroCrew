@@ -1,11 +1,12 @@
-"""Commands: ``pending``, ``verdict``, ``carry``, ``list``, ``brief``. Run inside a fork clone."""
+"""Commands: ``pending``, ``verdict``, ``carry``, ``list``, ``brief``, and the ones in
+``cli_prepare``. Run inside a fork clone."""
 
 from __future__ import annotations
 
 import argparse
 import datetime
 
-from . import UPSTREAM, ledger
+from . import UPSTREAM, cli_prepare, ledger
 from .changes import Change, Run, git_changes, patch_id, run_git
 from .watch import judge_brief, unjudged
 
@@ -90,7 +91,10 @@ def main(argv: list[str], run: Run = run_git) -> int:
     verdict.add_argument("--upstream-match", default="none", help=f"a link on {UPSTREAM}")
     verdict.add_argument("--pr", type=int, help="the fork pull request, when not a merge commit")
     verdict.add_argument("--by", default="judge", help="who judged")
+    cli_prepare.register(commands)
     args = parser.parse_args(argv)
+    if args.command in cli_prepare.COMMANDS:
+        return cli_prepare.run_command(args, run)
 
     changes = git_changes(run)
     if args.command == "verdict":
