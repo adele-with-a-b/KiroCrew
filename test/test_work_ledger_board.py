@@ -171,10 +171,24 @@ async def test_a_row_is_the_conductor_item_shape_minus_the_masked_field():
         "acceptance_concrete",
         "report_undelivered",
         "awaits_person",
+        "has_worker",
+        "in_backlog",
         "events",
     }
     joined = {"alive", "outstanding", "terminal"}
     assert set(row) == item_keys | derived | joined
+
+
+@pytest.mark.asyncio
+async def test_a_story_no_worker_is_on_reads_as_backlog_and_takes_no_seat_on_the_page():
+    """Blick's shape: no plan anywhere, one worker. The page gets the answer, not the key."""
+    waiting, working = _item(title="waiting"), _item(title="working")
+    _bind(working)
+    body, _ = await _call(_state({WORKER: _slot()}), CONDUCTOR)
+    rows = {row["item_id"]: row for row in body["items"]}
+    assert (rows[waiting]["in_backlog"], rows[waiting]["has_worker"]) == (True, False)
+    assert (rows[working]["in_backlog"], rows[working]["has_worker"]) == (False, True)
+    assert body["conductor"]["next_pick"] == waiting
 
 
 @pytest.mark.asyncio

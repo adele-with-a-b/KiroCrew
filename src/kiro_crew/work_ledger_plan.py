@@ -40,6 +40,7 @@ from kiro_crew.work_ledger_store import (
 from kiro_crew.work_plan_vocab import (
     MAX_RELEASES,
     counts_toward_concurrency,
+    in_backlog,
     merge_plan,
     plan_problem,
     rank_value,
@@ -248,7 +249,9 @@ def apply_person_rank(slot_key: str, item_id: str, rank: Any) -> dict[str, Any]:
     """A person's drag: set only ``plan.rank`` on one open item.
 
     The one plan key a person writes: the backlog order is theirs to set, the rest
-    of the plan is the conductor's, so an item outside the backlog is refused.
+    of the plan is the conductor's, so an item outside the backlog is refused. A
+    story with no worker and no ``backlog`` key is a backlog row (:func:`in_backlog`),
+    so a board whose conductor never planned is ranked as well.
     Returns ``{"item", "event"}``.
     """
     checked_id = _require_item_id(item_id)
@@ -259,7 +262,7 @@ def apply_person_rank(slot_key: str, item_id: str, rank: Any) -> dict[str, Any]:
         )
     with item_lock(slot_key, checked_id, create=False):
         item = _open_item(slot_key, checked_id)
-        if not (item.plan or {}).get("backlog"):
+        if not in_backlog(item.plan, state=item.state, worker_bound=bool(item.worker_session_key)):
             raise WorkLedgerError(
                 f"item {checked_id!r} is not in the backlog: only a backlog row is ranked",
                 code=CODE_INVALID_VALUE,

@@ -1292,6 +1292,7 @@ if TYPE_CHECKING:  # the project names this module imported that only its owners
         coerce_plan,
         coerce_releases,
         counts_toward_concurrency,
+        in_backlog,
         merge_plan,
         plan_problem,
         rank_value,

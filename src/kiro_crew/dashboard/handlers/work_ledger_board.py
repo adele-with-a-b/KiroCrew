@@ -59,7 +59,7 @@ from kiro_crew.dashboard.handlers.work_ledger import (
 )
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.platform.context import redact_via_context
-from kiro_crew.work_plan_vocab import next_pick, show_step
+from kiro_crew.work_plan_vocab import in_backlog, next_pick, show_step
 from kiro_crew.work_vocab import waits_on_person
 
 logger = logging.getLogger(__name__)
@@ -751,6 +751,12 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     for item in items:
         row = item.to_dict()
         show_step(row, record.releases)
+        # Backlog or sprint, and whether a worker holds it, worked out here because
+        # the page never gets the worker's key: a story with no worker and no
+        # ``plan.backlog`` is a backlog row, on every board (``in_backlog``).
+        has_worker = bool(item.worker_session_key)
+        row["has_worker"] = has_worker
+        row["in_backlog"] = in_backlog(item.plan, state=item.state, worker_bound=has_worker)
         row["orphaned"] = work_ledger.is_orphaned(item, conductor_slot_exists=conductor_alive)
         running, closed, looping, held = work_ledger.item_liveness(
             key,

@@ -27,7 +27,26 @@ describe('boardPlan', () => {
     expect(epicOf(items[0], plan.byId)).toBeNull()
   })
 
-  it('reads a board that was never planned as one sprint', () => {
+  it('puts the stories the server reads as waiting in the backlog, oldest first, on a board never planned', () => {
+    // Blick's shape: open rows with no plan, two of them with a worker.
+    const rows = ['a1', 'a2', 'a3', 'a4', 'a5'].map(id => item(id, undefined, { in_backlog: true, has_worker: false }))
+    rows[1] = { ...rows[1], in_backlog: false, has_worker: true }
+    rows[3] = { ...rows[3], in_backlog: false, has_worker: true }
+    const plan = boardPlan(rows)
+    expect(plan.sprint.map(i => i.item_id)).toEqual(['a2', 'a4'])
+    expect(plan.backlog.map(i => i.item_id)).toEqual(['a1', 'a3', 'a5'])
+    expect(seatsBusy(rows)).toBe(2)
+  })
+
+  it('keeps a story held in the sprint with no worker yet out of the backlog and the seats', () => {
+    const rows = [item('h1', { backlog: false }, { in_backlog: false, has_worker: false }), item('w2', undefined, { in_backlog: false, has_worker: true })]
+    const plan = boardPlan(rows)
+    expect(plan.sprint.map(i => i.item_id)).toEqual(['h1', 'w2'])
+    expect(plan.backlog).toHaveLength(0)
+    expect(seatsBusy(rows)).toBe(1)
+  })
+
+  it('reads a board that was never planned as one sprint from an older gateway', () => {
     const plan = boardPlan([item('a1'), item('a2')])
     expect(plan.planned).toBe(false)
     expect(plan.sprint).toHaveLength(2)
