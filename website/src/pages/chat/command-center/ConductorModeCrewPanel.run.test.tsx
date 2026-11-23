@@ -1,9 +1,9 @@
 /**
- * Conductor mode Board > Status > Overview: one line says what the run is
- * doing (Working, Waiting for you, Paused, Done or Stopped), from what is live on
- * this screen first and then the board read's `run` verdict. A settled run says
- * one plain sentence with no numbers, and a rejected or abandoned milestone reads
- * Not done, never with the done check.
+ * Conductor mode Board, the sprint line: one word says what the run is doing
+ * (Working, Waiting for you, Paused, Done or Stopped), from what is live on this
+ * screen first and then the board read's `run` verdict. A settled run says one
+ * plain sentence with no numbers, and a rejected or abandoned story reads Not
+ * done in the sprint, never with the done check.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -54,7 +54,7 @@ describe('Conductor mode run line', () => {
     expect(line).toHaveAttribute('data-state', 'done')
     expect(line.querySelector('svg')?.getAttribute('class')).toContain('crew-tone-ok')
     expect(line).toHaveTextContent('Done')
-    expect(within(line).getByTestId('conductor-mode-run-detail')).toHaveTextContent('Every milestone was accepted.')
+    expect(screen.getByTestId('conductor-mode-run-detail')).toHaveTextContent('Every milestone was accepted.')
     // The main chat is on screen: its last message is the report, so no button.
     expect(within(line).queryByRole('button')).toBeNull()
   })
@@ -65,7 +65,7 @@ describe('Conductor mode run line', () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({}), rejected, dropped], run: RUN({ not_done: 2 }) })
     renderPanel()
     const line = await runLine()
-    expect(within(line).getByTestId('conductor-mode-run-detail')).toHaveTextContent('Finished. Some milestones were not done.')
+    expect(screen.getByTestId('conductor-mode-run-detail')).toHaveTextContent('Finished. Some milestones were not done.')
     // The check is muted, never the green of a run where everything landed.
     expect(line.querySelector('svg')?.getAttribute('class')).toContain('text-muted')
     expect(line.querySelector('svg')?.getAttribute('class')).not.toContain('crew-tone-ok')
@@ -74,8 +74,9 @@ describe('Conductor mode run line', () => {
       expect.stringContaining('Not done · failed its check'),
       expect.stringContaining('Not done · dropped'),
     ])
-    // Only the accepted one counts as done.
-    expect(screen.getByTestId('conductor-mode-milestones')).toHaveTextContent('Milestones · 1 of 3')
+    // Only the accepted one counts as done; the two not done stay in the sprint.
+    expect(screen.getByTestId('conductor-mode-milestones-done').querySelector('summary')).toHaveTextContent(/^1 done$/)
+    expect(rows.every(r => r.closest('[data-testid="plan-sprint"]'))).toBe(true)
   })
 
   it('says Stopped with open milestones, without saying who stopped it', async () => {
@@ -86,7 +87,7 @@ describe('Conductor mode run line', () => {
     expect(line).toHaveAttribute('data-state', 'stopped')
     // A stop sign, not a hollow square that reads as a checkbox.
     expect(line.querySelector('svg')?.getAttribute('class')).toContain('lucide-circle-stop')
-    expect(within(line).getByTestId('conductor-mode-run-detail')).toHaveTextContent('Some milestones are still open and nothing is checking on them. Write to the main chat to continue.')
+    expect(screen.getByTestId('conductor-mode-run-detail')).toHaveTextContent('Some milestones are still open and nothing is checking on them. Write to the main chat to continue.')
     expect(line.textContent).not.toMatch(/\byou\b.*stopped|stopped by/i)
   })
 
@@ -94,7 +95,8 @@ describe('Conductor mode run line', () => {
     const open = ITEM({ item_id: 'it_d', state: 'open', status: 'progress', terminal: false, alive: 'idle', closed_at: null })
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [open], run: RUN({ settled: 'stopped', open: 1, accepted: 0, at_limit: true }) })
     renderPanel()
-    const detail = within(await runLine()).getByTestId('conductor-mode-run-detail')
+    await runLine()
+    const detail = screen.getByTestId('conductor-mode-run-detail')
     expect(detail).toHaveTextContent('It stopped at a time or budget limit with milestones still open.')
     // A stop at the limit sends no final report, so nothing says one exists.
     expect(detail.textContent).not.toMatch(/final report/i)
@@ -105,7 +107,7 @@ describe('Conductor mode run line', () => {
     renderPanel()
     const line = await runLine()
     expect(line).toHaveAttribute('data-state', 'working')
-    expect(within(line).queryByTestId('conductor-mode-run-detail')).toBeNull()
+    expect(screen.queryByTestId('conductor-mode-run-detail')).toBeNull()
   })
 
   it('says Waiting for you over a settled verdict when an item asks the person', async () => {
@@ -144,7 +146,7 @@ describe('Conductor mode run line', () => {
   it('draws no line for a chat with no goal and no milestone', async () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, conductor: { ...BOARD.conductor, goal: '' }, items: [], run: RUN({ settled: '', accepted: 0 }) })
     renderPanel()
-    await screen.findByText('No milestones yet.')
+    await screen.findByText('Nothing in this sprint yet.')
     expect(screen.queryByTestId('conductor-mode-run')).toBeNull()
   })
 

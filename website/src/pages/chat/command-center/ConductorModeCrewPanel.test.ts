@@ -1,13 +1,11 @@
 /**
- * The conductor mode Status view's pure helpers: the Overview's goal and "Done when"
- * lines, the milestone state rule, the Recap rule (the session summary only when
- * it is about goal progress, else the milestone sentence) and the List's tree depth.
+ * The conductor mode Board's pure helpers: the goal line's "Done when", scope and
+ * latest change, the story state rule, and the Workers tree's depth.
  */
 import { describe, it, expect } from 'vitest'
 import type { CrewWorker } from '../../../types'
 import type { WorkBoardItem } from '../../../api/crewBoard'
-import type { SessionSummary } from '../../../types/sessionSummary'
-import { CREW_BOARD_EXPANDED_KEY, crewAncestors, crewRowOpen, crewTree, doneWhen, goalDoneWhen, goalScope, goalSentence, latestChange, milestoneSentence, milestoneState, readCrewBoardExpanded, summaryRecap, visibleCrewRows, type CrewTreeNode } from './ConductorModeCrewPanel'
+import { CREW_BOARD_EXPANDED_KEY, crewAncestors, crewRowOpen, crewTree, doneWhen, goalDoneWhen, goalScope, goalSentence, latestChange, milestoneState, readCrewBoardExpanded, visibleCrewRows, type CrewTreeNode } from './ConductorModeCrewPanel'
 
 const item = (over: Partial<WorkBoardItem>): WorkBoardItem => ({
   schema: 1, item_id: 'it_1', title: 'Menu', acceptance: { kind: 'human_approval' }, state: 'open', verdict: null,
@@ -21,12 +19,7 @@ const worker = (key: string, by: string): CrewWorker => ({
   created_by: by, dispatched_by: by,
 })
 
-const summary = (line: string): SessionSummary => ({
-  enabled: true, stale: false, constraints: [], generated_at: 1, user_turns: 3, last_activity: null,
-  intents: [{ title: 'Launch', initial_intent: '', progress: [line], next_steps: [], ranges: [[1, 3]], status: 'active', verified: null, state: 'in-progress', last_touched_turn: 3, origin_turn: 1 }],
-})
-
-describe('Overview', () => {
+describe('Goal line', () => {
   it('takes the first sentence of the goal and drops parentheticals', () => {
     expect(goalSentence('Plan a small tea shop launch (UI review demo). Then more.')).toBe('Plan a small tea shop launch.')
   })
@@ -180,28 +173,6 @@ describe('milestoneState', () => {
   it('a rejected or abandoned item is not done, whatever its last report said', () => {
     expect(milestoneState(item({ status: 'question', outstanding: false, terminal: true, state: 'abandoned' }), false)).toBe('not_done')
     expect(milestoneState(item({ status: 'done', terminal: true, state: 'rejected' }), true)).toBe('not_done')
-  })
-})
-
-describe('Recap', () => {
-  const titles = ['Supplies list', 'Drinks menu']
-
-  it('uses the summary line when it is about a milestone', () => {
-    expect(summaryRecap(summary('The drinks menu is ready and the supplies list waits for a save.'), titles)).toBe('The drinks menu is ready and the supplies list waits for a save.')
-  })
-
-  it('rejects bookkeeping and lines that name no milestone', () => {
-    expect(summaryRecap(summary('Tasks used: 8 of 20. The open-task limit was raised.'), titles)).toBe('')
-    expect(summaryRecap(summary('Waiting for the person.'), titles)).toBe('')
-    // A stale summary may name a state the milestones have moved past.
-    expect(summaryRecap({ ...summary('The drinks menu is ready and the supplies list waits for a save.'), stale: true }, titles)).toBe('')
-    expect(summaryRecap({ ...summary('The drinks menu is ready.'), enabled: false }, titles)).toBe('')
-  })
-
-  it('builds the milestone sentence, counting the running ones instead of naming them', () => {
-    expect(milestoneSentence(4, 8, ['Disk check', 'Decor team'], ['Launch-day checklist'])).toBe('4 of 8 done; Disk check and Decor team wait on you; 1 running.')
-    expect(milestoneSentence(5, 6, [], [], ['Supplies list'])).toBe('5 of 6 done; Supplies list is stuck.')
-    expect(milestoneSentence(4, 6, [], ['Poem', 'Menu'], ['Supplies list'], ['Drinks menu'])).toBe('4 of 6 done; Supplies list is stuck; Drinks menu has gone quiet; 2 running.')
   })
 })
 
