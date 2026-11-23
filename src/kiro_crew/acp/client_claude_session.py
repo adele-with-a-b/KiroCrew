@@ -239,33 +239,40 @@ _CLAUDE_CARRIED_PERMISSION_KEYS: tuple[str, ...] = ("deny", "ask")
 _CLAUDE_PROJECT_SETTINGS_MAX_BYTES = CLAUDE_SETTINGS_MAX_BYTES
 
 
-#: The environment names that decide which ``settings.json`` a claude child loads as
-#: its ``user`` source: the config directory itself, else the home it sits under.
-_CLAUDE_USER_TIER_ENV_NAMES: tuple[str, ...] = ("CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE")
+def _claude_user_tier_env_names() -> frozenset[str]:
+    """Upper-cased environment names that decide which ``settings.json`` a child's ``user`` source loads.
+
+    The home itself, and every variable the harness tables declare as moving a
+    sign-in or permission-file directory (``CLAUDE_CONFIG_DIR``, ``CLAUDE_HOME``):
+    the set ``agent.env`` refuses, so a variable added to those tables counts here too.
+    """
+    from kiro_crew.config.sections_agent_env import _agent_env_home_override_names
+
+    return _agent_env_home_override_names() | {"HOME", "USERPROFILE"}
 
 
-def _claude_user_settings_file(self: ClaudeAcpClient) -> Path | None:
+def _claude_user_settings_file(client: ClaudeAcpClient) -> Path | None:
     """The ``settings.json`` this session's ``user`` source loads, or None when unknown.
 
     The gateway's own resolution (``CLAUDE_CONFIG_DIR``, else ``~/.claude``) holds for
     the child only while the child resolves it the same way. So None, and no file is
     then taken for the user's, when anything Crew puts on this session's environment
-    names one of :data:`_CLAUDE_USER_TIER_ENV_NAMES` (``agent.env``, the session's
-    ``extra_env``, the ``env`` of its spec's or Bot's ``claudeCode`` block), or when
-    the child's home is remapped (a pod). Blocking: it reads config and the spec.
+    names one of :func:`_claude_user_tier_env_names` (``agent.env``, the session's
+    ``extra_env``, the ``env`` of its spec's or Bot's ``claudeCode`` block). A pod
+    does not remap a claude child's home (``ACP_BACKENDS_POD_HOME_REMAP``). Blocking:
+    it reads config and the spec.
     """
-    if os.environ.get("KIROCREW_POD") == "1":
-        return None
     options: dict[str, Any] = {}
-    apply_spec_claude_options(options, getattr(self, "_agent", None))
-    apply_crewmate_claude_options(options, getattr(self, "_session_key", None))
+    apply_spec_claude_options(options, getattr(client, "_agent", None))
+    apply_crewmate_claude_options(options, getattr(client, "_session_key", None))
+    moving = _claude_user_tier_env_names()
     layers: tuple[Any, ...] = (
-        self._agent_env_for_spawn(),
-        getattr(self, "_extra_env", None),
+        client._agent_env_for_spawn(),
+        getattr(client, "_extra_env", None),
         options.get("env"),
     )
     for layer in layers:
-        if isinstance(layer, dict) and any(name in layer for name in _CLAUDE_USER_TIER_ENV_NAMES):
+        if isinstance(layer, dict) and any(str(name).upper() in moving for name in layer):
             return None
     config_dir = claude_config_dir()
     return None if config_dir is None else config_dir / "settings.json"
@@ -285,7 +292,8 @@ def _is_user_settings_file(path: Path, user_settings: Path | None) -> bool:
     folder reached through another spelling is not recognised and is examined as a
     project file, the refusing direction.
     """
-    if user_settings is None:
+    if user_settings is None or ".." in path.parts or ".." in user_settings.parts:
+        # ``abspath`` folds ``..`` by spelling, which is another file past a link.
         return False
 
     def spelled(p: Path) -> str:

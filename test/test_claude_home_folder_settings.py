@@ -93,7 +93,9 @@ class TestHomeFolderSession:
         assert client._claude_local_settings_excluded is True
         assert "foo" in _by_name(client._session_mcp_servers())
 
-    @pytest.mark.parametrize("name", ["CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE"])
+    @pytest.mark.parametrize(
+        "name", ["CLAUDE_CONFIG_DIR", "CLAUDE_HOME", "HOME", "USERPROFILE", "claude_config_dir"]
+    )
     def test_a_child_pointed_at_another_user_tier_gets_no_exemption(
         self, tmp_path, agents_dir, monkeypatch, name
     ):
@@ -123,16 +125,6 @@ class TestHomeFolderSession:
             "apply_spec_claude_options",
             lambda options, agent: options.update(env={"CLAUDE_CONFIG_DIR": "/elsewhere"}),
         )
-
-        assert client_session_mod._claude_user_settings_file(client) is None
-
-    def test_a_remapped_home_gets_no_exemption(self, tmp_path, agents_dir, monkeypatch):
-        home = _home_folder(tmp_path, monkeypatch)
-        client = AcpClient(work_dir=home, agent="kirocrew", acp_backend=ACP_BACKEND_CLAUDE)
-        assert client_session_mod._claude_user_settings_file(client) == (
-            home / ".claude" / "settings.json"
-        )
-        monkeypatch.setenv("KIROCREW_POD", "1")
 
         assert client_session_mod._claude_user_settings_file(client) is None
 
@@ -168,5 +160,17 @@ class TestProjectSettingsRestrictions:
             client_session_mod._project_settings_restrictions(
                 project / "settings.json", user / "settings.json"
             )
+            is None
+        )
+
+    def test_a_path_spelled_through_dot_dot_is_not_the_users_file(self, tmp_path):
+        user = tmp_path / "user-config"
+        user.mkdir()
+        (user / "settings.json").write_text(json.dumps(_HOOKS), encoding="utf-8")
+        (tmp_path / "repo").mkdir()
+        spelled = tmp_path / "repo" / ".." / "user-config" / "settings.json"
+
+        assert (
+            client_session_mod._project_settings_restrictions(spelled, user / "settings.json")
             is None
         )

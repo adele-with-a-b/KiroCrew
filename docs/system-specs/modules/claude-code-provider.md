@@ -735,10 +735,11 @@ Which file that is comes from `_claude_user_settings_file`: `settings.json` in
 `CLAUDE_CONFIG_DIR`, else in `~/.claude`, as the gateway resolves them. That answer
 holds for the child only while the child resolves it the same way, so no file is
 taken for the user's when anything Crew puts on the session's environment names
-`CLAUDE_CONFIG_DIR`, `HOME` or `USERPROFILE` (`agent.env`, the session's `extra_env`,
-the `env` of a spec's or Bot's `claudeCode` block), or when the child's home is
-remapped (`KIROCREW_POD`). The path is matched as written
-(`_is_user_settings_file`), never through the filesystem: a link or hard link in a
+`HOME`, `USERPROFILE` or a variable the harness tables declare as moving a config
+directory (`CLAUDE_CONFIG_DIR`, `CLAUDE_HOME`; `_claude_user_tier_env_names`) (`agent.env`, the session's `extra_env`,
+the `env` of a spec's or Bot's `claudeCode` block). A pod does not remap a claude
+child's home (`ACP_BACKENDS_POD_HOME_REMAP` names kiro alone). The path is matched as written
+(`_is_user_settings_file`), never through the filesystem, and a path spelled with `..` never matches: a link or hard link in a
 repository that resolves to the user's file is still a project file, and no `stat`
 follows a link a repository controls. The cost is the refusing direction: a home
 folder reached through another spelling (a linked home, a different case on a
