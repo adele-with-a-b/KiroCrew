@@ -1,7 +1,7 @@
 """The conductor context cap (``docs/request-for-change/rfc-conductor-context-cap.md``).
 
-A goal conductor's KAS chat over its marks is trimmed at a dashboard turn's start,
-before the turn claims its session: the KAS conversation ends through
+A goal conductor's KAS or claude chat over its marks is trimmed at a dashboard turn's start,
+before the turn claims its session: the conversation ends through
 ``discard_conversation(replay=True)``, and the session the turn then starts is seeded
 with a trim note, the session-ledger snapshot and a longer text tail of the transcript.
 No model call is spent, and the transcript gains no row: the person cannot act on a
@@ -35,8 +35,11 @@ CONTEXT_CAP_LOW_TOKENS = 150_000
 CONTEXT_CAP_HIGH_TOKENS = 400_000
 #: Rule B: a session over this whose previous turn ended a cache life ago is trimmed.
 CONTEXT_CAP_IDLE_TOKENS = CONTEXT_CAP_LOW_TOKENS + 50_000
-#: The prompt-cache life Rule B measures the gap against, in seconds.
-CONTEXT_CAP_CACHE_SECS = 300.0
+#: KAS's prompt-cache life, in seconds, as this cap's RFC measured it (credits per
+#: request step from 1.88 to 2.95 at 5.0 min). KAS is not in ``PROMPT_CACHE_LIFETIMES``
+#: (idle compaction skips it), so the cap holds the measured value. Every other
+#: backend's life is read off that table (``_context_cap_cache_secs``).
+CONTEXT_CAP_KAS_CACHE_SECS = 300.0
 #: A session a trim started is not trimmed again until its reading has grown this far
 #: past its first one, so a trim that lands high cannot repeat on every cold turn.
 CONTEXT_CAP_DAMPING_TOKENS = 50_000
@@ -99,7 +102,7 @@ async def _cap_conductor_context(
     *,
     is_slash: bool,
 ) -> str:
-    """Trim *slot*'s conductor KAS chat when it is over a mark, before the turn claims it.
+    """Trim *slot*'s conductor chat when it is over a mark, before the turn claims it.
 
     Runs at a dashboard turn's start, beside the pending-reset consume. Returns
     ``"trimmed"`` or the hold that stopped the trim (RFC section 3.4); every hold
@@ -146,7 +149,11 @@ async def _context_cap_trim(
     if tokens is None:
         return "unknown_reading"
     floor = _context_cap_damping_floor(state, session_key, tokens)
-    rule = _context_cap_rule(tokens, _context_cap_idle_secs(state, session_key))
+    rule = _context_cap_rule(
+        tokens,
+        _context_cap_idle_secs(state, session_key),
+        _context_cap_cache_secs(provider, backend),
+    )
     if rule is None:
         return "below_marks"
     if floor is not None and tokens < floor:
@@ -184,18 +191,36 @@ async def _context_cap_trim(
     return "trimmed"
 
 
-def _context_cap_rule(tokens: int, idle_secs: float | None) -> str | None:
+def _context_cap_rule(tokens: int, idle_secs: float | None, cache_secs: float | None) -> str | None:
     """The rule that trims a session at *tokens* whose previous turn ended *idle_secs* ago.
 
-    Rule A: over HIGH. Rule B: over the Rule B line once the cache life has passed,
-    when the next request writes a new cache either way. ``None``: neither holds.
+    Rule A: over HIGH. Rule B: over the Rule B line once *cache_secs*, the backend's
+    cache life, has passed, when the next request writes a new cache either way.
+    ``None``: neither holds. An unknown cache life never fires Rule B: guessing it
+    short trims a chat whose cache is still warm, and the trim drops detail.
     """
     if tokens > CONTEXT_CAP_HIGH_TOKENS:
         return "A"
-    if idle_secs is not None and idle_secs >= CONTEXT_CAP_CACHE_SECS:
+    if idle_secs is not None and cache_secs is not None and idle_secs >= cache_secs:
         if tokens > CONTEXT_CAP_IDLE_TOKENS:
             return "B"
     return None
+
+
+def _context_cap_cache_secs(provider: Any, backend: str) -> float | None:
+    """The prompt-cache life of *provider*'s *backend* in seconds, or ``None`` when unknown.
+
+    ``PROMPT_CACHE_LIFETIMES`` answers first, through the launch environment idle
+    compaction reads (claude: only when ``CLAUDE_CODE_PROMPT_CACHE_TTL`` names the
+    tier). KAS, absent from it, has the cap's measured ``CONTEXT_CAP_KAS_CACHE_SECS``.
+    """
+    from kiro_crew.agent_sdk.backends import ACP_BACKEND_KAS
+    from kiro_crew.session_idle_compaction import provider_prompt_cache_lifetime
+
+    secs = provider_prompt_cache_lifetime(provider)
+    if secs is None and backend == ACP_BACKEND_KAS:
+        return CONTEXT_CAP_KAS_CACHE_SECS
+    return secs
 
 
 def _context_cap_reading(provider: Any) -> int | None:
@@ -254,7 +279,7 @@ def _context_cap_damping_floor(state: DashboardState, session_key: str, tokens: 
 
 
 async def _context_cap_discard(state: DashboardState, slot: _ChatSlot, session_key: str) -> bool:
-    """End the slot's KAS conversation with replay kept on; False when a turn holds it.
+    """End the slot's conversation with replay kept on; False when a turn holds it.
 
     ``skip_if_busy`` refuses under the same session lock that pops the session, so a
     turn that starts between the checks above and the teardown is never cut.

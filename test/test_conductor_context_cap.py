@@ -1,8 +1,9 @@
 """The conductor context cap (``docs/request-for-change/rfc-conductor-context-cap.md``).
 
 Section 5 of the RFC asks for a test per rule and per hold, each failing first: Rule
-A, Rule B, the 300-s clock read from the previous turn's release rather than its
-acquire, the damping guard, an unknown reading, a slash command, a queued reset, a
+A, Rule B, the cache-life clock (KAS's 300 s, claude's named tier, none when
+unknown) read from the previous turn's release rather than its acquire, the
+damping guard, an unknown reading, a slash command, a queued reset, a
 pending question, attached sub-agents, a refused teardown and the off switch; and
 for the seed, its budget, its note, its snapshot and the notice row its replay
 skips. The check runs through ``chat_runner._cap_conductor_context`` on a real slot
@@ -158,21 +159,73 @@ def _notices(slot) -> list[dict]:
 
 
 @pytest.mark.parametrize(
-    ("tokens", "idle", "rule"),
+    ("tokens", "idle", "cache", "rule"),
     [
-        (400_001, 0.0, "A"),
-        (400_000, 0.0, None),
-        (400_000, None, None),
-        (200_001, 300.0, "B"),
-        (200_000, 300.0, None),
-        (200_001, 299.9, None),
-        (200_001, None, None),
-        (900_000, None, "A"),
+        (400_001, 0.0, 300.0, "A"),
+        (400_000, 0.0, 300.0, None),
+        (400_000, None, 300.0, None),
+        (200_001, 300.0, 300.0, "B"),
+        (200_000, 300.0, 300.0, None),
+        (200_001, 299.9, 300.0, None),
+        (200_001, None, 300.0, None),
+        (900_000, None, 300.0, "A"),
+        (200_001, 3_599.9, 3_600.0, None),
+        (200_001, 3_600.0, 3_600.0, "B"),
+        (200_001, 86_400.0, None, None),
+        (400_001, 0.0, None, "A"),
     ],
 )
-def test_the_rules_fire_only_past_their_marks(tokens, idle, rule):
-    """Rule A past 400K whatever the cache; Rule B past 200K once 300 s have passed."""
-    assert chat_runner._context_cap_rule(tokens, idle) == rule
+def test_the_rules_fire_only_past_their_marks(tokens, idle, cache, rule):
+    """Rule A past 400K whatever the cache; Rule B past 200K once the cache life has
+    passed, and never when that life is unknown."""
+    assert chat_runner._context_cap_rule(tokens, idle, cache) == rule
+
+
+def _claude(tokens: int) -> _Provider:
+    """A live claude session's meter. Its client, like a real claude one, holds no
+    ``agent.env`` snapshot, so the gateway's environment names the tier."""
+    provider = _Provider(tokens)
+    provider.harness_managed_compaction_backend = "claude"
+    provider.client = SimpleNamespace(backend="claude", _agent_env_snapshot=None, _extra_env={})
+    return provider
+
+
+@pytest.mark.asyncio
+async def test_kas_keeps_its_measured_five_minute_cache_life(tmp_path, monkeypatch):
+    """KAS is not in ``PROMPT_CACHE_LIFETIMES``; its chat is trimmed after 300 s idle."""
+    monkeypatch.delenv("CLAUDE_CODE_PROMPT_CACHE_TTL", raising=False)
+    sessions = _Sessions(_Provider(250_000), idle_secs=240.0)
+    state, slot = _conductor(tmp_path, sessions)
+    assert await _check(state, slot) == "below_marks"
+
+    sessions.set_idle(360.0)
+    assert await _check(state, slot) == "trimmed"
+
+
+@pytest.mark.asyncio
+async def test_a_claude_chat_on_a_one_hour_cache_is_not_trimmed_while_warm(tmp_path, monkeypatch):
+    """The tier ``CLAUDE_CODE_PROMPT_CACHE_TTL`` names is the clock Rule B reads."""
+    monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
+    sessions = _Sessions(_claude(250_000), idle_secs=59 * 60.0)
+    state, slot = _conductor(tmp_path, sessions)
+    assert await _check(state, slot) == "below_marks"
+
+    sessions.set_idle(60 * 60.0)
+    assert await _check(state, slot) == "trimmed"
+
+
+@pytest.mark.asyncio
+async def test_a_claude_chat_with_no_known_cache_life_is_trimmed_only_past_400k(
+    tmp_path, monkeypatch
+):
+    """Claude Code picks its tier from the account; unnamed, Rule B never fires."""
+    monkeypatch.delenv("CLAUDE_CODE_PROMPT_CACHE_TTL", raising=False)
+    sessions = _Sessions(_claude(399_000), idle_secs=24 * 3_600.0)
+    state, slot = _conductor(tmp_path, sessions)
+    assert await _check(state, slot) == "below_marks"
+
+    sessions.provider = _claude(401_000)
+    assert await _check(state, slot) == "trimmed"
 
 
 @pytest.mark.asyncio

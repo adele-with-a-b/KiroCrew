@@ -533,6 +533,9 @@ ACP_BACKENDS_COMPACTION_REPORTED = ACP_BACKENDS_SENT_IMAGE_RECORD
 # absent from the table, or whose resolver answers ``None``, has a lifetime Crew
 # cannot know and is never idle-compacted: guessing too long compacts after the
 # cache is gone, guessing too short spends a model call for nothing.
+# ``session.context_cap``'s Rule B reads the same table
+# (``dashboard/chat_turn/context_cap._context_cap_cache_secs``): a row added or
+# changed here also moves when a conductor chat is trimmed.
 #
 # kiro: 300 s, measured from recorded kiro-cli 2.32.0 turns. A turn starting at
 # 290-300 s after the previous one ended paid more than twice the warm cost on 21%

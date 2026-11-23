@@ -49,6 +49,17 @@ superseded-by: []
   replay of the shipped check found 0 conductor turn starts over 400K on a warm
   cache, so Rule A trimmed nothing that Rule B would not, and the owner prefers
   using the window over cutting a warm session.
+- **Amended 2026-11-22: Rule B reads the backend's cache life.** The 300 s
+  in Rule B is KAS's measured life (section 2); the cap also covers claude
+  chats, which cache for up to an hour. Rule B now reads the life per backend
+  through `PROMPT_CACHE_LIFETIMES` (`agent_sdk/backends_turns.py`), the table
+  idle compaction reads: claude is 300 s or 3600 s only when
+  `CLAUDE_CODE_PROMPT_CACHE_TTL` names the tier. KAS, absent from that table,
+  keeps 300 s. An unknown life never fires Rule B, because a guess that is too
+  short trims a chat whose cache is still warm and drops detail for nothing.
+  Why: on one operator's host, whose claude account writes every cache at the
+  1-hour rate (2026-11-20..22, read from its claude transcripts' usage
+  fields), Rule B trimmed conductor chats 46 times on a cache still warm.
 - Code measured at `c3f2b27de7`. The numbers come from the R5 study on one
   operator's host: 5,174 dashboard turns from 2026-10-01 to 2026-10-19, each
   joined across Kiro Crew's usage rows, its chat history and the KAS
