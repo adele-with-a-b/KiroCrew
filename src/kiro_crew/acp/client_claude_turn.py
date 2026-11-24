@@ -32,6 +32,7 @@ from kiro_crew.acp._dispatch import (
     redact_text,
 )
 from kiro_crew.acp.client_claude_session import (
+    CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION,
     CLAUDE_ACP_STEERING_MIN_VERSION,
     _adapter_version_at_least,
 )
@@ -208,6 +209,15 @@ def _steering_adapter_floor_met(self: ClaudeAcpClient) -> bool:
     the release that takes ``_session/steering`` as this client sends it."""
     return _adapter_version_at_least(
         getattr(self, "_agent_version", ""), CLAUDE_ACP_STEERING_MIN_VERSION
+    )
+
+
+def _folds_prompt_into_agent_turn(self: ClaudeAcpClient) -> bool:
+    """Whether this claude-agent-acp is at or above
+    :data:`CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION`, the release shown to fold a
+    ``session/prompt`` into a turn Claude Code started on its own."""
+    return _adapter_version_at_least(
+        getattr(self, "_agent_version", ""), CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION
     )
 
 

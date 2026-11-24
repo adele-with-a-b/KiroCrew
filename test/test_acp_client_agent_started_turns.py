@@ -33,7 +33,10 @@ from kiro_crew.acp.types import (
 )
 from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_CLAUDE,
+    ACP_BACKEND_CODEX,
+    ACP_BACKEND_GOOSE,
     ACP_BACKEND_KIRO,
+    ACP_BACKEND_OPENCODE,
     ACP_BACKENDS_AGENT_STARTED_TURNS,
 )
 from kiro_crew.testing.wait import FALLBACK_TIMEOUT_SECS, async_wait_until, await_until
@@ -1219,3 +1222,287 @@ async def test_a_late_steering_answer_does_not_end_the_agent_started_turn(
     assert turns == [client]
     assert client._unanswered_steering_ids() == set()
     await _stop_restarted_reader(client)
+
+
+# ── A steer folded into an agent-started turn ──
+#
+# Abdel, 2026-11-23, "Q1a yes": a note may cut into a turn the chat started by itself
+# and is read at its next step. claude-agent-acp 0.109.0 folds a session/prompt into
+# such a turn; the frames below are in the order a live probe of it saw.
+
+_FOLD_VERSION = "0.109.0"
+_TOOL_OPEN = _update(
+    {"sessionUpdate": "tool_call", "toolCallId": "t1", "status": "in_progress", "title": "Bash"}
+)
+_TOOL_DONE = _update(
+    {"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed"}
+)
+
+
+def _prompt_ids(sent: list[dict]) -> list[int]:
+    return [frame["id"] for frame in sent if frame.get("method") == "session/prompt"]
+
+
+def _answer(request_id: int, stop_reason: str = "end_turn") -> dict:
+    return {"jsonrpc": "2.0", "id": request_id, "result": {"stopReason": stop_reason}}
+
+
+async def _collect(stream) -> list:
+    return [e async for e in stream]
+
+
+async def _fold_turn(*frames: dict, version: str = _FOLD_VERSION, turns=None):
+    """A claude client in an agent-started turn that has streamed *frames*."""
+    client, reader, sent = _steering_client(on_turn=turns.append if turns is not None else None)
+    client._agent_version = version
+    await _handed_off(client, reader, *frames)
+    return client, reader, sent
+
+
+@pytest.mark.asyncio
+async def test_a_steer_is_folded_into_an_agent_started_turn_and_read_at_its_next_step() -> None:
+    turns: list[AcpClient] = []
+    client, reader, sent = await _fold_turn(_chunk("running the job "), _TOOL_OPEN, turns=turns)
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        first = []
+        while not client._active_tool_calls.possibly_open:
+            first.append(await stream.__anext__())
+        # A foreground tool is running: the note is not held behind it.
+        assert await client.steer("rebase before you push") is True
+        assert client.steer_refusal == ""
+        [prompt_id] = _prompt_ids(sent)
+        assert sent[-1]["params"] == {
+            "sessionId": "s1",
+            "prompt": [{"type": "text", "text": "rebase before you push"}],
+        }
+        # The turn goes on: the tool finishes, the model reads the note, and the
+        # cycle closes; the folded prompt's answer comes with that close.
+        _feed(
+            reader,
+            _TOOL_DONE,
+            _chunk("SEEN: rebasing first"),
+            _AUTONOMOUS_END,
+            _answer(prompt_id),
+            _chunk("next turn"),
+        )
+        rest = [e async for e in stream]
+
+    events = first + rest
+    kinds = [e.kind for e in events]
+    # Nothing was cancelled: one turn, one end, the note reported read before it.
+    assert kinds.count(EVENT_COMPLETE) == 1
+    assert kinds[-2:] == [EVENT_STEER_CONSUMED, EVENT_COMPLETE]
+    assert events[-1].stop_reason == "end_turn"
+    assert events[-2].text == "<user_message>\nrebase before you push\n</user_message>"
+    assert "SEEN: rebasing first" in [e.text for e in events if e.kind == EVENT_TEXT_CHUNK]
+    proc_writes = [f.get("method") for f in sent]
+    assert "session/cancel" not in proc_writes
+    # The answer is the turn's own: nothing of it is left for the next reader.
+    assert client._folded_prompts() == {}
+    await async_wait_until(lambda: len(turns) == 2, timeout=5)
+    assert client._buffer[0].params["update"]["content"]["text"] == "next turn"
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_a_folded_prompt_answered_before_the_close_ends_the_turn_on_its_answer() -> None:
+    turns: list[AcpClient] = []
+    client, reader, sent = await _fold_turn(_chunk("working "), turns=turns)
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("stop, that issue is fixed") is True
+        [prompt_id] = _prompt_ids(sent)
+        _feed(reader, _chunk("stopping"), _answer(prompt_id), _AUTONOMOUS_END)
+        rest = [e async for e in stream]
+
+    kinds = [e.kind for e in rest]
+    assert kinds.count(EVENT_COMPLETE) == 1
+    assert kinds[-2:] == [EVENT_STEER_CONSUMED, EVENT_COMPLETE]
+    # The trailing close is a lone marker: it starts no turn of its own.
+    await async_wait_until(lambda: client._stdout_claims == 0, timeout=5)
+    await _stop_restarted_reader(client)
+    assert turns == [client]
+
+
+@pytest.mark.asyncio
+async def test_a_folded_prompt_the_adapter_refuses_is_not_reported_read() -> None:
+    client, reader, sent = await _fold_turn(_chunk("working "))
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("rebase first") is True
+        [prompt_id] = _prompt_ids(sent)
+        refusal = {"jsonrpc": "2.0", "id": prompt_id, "error": {"code": -32603, "message": "no"}}
+        _feed(reader, refusal, _chunk("done"), _AUTONOMOUS_END)
+        rest = [e async for e in stream]
+
+    kinds = [e.kind for e in rest]
+    # The turn ends on its own close, and the caller's pending entry is queued.
+    assert EVENT_STEER_CONSUMED not in kinds
+    assert kinds.count(EVENT_COMPLETE) == 1 and rest[-1].stop_reason == "end_turn"
+    assert client._folded_prompts() == {}
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_a_stopped_turn_with_a_folded_note_reports_nothing_read() -> None:
+    client, reader, sent = await _fold_turn(_chunk("working "))
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("rebase first") is True
+        [prompt_id] = _prompt_ids(sent)
+        client._cancelled = True
+        client._cancel_ts = time.monotonic()
+        _feed(reader, _AUTONOMOUS_END, _answer(prompt_id, "cancelled"))
+        rest = [e async for e in stream]
+
+    assert EVENT_STEER_CONSUMED not in [e.kind for e in rest]
+    assert rest[-1].kind == EVENT_COMPLETE and rest[-1].stop_reason == "cancelled"
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_a_fold_answered_with_an_error_after_the_close_ends_the_turn() -> None:
+    """The adapter closes a failed cycle first, then rejects the prompt that owned it."""
+    client, reader, sent = await _fold_turn(_chunk("working "))
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("rebase first") is True
+        [prompt_id] = _prompt_ids(sent)
+        failure = {
+            "jsonrpc": "2.0",
+            "id": prompt_id,
+            "error": {"code": -32603, "message": "overloaded"},
+        }
+        _feed(reader, _chunk("trying"), _AUTONOMOUS_END, failure)
+        rest = await asyncio.wait_for(_collect(stream), timeout=5)
+
+    kinds = [e.kind for e in rest]
+    assert EVENT_STEER_CONSUMED not in kinds
+    assert kinds.count(EVENT_COMPLETE) == 1
+    assert client._folded_prompts() == {}
+    # The adapter refused it: it runs once, from the queue, as fresh text.
+    assert client.held_steers_possibly_delivered == frozenset()
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_a_turn_ended_by_another_response_reports_its_fold_unread() -> None:
+    """A response to a request sent during the turn ends it before the fold's answer."""
+    client, reader, sent = await _fold_turn(_chunk("working "))
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("rebase first") is True
+        [prompt_id] = _prompt_ids(sent)
+        _feed(reader, _answer(prompt_id + 1))
+        rest = await asyncio.wait_for(_collect(stream), timeout=5)
+
+    assert EVENT_STEER_CONSUMED not in [e.kind for e in rest]
+    assert rest[-1].kind == EVENT_COMPLETE
+    # Its answer is still known, so it ends the turn that reads that prompt's tail.
+    assert client._folded_prompts() == {prompt_id: (client._agent_turn_serial, "rebase first")}
+    # The adapter may still run it, so the caller requeues it as possibly delivered.
+    assert client.held_steers_possibly_delivered == frozenset({"rebase first"})
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_a_turn_closed_with_no_complete_requeues_its_fold_as_possibly_delivered() -> None:
+    """An exit that yields no complete (here the stream closed, as the stale-turn
+    gate and an error also end it) still marks the unanswered fold."""
+    client, reader, sent = await _fold_turn(_chunk("working "))
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("rebase first") is True
+        _feed(reader, _chunk("still working"))
+        await stream.__anext__()
+
+    assert client.held_steers_possibly_delivered == frozenset({"rebase first"})
+    assert not [t for aimed, t in client._steers_accepted if aimed == -1]
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_a_second_note_into_the_same_agent_started_turn_is_not_folded() -> None:
+    client, reader, sent = await _fold_turn(_chunk("working "))
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("rebase first") is True
+        assert await client.steer("and then run the tests") is False
+        assert client.steer_refusal == "too_many"
+        [prompt_id] = _prompt_ids(sent)
+        _feed(reader, _AUTONOMOUS_END, _answer(prompt_id))
+        rest = [e async for e in stream]
+
+    kinds = [e.kind for e in rest]
+    assert kinds.count(EVENT_STEER_CONSUMED) == 1 and kinds[-1] == EVENT_COMPLETE
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_an_earlier_turns_folded_answer_ends_the_turn_reading_its_tail() -> None:
+    """A fold whose turn ended first ran on as a prompt of its own; its answer is
+    then the only end that turn gets, as for any earlier prompt's response."""
+    client, reader, _sent = await _fold_turn(_chunk("the old note's tail "))
+    # A fold from turn 0 whose turn ended before its answer was read.
+    client._folded_prompts()[5] = (0, "old note")
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        _feed(reader, _chunk("still going"), _answer(5))
+        rest = await asyncio.wait_for(_collect(stream), timeout=5)
+
+    assert [e.text for e in rest if e.kind == EVENT_TEXT_CHUNK] == ["still going"]
+    kinds = [e.kind for e in rest]
+    assert kinds.count(EVENT_COMPLETE) == 1 and EVENT_STEER_CONSUMED not in kinds
+    assert client._folded_prompts() == {}
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.asyncio
+async def test_a_steer_after_an_agent_started_turn_ended_is_told_the_turn_ended() -> None:
+    client, reader, _sent = await _fold_turn(_chunk("working "), version="0.94.2")
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        _feed(reader, _AUTONOMOUS_END)
+        [e async for e in stream]
+
+    assert await client.steer("rebase first") is False
+    assert client.steer_refusal == "turn_ended"
+    await _stop_restarted_reader(client)
+
+
+@pytest.mark.parametrize("version", ["0.108.9", "0.94.2", ""])
+@pytest.mark.asyncio
+async def test_below_the_fold_floor_an_agent_started_turn_keeps_the_fallback(version) -> None:
+    client, reader, sent = await _fold_turn(_chunk("working "), version=version)
+
+    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+        await stream.__anext__()
+        assert await client.steer("rebase first") is False
+        assert client.steer_refusal == "agent_turn"
+        _feed(reader, _AUTONOMOUS_END)
+        rest = [e async for e in stream]
+
+    assert sent == []
+    assert rest[-1].kind == EVENT_COMPLETE
+    await _stop_restarted_reader(client)
+
+
+def test_only_the_claude_adapter_folds_and_only_at_its_floor() -> None:
+    """Positive identity: the base client folds nothing; claude-agent-acp from 0.109.0."""
+    for backend in (ACP_BACKEND_KIRO, ACP_BACKEND_CODEX, ACP_BACKEND_GOOSE, ACP_BACKEND_OPENCODE):
+        assert AcpClient(acp_backend=backend)._folds_prompt_into_agent_turn() is False
+    claude = AcpClient(acp_backend=ACP_BACKEND_CLAUDE)
+    assert isinstance(claude, ClaudeAcpClient)
+    for version, folds in (("0.109.0", True), ("0.110.3", True), ("0.108.9", False), ("", False)):
+        claude._agent_version = version
+        assert claude._folds_prompt_into_agent_turn() is folds

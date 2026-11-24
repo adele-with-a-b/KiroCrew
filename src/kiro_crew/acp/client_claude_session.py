@@ -200,6 +200,14 @@ CLAUDE_ACP_SETTING_SOURCES_MIN_VERSION = (0, 84, 0)
 #: the adapter reports no version, the session takes no steer and the caller queues.
 CLAUDE_ACP_STEERING_MIN_VERSION = (0, 65, 0)
 
+#: The oldest claude-agent-acp shown to fold a ``session/prompt`` into a turn Claude
+#: Code started on its own (a background task's notice): the prompt "owns that turn
+#: now" (its ``acp-agent.js``), the model reads the text at its next step, and the
+#: prompt is answered when that turn ends. Probed live on 0.109.0 only, the release
+#: this floor names; below it, or with no version, such a turn takes no steer and the
+#: caller queues (``kiro_crew.steer_refusal.AGENT_TURN``).
+CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION = (0, 109, 0)
+
 #: The oldest claude-agent-acp whose ``session/fork`` honours a fork point
 #: (``_meta.jetbrains.air.fork.messageId``). Older ones advertise
 #: ``sessionCapabilities.fork`` too but copy the whole session, so below it, or
