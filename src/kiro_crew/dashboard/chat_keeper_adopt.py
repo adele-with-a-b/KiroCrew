@@ -35,9 +35,9 @@ _KEPT_SESSION_KEYS: frozenset[str] = frozenset()
 
 def _feature_on(cfg: Any) -> bool:
     from kiro_crew import chat_keeper
-    from kiro_crew.acp import client_keeper
+    from kiro_crew.agent_sdk import chat_keeper as keeper
 
-    return chat_keeper.supported() and client_keeper._keeps(getattr(cfg, "agent", None))
+    return chat_keeper.supported() and keeper.keeps(getattr(cfg, "agent", None))
 
 
 def arm(cfg: Any) -> list[KeeperRecord]:
@@ -76,7 +76,7 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
     """Adopt each live keeper whose chat the restore rebuilt; how many were adopted."""
     if not live:
         return 0
-    from kiro_crew.acp.client_keeper import _end_unadopted
+    from kiro_crew.agent_sdk.chat_keeper import end_unadopted
     from kiro_crew.dashboard import restart_receipt
     from kiro_crew.dashboard.chat_utils_slots import effective_session_key
 
@@ -87,7 +87,7 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
         slot = slots.get(record.session_key)
         if not enabled or slot is None:
             why = "the flag is off" if not enabled else "its chat was not restored"
-            await _end_unadopted(record, why)
+            await end_unadopted(record, why)
             restart_receipt.note_ended(record.session_key, slot, why)
             # A slot built later (a member slot's retry) then gets its interrupted row.
             _no_longer_kept(record.session_key)
@@ -105,7 +105,7 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
             # Not left for the first message to adopt: its prompt would then read
             # the old turn's frames as its own. The chat gets its interrupted row.
             why = "the eager adopt did not attach"
-            await _end_unadopted(record, why)
+            await end_unadopted(record, why)
             restart_receipt.note_ended(record.session_key, slot, why)
             _no_longer_kept(record.session_key)
             _owe_no_longer(slot)
@@ -123,17 +123,22 @@ def _left_to_another_start(slot: Any, record: KeeperRecord) -> bool:
     One holding it serves the chat on it. A running turn's own start adopts the
     keeper, or ends it before it spawns (``client_keeper.adopt_for``).
     """
-    from kiro_crew.acp import client_keeper
+    from kiro_crew.agent_sdk import chat_keeper as keeper
 
-    return client_keeper.holder_of(record.instance) is not None or slot.running is True
+    return keeper.holder_of(record.instance) is not None or slot.running is True
+
+
+def _keeper_of(provider: Any) -> Any:
+    """*provider*'s keeper process, or None when its client runs on none."""
+    from kiro_crew.agent_sdk.chat_keeper import keeper_process
+
+    client = getattr(provider, "_client", None)
+    return keeper_process(client) if client is not None else None
 
 
 def _serves(provider: Any, record: KeeperRecord) -> bool:
     """Whether *provider*'s client runs on *record*'s keeper."""
-    from kiro_crew.acp.client_keeper import keeper_process
-
-    client = getattr(provider, "_client", None)
-    process = keeper_process(client) if client is not None else None
+    process = _keeper_of(provider)
     return process is not None and process.record.instance == record.instance
 
 
@@ -161,14 +166,14 @@ async def _await_held_start(
 
     None when that start let go of the keeper first, or ran past *deadline*.
     """
-    from kiro_crew.acp import client_keeper
+    from kiro_crew.agent_sdk import chat_keeper as keeper
 
     loop = asyncio.get_running_loop()
     while True:
         provider = state.sessions.get_provider(session_key)
         if _serves(provider, record):
             return provider
-        if client_keeper.holder_of(record.instance) is None or loop.time() >= deadline:
+        if keeper.holder_of(record.instance) is None or loop.time() >= deadline:
             return None
         await asyncio.sleep(_HELD_START_POLL_SECS)
 
@@ -272,7 +277,7 @@ async def _start_once(
     from kiro_crew.dashboard import restart_receipt
 
     # Before the watch, so the receipt row lands above the continuing turn's rows.
-    await restart_receipt.note_kept(state, slot, provider)
+    await restart_receipt.note_kept(state, slot, getattr(_keeper_of(provider), "state", None))
     _watch_agent_turns(state, slot, provider, cfg)
     kick = getattr(client, "_maybe_start_idle_reader", None)
     if callable(kick):
@@ -289,7 +294,7 @@ async def _start_here(
     deadline: float,
 ) -> Any:
     """The pass's own eager start of *slot*; the provider serving the chat after it."""
-    from kiro_crew.acp import client_keeper
+    from kiro_crew.agent_sdk import chat_keeper as keeper
     from kiro_crew.dashboard import chat_runner
 
     _eager_spawn = getattr(chat_runner, "_eager_spawn")
@@ -323,7 +328,7 @@ async def _start_here(
         start_logger.setLevel(level)
     session_key = effective_session_key(slot)
     provider = state.sessions.get_provider(session_key)
-    if not _serves(provider, record) and client_keeper.holder_of(record.instance) is not None:
+    if not _serves(provider, record) and keeper.holder_of(record.instance) is not None:
         # Another start of the chat took the keeper first; this one stood down.
         provider = await _await_held_start(state, session_key, record, deadline)
     if not _serves(provider, record):

@@ -4,19 +4,20 @@ The startup restore builds it in three steps:
 
 * :func:`begin`, before the open tabs are rebuilt, starts this boot's receipt;
 * the adopt pass (``chat_keeper_adopt``) reports each live keeper's outcome:
-  :func:`note_kept` for a chat it attached, :func:`note_left` for one another start
-  of the chat holds, :func:`note_ended` for a keeper it ended;
-* :func:`finish`, once the restore and the parked-send drain are done, adds the chats
-  whose running turn was cut and the restored queue cards that wait for a person,
-  appends the whole receipt as one JSON line to ``<data home>/logs/`` (:data:`RECEIPTS_FILE`),
-  and logs its one-line summary.
+  :func:`note_kept` for a chat it attached, :func:`note_left` for one it left to
+  another start of the chat (recorded as left, neither kept nor cut: that start's
+  outcome is not this pass's to report), :func:`note_ended` for a keeper it ended;
+* :func:`finish`, once the restore and the parked-send drain are done (or the restore
+  raised), adds the chats whose running turn the restart cut and the restored queue
+  cards that wait for a person, appends the whole receipt as one JSON line to
+  ``<data home>/logs/`` (:data:`RECEIPTS_FILE`), and logs its one-line summary.
 
 A kept chat whose turn was running (the keeper saw its prompt unanswered at the
-detach, or the restore owes it its "interrupted" row), or whose approval waited
-through the gap, gets one ``notice`` row in its transcript, appended before its
-continuing turn is read. The row states only what the keeper measured: how long no gateway was attached
-(Crew's own tools could not answer in that time) and, when a permission request
-was open, how many waited and the longest wait. A chat whose turn was cut already
+detach, or the restore owes it its "interrupted" row; for an older keeper that
+reports no gap, the restore found the turn in flight), or whose approval waited through the gap, gets one ``notice`` row in its
+transcript, appended before its continuing turn is read. The row states only what
+the keeper measured: how long no gateway was attached to this chat and, when a
+permission request was open, how many waited and the longest wait. A chat whose turn was cut already
 gets its "interrupted" row (``slot_persistence.turn_marker``), and a held queue card
 already shows in its chat, so neither gets a second row here.
 
@@ -60,7 +61,6 @@ class _Kept:
     detached_secs: float | None = None
     waits: int = 0
     wait_secs: float = 0.0
-    via: str = "adopt"
 
     def as_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -68,10 +68,9 @@ class _Kept:
             "title": self.title,
             "session_key": self.session_key,
             "running": self.running,
-            "via": self.via,
         }
         if self.detached_secs is not None:
-            out["tools_down_secs"] = round(self.detached_secs)
+            out["detached_secs"] = round(self.detached_secs)
         if self.waits:
             out["approvals_waited"] = self.waits
             out["approval_wait_secs"] = round(self.wait_secs)
@@ -82,6 +81,7 @@ class _Kept:
 class _Receipt:
     started_at: str
     kept: dict[str, _Kept] = field(default_factory=dict)
+    left: dict[str, dict[str, Any]] = field(default_factory=dict)
     ended: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -118,7 +118,7 @@ def row_text(kept: _Kept) -> str:
     """The row's English content, the catalog's words: what channel mirrors and older frontends read."""
     parts = ["The app restarted. This chat kept running."]
     if kept.detached_secs is not None:
-        parts.append(f"The app's own tools were offline for {round(kept.detached_secs)} s.")
+        parts.append(f"The app was disconnected from this chat for {round(kept.detached_secs)} s.")
     if kept.waits == 1:
         parts.append(f"1 tool call waited {round(kept.wait_secs)} s for approval.")
     elif kept.waits:
@@ -136,38 +136,34 @@ def row_meta(kept: _Kept) -> dict[str, object]:
     )
 
     args: dict[str, int] = {}
+    if kept.running:
+        args["running"] = 1
     if kept.detached_secs is not None:
-        args["down_secs"] = round(kept.detached_secs)
+        args["detached_secs"] = round(kept.detached_secs)
     if kept.waits:
         args["waits"] = kept.waits
         args["wait_secs"] = round(kept.wait_secs)
     return {"kind": ROW_KIND, **gateway_notice_meta(GATEWAY_NOTICE_RESTART_KEPT_RUNNING, **args)}
 
 
-async def note_kept(state: Any, slot: Any, provider: Any) -> None:
+async def note_kept(state: Any, slot: Any, attach: Any) -> None:
     """Record a chat the adopt pass attached, and give it its row when it was working.
 
-    Called after the keeper is attached and before the chat's continuing turn is
+    *attach* is the state its keeper reported at the attach (``AttachState``), or
+    None when there is none to read. Called after the keeper is attached and before the chat's continuing turn is
     read, so the row lands above that turn's rows. Never raises.
     """
     receipt = _RECEIPT
     if receipt is None:
         return
     try:
-        from kiro_crew.acp.client_keeper import keeper_process
-
-        client = getattr(provider, "_client", None)
-        process = keeper_process(client) if client is not None else None
-        attach = getattr(process, "state", None)
+        detached_secs = getattr(attach, "detached_secs", None)
         kept = _Kept(
             slot=str(getattr(slot, "key", "")),
             title=_title(slot),
             session_key=_session_key(slot),
-            # The keeper's own word first: the restore owes no row when the
-            # transcript on disk already reads as cut (an unanswered user row).
-            running=getattr(attach, "turn_at_detach", False) is True
-            or getattr(slot, "_restart_interruption_owed", False) is True,
-            detached_secs=getattr(attach, "detached_secs", None),
+            running=_was_running(slot, attach, detached_secs),
+            detached_secs=detached_secs,
             waits=int(getattr(attach, "permission_waits", 0) or 0),
             wait_secs=float(getattr(attach, "permission_wait_secs", 0.0) or 0.0),
         )
@@ -186,20 +182,38 @@ async def note_kept(state: Any, slot: Any, provider: Any) -> None:
         )
 
 
+def _was_running(slot: Any, attach: Any, detached_secs: Any) -> bool:
+    """Whether the kept chat's turn ran on through the gap.
+
+    The keeper's ``turn_at_detach``, or the restore's owed flag, which is not set
+    when the transcript on disk already reads as cut (an unanswered user row). An
+    older keeper reports no gap and no ``turn_at_detach``, so for it the restore's
+    marker stands in: a turn marker not ended before the restart means a turn was
+    in flight.
+    """
+    if (
+        getattr(attach, "turn_at_detach", False) is True
+        or getattr(slot, "_restart_interruption_owed", False) is True
+    ):
+        return True
+    if detached_secs is not None:
+        return False
+    marker = getattr(slot, "_restored_turn_marker", None)
+    return isinstance(marker, dict) and marker.get("cut") is not False
+
+
 def note_left(slot: Any) -> None:
-    """Record a kept chat that another start of it holds (its numbers are that start's)."""
+    """Record a kept chat the pass left to another start of it, which reports nothing here."""
     receipt = _RECEIPT
     if receipt is None:
         return
     try:
         key = str(getattr(slot, "key", ""))
-        receipt.kept[key] = _Kept(
-            slot=key,
-            title=_title(slot),
-            session_key=_session_key(slot),
-            running=getattr(slot, "_restart_interruption_owed", False) is True,
-            via="another start",
-        )
+        receipt.left[key] = {
+            "slot": key,
+            "title": _title(slot),
+            "session_key": _session_key(slot),
+        }
     except Exception:  # noqa: BLE001 - see module docstring
         logger.warning("restart receipt: could not note a held chat", exc_info=True)
 
@@ -216,19 +230,30 @@ def note_ended(session_key: str, slot: Any, why: str) -> None:
     receipt.ended.append(entry)
 
 
-def _cut_and_queued(state: Any, kept: dict[str, _Kept]) -> tuple[list[dict], list[dict]]:
-    """The chats whose running turn did not carry on, and the cards a person must send."""
-    from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY
+def _cut_and_queued(state: Any, receipt: _Receipt) -> tuple[list[dict], list[dict]]:
+    """The chats whose running turn the restart cut, and the cards a person must send.
+
+    Only the slots built by now: a crewmate thread the member-slot retry builds, or a
+    channel conversation reconciled later, gets its "interrupted" row then and is not
+    counted here.
+    """
+    from kiro_crew.dashboard.slot_queue_repository import is_held_queue_entry
 
     cut: list[dict[str, Any]] = []
     queued: list[dict[str, Any]] = []
     for slot in list(getattr(state, "_slots", {}).values()):
         key = str(getattr(slot, "key", ""))
-        if getattr(slot, "_restored_turn_marker", None) and key not in kept:
+        marker = getattr(slot, "_restored_turn_marker", None)
+        if (
+            isinstance(marker, dict)
+            # A turn the user stopped, or a refused model settled, was not cut.
+            and marker.get("cut") is not False
+            and key not in receipt.kept
+            and key not in receipt.left
+        ):
             cut.append({"slot": key, "title": _title(slot)})
-        held = sum(
-            1 for entry in list(getattr(slot, "_queue", ())) if entry.get(RESTORED_QUEUE_KEY)
-        )
+        # A card the boot drain already accepted sends by itself: not a person's to send.
+        held = sum(1 for entry in list(getattr(slot, "_queue", ())) if is_held_queue_entry(entry))
         if held:
             queued.append({"slot": key, "title": _title(slot), "count": held})
     return cut, queued
@@ -240,27 +265,42 @@ def summary(record: dict[str, Any]) -> str:
     running = sum(1 for k in kept if k.get("running"))
     queued = sum(int(q.get("count", 0)) for q in record.get("queued") or [])
     waits = sum(int(k.get("approvals_waited", 0)) for k in kept)
-    parts = [f"{len(kept)} kept ({running} running)", f"{len(record.get('cut') or [])} cut"]
+    cut = record.get("cut")
+    parts = [
+        f"{len(kept)} kept ({running} running)",
+        "cut unknown" if cut is None else f"{len(cut)} cut",
+    ]
     parts.append(f"{queued} queued")
+    if record.get("left"):
+        parts.append(f"{len(record['left'])} left to another start")
     if record.get("ended"):
         parts.append(f"{len(record['ended'])} keeper(s) ended")
     if waits:
         parts.append(f"{waits} approval(s) waited")
-    return ", ".join(parts)
+    line = ", ".join(parts)
+    return line if record.get("complete", True) else f"{line} (the restore did not finish)"
 
 
-def build(state: Any) -> dict[str, Any] | None:
-    """This boot's receipt as the record :func:`finish` writes; None before :func:`begin`."""
+def build(state: Any, *, complete: bool = True) -> dict[str, Any] | None:
+    """This boot's receipt as the record :func:`finish` writes; None before :func:`begin`.
+
+    *complete* is False when the restore raised: the record then
+    holds what this start got to, and says so. Its ``cut`` is None (unknown), since
+    the adopt pass may not have reported the chats a keeper still holds.
+    """
     receipt = _RECEIPT
     if receipt is None:
         return None
-    cut, queued = _cut_and_queued(state, receipt.kept)
+    cut_found, queued = _cut_and_queued(state, receipt)
+    cut: list[dict[str, Any]] | None = cut_found if complete else None
     record: dict[str, Any] = {
         "v": RECEIPT_VERSION,
         "started_at": receipt.started_at,
         "written_at": _now_iso(),
         "gateway_pid": os.getpid(),
+        "complete": complete,
         "kept": [k.as_json() for k in receipt.kept.values()],
+        "left": list(receipt.left.values()),
         "cut": cut,
         "queued": queued,
         "ended": list(receipt.ended),
@@ -274,11 +314,14 @@ def receipts_path(home: Path) -> Path:
     return Path(home) / "logs" / RECEIPTS_FILE
 
 
-async def finish(state: Any) -> dict[str, Any] | None:
-    """Write this boot's receipt and end it; the record written, or None. Never raises."""
+async def finish(state: Any, *, complete: bool = True) -> dict[str, Any] | None:
+    """Write this boot's receipt and end it; the record written, or None. Never raises.
+
+    A second call, or one before :func:`begin`, writes nothing.
+    """
     global _RECEIPT
     try:
-        record = build(state)
+        record = build(state, complete=complete)
     except Exception:  # noqa: BLE001 - see module docstring
         logger.warning("restart receipt: could not be built", exc_info=True)
         record = None

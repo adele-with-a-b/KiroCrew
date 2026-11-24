@@ -385,6 +385,81 @@ class TestBootRestore:
             await self._stop_reconciler(state)
 
     @pytest.mark.asyncio
+    async def test_a_restore_that_raises_still_writes_its_receipt_marked_incomplete(
+        self, state, _floor_monkeypatch
+    ) -> None:
+        from kiro_crew.dashboard import restart_receipt
+
+        written: list[dict] = []
+        _floor_monkeypatch.setattr(restart_receipt, "_append", lambda _p, rec: written.append(rec))
+
+        async def _open(st) -> int:
+            # A rebuilt chat whose turn a keeper may still hold: the adopt pass
+            # never runs, so nothing says whether it was cut.
+            st.get_or_create_slot("chat-1-100")._restored_turn_marker = {
+                "generation": 3,
+                "cut": True,
+            }
+            return 0
+
+        _floor_monkeypatch.setattr(srv.chat, "restore_open_slots_async", _open)
+        _floor_monkeypatch.setattr(
+            srv.chat, "restore_recent_sessions_async", AsyncMock(side_effect=RuntimeError("x"))
+        )
+        state.begin_slot_list_rebuild()
+        try:
+            with pytest.raises(RuntimeError):
+                await srv._restore_dashboard_sessions(state, _restore_cfg())
+        finally:
+            await self._stop_reconciler(state)
+
+        assert [rec["complete"] for rec in written] == [False]
+        assert written[0]["cut"] is None, "an unfinished restore claims no chat as cut"
+        assert "cut unknown" in written[0]["summary"]
+        assert written[0]["summary"].endswith("(the restore did not finish)")
+        assert restart_receipt.build(state) is None, "the receipt ends with the boot"
+
+    @pytest.mark.asyncio
+    async def test_a_restore_that_raises_after_its_drain_is_still_incomplete(
+        self, state, _floor_monkeypatch
+    ) -> None:
+        from kiro_crew.dashboard import restart_receipt
+
+        written: list[dict] = []
+        _floor_monkeypatch.setattr(restart_receipt, "_append", lambda _p, rec: written.append(rec))
+
+        def _reconciler(*_a, **_k):
+            # The last step of the restore, after every kept chat is adopted and
+            # the parked sends are drained.
+            raise RuntimeError("reconciler")
+
+        _floor_monkeypatch.setattr(channel_slots, "channel_slot_reconciler", _reconciler)
+        state.begin_slot_list_rebuild()
+        try:
+            with pytest.raises(RuntimeError):
+                await srv._restore_dashboard_sessions(state, _restore_cfg())
+        finally:
+            await self._stop_reconciler(state)
+
+        assert [rec["complete"] for rec in written] == [False]
+
+    @pytest.mark.asyncio
+    async def test_a_restore_that_finishes_writes_one_complete_receipt(
+        self, state, _floor_monkeypatch
+    ) -> None:
+        from kiro_crew.dashboard import restart_receipt
+
+        written: list[dict] = []
+        _floor_monkeypatch.setattr(restart_receipt, "_append", lambda _p, rec: written.append(rec))
+        state.begin_slot_list_rebuild()
+        try:
+            await srv._restore_dashboard_sessions(state, _restore_cfg())
+        finally:
+            await self._stop_reconciler(state)
+
+        assert [rec["complete"] for rec in written] == [True]
+
+    @pytest.mark.asyncio
     async def test_first_complete_channel_pass_releases_the_startup_hold(self, state) -> None:
         state.conversation_log = SimpleNamespace(list_sessions_status=lambda: ([], True))
         state.begin_slot_list_rebuild()

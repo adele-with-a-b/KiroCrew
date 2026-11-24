@@ -19,14 +19,16 @@ export default memo(function RestartReceiptNotice({ content, details }: { conten
       body={
         <>
           {content}
-          <details className="mt-1 text-[12px]" data-testid="restart-receipt-details">
-            <summary className="cursor-pointer underline underline-offset-2 hover:text-text">
-              {i18nT('pages.chat.gatewayNotice.restart_receipt_details')}
-            </summary>
-            <ul className="mt-1 space-y-0.5">
-              {details.map(line => <li key={line}>{line}</li>)}
-            </ul>
-          </details>
+          {details.length > 0 && (
+            <details className="mt-1 text-[12px]" data-testid="restart-receipt-details">
+              <summary className="cursor-pointer underline underline-offset-2 hover:text-text">
+                {i18nT('pages.chat.gatewayNotice.restart_receipt_details')}
+              </summary>
+              <ul className="mt-1 space-y-0.5">
+                {details.map(line => <li key={line}>{line}</li>)}
+              </ul>
+            </details>
+          )}
         </>
       }
     />

@@ -13128,7 +13128,7 @@
         "restart_kept_running": "应用已重启。此聊天继续运行。",
         "restart_receipt_details": "发生了什么",
         "restart_receipt_kept": "正在运行的轮次已继续。",
-        "restart_receipt_down": "应用自身的工具离线了 {{time}}。",
+        "restart_receipt_detached": "应用与此聊天断开连接了 {{time}}。",
         "restart_receipt_waited_other": "{{count}} 个工具调用等待批准，最长 {{time}}。",
         "capability_tool_limits_unsupported": "此 Bot 保存的能力关闭了某个 MCP 服务器上的单个工具。运行其聊天的代理主机（{{setting}}）无法关闭单个工具，因此它们会处于开启状态。在该 Bot 的“能力”页面上，关闭整个服务器或重新开启这些工具，然后开始一个新聊天。",
         "connection_lost_retrying": "连接已中断{{detail}}，正在重试…",

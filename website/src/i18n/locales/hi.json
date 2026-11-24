@@ -13449,7 +13449,7 @@
         "restart_kept_running": "ऐप पुनः आरंभ हुआ। यह चैट चलती रही।",
         "restart_receipt_details": "क्या हुआ",
         "restart_receipt_kept": "चल रहा टर्न जारी रहा।",
-        "restart_receipt_down": "ऐप के अपने टूल {{time}} तक ऑफ़लाइन रहे।",
+        "restart_receipt_detached": "ऐप {{time}} तक इस चैट से डिस्कनेक्ट रहा।",
         "restart_receipt_waited_one": "{{count}} टूल कॉल ने मंज़ूरी के लिए {{time}} इंतज़ार किया।",
         "restart_receipt_waited_other": "{{count}} टूल कॉल ने मंज़ूरी के लिए अधिकतम {{time}} इंतज़ार किया।",
         "capability_tool_limits_unsupported": "इस Bot की सहेजी गई क्षमताएँ किसी MCP सर्वर पर अलग-अलग टूल बंद कर देती हैं। जिस एजेंट होस्ट पर इसकी चैट चलती है ({{setting}}) वह अलग-अलग टूल बंद नहीं कर सकता, इसलिए वे चालू रहेंगे। Bot के क्षमताएँ पृष्ठ पर, पूरे सर्वर को बंद करो या उन टूल को फिर से चालू करो, फिर एक नई चैट शुरू करो।",

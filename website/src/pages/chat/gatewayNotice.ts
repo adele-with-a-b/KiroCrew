@@ -881,16 +881,17 @@ function wholeSecs(value: unknown): number | null {
  * The details-fold lines of a restart receipt row, or `null` for any other row.
  * The row is the `restart_kept_running` family (`dashboard/restart_receipt.py`):
  * a chat a chat keeper kept running across a restart. Each line states one thing
- * the keeper measured, and a number the row does not carry gets no line, so a
- * chat no approval waited in says nothing about waits.
+ * the gateway or the keeper measured, and a number the row does not carry gets no
+ * line, so a chat no approval waited in says nothing about waits.
  */
 export function restartReceiptDetails(m: ChatMessage): string[] | null {
   const shape = m.role === 'notice' ? shapeOf(m) : null
   if (shape?.token !== 'restart_kept_running') return null
-  const lines = [i18nT('pages.chat.gatewayNotice.restart_receipt_kept')]
-  const down = wholeSecs(shape.args.down_secs)
-  if (down !== null) {
-    lines.push(i18nT('pages.chat.gatewayNotice.restart_receipt_down', { time: fmtElapsed(down * 1000, { wholeSeconds: true }) }))
+  // A row raised only by an approval that waited names no running turn.
+  const lines = shape.args.running === 1 ? [i18nT('pages.chat.gatewayNotice.restart_receipt_kept')] : []
+  const detached = wholeSecs(shape.args.detached_secs)
+  if (detached !== null) {
+    lines.push(i18nT('pages.chat.gatewayNotice.restart_receipt_detached', { time: fmtElapsed(detached * 1000, { wholeSeconds: true }) }))
   }
   const waits = typeof shape.args.waits === 'number' && shape.args.waits > 0 ? Math.round(shape.args.waits) : 0
   const waited = wholeSecs(shape.args.wait_secs)

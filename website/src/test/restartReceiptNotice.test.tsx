@@ -50,24 +50,31 @@ describe('restart receipt notice', () => {
   })
 
   it('says nothing about waits when no approval waited', () => {
-    const lines = restartReceiptDetails(row({ down_secs: 42 })) ?? []
+    const lines = restartReceiptDetails(row({ running: 1, detached_secs: 42 })) ?? []
     expect(lines).toHaveLength(2)
     expect(lines[0]).toBe(copy.restart_receipt_kept)
-    expect(lines[1]).toContain('42')
+    expect(lines[1]).toBe('The app was disconnected from this chat for 42s.')
     expect(lines.join(' ')).not.toMatch(/approval/)
   })
 
+  it('names no running turn when only a wait raised the row', () => {
+    const lines = restartReceiptDetails(row({ detached_secs: 20, waits: 1, wait_secs: 18 })) ?? []
+    expect(lines).not.toContain(copy.restart_receipt_kept)
+    expect(lines).toHaveLength(2)
+  })
+
   it('reports the measured waits', () => {
-    const lines = restartReceiptDetails(row({ down_secs: 63, waits: 2, wait_secs: 41 })) ?? []
+    const lines = restartReceiptDetails(row({ running: 1, detached_secs: 63, waits: 2, wait_secs: 41 })) ?? []
     expect(lines).toHaveLength(3)
     expect(lines[2]).toMatch(/^2 tool calls waited up to .*41.* for approval\.$/)
-    const one = restartReceiptDetails(row({ down_secs: 9, waits: 1, wait_secs: 8 })) ?? []
+    const one = restartReceiptDetails(row({ running: 1, detached_secs: 9, waits: 1, wait_secs: 8 })) ?? []
     expect(one[2]).toMatch(/^1 tool call waited .*8.* for approval\.$/)
   })
 
   it('drops a number it cannot trust', () => {
-    expect(restartReceiptDetails(row({ down_secs: -1, waits: 3 }))).toEqual([copy.restart_receipt_kept])
-    expect(restartReceiptDetails(row({ down_secs: 'x', waits: 2, wait_secs: null }))).toEqual([copy.restart_receipt_kept])
+    expect(restartReceiptDetails(row({ running: 1, detached_secs: -1, waits: 3 }))).toEqual([copy.restart_receipt_kept])
+    expect(restartReceiptDetails(row({ running: 1, detached_secs: 'x', waits: 2, wait_secs: null }))).toEqual([copy.restart_receipt_kept])
+    expect(restartReceiptDetails(row({ running: true }))).toEqual([])
   })
 
   it('draws one line with a closed fold of the details', () => {
@@ -77,6 +84,11 @@ describe('restart receipt notice', () => {
     expect(fold.open).toBe(false)
     expect(fold.querySelector('summary')?.textContent).toBe(copy.restart_receipt_details)
     expect([...fold.querySelectorAll('li')].map(li => li.textContent)).toEqual(['first', 'second'])
+  })
+
+  it('draws no empty fold', () => {
+    render(<RestartReceiptNotice content="kept" details={[]} />)
+    expect(screen.queryByTestId('restart-receipt-details')).toBeNull()
   })
 })
 
@@ -92,7 +104,7 @@ describe('a collapsed turn the restart receipt lands in', () => {
     const messages: ChatMessage[] = [
       { role: 'user', content: 'Run the build.', ts: 'u' },
       tool('1'),
-      { ...row({ down_secs: 31 }), ts: '2' },
+      { ...row({ running: 1, detached_secs: 31 }), ts: '2' },
       tool('3'),
       { role: 'assistant', content: 'DONE', ts: '9' },
     ]

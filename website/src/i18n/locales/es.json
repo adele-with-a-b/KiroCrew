@@ -13770,7 +13770,7 @@
         "restart_kept_running": "La aplicación se reinició. Este chat siguió en marcha.",
         "restart_receipt_details": "Qué pasó",
         "restart_receipt_kept": "El turno en curso continuó.",
-        "restart_receipt_down": "Las herramientas propias de la aplicación estuvieron sin conexión durante {{time}}.",
+        "restart_receipt_detached": "La aplicación estuvo desconectada de este chat durante {{time}}.",
         "restart_receipt_waited_one": "{{count}} llamada a herramienta esperó {{time}} su aprobación.",
         "restart_receipt_waited_many": "{{count}} llamadas a herramientas esperaron hasta {{time}} su aprobación.",
         "restart_receipt_waited_other": "{{count}} llamadas a herramientas esperaron hasta {{time}} su aprobación.",

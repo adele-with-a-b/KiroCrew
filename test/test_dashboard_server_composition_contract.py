@@ -407,7 +407,7 @@ _LAZY_IMPORTS = {
     "kiro_crew.edition_locks": "local_enable_locked relay_selected",
     "kiro_crew.dashboard": (
         "chat_keeper_adopt chat_trust_restart crew_mode_migration display_verdicts "
-        "handlers_instances stale_wake tailnet_direct_listener"
+        "handlers_instances restart_receipt stale_wake tailnet_direct_listener"
     ),
     "kiro_crew.dashboard.card_send": "card_turn_arrival_middleware card_turn_delegation_middleware",
     "kiro_crew.dashboard.chat": "_run_chat",

@@ -13128,7 +13128,7 @@
         "restart_kept_running": "アプリが再起動しました。このチャットは実行を続けました。",
         "restart_receipt_details": "詳細",
         "restart_receipt_kept": "実行中だったターンは続行されました。",
-        "restart_receipt_down": "アプリ独自のツールは {{time}} の間オフラインでした。",
+        "restart_receipt_detached": "アプリはこのチャットから {{time}} の間切断されていました。",
         "restart_receipt_waited_other": "{{count}} 件のツール呼び出しが承認を最大 {{time}} 待ちました。",
         "capability_tool_limits_unsupported": "この Bot の保存された機能は、MCP サーバー上の個々のツールをオフにしています。チャットが動作するエージェントホスト（{{setting}}）は個々のツールをオフにできないため、それらはオンのままになります。Bot の「機能」ページでサーバー全体をオフにするか、それらのツールを再度オンにしてから、新しいチャットを開始してください。",
         "connection_lost_retrying": "接続が切断されました{{detail}} — 再試行中…",

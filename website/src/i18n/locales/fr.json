@@ -13770,7 +13770,7 @@
         "restart_kept_running": "L’application a redémarré. Ce chat a continué.",
         "restart_receipt_details": "Ce qui s’est passé",
         "restart_receipt_kept": "Le tour en cours a continué.",
-        "restart_receipt_down": "Les outils propres à l’application ont été hors ligne pendant {{time}}.",
+        "restart_receipt_detached": "L’application a été déconnectée de ce chat pendant {{time}}.",
         "restart_receipt_waited_one": "{{count}} appel d’outil a attendu {{time}} une approbation.",
         "restart_receipt_waited_many": "{{count}} appels d’outils ont attendu jusqu’à {{time}} une approbation.",
         "restart_receipt_waited_other": "{{count}} appels d’outils ont attendu jusqu’à {{time}} une approbation.",

@@ -651,6 +651,9 @@ def test_deliberate_stop_clears_a_stale_marker_without_flagging_interruption(tmp
     assert _restart_rows(restored.messages) == []
     assert restored._turn_in_flight_generation == 0
     assert restored._dirty is True
+    # The restart receipt does not count the user's own stop as a cut turn.
+    assert restored._restored_turn_marker is not None
+    assert restored._restored_turn_marker["cut"] is False
 
 
 def test_a_stop_card_behind_tool_rows_still_counts_as_deliberate(tmp_path):
@@ -1132,6 +1135,7 @@ def test_a_restore_keeps_the_dispatchers_evidence_after_clearing_the_marker(tmp_
         "generation": 4,
         "ts": lost["ts"],
         "mid": lost["meta"]["mid"],
+        "cut": True,
     }
     # A session whose turn finished keeps none.
     plain = state.get_or_create_slot("chat-2")

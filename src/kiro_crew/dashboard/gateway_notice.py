@@ -145,8 +145,9 @@ GATEWAY_NOTICE_TURN_INTERRUPTED_RESTART = "turn_interrupted_restart"
 GATEWAY_NOTICE_TURN_INTERRUPTED_CLOSE = "turn_interrupted_close"
 
 # The restart receipt of a chat a chat keeper kept running (``restart_receipt``).
-# ``notice_args``: ``down_secs`` (how long no gateway was attached) when the keeper
-# measured it, and ``waits`` / ``wait_secs`` only when a tool approval waited.
+# ``notice_args``: ``running`` (1) when its turn ran on, ``detached_secs`` (how long
+# no gateway was attached to the chat) when the keeper measured it, and ``waits`` /
+# ``wait_secs`` only when a tool approval waited.
 GATEWAY_NOTICE_RESTART_KEPT_RUNNING = "restart_kept_running"
 
 # A capability a member's saved config needs but its backend cannot honour

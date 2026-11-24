@@ -223,6 +223,8 @@ def test_restart_reconcile_still_lands_a_row_for_a_later_nudge_turn(tmp_path, mo
     assert _reconcile_local_turn_marker(slot, 1) is True
     assert len(slot.messages) == before + 1
     assert slot.messages[-1]["role"] == "error"
+    # The later turn was cut, so the restart receipt counts it.
+    assert slot._restored_turn_marker["cut"] is True
 
 
 def test_restart_reconcile_lands_a_row_for_a_later_subagent_turn(tmp_path, monkeypatch):
@@ -248,6 +250,8 @@ def test_restart_reconcile_adds_no_resume_row_after_the_card(tmp_path, monkeypat
     assert _reconcile_local_turn_marker(slot, 1) is True
     assert len(slot.messages) == before
     assert is_turn_interrupted(slot.messages) is False
+    # The restart receipt does not count a turn the refused model settled as cut.
+    assert slot._restored_turn_marker["cut"] is False
 
 
 # ---- the interactive turn end to end ------------------------------------------------
