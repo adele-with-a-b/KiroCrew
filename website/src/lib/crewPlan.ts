@@ -17,10 +17,14 @@ export function isOpen(item: WorkBoardItem): boolean {
   return item.state === 'open'
 }
 
-/** Stored, not started: an open story marked `backlog`. An epic or a sub-task is
- *  never bound, so neither is ever picked from the backlog (`next_pick`). */
+/** Stored, not started: an open story with no worker, unless its conductor holds
+ *  it in the sprint, or one marked `backlog`. The server works it out
+ *  (`in_backlog`), because the page never gets the worker's key; an older gateway
+ *  sends no answer, and then only the mark counts. An epic or a sub-task is never
+ *  bound, so neither is ever picked from the backlog (`next_pick`). */
 export function inBacklog(item: WorkBoardItem): boolean {
-  return isOpen(item) && !!planOf(item).backlog && levelOf(item) === 'story'
+  if (!isOpen(item) || levelOf(item) !== 'story') return false
+  return item.in_backlog ?? !!planOf(item).backlog
 }
 
 /** Merged or shipped, by its step or by the conductor's acceptance. */
@@ -95,11 +99,23 @@ export function childProgress(item: WorkBoardItem, children: ReadonlyMap<string,
   return { done: kids.filter(isMerged).length, total: kids.length }
 }
 
-/** Seats in use against the goal's cap: open items outside the backlog that are
- *  neither epics nor sub-tasks (a sub-task rides its story's worker), as
- *  `counts_toward_concurrency` reads it. */
+/** Seats in use against the goal's cap: open stories a worker is on (a sub-task
+ *  rides its story's worker, and an epic is never bound). An older gateway sends no
+ *  `has_worker`, and then every open story outside the backlog counts. */
 export function seatsBusy(items: readonly WorkBoardItem[]): number {
-  return items.filter(i => isOpen(i) && !planOf(i).backlog && levelOf(i) === 'story').length
+  return items.filter(i => isOpen(i) && levelOf(i) === 'story' && (i.has_worker ?? !planOf(i).backlog)).length
+}
+
+/** How many more workers can start toward the next pick. A seat not taken by a
+ *  worker or by a story held in the sprint is free, and a waiting story with no
+ *  `backlog` mark already holds its own seat in the store, so starting one takes
+ *  none. Pulling a MARKED row takes a new seat, so when the next pick is one, only
+ *  the seats the store has not handed out count (`held`, `conductor.seats_held`). */
+export function freeSeats(items: readonly WorkBoardItem[], cap: number | undefined, held: number | null | undefined, pick: WorkBoardItem | undefined): number {
+  if (cap == null) return 0
+  const heldInSprint = items.filter(i => isOpen(i) && levelOf(i) === 'story' && i.has_worker === false && i.in_backlog === false).length
+  const open = Math.max(0, cap - seatsBusy(items) - heldInSprint)
+  return pick && planOf(pick).backlog === true && held != null ? Math.min(open, Math.max(0, cap - held)) : open
 }
 
 /** The rank writes a drop of the row at `from` onto `to` (an index in the list
