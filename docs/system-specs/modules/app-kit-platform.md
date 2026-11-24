@@ -6331,7 +6331,7 @@ Now one request shape opens either: `AppOpenTarget = {kind: 'panelTab' |
   open), and any other outside press, a link's included, closes at once.
 - **Width.** `contributes.sessionControls[].width`, an int in
   [`SESSION_CONTROL_DEFAULT_WIDTH` 340, `SESSION_CONTROL_MAX_WIDTH` 396]
-  (`apps/manifest_contributes.py`, mirrored by `SESSION_CONTROL_WIDTH` in
+  (`apps/manifest_session_controls.py`, mirrored by `SESSION_CONTROL_WIDTH` in
   `hooks/useSessionControls.ts`), refused at install otherwise (an explicit `0` or
   `null` too, which would read as absent) and clamped again
   on read. Drawn only at `innerWidth >= MOBILE_BREAKPOINT` (768); below it the
@@ -6352,7 +6352,8 @@ Writers: `website/src/linkPreview/linkPreviewNav.ts`,
 `website/src/app-sdk/sessionControlRequest.ts`,
 `website/src/components/SessionControlHost.tsx`,
 `website/src/hooks/useSessionControls.ts`, `apps/app_frame.py`,
-`apps/manifest_contributes.py`, `apps/manifest.py`, `apps/app_sdk_level.py`.
+`apps/manifest_session_controls.py`, `apps/manifest_contributes.py`, `apps/manifest.py`,
+`apps/app_sdk_level.py`.
 
 ## 18o. A session control scrolls its own chat to a reply (seam level 13)
 
@@ -6438,7 +6439,7 @@ A key opens the control's box in the chat on screen with its `arg` as the
 request's payload and `via: 'key'`. The host has no app id in it: every rule below
 is the same for every app.
 
-- **Install.** `manifest_contributes.SessionControlKey` parses the keys and
+- **Install.** `manifest_session_controls.SessionControlKey` parses the keys and
   `manifest._session_control_key_errors` refuses a bad one at install, with the
   reason: an id that is missing, not kebab-case, or used twice; a missing label; a
   `default` outside the grammar (`session_control_key_default_error`: `Mod`,
@@ -6492,7 +6493,8 @@ is the same for every app.
 
 Not covered: the ⌥K shortcuts list, and phones (no keyboard row).
 
-Writers: `src/kiro_crew/apps/manifest_contributes.py`, `src/kiro_crew/apps/manifest.py`,
+Writers: `src/kiro_crew/apps/manifest_session_controls.py`,
+`src/kiro_crew/apps/manifest_contributes.py`, `src/kiro_crew/apps/manifest.py`,
 `apps/app_sdk_level.py`, `website/src/lib/appSessionKeys.ts`,
 `website/src/hooks/useAppSessionKeys.ts`, `website/src/hooks/useSessionControls.ts`,
 `website/src/pages/chat/page/sessionControls.ts`,
@@ -7147,7 +7149,8 @@ This section records which module owns which part, so a change lands in its owne
 | `manifest_names.py` | The app-name contract (`app_name_error`, `is_reserved_app_name`, the reserved sets, `KEBAB_RE`) and the version grammar (`SEMVER_RE`) |
 | `manifest_containment.py` | App-root containment of declared resource paths through the shared path screen (`_app_path_refusal`, `screen_app_path`, the `Containment` answers) and of the agents a contributed command selects (`_declared_agent_names`, `contain_command_agents`) |
 | `manifest_sections.py` | The typed `app.json` blocks other than `contributes`: `CronEntry`, `UIConfig` with its pages, overlays and sidebar, `BackendConfig` with `HooksConfig`, `Permissions`, `SetupConfig`, `Dependencies`, `PlatformConfig`, `PublishProviderConfig` and `NotificationsConfig` |
-| `manifest_contributes.py` | The `contributes` block: session controls, Command Bar commands and their argument, side-panel tabs, file-menu rows, `Contributes`, and the caps and grammars the dashboard mirrors for them |
+| `manifest_contributes.py` | The `contributes` block: Command Bar commands and their argument, side-panel tabs, file-menu rows, `Contributes`, and the caps and grammars the dashboard mirrors for them; it re-exports the session-control names below |
+| `manifest_session_controls.py` | Session controls: `SessionControlContribution`, `SessionControlKey`, their caps and widths, and the key-default grammar (`session_control_key_default_error`) the dashboard mirrors |
 | `job_sdk.py` | The facade, plus `JobSDK`, the per-app `JobStore`, the process-wide SDK registry, the interruption message `reconcile` composes (`_interrupt_error`), the process identity (`_ORIGIN`) and the tunables only they read |
 | `job_sdk_records.py` | The run record (`JobRun`), its lifecycle states and interruption causes, the params bounds and the ingest redaction (`_validated_params`, `_redact`), the `JobHandle` a runner holds, and the Job SDK exceptions |
 | `job_sdk_returns.py` | What a runner hands back: `_undriven_result`, `_stop_returned_work`, `_close_quietly`, and the registration-time `_lazy_call_shape` |
@@ -7185,7 +7188,8 @@ fails. `test_setup_hooks_contract.py` excludes `manifest_sections.py`, where eve
 `apps/job_sdk_records.py`, whose `_redact` is the ingest scrub.
 
 Writers: `apps/manifest.py`, `apps/manifest_names.py`, `apps/manifest_containment.py`,
-`apps/manifest_sections.py`, `apps/manifest_contributes.py`, `apps/job_sdk.py`,
+`apps/manifest_sections.py`, `apps/manifest_contributes.py`,
+`apps/manifest_session_controls.py`, `apps/job_sdk.py`,
 `apps/job_sdk_records.py`, `apps/job_sdk_returns.py`, `apps/job_sdk_retention.py`.
 
 ### 26.1 Retention is a per-kind count cap, opt-in

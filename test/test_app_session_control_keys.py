@@ -29,14 +29,24 @@ def _key_errors(keys) -> list[str]:
 
 def test_a_declared_key_round_trips_to_the_dashboard():
     keys = [
-        {"id": "questions", "label": "Open Questions", "default": "Alt+Shift+Q", "arg": {"view": "questions"}},
+        {
+            "id": "questions",
+            "label": "Open Questions",
+            "default": "Alt+Shift+Q",
+            "arg": {"view": "questions"},
+        },
         {"id": "references", "label": "Open References"},
     ]
     m = _mf(keys)
     assert _key_errors(keys) == []
     served = m.to_dict()["contributes"]["sessionControls"][0]["keys"]
     assert served == [
-        {"id": "questions", "label": "Open Questions", "default": "Alt+Shift+Q", "arg": {"view": "questions"}},
+        {
+            "id": "questions",
+            "label": "Open Questions",
+            "default": "Alt+Shift+Q",
+            "arg": {"view": "questions"},
+        },
         {"id": "references", "label": "Open References"},
     ]
 
@@ -82,7 +92,10 @@ def test_a_bad_default_is_refused_at_install():
 
 def test_ids_labels_count_and_shape_are_checked():
     assert any("kebab-case" in e for e in _key_errors([{"id": "Bad Id", "label": "x"}]))
-    assert any("duplicated" in e for e in _key_errors([{"id": "a", "label": "x"}, {"id": "a", "label": "y"}]))
+    assert any(
+        "duplicated" in e
+        for e in _key_errors([{"id": "a", "label": "x"}, {"id": "a", "label": "y"}])
+    )
     assert any("missing required field: label" in e for e in _key_errors([{"id": "a"}]))
     assert any("missing required field: id" in e for e in _key_errors(["nope"]))
     too_many = [{"id": f"k{i}", "label": "x"} for i in range(MAX_SESSION_CONTROL_KEYS + 1)]
