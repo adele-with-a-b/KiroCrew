@@ -26,7 +26,7 @@ from test_chat_trust_restart_notice import (  # noqa: F401
     _pick,
     _rows_about_mode,
     _settle,
-    home,
+    home_fixture,
 )
 
 from kiro_crew.dashboard import chat_persistence, chat_trust_restart

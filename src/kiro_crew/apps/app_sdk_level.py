@@ -9,7 +9,9 @@ status routes at once. Level 11 adds the session-control open: a link-preview ca
 adds ``permissions.openFiles`` and the SDK's ``useOpenFile``: an app's UI opens a
 local file in the default app on a click. Level 13 adds the SDK's
 ``useSessionControlJump``: a session control scrolls its own chat to one of its
-messages, with the Back pill.
+messages, with the Back pill. Level 14 adds a session control's ``keys``: a key,
+changeable in Settings → Shortcuts → Apps, opens its box in the chat on screen, and
+the box reads the key's ``arg`` with ``via: 'key'``.
 """
 
-APP_SDK_LEVEL = 13
+APP_SDK_LEVEL = 14

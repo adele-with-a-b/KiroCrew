@@ -1,5 +1,6 @@
-"""The send path: ``POST /api/chat`` and the steer-or-queue decision a busy slot's
-human send asks for.
+"""The send path: ``POST /api/chat`` and the send claim it settles first. The
+steer-or-queue decision lives in ``steer_decision``, the typing lease and the
+claim's commit in ``send_lease``.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
         CHAT_BANNER_META_KEY,
         HUMAN_TURN_META_KEY,
         RESERVED_ROW_META_KEYS,
-        STEER_AUTO,
         STEER_REQUEUED,
         STEER_STEERED,
         TURN_ACTOR_META_KEY,
@@ -35,6 +35,8 @@ if TYPE_CHECKING:
         _build_stream_chunk,
         _channel_pin_refusal,
         _ChatSlot,
+        _committed_if_accepted,
+        _composer_locked_answer,
         _deny_app_session_settings,
         _emit_agent_assignment,
         _forwards_harness_command,
@@ -46,6 +48,7 @@ if TYPE_CHECKING:
         _record_explicit_agent_selection,
         _redact_meta,
         _run_chat,
+        _send_id_of,
         _send_writes_persona,
         _start_next_queued_turn,
         _wake_pending_reset_retry,
@@ -56,6 +59,7 @@ if TYPE_CHECKING:
         crew_steer_discarded,
         cron_creator_admission,
         cron_slot_creator,
+        decided_message_handling,
         deny_app_session_control,
         drained_to_thread,
         effective_session_key,
@@ -93,6 +97,7 @@ if TYPE_CHECKING:
         spawn_guarded_turn,
         start_queue_persist,
         steer_into_running_turn,
+        steer_is_auto,
         string_field_error,
         subagents_hold_user_messages,
         teardown_hold_active,
@@ -160,113 +165,6 @@ async def _send_harness_command(message: str, state: DashboardState, slot: _Chat
     key = effective_session_key(slot)
     forwarded = await _forwards_harness_command(state, key, first_word, cc_provider=cc_provider)
     return first_word if forwarded else ""
-
-
-def steer_is_auto(value: object) -> bool:
-    """Whether a send's ``steer`` flag asks Jev to choose the path.
-
-    Only the exact string, case- and space-insensitively. A boolean ``True`` is a
-    MANUAL steer and must never read as auto: that flag is what every existing
-    client sends, and reading it as a request to decide would put an oracle on a
-    path the sender already answered.
-    """
-    return isinstance(value, str) and value.strip().lower() == STEER_AUTO
-
-
-async def decided_message_handling(slot: Any, message: str) -> tuple[bool, dict | None]:
-    """Ask ``message.steer`` whether *message* queues instead of steering.
-
-    Returns ``(queues, record)``: whether to take the QUEUE path, and the decision
-    row to stamp on the persisted user row (``None`` when nothing was decided, or
-    when the row itself was refused).
-
-    A BOOLEAN rather than the point's choice string, so the caller holds no copy of
-    that vocabulary and cannot drift from it: every refusal -- the seam off, the
-    session unsampled, a timeout, an answer outside the two options, a failed
-    import -- is ``False``, which is the steer path a manual Steer and the
-    composer's default have always taken.
-
-    Called for a send the dashboard's own human made while a turn is running, and
-    nowhere else (the busy branch's ``_person_send`` conjunct): an app token, an
-    integration or a cron has nobody watching the reply, and every such send
-    already falls through to the fail-closed queue; an agent-origin send takes the
-    manual steer path as a non-person steer. Consent and sampling are the
-    seam's own gates, re-checked inside ``decide``.
-
-    Never raises except cancellation. The seam may cost an observation and must
-    never cost a send.
-    """
-    try:
-        # Imported HERE, not at module scope: this module is on the gateway's boot
-        # path and the decisions package is optional, off by default, and pulls the
-        # config loader in behind it.
-        from kiro_crew.decisions.points import message_steer
-
-        session_key = effective_session_key(slot)
-        decided = await message_steer.steer_or_queue(
-            message,
-            session_key=session_key,
-            # The live list, sliced and read off the loop by the point; nothing is
-            # written back.
-            rows=getattr(slot, "messages", ()) or (),
-        )
-        if decided is None:
-            return False, None
-        # The row is written BEFORE the path is taken, and the receipt is stamped
-        # only when it landed: the strip's thumbs POST this turn id, so a receipt
-        # from a row `append` refused would invite a verdict about a decision the
-        # log does not hold. Off the loop -- the append locks a file.
-        record = await asyncio.to_thread(message_steer.record_outcome, session_key, decided)
-        return decided.get("choice") == message_steer.CHOICE_QUEUE, record
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.debug("message.steer: taking the shipped default", exc_info=True)
-        return False, None
-
-
-def _send_id_of(user_meta: dict | None) -> str:
-    return (normalize_send_id(user_meta.get("sendId")) or "") if user_meta else ""
-
-
-def _committed_if_accepted(request: web.Request, resp: Any, user_meta: dict | None) -> Any:
-    """Record the claimed send when *resp* accepted it; a refusal gives the claim back."""
-    from kiro_crew.shared_crew import send_race
-
-    if getattr(resp, "status", 500) < 400:
-        send_race.commit_request(request, message_id=_send_id_of(user_meta))
-    return resp
-
-
-def _composer_locked_answer(
-    request: web.Request, state: Any, slot: Any, steer: object
-) -> web.StreamResponse | None:
-    """409 ``composer_locked`` when someone else holds the session's typing lease.
-
-    Only a dashboard user's send is held: an app or automation send has no
-    composer and no lease. A steer into a running turn passes, so a locked
-    collaborator can still steer or stop the turn that is running.
-    """
-    if not request.get("is_dashboard_user", False):
-        return None
-    if steer and getattr(slot, "turn_running", False):
-        return None
-    from kiro_crew.shared_crew import typing_lease
-    from kiro_crew.shared_crew.identity import actor_of
-
-    body = typing_lease.refuse_if_locked(state, slot.key, actor_of(request).principal)
-    if body is None:
-        return None
-    return web.json_response(
-        {
-            "error": body["error"],
-            "code": body["code"],
-            "session_key": body["session_key"],
-            "holder": body["holder"],
-            "lease": body["lease"],
-        },
-        status=409,
-    )
 
 
 async def _settle_send_race(

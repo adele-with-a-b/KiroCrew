@@ -81,6 +81,7 @@ from kiro_crew.dashboard.chat_api import resume as _owner_resume
 from kiro_crew.dashboard.chat_api import resume_identity as _owner_resume_identity
 from kiro_crew.dashboard.chat_api import resume_live as _owner_resume_live
 from kiro_crew.dashboard.chat_api import resume_window as _owner_resume_window
+from kiro_crew.dashboard.chat_api import send_lease as _owner_send_lease
 from kiro_crew.dashboard.chat_api import session_relaunch as _owner_session_relaunch
 from kiro_crew.dashboard.chat_api import slot_approval as _owner_slot_approval
 from kiro_crew.dashboard.chat_api import slot_create as _owner_slot_create
@@ -96,6 +97,7 @@ from kiro_crew.dashboard.chat_api import slot_settings as _owner_slot_settings
 from kiro_crew.dashboard.chat_api import slot_summary as _owner_slot_summary
 from kiro_crew.dashboard.chat_api import source_links as _owner_source_links
 from kiro_crew.dashboard.chat_api import sse_write as _owner_sse_write
+from kiro_crew.dashboard.chat_api import steer_decision as _owner_steer_decision
 from kiro_crew.dashboard.chat_api import turn_stop as _owner_turn_stop
 from kiro_crew.dashboard.chat_api.agent_switch import (  # noqa: F401
     CREW_MODE_LOCKED,
@@ -128,16 +130,11 @@ from kiro_crew.dashboard.chat_api.app_admission import (  # noqa: F401
 )
 from kiro_crew.dashboard.chat_api.chat_send import (  # noqa: F401
     _api_chat_send,
-    _committed_if_accepted,
-    _composer_locked_answer,
     _send_binds_agent,
     _send_harness_command,
-    _send_id_of,
     _settle_send_race,
     _sweep_stale_permissions,
     api_chat,
-    decided_message_handling,
-    steer_is_auto,
 )
 from kiro_crew.dashboard.chat_api.conductor_close import (  # noqa: F401
     _close_managed,
@@ -238,6 +235,11 @@ from kiro_crew.dashboard.chat_api.resume_live import (  # noqa: F401
 )
 from kiro_crew.dashboard.chat_api.resume_window import (  # noqa: F401
     _reconcile_slot_window,
+)
+from kiro_crew.dashboard.chat_api.send_lease import (  # noqa: F401
+    _committed_if_accepted,
+    _composer_locked_answer,
+    _send_id_of,
 )
 from kiro_crew.dashboard.chat_api.session_relaunch import (  # noqa: F401
     _report_reload_respawn,
@@ -401,6 +403,10 @@ from kiro_crew.dashboard.chat_api.source_links import (  # noqa: F401
     api_chat_slot_source_links,
 )
 from kiro_crew.dashboard.chat_api.sse_write import write_sse_or_abort  # noqa: F401
+from kiro_crew.dashboard.chat_api.steer_decision import (  # noqa: F401
+    decided_message_handling,
+    steer_is_auto,
+)
 from kiro_crew.dashboard.chat_api.turn_stop import (  # noqa: F401
     _cancel_cron_run,
     _cancel_preparing_runner,
@@ -1477,6 +1483,7 @@ _facade_compose(
         _owner_resume_identity,
         _owner_resume_live,
         _owner_resume_window,
+        _owner_send_lease,
         _owner_session_relaunch,
         _owner_slot_approval,
         _owner_slot_create,
@@ -1492,6 +1499,7 @@ _facade_compose(
         _owner_slot_summary,
         _owner_source_links,
         _owner_sse_write,
+        _owner_steer_decision,
         _owner_turn_stop,
     ),
 )

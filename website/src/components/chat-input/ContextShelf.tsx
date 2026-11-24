@@ -146,8 +146,11 @@ export function SessionControlChips({ sessionControls, shelfCompact, onSessionCo
       data-session-control-chip=""
       // Which control: an app's open request anchors the popover on this chip.
       data-session-control-key={sc.key}
-      title={chipName}
+      title={sc.shortcut
+        ? i18nT('components.chatInput.session_control_chip_shortcut', { label: chipName, keys: sc.shortcut.shown })
+        : chipName}
       aria-label={chipName}
+      aria-keyshortcuts={sc.shortcut?.aria}
     >
       <AppIcon icon={sc.icon} size={13} />
       {!shelfCompact && <span className="truncate max-w-[140px]">{shown}</span>}

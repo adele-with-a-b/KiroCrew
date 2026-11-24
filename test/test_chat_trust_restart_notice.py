@@ -68,8 +68,8 @@ def _cfg() -> SimpleNamespace:
     )
 
 
-@pytest.fixture
-def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+@pytest.fixture(name="home")
+def home_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A data home holding one open chat with a transcript."""
     monkeypatch.setenv("KIROCREW_HOME", str(tmp_path))
     seed = _make_state(tmp_path / "sessions")

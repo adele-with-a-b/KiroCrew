@@ -1,4 +1,7 @@
-import { IS_MAC } from '../../hooks/useKeyboardShortcuts'
+import { IS_MAC, shortcutLabel, shortcutPlatform, type ShortcutDef } from '../../hooks/useKeyboardShortcuts'
+import { useAppKeyRecorder, useAppSessionKeys, type KeyHolder } from '../../hooks/useAppSessionKeys'
+import { useSessionControls } from '../../hooks/useSessionControls'
+import { shownKeys, type ResolvedAppKey } from '../../lib/appSessionKeys'
 import { SHORTCUT_GROUPS, ShortcutGroupRows, KeyCapSequence, GlobalHotkeyRow, PANEL_TOGGLE_LABEL_KEY, groupShortcuts, shortcutGroupLabel, shortcutsHelpText, useShortcutPrefs } from '../../components/ShortcutsModal'
 import { SettingsSection, SettingsCard, SettingsToggle, SettingsButtonGroup } from '../../components/settings'
 import { useQuickSearchShortcut } from '../../hooks/useQuickSearchShortcut'
@@ -127,6 +130,84 @@ function PanelToggleConfig() {
   )
 }
 
+/** Who holds a key, named for a note: one of Crew's keys, or another app key's row. */
+function keyHolderName(holder: KeyHolder): string {
+  if ('app' in holder) return appKeyRowName(holder.app)
+  const owner = holder.crew
+  if (owner.kind === 'panel') return i18nT(PANEL_TOGGLE_LABEL_KEY[owner.id])
+  if (owner.kind === 'search') return i18nT('components.shortcutsModal.search_everywhere')
+  if (owner.kind === 'editing') return i18nT('pages.settings.shortcutsPanel.app_key_holder_editing')
+  return shortcutLabel({ id: owner.id, n: owner.n } as ShortcutDef)
+}
+
+function appKeyRowName(k: ResolvedAppKey): string {
+  return i18nT('pages.settings.shortcutsPanel.app_key_row', { app: k.control.appDisplayName, label: k.key.label })
+}
+
+/**
+ * Editor for the keys apps declare for their box under the message box
+ * (`contributes.sessionControls[].keys`), one row per key, with the panel
+ * toggles' recorder and Clear. A key Crew or another app holds is refused while
+ * recording and named; a default that clashes is off, and its row says by what.
+ */
+function AppKeysConfig({ keys }: { keys: ResolvedAppKey[] }) {
+  const { recordingId, refused, startRecording, cancelRecording, clear } = useAppKeyRecorder(keys)
+  const platform = shortcutPlatform()
+  return (
+    <>
+      {keys.map(k => {
+        const recording = recordingId === k.id
+        const caps = k.chord ? formatChordKeys(k.chord) : []
+        return (
+          <div key={k.id} data-testid="app-key-row">
+            <div className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-md">
+              <div className="text-[13px] text-text">{appKeyRowName(k)}</div>
+              <span className="flex items-center gap-2">
+                <Btn
+                  onClick={recording ? cancelRecording : () => startRecording(k.id)}
+                  aria-label={i18nT('pages.settings.shortcutsPanel.record_prompt')}
+                  className={recording ? 'border-accent text-accent' : ''}
+                >
+                  {recording ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-accent animate-pulse" aria-hidden="true" />
+                      {i18nT('pages.settings.shortcutsPanel.record_prompt')}
+                    </span>
+                  ) : caps.length > 0 ? (
+                    <span className="flex items-center gap-1"><KeyCapSequence caps={caps} plus /></span>
+                  ) : (
+                    i18nT('pages.settings.shortcutsPanel.record_prompt')
+                  )}
+                </Btn>
+                {k.chord && !recording && (
+                  <Btn onClick={() => clear(k.id)} aria-label={i18nT('pages.settings.shortcutsPanel.clear_shortcut')}>
+                    {i18nT('pages.settings.shortcutsPanel.clear_shortcut')}
+                  </Btn>
+                )}
+              </span>
+            </div>
+            {recording && refused ? (
+              <div className="text-[12px] text-warn px-2 pb-1" role="status">
+                {k.chord
+                  ? i18nT('pages.settings.shortcutsPanel.app_key_refused', { keys: shownKeys(refused.chord, platform), holder: keyHolderName(refused.holder), current: shownKeys(k.chord, platform) })
+                  : i18nT('pages.settings.shortcutsPanel.app_key_refused_none', { keys: shownKeys(refused.chord, platform), holder: keyHolderName(refused.holder) })}
+              </div>
+            ) : k.off && k.wanted ? (
+              <div className="text-[12px] text-muted px-2 pb-1">
+                {i18nT('crew' in k.off ? 'pages.settings.shortcutsPanel.app_key_off_crew' : 'pages.settings.shortcutsPanel.app_key_off_app', {
+                  keys: shownKeys(k.wanted, platform),
+                  holder: keyHolderName(k.off),
+                })}
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+      <div className="text-[12px] text-muted px-2 pt-1">{i18nT('pages.settings.shortcutsPanel.apps_hint')}</div>
+    </>
+  )
+}
+
 /**
  * Settings → Shortcuts. Same data + preference state as the Alt+K
  * `ShortcutsModal` (shared primitives from ShortcutsModal.tsx), presented in
@@ -137,6 +218,7 @@ function PanelToggleConfig() {
 export function ShortcutsPanel() {
   const { enabled, macCtrl, toggle, toggleMacCtrl, saveError } = useShortcutPrefs()
   const globalHotkey = useGlobalHotkey()
+  const appKeys = useAppSessionKeys(useSessionControls().controls)
 
   return (
     <div className="max-w-2xl">
@@ -184,6 +266,14 @@ export function ShortcutsPanel() {
       <SettingsCard index={SHORTCUT_GROUPS.length + 2}>
         <PanelToggleConfig />
       </SettingsCard>
+      {appKeys.length > 0 && (
+        <div>
+          <SettingsSection title={i18nT('pages.settings.shortcutsPanel.apps')} />
+          <SettingsCard index={SHORTCUT_GROUPS.length + 3}>
+            <AppKeysConfig keys={appKeys} />
+          </SettingsCard>
+        </div>
+      )}
       {globalHotkey && (
         <div>
           <SettingsSection title={i18nT('components.shortcutsModal.desktop_app')} />

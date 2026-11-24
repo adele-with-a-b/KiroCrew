@@ -6790,7 +6790,7 @@
         "failed_desktop_unsupported": "Non è possibile installare «{{app}}» nella versione desktop di {{productName}}, e nulla è stato modificato.",
         "failed_desktop_unsupported_help": "Ha bisogno di pacchetti Python che la build desktop non può aggiungere; chiedi all'autore dell'app di includerli con l'app, oppure apri {{productName}} in un browser web invece che nella versione desktop.",
         "open_files_heading": "Può aprire file quando fai clic al suo interno",
-        "open_files_desc": "Dopo che fai clic al suo interno, può aprire un file a sua scelta nella sua app predefinita su questo computer. Uno script o un'app viene eseguito all'apertura. I file che Kiro Crew mantiene privati vengono rifiutati."
+        "open_files_desc": "Dopo che fai clic al suo interno, può aprire un file a sua scelta nella sua app predefinita su questo computer. Uno script o un'app viene eseguito all'apertura. I file che {{productName}} mantiene privati vengono rifiutati."
       },
       "registryTier": {
         "curated": "Verificato dal team",
@@ -7148,6 +7148,7 @@
       "session_control_needs_attention": "Richiede attenzione",
       "session_control_ready": "Pronto",
       "session_control_chip_label": "{{label}} — {{detail}}",
+      "session_control_chip_shortcut": "{{label}} {{keys}}",
       "agent_inherited_default": "Questa sessione segue l’agente predefinito ({{name}}). Non ha un agente proprio, quindi cambia se cambia il predefinito. Fai clic per fissarne uno.",
       "agent_cycle_hint": "Agente successivo: Alt+Maiusc+A · Precedente: Alt+Maiusc+Z",
       "agent_cycle_hint_mac": "Agente successivo: ⌥⇧A · Precedente: ⌥⇧Z",
@@ -12218,7 +12219,7 @@
       },
       "grants_reconsent_composer_actions": "Pulsanti dell'editor: consente all'app di aggiungere questi pulsanti al menu + dell'editor. Un clic inserisce il testo dell'app nella tua bozza; l'app non può vedere la bozza né inviarla.",
       "grants_reconsent_selection_actions": "Azioni sul testo selezionato: gli elementi dell'app ricevono il testo che selezioni nelle risposte della chat e possono offrire un risultato da Copiare o Aprire.",
-      "open_files_desc": "Dopo che fai clic al suo interno, può aprire un file a sua scelta nella sua app predefinita su questo computer. Uno script o un'app viene eseguito all'apertura. I file che Kiro Crew mantiene privati vengono rifiutati.",
+      "open_files_desc": "Dopo che fai clic al suo interno, può aprire un file a sua scelta nella sua app predefinita su questo computer. Uno script o un'app viene eseguito all'apertura. I file che {{productName}} mantiene privati vengono rifiutati.",
       "grants_reconsent_open_files": "Aprire un file a sua scelta nella sua app predefinita dopo che fai clic al suo interno. Uno script o un'app viene eseguito all'apertura."
     },
     "appPage": {
@@ -21184,7 +21185,15 @@
         "clear_shortcut": "Cancella",
         "panel_toggles": "Attiva/disattiva pannelli",
         "skips_shell_hint": "Funziona anche nel terminale, quindi la tua shell non riceve più questo tasto: non scegliere Ctrl+C o Ctrl+R.",
-        "skips_shell_hint_mac": "Funziona anche nel terminale, quindi la tua shell non riceve più questo tasto: non scegliere ⌃C (Ctrl+C) o ⌃R (Ctrl+R)."
+        "skips_shell_hint_mac": "Funziona anche nel terminale, quindi la tua shell non riceve più questo tasto: non scegliere ⌃C (Ctrl+C) o ⌃R (Ctrl+R).",
+        "apps": "App",
+        "app_key_row": "{{app}} · {{label}}",
+        "app_key_off_crew": "Il suo tasto {{keys}} è «{{holder}}» di Crew, quindi è spento. Premi dei tasti per sceglierne un altro.",
+        "app_key_off_app": "Il suo tasto {{keys}} è usato da «{{holder}}», quindi è spento. Premi dei tasti per sceglierne un altro.",
+        "app_key_refused": "{{keys}} è usato da «{{holder}}». Premi un altro tasto, o Esc per tenere {{current}}.",
+        "app_key_refused_none": "{{keys}} è usato da «{{holder}}». Premi un altro tasto, o Esc per smettere.",
+        "app_key_holder_editing": "Tasti di ricerca, invio e modifica (copia, incolla, annulla)",
+        "apps_hint": "Tasti che un’app aggiunge per il suo riquadro sotto la casella del messaggio. Agiscono nella chat sullo schermo. I tasti di Crew vincono sempre."
       },
       "skillsPanel": {
         "analyze_each_completed_session_and_draft_a_reusa": "Analizza ogni sessione completata e redigi una SKILL.md riutilizzabile quando la sessione dimostra una procedura ricorrente — una che una sessione futura, lavorando su un obiettivo diverso, eseguirebbe di nuovo. Disattivato per impostazione predefinita. Le bozze vengono messe in coda in Personalizza → Competenze per la revisione — nulla va in produzione senza la tua approvazione (vedi sotto).",

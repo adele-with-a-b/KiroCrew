@@ -293,6 +293,8 @@ export interface ChatInputProps {
      * stays the manifest label, so a detail cannot relabel the control.
      */
     detail?: string
+    /** The control's first live key, for the hover: shown keys (`⌥⇧Q`) and the ARIA form (`Alt+Shift+Q`). */
+    shortcut?: { shown: string; aria: string }
   }[]
   onSessionControlClick?: (key: string, rect: DOMRect, trigger?: HTMLElement) => void
   contextPct?: number

@@ -4,10 +4,15 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import { useAnchoredTriggerRect } from '../../../hooks/useAnchoredTriggerRect'
 import { useFolderSortMode } from '../../../hooks/useFolderSortMode'
-import { dashboardSessionKey, SESSION_CONTROL_STATUS_KEY, useSessionControls, useSessionControlStatuses } from '../../../hooks/useSessionControls'
+import { dashboardSessionKey, SESSION_CONTROL_STATUS_KEY, useSessionControls, useSessionControlStatuses, type ResolvedSessionControl } from '../../../hooks/useSessionControls'
+import { useAppSessionKeys } from '../../../hooks/useAppSessionKeys'
+import { isTerminalTarget, shortcutPlatform, SHORTCUTS_ENABLED_KEY } from '../../../hooks/useKeyboardShortcuts'
+import { ariaKeys, matchAppKeyEvent, shownKeys, type ResolvedAppKey } from '../../../lib/appSessionKeys'
+import { safeGetItem } from '../../../utils/safeStorage'
+import { hasBlockingOverlay } from '../../../utils/blockingOverlay'
 import type { ChatFolder, ChatSlot } from '../../../types'
 import { onLinkPreviewNav } from '../../../linkPreview/linkPreviewNav'
-import { clearSessionControlRequest, putSessionControlRequest } from '../../../app-sdk/sessionControlRequest'
+import { clearSessionControlRequest, putSessionControlRequest, type SessionControlOpenVia } from '../../../app-sdk/sessionControlRequest'
 
 /** One shared empty list, so an absent folder cache keeps a stable identity. */
 const NO_CHAT_FOLDERS: ChatFolder[] = []
@@ -65,22 +70,65 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
   // composer draws (else `not_declared`), anchored on its chip (else
   // `not_on_screen`). Opening the one already open keeps it open and hands it
   // the new payload.
-  const latestOpen = useRef({ activeSlot, sessionControls, anchorSessionControl })
-  latestOpen.current = { activeSlot, sessionControls, anchorSessionControl }
+  // The app keys (a control's `keys`), resolved against Crew's own keys.
+  const appKeys = useAppSessionKeys(sessionControls)
+  // Which key opened the box now open, so the same key again closes it. Any
+  // other open of that box (a click, a card, a status go) clears it.
+  const keyOpen = useRef<{ control: string; keyId: string } | null>(null)
+  useEffect(() => {
+    if (!openSessionControl || openSessionControl.key !== keyOpen.current?.control) keyOpen.current = null
+  }, [openSessionControl])
+  const latestOpen = useRef({ activeSlot, sessionControls, anchorSessionControl, appKeys, openSessionControl, refreshSessionControlStatuses })
+  latestOpen.current = { activeSlot, sessionControls, anchorSessionControl, appKeys, openSessionControl, refreshSessionControlStatuses }
+  // Open control `sc` on its chip in chat `slot`, handing it `payload`.
+  const openOnChip = useCallback((sc: ResolvedSessionControl, slot: string, chip: HTMLElement, payload: unknown, via: SessionControlOpenVia) => {
+    putSessionControlRequest(dashboardSessionKey(slot), sc.key, payload, via)
+    latestOpen.current.anchorSessionControl(chip.getBoundingClientRect(), chip)
+    setOpenSessionControl(o => (o?.key === sc.key && o.slot === slot ? o : { key: sc.key, slot }))
+  }, [])
   useEffect(() => onLinkPreviewNav(req => {
     if (req.kind !== 'open' || req.target.kind !== 'sessionControl') return false
-    const { activeSlot: slot, sessionControls: list, anchorSessionControl: anchor } = latestOpen.current
+    const { activeSlot: slot, sessionControls: list } = latestOpen.current
     if (!slot || req.slot !== slot) return false
     const id = req.target.id
     const sc = list.find(c => c.appName === req.appName && c.id === id)
     if (!sc) return 'not_declared'
     const chip = sessionControlChip(sc.key)
     if (!chip) return 'not_on_screen'
-    putSessionControlRequest(dashboardSessionKey(slot), sc.key, req.payload, req.via)
-    anchor(chip.getBoundingClientRect(), chip)
-    setOpenSessionControl(o => (o?.key === sc.key && o.slot === slot ? o : { key: sc.key, slot }))
+    keyOpen.current = null
+    openOnChip(sc, slot, chip, req.payload, req.via)
     return true
-  }), [])
+  }), [openOnChip])
+  // An app key: in the chat on screen, on a chip it draws. Capture phase on the
+  // document, so it runs before the popover stops a key typed inside it, and
+  // after Settings' recorders (capture on the window), which stop the key they
+  // record. A terminal keeps its keys, an open modal dialog keeps the keyboard,
+  // and "Enable shortcuts" off turns these off.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return
+      const { activeSlot: slot, appKeys: keys, openSessionControl: open, refreshSessionControlStatuses: refresh } = latestOpen.current
+      const hit = keys.length > 0 ? matchAppKeyEvent(e, keys, shortcutPlatform()) : null
+      if (!hit || !slot || isTerminalTarget(e.target) || safeGetItem(SHORTCUTS_ENABLED_KEY) === '0') return
+      const chip = sessionControlChip(hit.control.key)
+      if (!chip || chip.getClientRects().length === 0 || hasBlockingOverlay()) return
+      e.preventDefault()
+      e.stopPropagation()
+      // A held key's repeats are claimed too (⌥⇧Q would type Œ into the draft)
+      // but do nothing: one press, one open or close.
+      if (e.repeat) return
+      if (open?.key === hit.control.key && open.slot === slot && keyOpen.current?.keyId === hit.key.id) {
+        keyOpen.current = null
+        setOpenSessionControl(null)
+        refresh()
+        return
+      }
+      keyOpen.current = { control: hit.control.key, keyId: hit.key.id }
+      openOnChip(hit.control, slot, chip, hit.key.arg, 'key')
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [openOnChip])
   // Folder names for the session-control context. Shares the sidebar's own
   // ['chat-folders'] cache, so this costs no extra request.
   const { data: chatFoldersRaw, error: chatFoldersError } = useQuery<ChatFolder[]>({
@@ -126,7 +174,7 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
       activeFolderName,
     )
   return {
-    sessionControls, sessionControlsError,
+    sessionControls, sessionControlsError, appKeys,
     openSessionControl, setOpenSessionControl, sessionControlRect, anchorSessionControl,
     refreshSessionControlStatuses,
     chatFolders, chatFoldersError, chatFoldersLoaded, folderSortMode, folderSortError, activeFolderName,
@@ -144,19 +192,26 @@ function sessionControlChip(key: string): HTMLElement | null {
 }
 
 /** The composer bar's chip model for each control. */
-export function useSessionControlChips({ sessionControls, openSessionControl, activeSlot, sessionControlStatuses }: {
+export function useSessionControlChips({ sessionControls, openSessionControl, activeSlot, sessionControlStatuses, appKeys }: {
   sessionControls: ReturnType<typeof useSessionControls>['controls']
   openSessionControl: { key: string; slot: string } | null
   activeSlot: string | null
   sessionControlStatuses: ReturnType<typeof useSessionControlStatuses>['statuses']
+  appKeys: readonly ResolvedAppKey[]
 }) {
-  return useMemo(() => sessionControls.map(sc => ({
-    key: sc.key,
-    label: sc.label,
-    icon: sc.icon,
-    active: openSessionControl?.key === sc.key && openSessionControl.slot === activeSlot,
-    state: sessionControlStatuses[sc.key]?.state,
-    statusTooltip: sessionControlStatuses[sc.key]?.tooltip,
-    detail: sessionControlStatuses[sc.key]?.detail,
-  })), [sessionControls, openSessionControl, activeSlot, sessionControlStatuses])
+  return useMemo(() => sessionControls.map(sc => {
+    // The hover names the control's first live key.
+    const chord = appKeys.find(k => k.control.key === sc.key && k.chord)?.chord
+    const platform = shortcutPlatform()
+    return {
+      key: sc.key,
+      label: sc.label,
+      icon: sc.icon,
+      active: openSessionControl?.key === sc.key && openSessionControl.slot === activeSlot,
+      state: sessionControlStatuses[sc.key]?.state,
+      statusTooltip: sessionControlStatuses[sc.key]?.tooltip,
+      detail: sessionControlStatuses[sc.key]?.detail,
+      shortcut: chord ? { shown: shownKeys(chord, platform), aria: ariaKeys(chord, platform) } : undefined,
+    }
+  }), [sessionControls, openSessionControl, activeSlot, sessionControlStatuses, appKeys])
 }

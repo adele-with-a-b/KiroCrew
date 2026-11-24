@@ -2135,7 +2135,7 @@
         "failed_desktop_unsupported": "“{{app}}” can't be installed in the desktop version of {{productName}}, and nothing was changed.",
         "failed_desktop_unsupported_help": "It needs Python packages the desktop build can't add; ask the app's author to ship them with the app, or open {{productName}} in a web browser instead of the desktop version.",
         "open_files_heading": "It can open files when you click in it",
-        "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files Kiro Crew keeps private are refused."
+        "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files {{productName}} keeps private are refused."
       },
       "registryTier": {
         "curated": "Team reviewed",
@@ -2361,6 +2361,7 @@
       "session_control_needs_attention": "Needs attention",
       "session_control_ready": "Ready",
       "session_control_chip_label": "{{label}} — {{detail}}",
+      "session_control_chip_shortcut": "{{label}} {{keys}}",
       "terminal_hint": "Terminal panel · {{workspace}}",
       "terminal_panel": "Terminal panel",
       "terminal_review_at_capacity": "Review the command. Run opens the terminal panel; if it is still full, close an unused tab and try again. Nothing is queued.",
@@ -5412,7 +5413,7 @@
       },
       "grants_reconsent_composer_actions": "Composer buttons: lets the app add these buttons to the composer's + menu. A click inserts the app's text into your draft; the app can't see the draft or send it.",
       "grants_reconsent_selection_actions": "Selected-text actions: lets the app's items be handed text you select in chat replies, and offer it back for Copy or Open.",
-      "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files Kiro Crew keeps private are refused.",
+      "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files {{productName}} keeps private are refused.",
       "grants_reconsent_open_files": "Opening a file it picks in its default app after you click in it. A script or an app runs when it opens."
     },
     "appsPage": {
@@ -10504,7 +10505,15 @@
         "clear_shortcut": "Clear",
         "panel_toggles": "Panel toggles",
         "skips_shell_hint": "Works inside the terminal too, so your shell stops receiving this key — do not pick Ctrl+C or Ctrl+R.",
-        "skips_shell_hint_mac": "Works inside the terminal too, so your shell stops receiving this key — do not pick ⌃C (Ctrl+C) or ⌃R (Ctrl+R)."
+        "skips_shell_hint_mac": "Works inside the terminal too, so your shell stops receiving this key — do not pick ⌃C (Ctrl+C) or ⌃R (Ctrl+R).",
+        "apps": "Apps",
+        "app_key_row": "{{app}} · {{label}}",
+        "app_key_off_crew": "Its key {{keys}} is Crew’s “{{holder}}”, so it is off. Press keys to pick another.",
+        "app_key_off_app": "Its key {{keys}} is used by “{{holder}}”, so it is off. Press keys to pick another.",
+        "app_key_refused": "{{keys}} is used by “{{holder}}”. Press another key, or Esc to keep {{current}}.",
+        "app_key_refused_none": "{{keys}} is used by “{{holder}}”. Press another key, or Esc to stop.",
+        "app_key_holder_editing": "Find, send and editing keys (copy, paste, undo)",
+        "apps_hint": "Keys an app adds for its box under the message box. They act in the chat on screen. Crew’s own keys always win."
       },
       "reportProblemCard": {
         "support": "Support",

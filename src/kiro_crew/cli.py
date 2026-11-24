@@ -1122,8 +1122,7 @@ def main() -> None:
             except OSError:
                 pass  # the notice stays; the update itself succeeded
     elif args.command == "stop":
-        from kiro_crew import kept_trust
-        from kiro_crew import cli_server_stop
+        from kiro_crew import cli_server_stop, kept_trust
         from kiro_crew.cli_server import _stop
 
         # An explicit stop ends the trust the user gave (``kept_trust``), so it is

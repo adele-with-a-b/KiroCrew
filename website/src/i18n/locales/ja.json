@@ -6401,7 +6401,7 @@
         "failed_desktop_unsupported": "「{{app}}」は {{productName}} のデスクトップ版にはインストールできず、何も変更されませんでした。",
         "failed_desktop_unsupported_help": "デスクトップ版では追加できない Python パッケージが必要です。アプリの作者にアプリへ同梱してもらうか、デスクトップ版ではなくウェブブラウザーで {{productName}} を開いてください。",
         "open_files_heading": "アプリ内をクリックするとファイルを開けます",
-        "open_files_desc": "アプリ内をクリックすると、アプリが選んだファイルをこのコンピュータの既定のアプリで開けます。スクリプトやアプリは開くと実行されます。Kiro Crew が非公開にしているファイルは拒否されます。"
+        "open_files_desc": "アプリ内をクリックすると、アプリが選んだファイルをこのコンピューターの既定のアプリで開けます。スクリプトやアプリは開くと実行されます。{{productName}} が非公開にしているファイルは拒否されます。"
       },
       "registryTier": {
         "curated": "チーム確認済み",
@@ -6776,6 +6776,7 @@
       "session_control_needs_attention": "要対応",
       "session_control_ready": "準備完了",
       "session_control_chip_label": "{{label}} — {{detail}}",
+      "session_control_chip_shortcut": "{{label}} {{keys}}",
       "agent_inherited_default": "このセッションはデフォルトエージェント（{{name}}）に従います。独自のエージェントを持たないため、デフォルトが変わると変わります。固定するにはクリックしてください。",
       "agent_cycle_hint": "次のエージェント: Alt+Shift+A · 前へ: Alt+Shift+Z",
       "agent_cycle_hint_mac": "次のエージェント: ⌥⇧A · 前へ: ⌥⇧Z",
@@ -11698,7 +11699,7 @@
       },
       "grants_reconsent_composer_actions": "入力欄ボタン：入力欄の + メニューにこれらのボタンを追加できます。クリックするとアプリのテキストが下書きに挿入されます。アプリは下書きを見ることも送信することもできません。",
       "grants_reconsent_selection_actions": "選択テキストの操作: チャットの返信で選択したテキストがアプリの項目に渡され、コピーまたは開くための結果を返せます。",
-      "open_files_desc": "アプリ内をクリックすると、アプリが選んだファイルをこのコンピュータの既定のアプリで開けます。スクリプトやアプリは開くと実行されます。Kiro Crew が非公開にしているファイルは拒否されます。",
+      "open_files_desc": "アプリ内をクリックすると、アプリが選んだファイルをこのコンピューターの既定のアプリで開けます。スクリプトやアプリは開くと実行されます。{{productName}} が非公開にしているファイルは拒否されます。",
       "grants_reconsent_open_files": "アプリ内をクリックしたあとに、アプリが選んだファイルを既定のアプリで開く。スクリプトやアプリは開くと実行されます。"
     },
     "appPage": {
@@ -20126,7 +20127,15 @@
         "clear_shortcut": "クリア",
         "panel_toggles": "パネルの表示切り替え",
         "skips_shell_hint": "ターミナル内でも動作するため、シェルはこのキーを受け取らなくなります。Ctrl+C や Ctrl+R は選ばないでください。",
-        "skips_shell_hint_mac": "ターミナル内でも動作するため、シェルはこのキーを受け取らなくなります。⌃C (Ctrl+C) や ⌃R (Ctrl+R) は選ばないでください。"
+        "skips_shell_hint_mac": "ターミナル内でも動作するため、シェルはこのキーを受け取らなくなります。⌃C (Ctrl+C) や ⌃R (Ctrl+R) は選ばないでください。",
+        "apps": "アプリ",
+        "app_key_row": "{{app}} · {{label}}",
+        "app_key_off_crew": "このキー {{keys}} は Crew の「{{holder}}」なので、オフになっています。キーを押して別のキーを選んでください。",
+        "app_key_off_app": "このキー {{keys}} は「{{holder}}」が使っているので、オフになっています。キーを押して別のキーを選んでください。",
+        "app_key_refused": "{{keys}} は「{{holder}}」が使っています。別のキーを押すか、Esc で {{current}} のままにします。",
+        "app_key_refused_none": "{{keys}} は「{{holder}}」が使っています。別のキーを押すか、Esc でやめます。",
+        "app_key_holder_editing": "検索・送信・編集のキー（コピー、貼り付け、取り消し）",
+        "apps_hint": "アプリがメッセージ欄の下のボックス用に追加するキーです。画面のチャットで動作します。Crew 自身のキーが常に優先されます。"
       },
       "skillsPanel": {
         "analyze_each_completed_session_and_draft_a_reusa": "完了したセッションを分析し、繰り返し使われる手順 — 将来のセッションが別の対象に対して再び実行するような手順 — が示されたときに再利用可能な SKILL.md を作成します。デフォルトではオフです。ドラフトは「カスタマイズ → スキル」の保留キューにステージされます。レビュー用です。何もライブにはなりません（以下を参照してください）。",

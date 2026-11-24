@@ -149,6 +149,8 @@ export const DURABLE_PREF_KEYS: readonly string[] = [
   'mc-mac-ctrl-digits',
   'mc-quicksearch-shortcut',
   'mc-panel-toggle-shortcuts',
+  // Settings → Shortcuts → Apps (lib/appSessionKeys.ts).
+  'mc-app-session-keys',
   'mc-ptt-config',
   // Cloud launch defaults.
   'mc-cloud-profile',

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
@@ -558,8 +558,12 @@ describe('Conductor mode Crew tab', () => {
   })
 
   it('Board: a story reported done but not accepted says Done in the sprint, aged from its report', async () => {
+    // Only Date is faked: the age reads the pinned clock, and the query timers stay real.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    onTestFinished(() => vi.useRealTimers())
+    vi.setSystemTime(Date.parse('2026-11-01T12:00:00Z'))
     api.crewWorkers.mockResolvedValue(WORKERS)
-    const reported = new Date(Date.now() - 5 * 60_000).toISOString()
+    const reported = '2026-11-01T11:55:00.000Z'
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'd2', title: 'Menu', status: 'done', summary: 'Menu drafted. All of it.', pr: 7, created_at: '2026-10-30T00:00:00Z', last_report_at: reported })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
     const row = await screen.findByTestId('plan-story')

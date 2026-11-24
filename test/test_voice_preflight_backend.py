@@ -24,7 +24,9 @@ def test_unknown_backend_keeps_the_strict_answer(overlapping):
 
 @pytest.mark.parametrize("backend", [ACP_BACKEND_KIRO, ACP_BACKEND_KAS])
 def test_sandbox_delegating_backends_are_refused(overlapping, backend):
-    assert "protected voice runtime" in voice_runtime_workspace_conflict(overlapping, backend=backend)
+    assert "protected voice runtime" in voice_runtime_workspace_conflict(
+        overlapping, backend=backend
+    )
 
 
 def test_claude_backend_is_not_refused(overlapping):

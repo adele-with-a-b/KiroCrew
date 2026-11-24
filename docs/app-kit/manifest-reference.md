@@ -759,6 +759,43 @@ to one of its messages, with the Back pill a card's `jumpTo` gives, and stay ope
 the SDK's `useSessionControlJump()`, in the
 [API reference](api-reference.md#session-control-jump). Needs `APP_SDK_LEVEL >= 13`.
 
+**`keys` — a key that opens the box.** A control can declare up to **4** keys,
+each opening its box in the chat on screen with its own `arg`:
+
+```json
+"keys": [
+  { "id": "questions", "label": "Open Questions", "default": "Alt+Shift+Q", "arg": { "view": "questions" } },
+  { "id": "references", "label": "Open References", "default": "Alt+Shift+L", "arg": { "view": "references" } }
+]
+```
+
+| Field | Rule |
+|-------|------|
+| `id` | kebab-case, unique within the control |
+| `label` | required; Settings shows it as `<app> · <label>` |
+| `default` | optional. `Mod`, `Ctrl`, `Alt`, `Shift`, each at most once, joined by `+`, then one key: a letter, a digit, US punctuation (`` , . / \ [ ] ` - = ; ' ``), `Enter` or an arrow (`ArrowUp` …). It must hold `Mod`, `Ctrl` or `Alt`. `Mod` is ⌘ on a Mac and Ctrl elsewhere. With none, the key is unbound until the person records one |
+| `arg` | optional, any JSON value of at most 4 KB serialized; it is the request's `payload` |
+
+A key that breaks a rule refuses the install with the reason. The person changes
+or clears each key in **Settings → Shortcuts → Apps**, and their choice is kept
+in the browser; the recorder takes only the keys `default` may name. A key acts
+only while the chat's chip is drawn and on screen; elsewhere (a terminal in
+focus, a recorder listening, a modal dialog open, shortcuts turned off, another
+page, AltGr typing) it passes on. A held key opens or closes once, and its
+repeats type nothing. It opens the box with
+`useSessionControlRequest()` reading `via: 'key'`. The same key again closes the
+box; another key of the same control, or a key while the box was opened another
+way, keeps it open and hands over the new `arg`.
+
+**Who keeps a key.** Crew's own keys always win: a `default` that one of them
+holds (a shortcut, a panel toggle, the search key, ⌥ with a letter or a digit,
+find, the message box's ⌘/Ctrl+Enter, and copy, cut, paste, undo, redo and
+select all) is off, and its Settings row names the holder. Between two apps declaring the
+same key, the app installed first keeps it and the other's is off, named the same
+way. Settings refuses to record a key that is in use and names who has it. The
+chip's hover shows its first live key. Needs `APP_SDK_LEVEL >= 14`; an older host
+ignores `keys`.
+
 **Two caps, and the second one drops.** The backend allows at most **2** controls
 per app. The dashboard renders at most **2** across all apps, and controls past
 that are dropped rather than moved into an overflow menu -- the bar shares one row

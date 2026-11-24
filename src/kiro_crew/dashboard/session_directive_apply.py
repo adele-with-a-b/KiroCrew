@@ -483,6 +483,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _structured_binding,
         _structured_monitor_update,
         _structured_stop_reason,
+        _system_stopped,
     )
     from kiro_crew.dashboard.session_directive_apply_outcome import (  # noqa: F401
         ARM_REFUSAL_NOTICE_KIND,

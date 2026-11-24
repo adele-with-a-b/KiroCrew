@@ -77,6 +77,9 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     _COMPOSER_ACTION_POPOVER,
     _FILE_MENU_KINDS,
     _HOST_RE,
+    _KEY_MODIFIERS,
+    _KEY_NAMED,
+    _KEY_PUNCT,
     _MAX_ARGUMENT_HOSTS,
     _MAX_COMMANDS_PER_APP,
     _MAX_FILE_MENU_ITEMS_PER_APP,
@@ -114,12 +117,14 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     MAX_MESSAGE_ACTIONS_PER_APP,
     MAX_SELECTION_ACTIONS_PER_APP,
     MAX_SELECTION_TEXT,
+    MAX_SESSION_CONTROL_KEYS,
     MAX_SESSION_CONTROLS_PER_APP,
     MESSAGE_ACTION_FORMATS,
     MESSAGE_ACTION_ROLES,
     SELECTION_EFFECTS,
     SELECTION_SOURCES,
     SESSION_CONTROL_DEFAULT_WIDTH,
+    SESSION_CONTROL_KEY_ARG_MAX_BYTES,
     SESSION_CONTROL_MAX_WIDTH,
     TEXT_PATTERN_TONES,
     CommandArgument,
@@ -134,11 +139,14 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     PanelTabConfig,
     SelectionActionConfig,
     SessionControlContribution,
+    SessionControlKey,
     _int_field,
     _mirrored_len,
     _name_list,
     _normalize_status_path,
+    _session_control_width,
     _strict_int,
+    session_control_key_default_error,
 )
 from kiro_crew.apps.manifest_names import (  # noqa: F401
     APP_NAME_MAX_LENGTH,
@@ -474,6 +482,44 @@ def _optional_text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _session_control_key_errors(ctl: SessionControlContribution) -> list[str]:
+    """Why a session control's ``keys`` would be refused at install, one line each."""
+    name = f"session control contribution {ctl.id or '<unnamed>'}"
+    if ctl.bad_keys:
+        return [f"{name} keys must be an array"]
+    errors: list[str] = []
+    if len(ctl.keys) > MAX_SESSION_CONTROL_KEYS:
+        errors.append(f"{name}: at most {MAX_SESSION_CONTROL_KEYS} keys (declared {len(ctl.keys)})")
+    seen: set[str] = set()
+    for key in ctl.keys:
+        if not key.id:
+            errors.append(f"{name} key missing required field: id")
+        elif not _SESSION_CONTROL_ID_RE.fullmatch(key.id):
+            errors.append(f"{name} key id must be kebab-case: {key.id!r}")
+        elif key.id in seen:
+            errors.append(f"{name} key id is duplicated: {key.id!r}")
+        else:
+            seen.add(key.id)
+        if not key.label.strip():
+            errors.append(f"{name} key {key.id or '<unnamed>'} missing required field: label")
+        if key.default != "":
+            why = (
+                session_control_key_default_error(key.default)
+                if isinstance(key.default, str)
+                else 'it must be a string such as "Alt+Shift+Q"'
+            )
+            if why:
+                errors.append(f"{name} key {key.id or '<unnamed>'} default {key.default!r}: {why}")
+        if key.arg is not None:
+            size = len(json.dumps(key.arg, ensure_ascii=False).encode())
+            if size > SESSION_CONTROL_KEY_ARG_MAX_BYTES:
+                errors.append(
+                    f"{name} key {key.id or '<unnamed>'} arg is {size} bytes as JSON "
+                    f"(at most {SESSION_CONTROL_KEY_ARG_MAX_BYTES})"
+                )
+    return errors
+
+
 @dataclass
 class AppManifest:
     """Static metadata for a KiroCrew app — readable without executing app code.
@@ -751,7 +797,10 @@ class AppManifest:
                     refusal,
                     f"session control contribution entryPoint {refusal}: {ctl.entryPoint!r}",
                 )
-            if ctl.width and not SESSION_CONTROL_DEFAULT_WIDTH <= ctl.width <= SESSION_CONTROL_MAX_WIDTH:
+            if (
+                ctl.width
+                and not SESSION_CONTROL_DEFAULT_WIDTH <= ctl.width <= SESSION_CONTROL_MAX_WIDTH
+            ):
                 errors.append(
                     f"session control contribution {ctl.id or '<unnamed>'} width must be a whole number of px "
                     f"from {SESSION_CONTROL_DEFAULT_WIDTH} to {SESSION_CONTROL_MAX_WIDTH}"
@@ -764,6 +813,7 @@ class AppManifest:
                     f"session control contribution {ctl.id or '<unnamed>'} statusPath must be a relative "
                     f"backend route (lowercase, no scheme, host or query): {ctl.statusPath!r}"
                 )
+            errors.extend(_session_control_key_errors(ctl))
 
         # Cron validation. The cron modules are imported only for a manifest
         # that declares crons: a manifest is also read by the stdio MCP servers

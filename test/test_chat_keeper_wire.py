@@ -251,6 +251,8 @@ def test_the_transport_imports_where_signal_has_no_sigkill() -> None:
     import subprocess
     import sys
 
+    from kiro_crew.testing.wait import FALLBACK_TIMEOUT_SECS
+
     probe = (
         "import signal; del signal.SIGKILL; "
         "from kiro_crew.chat_keeper import transport; print(transport.LOST_RETURNCODE)"
@@ -260,7 +262,7 @@ def test_the_transport_imports_where_signal_has_no_sigkill() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=120,
+        timeout=FALLBACK_TIMEOUT_SECS,
     )
     assert done.returncode == 0, done.stderr
     assert int(done.stdout.strip()) < 0

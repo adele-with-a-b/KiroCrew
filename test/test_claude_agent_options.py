@@ -81,7 +81,9 @@ def _bot(monkeypatch, tmp_path, block=None, session="dashboard_member-bot", mate
     import kiro_crew.crewmate_harness as harness
     import kiro_crew.mate_config as mate_config
 
-    monkeypatch.setattr(harness, "crewmate_for_session", lambda _cfg, key: mate if key == session else "")
+    monkeypatch.setattr(
+        harness, "crewmate_for_session", lambda _cfg, key: mate if key == session else ""
+    )
     mates = tmp_path / "mates"
     mates.mkdir(exist_ok=True)
     monkeypatch.setattr(mate_config, "mate_config_path", lambda mid: mates / f"{mid}.json")
@@ -98,7 +100,9 @@ def _session_options(tmp_path, session: str, agent: str = "kirocrew-mate-conduct
     return client._claude_session_meta()["claudeCode"]["options"]
 
 
-def test_a_bot_without_a_block_gets_strict_mcp_and_no_auto_memory(tmp_path, agents_dir, monkeypatch):
+def test_a_bot_without_a_block_gets_strict_mcp_and_no_auto_memory(
+    tmp_path, agents_dir, monkeypatch
+):
     _bot(monkeypatch, tmp_path)
     options = _session_options(tmp_path, "dashboard_member-bot")
     assert options["strictMcpConfig"] is True
@@ -111,7 +115,11 @@ def test_a_bots_own_block_sets_its_memory_env_and_tools(tmp_path, agents_dir, mo
     _bot(
         monkeypatch,
         tmp_path,
-        {"autoMemoryDirectory": mem, "env": {"OPENCLAW_AGENT": "victor"}, "tools": ["Read", "Bash"]},
+        {
+            "autoMemoryDirectory": mem,
+            "env": {"OPENCLAW_AGENT": "victor"},
+            "tools": ["Read", "Bash"],
+        },
     )
     options = _session_options(tmp_path, "dashboard_member-bot")
     assert options["settings"]["autoMemoryDirectory"] == mem

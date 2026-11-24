@@ -1482,7 +1482,7 @@ Rules:
    People Advanced row shows the restart badge. A timer armed on the event loop at the
    earliest lease's idle end (`arm_idle_timer`) ends it on time; the socket status
    tick's presence sweep also sweeps leases.
-5. The host enforces it. `chat_send._composer_locked_answer` runs before the
+5. The host enforces it. `send_lease._composer_locked_answer` runs before the
    send race: a dashboard user's send while someone else holds the lease answers
    409 `{"error", "code": "composer_locked", session_key, holder (public), lease}`
    and nothing is accepted. A steer into a running turn passes, and Stop is a
