@@ -292,7 +292,7 @@ class Keeper:
             os._exit(0)
 
     def remove_files(self) -> None:
-        for suffix in (SOCKET_SUFFIX, ".json", ".key", ".log"):
+        for suffix in (SOCKET_SUFFIX, ".json", ".key", ".token", ".log"):
             with _suppress_missing():
                 (self.args.directory / f"{self.args.instance}{suffix}").unlink()
 

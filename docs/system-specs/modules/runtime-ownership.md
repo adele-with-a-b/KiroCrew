@@ -1019,11 +1019,14 @@ before, and its group dies with it.
   - `<instance>.json`: the record (session key, backend, keeper pid and start token,
     adapter pid, socket path, wire version, creation time; nothing secret);
   - `<instance>.key`: 32 random bytes, mode 0600;
+  - `<instance>.token`: the chat's session token (`session_token_sig`) that the
+    launching gateway put in the adapter's environment, mode 0600, written by the
+    gateway only (see "What the adopting gateway rebuilds");
   - `<instance>.s`: the listener, mode 0600. The name is short because AF_UNIX caps
     the whole path at 103 bytes;
   - `<instance>.log`: the keeper's own log.
 
-  The keeper removes all four when it ends.
+  The keeper removes all five when it ends.
 - **The secret never rides argv or the environment.** Any same-uid process can read
   both (`ps`, `KERN_PROCARGS2`, `/proc/<pid>/environ`). The gateway mints the secret,
   writes the key file and hands the secret to the keeper on its stdin, which the
@@ -1043,7 +1046,8 @@ before, and its group dies with it.
   for one. Each keeper has its own secret, so a key one chat could read opens no
   other. With the sandbox off, the agent runs as the operator with the operator's
   reach. It can then read the key, just as it can read `token_signing.key`; the keeper
-  adds no exposure beyond that.
+  adds no exposure beyond that. The same holds for `<instance>.token`: the token is
+  already in the chat's own process environment, which the operator's reach covers.
 - **One attachment at a time.** An authenticated attach replaces the current one,
   because only a gateway holds the secret and a new attach means the old gateway is
   gone or going. An unauthenticated connection never affects the current attachment.
@@ -1187,6 +1191,29 @@ An adopted client also gets what the launching gateway's `launch()` set on its o
 client: the record's `launch` state restores `_scratch_dir` (unless it was swept
 since), `_sandbox_wrapped_by_crew`, `_sandbox_hidden_dirs`, `_child_env_names` and
 `_ssh_auth_sock_forwarded` (`client_keeper.restore_launch_state`).
+
+**The kept chat keeps its session identity.** The adapter and every MCP server under
+it carry, in their environment, the session token the launching client minted
+(`client_spawn_env`), and an identity-bound tool call is admitted only when that
+token verifies to the chat's key (`member_memory_auth.session_key_is_attested`; a
+refused policy read is `identity_unattested`). The adopting client mints its own
+token at construction, which no process of the kept chat holds, and a gateway
+republishes only its client's token. So `KeeperSpawn` writes the launching client's
+token to `<instance>.token`, and `client_keeper._restore_session_token`, run first
+in `restore_launch_state`, sets it as the adopting client's `_stub_session_token` and
+publishes its mapping before the adopt handshake resumes the kept turn. Every later
+turn that publishes the turn's identity (`messaging.identity.publish_turn_identity`)
+republishes the same token, as for any chat. Without this, a kept chat worked only while a mapping the launching
+gateway wrote still existed. It had none when no turn ran under that gateway (the
+keeper a restart's own boot started), and a mapping that did exist was pruned a
+week after its last write. The token is restored only for a record whose session
+key is the client's, from a file only a gateway writes in the `HIDDEN` keepers
+directory, read without following a link, owned by this uid and shaped as a minted
+token. That directory is the control; besides, a token a live mapping vouches for
+another chat is not re-pointed to this one. A refused adopt keeps the restored token
+for the fresh adapter that replaces the keeper: it is the same chat's. A
+keeper from a build that kept no token leaves the client its own, as before
+(`test_chat_keeper_session_token.py`).
 
 A refusal ends the keeper (see "Process tree and who reaps a keeper") before the
 replacement spawns, so two adapters never run one session.

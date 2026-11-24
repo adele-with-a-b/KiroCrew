@@ -81,7 +81,9 @@ def mint_stub_session_token() -> str:
     gatewayd against the token a claim carries. It is a bearer name for a
     session's identity, so it must be unguessable — hence ``secrets`` — and it
     must never be logged, exported in ``stats()``, or written to the stub
-    fallback journal.
+    fallback journal. The one copy at rest is a kept chat's
+    ``chat-keepers/<instance>.token`` (0600, in a ``HIDDEN`` leaf), which the
+    gateway that adopts the chat reads to vouch for it again.
     """
     return secrets.token_hex(_TOKEN_BYTES)
 

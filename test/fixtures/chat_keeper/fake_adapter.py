@@ -13,6 +13,8 @@ sent while a prompt runs is answered while the prompt is still running.
   ``tool`` is set, and writes the answer it got as a chunk,
   then waits for ``gate`` (when given), writes ``after`` chunks and answers.
 * ``exit`` exits with ``code``.
+* ``getenv`` answers the value of its environment variable ``name`` ("" when unset),
+  as every MCP server the adapter starts inherits it.
 * ``ignore_term`` ignores SIGTERM from then on, so only a SIGKILL ends it.
 
 A gate is a FIFO: opening it for reading blocks until the test opens it to write,
@@ -109,6 +111,9 @@ def main():
             mask = os.umask(0)
             os.umask(mask)
             _out({"jsonrpc": "2.0", "id": req_id, "result": {"umask": mask}})
+        elif method == "getenv":
+            value = os.environ.get(str(params.get("name")), "")
+            _out({"jsonrpc": "2.0", "id": req_id, "result": {"value": value}})
         elif method == "ignore_term":
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
             _out({"jsonrpc": "2.0", "id": req_id, "result": {}})

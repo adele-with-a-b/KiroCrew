@@ -156,6 +156,9 @@ class KeeperSpawn:
     #: The launching client's process instance, kept in the record for the adopter.
     process_instance: str = ""  # pid-owner-ok: keeper launch id
     secret: bytes = field(default_factory=lambda: os.urandom(wire.SECRET_BYTES), repr=False)
+    #: The session token the adapter's environment carries (``client_spawn_env``),
+    #: kept beside the key so the gateway that adopts the keeper can vouch for it.
+    session_token: str = field(default="", repr=False)
     #: :func:`launch_state`, set by ``launch()`` before :meth:`finish` records it.
     launch: dict[str, Any] = field(default_factory=dict)
     _inner: list[str] = field(default_factory=list, repr=False)
@@ -246,6 +249,10 @@ class KeeperSpawn:
             launch=dict(self.launch),
         )
         await asyncio.to_thread(records.write_key, self.instance, self.secret, self.home)
+        if self.session_token:
+            await asyncio.to_thread(
+                records.write_session_token, self.instance, self.session_token, self.home
+            )
         await asyncio.to_thread(records.write_record, record, self.home)
         process = await attach(record, self.secret, hold=False, stdout_limit=self.stdout_limit)
         logger.info(
