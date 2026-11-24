@@ -2135,7 +2135,7 @@
         "failed_desktop_unsupported": "“{{app}}” can't be installed in the desktop version of {{productName}}, and nothing was changed.",
         "failed_desktop_unsupported_help": "It needs Python packages the desktop build can't add; ask the app's author to ship them with the app, or open {{productName}} in a web browser instead of the desktop version.",
         "open_files_heading": "It can open files when you click in it",
-        "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files Kiro Crew keeps private are refused."
+        "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files {{productName}} keeps private are refused."
       },
       "registryTier": {
         "curated": "Team reviewed",
@@ -5408,7 +5408,7 @@
       },
       "grants_reconsent_composer_actions": "Composer buttons: lets the app add these buttons to the composer's + menu. A click inserts the app's text into your draft; the app can't see the draft or send it.",
       "grants_reconsent_selection_actions": "Selected-text actions: lets the app's items be handed text you select in chat replies, and offer it back for Copy or Open.",
-      "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files Kiro Crew keeps private are refused.",
+      "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files {{productName}} keeps private are refused.",
       "grants_reconsent_open_files": "Opening a file it picks in its default app after you click in it. A script or an app runs when it opens."
     },
     "appsPage": {

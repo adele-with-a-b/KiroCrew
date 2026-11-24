@@ -269,6 +269,8 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _BREADCRUMB_FILE,
         _BREADCRUMB_MAX_BYTES,
         _IMAGE_TOKEN,
+        _LEGACY_BREADCRUMB_FILE,
+        _REARMED_SOURCES,
         _breadcrumb_idle,
         _breadcrumb_io_lock,
         _breadcrumb_path,

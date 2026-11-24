@@ -811,6 +811,13 @@ _GATEWAY_SINKS: tuple[tuple[str, str, str], ...] = (
         "to the browser.",
     ),
     (
+        "Chat session-id list",
+        "dashboard/handlers/slot_sids.py",
+        "The chat title in a chat's session-id list, returned to the person or to an "
+        "app with that chat in its slot scope, passes the same display redaction as "
+        "the slot snapshot's title.",
+    ),
+    (
         "Session detach notice",
         "dashboard/state_parts/session_events.py",
         "The notice sent to a channel whose session-resume binding was cleared — a "

@@ -1373,6 +1373,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _parse_etime,
         _read_env_has_kirocrew_marker,
         _read_tracked_agent_pids,
+        _reparented_pids,
         _reported_untracked_agent_pids,
         _tracked_agent_pids,
         _work_orphan_session_leader_alive,

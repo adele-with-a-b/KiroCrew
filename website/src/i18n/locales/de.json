@@ -6614,7 +6614,7 @@
         "failed_desktop_unsupported": "„{{app}}“ kann in der Desktop-Version von {{productName}} nicht installiert werden, und es wurde nichts geändert.",
         "failed_desktop_unsupported_help": "Sie braucht Python-Pakete, die der Desktop-Build nicht hinzufügen kann; bitte den Autor der App, sie mit der App auszuliefern, oder öffne {{productName}} statt in der Desktop-Version in einem Webbrowser.",
         "open_files_heading": "Sie kann Dateien öffnen, wenn du darin klickst",
-        "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die Kiro Crew privat hält, werden abgelehnt."
+        "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die {{productName}} privat hält, werden abgelehnt."
       },
       "registryTier": {
         "curated": "Vom Team geprüft",
@@ -11953,7 +11953,7 @@
       },
       "grants_reconsent_composer_actions": "Eingabefeld-Schaltflächen: Die App darf diese Schaltflächen zum +-Menü des Eingabefelds hinzufügen. Ein Klick fügt den Text der App in deinen Entwurf ein; die App kann den Entwurf weder sehen noch senden.",
       "grants_reconsent_selection_actions": "Aktionen für ausgewählten Text: Die Einträge der App erhalten Text, den du in Chat-Antworten auswählst, und können ein Ergebnis zum Kopieren oder Öffnen anbieten.",
-      "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die Kiro Crew privat hält, werden abgelehnt.",
+      "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die {{productName}} privat hält, werden abgelehnt.",
       "grants_reconsent_open_files": "Eine Datei ihrer Wahl in deren Standard-App öffnen, nachdem du darin klickst. Ein Skript oder eine App wird beim Öffnen ausgeführt."
     },
     "appPage": {

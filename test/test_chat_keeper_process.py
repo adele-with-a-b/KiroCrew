@@ -355,6 +355,7 @@ async def test_a_gateway_on_another_home_does_not_take_a_keeper_for_an_orphan(
     keeper's stdin. The control, a reparented child whose argv carries that marker,
     is a candidate in the same pass, so the pass does reach reparented pids.
     """
+    from kiro_crew import session_pid
     from kiro_crew import session_pid_orphan_scan as scan
 
     keeper = await _start(home)
@@ -373,7 +374,7 @@ async def test_a_gateway_on_another_home_does_not_take_a_keeper_for_an_orphan(
         # What a gateway exit leaves: both reparented to init. The age floor is
         # lifted so it cannot be what spares the keeper.
         monkeypatch.setattr(scan, "_reparented_pids", lambda: [keeper.pid, control.pid])
-        monkeypatch.setattr(scan, "_ORPHAN_MIN_AGE_SECONDS", 0)
+        monkeypatch.setattr(session_pid, "_ORPHAN_MIN_AGE_SECONDS", 0)
 
         candidates = scan.find_orphan_mcp_candidates(set())
 

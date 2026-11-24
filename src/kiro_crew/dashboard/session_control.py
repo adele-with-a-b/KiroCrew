@@ -422,6 +422,7 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         _DENY_CODE_CHANNEL,
         _DENY_OPERATION,
         _DENY_TARGET,
+        CREATOR_MESSAGE_ONLY,
         MIRROR_PEER_NOT_ON_RECORD,
         NOT_THE_SOLE_OWNER,
         ORIGIN_NOT_ON_RECORD,
@@ -434,6 +435,7 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         _code_channel_admitted,
         _deny_factory,
         _deny_operation,
+        _is_callers_creator,
         _live_target_refusal,
         _not_creator_reason,
         _owner_dm_clauses,
@@ -466,6 +468,7 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
 if TYPE_CHECKING:  # names this module re-exported from other modules
     from kiro_crew import model_registry  # noqa: F401
     from kiro_crew import model_scope  # noqa: F401
+    from kiro_crew import steer_refusal  # noqa: F401
     from kiro_crew.agent_files import WORKER_AGENT_FILENAME  # noqa: F401
     from kiro_crew.agent_sdk.backends import ACP_BACKENDS_MODEL_EFFORT_PAIR_IDS  # noqa: F401
     from kiro_crew.agent_sdk.capabilities import MODEL_NAMESPACE_ACP  # noqa: F401
@@ -492,6 +495,7 @@ if TYPE_CHECKING:  # names this module re-exported from other modules
     from kiro_crew.dashboard import session_managers  # noqa: F401
     from kiro_crew.dashboard.approval_inheritance import inherit_posture  # noqa: F401
     from kiro_crew.dashboard.chat_delivery import sanitize_outbound  # noqa: F401
+    from kiro_crew.dashboard.chat_delivery import steer_refusal_of  # noqa: F401
     from kiro_crew.dashboard.chat_folders import _folder_declared_project  # noqa: F401
     from kiro_crew.dashboard.chat_folders import _resolve_folder_project_dir  # noqa: F401
     from kiro_crew.dashboard.chat_folders import _slot_meta_txn_lock  # noqa: F401

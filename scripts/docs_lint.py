@@ -375,6 +375,10 @@ _UNRESOLVABLE_REF_OK: frozenset[str] = frozenset(
         # `agent_parts/spec_build.py`'s `_shipped_defaults()`; the shipped file is
         # `config/defaults.json`, which resolves.
         "agents/defaults.json",
+        # Kept trust records, `config_dir() / KEPT_DIR / CHATS_FILE` and
+        # `/ YOLO_FILE` in `kept_trust.py`.
+        "kept-trust/chats.json",
+        "kept-trust/yolo.json",
         #
         # -- FOREIGN homes. The `onboarding_sources/` adapters read other tools' config dirs
         #    to offer an import, so naming their layout is the point.

@@ -169,7 +169,15 @@ _CAP_REGISTER: dict[str, tuple[str, str]] = {
     # ceiling is far above any legitimate body.
     "chat_todo.py::api_chat_slot_todo": ("<default>", _BOUNDED_BY_DEFAULT),
     # Fork: the attach-conversation endpoint's body is one conversation id.
-    "attach_conversation.py::api_chat_slot_attach_conversation": ("<default>", _BOUNDED_CONTROL_FIELDS),
+    "attach_conversation.py::api_chat_slot_attach_conversation": (
+        "<default>",
+        _BOUNDED_CONTROL_FIELDS,
+    ),
+    # Fork: an app's status-changed body is at most one session key.
+    "handlers/app_status_changed.py::api_app_status_changed": (
+        "<default>",
+        _BOUNDED_CONTROL_FIELDS,
+    ),
     # Mate's one-line Global preference: a short sentence, so a 4 KB cap
     # is well above any legitimate body and far below the shared default.
     # A thread reply is one text field (capped at 32 KiB by the handler) plus a

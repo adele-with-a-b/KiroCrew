@@ -719,8 +719,8 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
     """
     aimed_at = self._steering_turn_req
     refusal = _steering_refusal(self, aimed_at)
-    if refusal:
-        self.steer_refusal = refusal
+    if refusal or aimed_at is None:
+        self.steer_refusal = refusal or steer_refusal.REFUSED
         return False
     waiters = self._steering_waiters()
     accepted = getattr(self, "_steers_accepted", None)

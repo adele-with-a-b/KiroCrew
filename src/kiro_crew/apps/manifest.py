@@ -77,6 +77,9 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     _COMPOSER_ACTION_POPOVER,
     _FILE_MENU_KINDS,
     _HOST_RE,
+    _KEY_MODIFIERS,
+    _KEY_NAMED,
+    _KEY_PUNCT,
     _MAX_ARGUMENT_HOSTS,
     _MAX_COMMANDS_PER_APP,
     _MAX_FILE_MENU_ITEMS_PER_APP,
@@ -114,12 +117,12 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     MAX_MESSAGE_ACTIONS_PER_APP,
     MAX_SELECTION_ACTIONS_PER_APP,
     MAX_SELECTION_TEXT,
+    MAX_SESSION_CONTROL_KEYS,
     MAX_SESSION_CONTROLS_PER_APP,
     MESSAGE_ACTION_FORMATS,
     MESSAGE_ACTION_ROLES,
     SELECTION_EFFECTS,
     SELECTION_SOURCES,
-    MAX_SESSION_CONTROL_KEYS,
     SESSION_CONTROL_DEFAULT_WIDTH,
     SESSION_CONTROL_KEY_ARG_MAX_BYTES,
     SESSION_CONTROL_MAX_WIDTH,
@@ -136,12 +139,14 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     PanelTabConfig,
     SelectionActionConfig,
     SessionControlContribution,
+    SessionControlKey,
     _int_field,
-    session_control_key_default_error,
     _mirrored_len,
     _name_list,
     _normalize_status_path,
+    _session_control_width,
     _strict_int,
+    session_control_key_default_error,
 )
 from kiro_crew.apps.manifest_names import (  # noqa: F401
     APP_NAME_MAX_LENGTH,
@@ -501,7 +506,7 @@ def _session_control_key_errors(ctl: SessionControlContribution) -> list[str]:
             why = (
                 session_control_key_default_error(key.default)
                 if isinstance(key.default, str)
-                else "it must be a string such as \"Alt+Shift+Q\""
+                else 'it must be a string such as "Alt+Shift+Q"'
             )
             if why:
                 errors.append(f"{name} key {key.id or '<unnamed>'} default {key.default!r}: {why}")
@@ -792,7 +797,10 @@ class AppManifest:
                     refusal,
                     f"session control contribution entryPoint {refusal}: {ctl.entryPoint!r}",
                 )
-            if ctl.width and not SESSION_CONTROL_DEFAULT_WIDTH <= ctl.width <= SESSION_CONTROL_MAX_WIDTH:
+            if (
+                ctl.width
+                and not SESSION_CONTROL_DEFAULT_WIDTH <= ctl.width <= SESSION_CONTROL_MAX_WIDTH
+            ):
                 errors.append(
                     f"session control contribution {ctl.id or '<unnamed>'} width must be a whole number of px "
                     f"from {SESSION_CONTROL_DEFAULT_WIDTH} to {SESSION_CONTROL_MAX_WIDTH}"

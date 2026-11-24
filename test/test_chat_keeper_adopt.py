@@ -306,7 +306,7 @@ async def test_a_spawn_with_no_keeper_of_its_chat_computes_no_fingerprint(monkey
 def test_the_sandbox_fingerprint_follows_the_mode_the_masks_and_the_leaf_tables(
     monkeypatch,
 ) -> None:
-    from kiro_crew import sandbox_leaves
+    from kiro_crew import sandbox
     from kiro_crew.chat_keeper.spawn import sandbox_fingerprint
 
     base = sandbox_fingerprint("strict", ("/a",))
@@ -315,26 +315,24 @@ def test_the_sandbox_fingerprint_follows_the_mode_the_masks_and_the_leaf_tables(
     assert sandbox_fingerprint("strict", ("/a", "/b")) != base
     assert sandbox_fingerprint("strict", ("/a",), ("/e",)) != base, "an exposed file"
     assert sandbox_fingerprint("strict", ("/a",), (), True) != base, "the harness's own sandbox"
-    monkeypatch.setattr(
-        sandbox_leaves, "_CREW_HIDDEN_LEAVES", (*sandbox_leaves._CREW_HIDDEN_LEAVES, "new.key")
-    )
+    monkeypatch.setattr(sandbox, "_CREW_HIDDEN_LEAVES", (*sandbox._CREW_HIDDEN_LEAVES, "new.key"))
     assert sandbox_fingerprint("strict", ("/a",)) != base, "an update's new HIDDEN leaf"
 
 
 def test_the_sandbox_fingerprint_follows_the_floor_and_the_read_only_layer(monkeypatch) -> None:
-    from kiro_crew import sandbox_tiers
+    from kiro_crew import sandbox
     from kiro_crew.chat_keeper.spawn import sandbox_fingerprint
 
-    monkeypatch.setattr(sandbox_tiers, "_governance_sandbox_floor", lambda: None)
-    monkeypatch.setattr(sandbox_tiers, "configured_readonly_layer", lambda: ((), ()))
+    monkeypatch.setattr(sandbox, "_governance_sandbox_floor", lambda: None)
+    monkeypatch.setattr(sandbox, "configured_readonly_layer", lambda: ((), ()))
     base = sandbox_fingerprint("standard", ())
-    monkeypatch.setattr(sandbox_tiers, "_governance_sandbox_floor", lambda: "strict")
+    monkeypatch.setattr(sandbox, "_governance_sandbox_floor", lambda: "strict")
     assert sandbox_fingerprint("standard", ()) != base, "a raised min_level floor"
     assert sandbox_fingerprint("standard", ()) == sandbox_fingerprint(
         "strict", ()
     ), "the tier the wrap applies, not the one asked for"
-    monkeypatch.setattr(sandbox_tiers, "_governance_sandbox_floor", lambda: None)
-    monkeypatch.setattr(sandbox_tiers, "configured_readonly_layer", lambda: (("/ro",), ()))
+    monkeypatch.setattr(sandbox, "_governance_sandbox_floor", lambda: None)
+    monkeypatch.setattr(sandbox, "configured_readonly_layer", lambda: (("/ro",), ()))
     assert sandbox_fingerprint("standard", ()) != base, "a new read-only path"
 
 
@@ -660,7 +658,7 @@ async def test_a_second_start_of_a_kept_chat_neither_takes_nor_ends_its_keeper(
     late = asyncio.ensure_future(client_keeper.adopt_for(second, lambda: "s"))  # type: ignore[arg-type]
     try:
         with pytest.raises(client_keeper.KeeperHeldElsewhere):
-            await await_until(late, timeout=10.0, what="the second start's adopt")
+            await await_until(late, what="the second start's adopt")
     finally:
         go.set()
     process = await await_until(adopting, what="the first start's adopt")
