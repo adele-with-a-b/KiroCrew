@@ -39,6 +39,14 @@ KIROCREW_SPAWN_HOME_ENV = "KIROCREW_SPAWN_HOME"
 # runtime regardless of host. Read back out of ``/proc/<pid>/environ`` by the
 # process-leak gate to tell the gateway's own background runtime from a session's.
 KIROCREW_RUNTIME_AGENT_ENV = "KIROCREW_RUNTIME_AGENT"
+# The agent ONE claude session runs, from Crew's own session record, set on every
+# claude session's envelope for its ``claude`` child
+# (``client_claude_session._name_the_session_agent``). Not the runtime's: a
+# process env is fixed at spawn, and one inherited from a parent (a gateway
+# started in a chat's shell) names another session's, so the spawn builders drop it.
+# A label, not proof of who created the session: any chat able to create a session
+# can create one that runs ``kirocrew-conductor``.
+KIROCREW_SESSION_AGENT_ENV = "KIROCREW_SESSION_AGENT"
 # Set on every tree spawned through ``sandbox.sandboxed_spawn_argv`` -- a build, an
 # ``npx`` install, a ``git``/``gh`` read, a provisioning run -- and inherited by that
 # whole tree exactly as KIROCREW_SPAWNED is. It says what KIROCREW_SPAWNED does not:

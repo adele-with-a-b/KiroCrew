@@ -4522,6 +4522,7 @@
       "conductor_mode_ms_waiting_pr": "Waiting on PR #{{n}}",
       "conductor_mode_ms_waiting_no_reason": "Paused, no reason given",
       "conductor_mode_ms_done_fold": "{{n}} done",
+      "conductor_mode_ms_not_done_fold": "Not done ({{n}})",
       "conductor_mode_ms_pr": "· PR #{{n}}",
       "conductor_mode_run_working": "Working",
       "conductor_mode_run_waiting": "Waiting for you",

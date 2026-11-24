@@ -741,7 +741,8 @@ def _session_tools() -> tuple[Tool, ...]:
                             "the target is idle (the message starts a turn either "
                             "way), and when mid-turn injection is unavailable the "
                             "message falls back to the queue rather than being "
-                            "dropped. Default false."
+                            "dropped, and the result says why and what it now "
+                            "waits for. Default false."
                         ),
                     },
                 },
@@ -845,10 +846,13 @@ def _session_tools() -> tuple[Tool, ...]:
                 "refused and delivers nothing, so when your audience computes to "
                 "nobody, skip the call. `mode` picks the delivery "
                 "and is required, because the two are different instructions: "
-                "`queue` waits for each target's current turn to end (use it for "
-                "'the base moved, rebase before you push'), while `steer` cuts "
-                "into every running turn so each target reads it mid-work (use it "
-                "for 'stop, that issue is already fixed'). Every target is checked "
+                "`queue` waits for each target's current turn to end, which can be "
+                "hours for a worker that does all its work in one turn (use it for "
+                "what is only useful after that turn, like 'when you finish, start "
+                "on the next item'), while `steer` cuts into every running turn so "
+                "each target reads it at its next step (use it for what must reach "
+                "a worker before it acts, like 'the base moved, rebase before you "
+                "push' or 'stop, that issue is already fixed'). Every target is checked "
                 "the same way a single session_send is, so this can reach nothing "
                 "a session_send could not. PARTIAL DELIVERY IS NORMAL and the "
                 "result says so per target: a session that was closed, went "
@@ -880,7 +884,8 @@ def _session_tools() -> tuple[Tool, ...]:
                             "target reads it mid-work; on an idle target it starts "
                             "a turn either way, and where mid-turn injection is "
                             "unavailable that target falls back to its queue "
-                            "rather than being dropped. No default — say which."
+                            "rather than being dropped, and its row says why. No "
+                            "default — say which."
                         ),
                     },
                     "targets": {

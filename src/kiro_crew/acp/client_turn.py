@@ -35,6 +35,7 @@ import time
 from contextlib import aclosing
 from typing import TYPE_CHECKING, AsyncGenerator, AsyncIterator, Callable
 
+from kiro_crew import steer_refusal
 from kiro_crew.acp import (
     batch_guard,
     disposed_session,
@@ -1048,15 +1049,27 @@ async def _dispatch_events(
         batch_window.reset()
     got_complete = False
     saw_agent_switch = False
-    # A prompt turn takes ``_session/steering`` steers; a command turn and a
-    # turn the agent started do not. Steers accepted into or held for an
-    # earlier turn were settled or dropped there.
+    # A prompt turn takes ``_session/steering`` steers; a command turn does not,
+    # and a turn the agent started takes them, folded in as a prompt, only on an
+    # adapter shown to fold one (``_steer_via_folded_prompt``). Steers accepted
+    # into or held for an earlier turn were settled or dropped there.
     self._steers_accepted = []
     self._steers_held = []
     self._held_steers_unanswered = set()
+    agent_started = req_id == _AGENT_STARTED_REQUEST_ID
+    if agent_started:
+        self._agent_turn_serial += 1
+    folds = agent_started and self._folds_prompt_into_agent_turn()
     self._steering_turn_req = (
-        None if extract_agent_from_result or req_id == _AGENT_STARTED_REQUEST_ID else req_id
+        None if extract_agent_from_result or (agent_started and not folds) else req_id
     )
+    # What a steer this turn refuses tells its sender (``kiro_crew.steer_refusal``).
+    if agent_started and not folds:
+        self._steering_closed_by = steer_refusal.AGENT_TURN
+    elif extract_agent_from_result:
+        self._steering_closed_by = steer_refusal.COMMAND_TURN
+    else:
+        self._steering_closed_by = ""
 
     _prompt_events = self._prompt_loop(req_id, timeout)
     async for action, msg in _prompt_events:

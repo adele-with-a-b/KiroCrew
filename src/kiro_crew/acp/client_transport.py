@@ -613,14 +613,27 @@ async def _read_turn(
     request sent while this turn reads, which it leaves at the front of
     ``_buffer`` for that request's reader. The answer to a steering request
     ends no turn: it is passed on as a stray response, as in a user turn.
+
+    A steer folded into the turn as a ``session/prompt``
+    (``_steer_via_folded_prompt``) makes that prompt the turn's owner, so the
+    turn ends on the prompt's answer, with its stop reason, and the cycle's
+    closing usage update does not end it while that answer is still ahead. An
+    error answer drops the steer it carried, and ends the turn when the close
+    already came. A fold the turn ends without (a cancel, a response to a later
+    request) is not reported read either. A folded prompt answered after its own
+    turn ended ran on as a prompt of its own, so its answer ends the turn
+    reading that tail, as any earlier prompt's response does.
     """
     first_unsent_id = self._next_id
     unanswered_steering = self._unanswered_steering_ids()
+    folded = self._folded_prompts()
     await self._claim_stdout()
     try:
         # An end marker read before this turn's first activity belongs to an
         # earlier cycle, so it does not end this one.
         saw_activity = False
+        # The cycle's close came while a fold of this turn was unanswered.
+        closed_under_fold = False
         async with aclosing(prompt_loop(req_id, timeout)) as frames:
             async for action, msg in frames:
                 # _prompt_loop hands a steer that still waits its answer first,
@@ -628,27 +641,68 @@ async def _read_turn(
                 late_steering_answer = msg.method is None and msg.id in unanswered_steering
                 if late_steering_answer:
                     unanswered_steering.discard(msg.id)
+                answered_fold = (
+                    folded.pop(msg.id, None)
+                    if msg.method is None and isinstance(msg.id, int)
+                    else None
+                )
                 if req_id != _AGENT_STARTED_REQUEST_ID or late_steering_answer:
-                    yield action, msg
+                    if answered_fold is None:
+                        yield action, msg
                     continue
                 result: dict = {}
-                if msg.method is None and isinstance(msg.id, int) and msg.id >= first_unsent_id:
+                if answered_fold is not None and answered_fold[0] != self._agent_turn_serial:
+                    # A fold whose own turn ended first ran on as a prompt of its
+                    # own, so its answer closes this cycle like any prompt's tail.
+                    answered_fold = None
+                if answered_fold is not None:
+                    if msg.error is not None or not isinstance(msg.result, dict):
+                        self._drop_folded_steer(answered_fold[1])
+                        if not closed_under_fold:
+                            continue
+                        # The adapter failed the cycle the fold owned after its
+                        # close: nothing else is left to end this turn.
+                    else:
+                        result = msg.result
+                elif msg.method is None and isinstance(msg.id, int) and msg.id >= first_unsent_id:
                     self._buffer.appendleft(msg)
                 else:
                     yield action, msg
                     saw_activity = saw_activity or _starts_agent_turn(msg, self.backend)
                     if not (saw_activity and _ends_agent_started_turn(msg)):
                         continue
+                    if msg.method is not None and any(
+                        serial == self._agent_turn_serial for serial, _text in folded.values()
+                    ):
+                        # The folded prompt owns the turn now; its answer ends it.
+                        closed_under_fold = True
+                        continue
                     # A prompt's late response keeps its own stop reason and usage.
                     if isinstance(msg.result, dict):
                         result = msg.result
+                # Before the complete: its reader releases the accepted steers on it.
+                _requeue_unanswered_folds(self, folded)
                 if not result.get("stopReason"):
                     reason = STOP_REASON_CANCELLED if self._cancelled else STOP_REASON_END_TURN
                     result = {"stopReason": reason}
                 yield "complete", JsonRpcMessage(id=req_id, result=result)
                 return
     finally:
+        if req_id == _AGENT_STARTED_REQUEST_ID:
+            # Also on the exits that yield no complete: the stale-turn gate, a
+            # closed stream, an error.
+            _requeue_unanswered_folds(self, folded)
         self._release_stdout()
+
+
+def _requeue_unanswered_folds(self: AcpClient, folded: dict[int, tuple[int, str]]) -> None:
+    """A fold its turn ends without an answer to was not shown read: its steer is
+    not reported consumed, so the caller queues it, and as possibly delivered,
+    since the adapter may still run it. Idempotent."""
+    for serial, fold_text in folded.values():
+        if serial == self._agent_turn_serial:
+            self._drop_folded_steer(fold_text)
+            self._held_steer_writes().add(fold_text)
 
 
 async def _claim_stdout(self: AcpClient) -> None:

@@ -386,7 +386,10 @@ async def _deliver_peer(
         if not slot.running:
             # The turn ended before this ran. Never fall through to queue-or-run
             # here: the caller's fallback delivers it, and two arms would run it twice.
-            return NOT_DELIVERED
+            from kiro_crew import steer_refusal
+            from kiro_crew.dashboard.chat_delivery import SteerUnavailable
+
+            return SteerUnavailable(steer_refusal.TURN_ENDED)
         from kiro_crew.dashboard.chat_delivery import (
             STEER_REQUEUED,
             STEER_STEERED,
@@ -400,7 +403,9 @@ async def _deliver_peer(
             return DELIVERED_STEERED
         if outcome == STEER_REQUEUED:
             return DELIVERED_REQUEUED
-        return NOT_DELIVERED
+        # The steer's own outcome when it names why: it equals NOT_DELIVERED, and the
+        # caller reads the cause off it (``chat_delivery.steer_refusal_of``).
+        return outcome if outcome == NOT_DELIVERED else NOT_DELIVERED
     from kiro_crew.dashboard.chat_runner import _run_chat
     from kiro_crew.tracing import steps as trace_steps
 

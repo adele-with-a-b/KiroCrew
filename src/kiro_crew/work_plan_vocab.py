@@ -113,8 +113,12 @@ def coerce_plan(raw: Any) -> dict[str, Any] | None:
     rank = rank_value(raw.get("rank"))
     if rank is not None:
         out["rank"] = rank
-    if raw.get("backlog") is True:
-        out["backlog"] = True
+    backlog = raw.get("backlog")
+    if isinstance(backlog, bool):
+        # ``False`` is kept, not dropped: it is the conductor holding a story in the
+        # sprint before its worker binds, which no key at all does not say
+        # (:func:`in_backlog`).
+        out["backlog"] = backlog
     step = raw.get("step")
     if step in PLAN_STEPS:
         out["step"] = step
@@ -133,7 +137,7 @@ def merge_plan(current: dict[str, Any] | None, change: dict[str, Any]) -> dict[s
     """*current* with *change* laid over it: a given key replaces, ``None`` clears."""
     merged = dict(current or {})
     for key, value in change.items():
-        if value is None or value is False and key == "backlog":
+        if value is None:
             merged.pop(key, None)
         else:
             merged[key] = value
@@ -207,6 +211,28 @@ def counts_toward_concurrency(plan: dict[str, Any] | None) -> bool:
     if not plan:
         return True
     return not plan.get("backlog") and plan.get("level") not in ("epic", "task")
+
+
+def in_backlog(plan: dict[str, Any] | None, *, state: Any, worker_bound: bool) -> bool:
+    """Whether an item is a backlog row: an open story stored and not started.
+
+    Only an open story is ever one; an epic and a sub-task keep their own rules.
+    ``plan.backlog`` has three values. ``True`` puts the story in the backlog, and
+    ``False`` keeps it in the sprint with no worker yet: the conductor pulled it and
+    binds next. With no key at all the item decides: a bound worker puts it in the
+    sprint, and none puts it in the backlog. Derived on every read and never stored,
+    so a board whose conductor never wrote a plan shows its waiting stories in the
+    backlog without a write to its ledger.
+    """
+    if state != "open":
+        return False
+    plan = plan or {}
+    if plan.get("level") in ("epic", "task"):
+        return False
+    backlog = plan.get("backlog")
+    if isinstance(backlog, bool):
+        return backlog
+    return not worker_bound
 
 
 def release_problem(raw: Any) -> tuple[str, str] | None:
@@ -288,7 +314,8 @@ def widest_plan() -> dict[str, Any]:
         "level": "story",
         "parent": "it_00000000",
         "rank": -PLAN_MAX_RANK + 0.123456789,
-        "backlog": True,
+        # ``false`` is one character wider than ``true`` on the wire.
+        "backlog": False,
         "step": "released",
         "release": "r" * PLAN_RELEASE_CHARS,
         "tags": [f"{n}" * PLAN_TAG_CHARS for n in range(PLAN_MAX_TAGS)],
@@ -311,8 +338,8 @@ def widest_releases() -> list[dict[str, Any]]:
 def next_pick(items: list[Any]) -> str | None:
     """The item the conductor dispatches next, or ``None``: the top of the backlog.
 
-    The lowest-ranked open backlog story with no worker: an epic and a sub-task are
-    never bound, so neither is a pick.
+    The lowest-ranked open backlog story (:func:`in_backlog`) with no worker: an epic
+    and a sub-task are never bound, so neither is a pick.
     A backlog item with no rank sorts after every ranked one, oldest first, so a
     board that never ranked still has a next pick. *items* are store records or
     fold dicts.
@@ -324,9 +351,8 @@ def next_pick(items: list[Any]) -> str | None:
     best: tuple[int, float, str, str] | None = None
     for item in items:
         plan = coerce_plan(get(item, "plan")) or {}
-        if get(item, "state") != "open" or not plan.get("backlog"):
-            continue
-        if plan.get("level") in ("epic", "task") or get(item, "worker_session_key"):
+        bound = bool(get(item, "worker_session_key"))
+        if bound or not in_backlog(plan, state=get(item, "state"), worker_bound=bound):
             continue
         rank = plan.get("rank")
         key = (

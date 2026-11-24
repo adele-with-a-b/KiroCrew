@@ -56,6 +56,31 @@ export function isAppMessageQueued(m: ChatMessage): boolean {
   return m.meta?.kind === 'mcp_app_message'
 }
 
+/** Why a steer this entry fell back from could not go into the running turn, one
+ *  catalog key per cause the gateway names (`kiro_crew/steer_refusal.py`,
+ *  `meta.steerRefusal`). An unknown cause reads as the plain refusal. */
+const STEER_REFUSAL_KEYS: Record<string, string> = {
+  turn_ended: 'components.queueStack.steer_refusal.turn_ended',
+  no_steer: 'components.queueStack.steer_refusal.no_steer',
+  peer_steer_off: 'components.queueStack.steer_refusal.peer_steer_off',
+  between_steps: 'components.queueStack.steer_refusal.between_steps',
+  compacting: 'components.queueStack.steer_refusal.compacting',
+  same_pending: 'components.queueStack.steer_refusal.same_pending',
+  too_many: 'components.queueStack.steer_refusal.too_many',
+  agent_turn: 'components.queueStack.steer_refusal.agent_turn',
+  command_turn: 'components.queueStack.steer_refusal.command_turn',
+  permission_wait: 'components.queueStack.steer_refusal.permission_wait',
+  too_long: 'components.queueStack.steer_refusal.too_long',
+  refused: 'components.queueStack.steer_refusal.refused',
+}
+
+/** The card's words for a queued entry that a steer fell back to, or null. */
+export function queuedSteerRefusal(m: ChatMessage): string | null {
+  const code = m.meta?.steerRefusal
+  if (typeof code !== 'string' || !code) return null
+  return i18nT(Object.hasOwn(STEER_REFUSAL_KEYS, code) ? STEER_REFUSAL_KEYS[code] : STEER_REFUSAL_KEYS.refused)
+}
+
 /** Display text for a queued entry: an app-message entry drops its machine
  *  envelope so the queue card wears the same skin the transcript row will —
  *  two skins for one message read as two different messages. */
@@ -714,6 +739,9 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, 
             const isWritten = m.meta?.written === true
             const displayText = queuedDisplayText(m)
             const notDurable = m.meta?.durable === false
+            // A steer that could not cut in waits here: the chip says why, so the
+            // person reading the queue knows it was meant for the running turn.
+            const steerRefusal = queuedSteerRefusal(m)
             // The card hides the knowledge envelope, so this chip is what says
             // the send still carries it. Same icon as the sent bubble's
             // knowledge chip, so the two read as one thing.
@@ -831,8 +859,17 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, 
                       )}
                       {/* `min-w-16` only when a chip shares the row: the chip
                           gives way (truncates) before the typed words do. */}
-                      <span className={`truncate flex-1${knowledgeChip || notDurable ? ' min-w-16' : ''}`}>{displayText}</span>
+                      <span className={`truncate flex-1${knowledgeChip || notDurable || steerRefusal ? ' min-w-16' : ''}`}>{displayText}</span>
                       {knowledgeChip}
+                      {steerRefusal && (
+                        <span
+                          data-testid="queue-card-steer-refusal"
+                          className="min-w-0 truncate text-[11px] italic opacity-80"
+                          title={i18nT('components.queueStack.steer_refusal_title', { why: steerRefusal })}
+                        >
+                          {steerRefusal}
+                        </span>
+                      )}
                       {/* The server's verdict that the durable copy of the queue
                           cannot hold this entry: accepted, but a restart before
                           it runs loses it. Quiet on purpose, not an error. */}

@@ -12,10 +12,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ArrowDown, ArrowUpDown, Check, ChevronRight, Circle, GripVertical, Square, SquareCheck } from 'lucide-react'
+import { ArrowDown, ArrowUpDown, Check, ChevronRight, Circle, GripVertical, Square, SquareCheck, X } from 'lucide-react'
 import { api } from '../../../api/client'
 import { crewBoardQueryKey, PLAN_STEPS, type PlanStep, type WorkBoardConductor, type WorkBoardItem } from '../../../api/crewBoard'
-import { backlogCompare, boardPlan, byEstimate, childProgress, epicOf, epicTone, estimateMinutes, isEstimateTag, isMerged, isOpen, levelOf, moveRow, planOf, projectedIndex, ranksForDrop, releaseViews, seatsBusy, stepIndex, type BoardPlan, type ReleaseView } from '../../../lib/crewPlan'
+import { backlogCompare, boardPlan, byEstimate, childProgress, epicOf, epicTone, estimateMinutes, freeSeats, isEstimateTag, isMerged, isOpen, levelOf, moveRow, planOf, projectedIndex, ranksForDrop, releaseViews, seatsBusy, stepIndex, type BoardPlan, type ReleaseView } from '../../../lib/crewPlan'
 import { useDndSensors } from '../../../hooks/useDndSensors'
 import { fmtDateFields, fmtUnit } from '../../../i18n/format'
 import { i18nT } from '../../../i18n/t'
@@ -329,16 +329,17 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
   loaded: boolean
 }) {
   const plan = useMemo(() => boardPlan(items), [items])
-  // Closed stories are on no list of the plan: one closed without being accepted
-  // stays in the sprint, marked Not done; an accepted one folds into Done at the foot.
+  // Closed stories are on no list of the plan: they fold at the foot, one closed
+  // without being accepted into Not done (each row still marked Not done), an
+  // accepted one into Done, so the sprint holds only what is open.
   const closed = items.filter(i => !isOpen(i) && levelOf(i) !== 'epic' && !(levelOf(i) === 'task' && plan.byId.has(planOf(i).parent ?? '')))
   const notDone = closed.filter(i => i.state !== 'accepted')
   const done = closed.filter(i => i.state === 'accepted')
   const [doneOpen, setDoneOpen] = useState(false)
+  const [notDoneOpen, setNotDoneOpen] = useState(false)
   const round = conductor?.round ?? 0
   const cap = conductor?.concurrency_cap
   const busy = seatsBusy(items)
-  const free = cap != null ? Math.max(0, cap - busy) : 0
   const releases = releaseViews(conductor?.releases, items)
   const pick = conductor?.next_pick ? plan.byId.get(conductor.next_pick) : undefined
 
@@ -402,6 +403,7 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
   const active = activeId ? plan.byId.get(activeId) : undefined
   // While a drop is unsaved the pick shown is the row the person put on top.
   const shownPick = pending ? backlog[0] : pick
+  const free = freeSeats(items, cap, conductor?.seats_held, shownPick)
   // Sorting by estimate is a view only: it never writes a rank, and the drag is off
   // while it is on, so the person's ranked order stays the one the conductor picks by.
   const [estSort, setEstSort] = useState(false)
@@ -432,8 +434,8 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
 
       <section className="space-y-1.5" data-testid="plan-sprint">
         <h3 className={`${H3} flex items-baseline gap-1`}><span>{i18nT('components.crewMode.plan_sprint', { n: round })} <span className={HINT}>{i18nT('components.crewMode.plan_sprint_hint', { n: round })}</span></span>{pulse}</h3>
-        {loaded && plan.sprint.length === 0 && notDone.length === 0 && <p className="text-[12px] text-muted">{i18nT('components.crewMode.plan_sprint_none')}</p>}
-        {[...plan.sprint, ...notDone].map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} withLine rowState={rowState} />)}
+        {loaded && plan.sprint.length === 0 && <p className="text-[12px] text-muted">{i18nT('components.crewMode.plan_sprint_none')}</p>}
+        {plan.sprint.map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} withLine rowState={rowState} />)}
         {free > 0 && backlog.length > 0 && (
           <p className="rounded-lg border border-dashed border-border px-2.5 py-1.5 text-center text-[12px] text-muted" data-testid="plan-slot-free">{i18nT('components.crewMode.plan_slot_free', { n: free })}</p>
         )}
@@ -522,6 +524,21 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
           <h3 className={H3}>{i18nT('components.crewMode.plan_releases')} <span className={HINT}>{i18nT('components.crewMode.plan_releases_hint')}</span></h3>
           {releases.map(v => <ReleaseBlock key={v.release.name} view={v} plan={plan} />)}
         </section>
+      )}
+
+      {/* Stories closed without being accepted fold into one row at the foot, beside Done. */}
+      {notDone.length > 0 && (
+        <details className={`group ${CARD} px-2.5 py-1.5`} data-testid="conductor-mode-milestones-not-done" open={notDoneOpen}
+          onToggle={e => setNotDoneOpen((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary className="flex items-center gap-2 cursor-pointer list-none text-[13px] text-text">
+            <ChevronRight size={12} aria-hidden="true" className="shrink-0 text-muted transition-transform group-open:rotate-90" />
+            <X size={13} strokeWidth={3} aria-hidden="true" className="shrink-0 text-muted" />
+            {i18nT('components.crewMode.conductor_mode_ms_not_done_fold', { n: notDone.length })}
+          </summary>
+          <div className="mt-1.5 space-y-1.5">
+            {notDone.map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} withLine rowState={rowState} />)}
+          </div>
+        </details>
       )}
 
       {/* Accepted stories fold into one row at the foot, so what is open stays on screen. */}

@@ -46,6 +46,7 @@ from kiro_crew.agent_sdk.backends import (
     NODE_ADAPTER_ENTRY_SEGMENTS,
 )
 from kiro_crew.agent_sdk.mcp_json_reach import mcp_json_server_names
+from kiro_crew.constants import KIROCREW_SESSION_AGENT_ENV
 from kiro_crew.env import augmented_path, describe_search_path
 from kiro_crew.identity_stores import IDENTITY_STORE_ROOTS
 from kiro_crew.kiro_cli import known_kiro_cli_dirs, resolve_kiro_cli
@@ -973,6 +974,10 @@ def _apply_session_identity_env(self: AcpClient, env: dict[str, str]) -> None:
         env["KIROCREW_SESSION_KEY"] = self._session_key
     else:
         env.pop("KIROCREW_SESSION_KEY", None)
+    # One session's agent is named per session, on claude's envelope
+    # (``client_claude_session._name_the_session_agent``), never by a process:
+    # a value inherited from the gateway's own parent names another session's.
+    env.pop(KIROCREW_SESSION_AGENT_ENV, None)
 
 
 def _resolve_spawn_agent_argv(self: AcpClient) -> str:

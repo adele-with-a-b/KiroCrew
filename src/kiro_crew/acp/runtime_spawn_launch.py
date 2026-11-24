@@ -87,6 +87,7 @@ from kiro_crew.config.paths import data_home, kiro_agents_dir
 from kiro_crew.constants import (
     INITIALIZE_TIMEOUT_SECS,
     KIROCREW_RUNTIME_AGENT_ENV,
+    KIROCREW_SESSION_AGENT_ENV,
     KIROCREW_SPAWN_HOME_ENV,
     KIROCREW_SPAWN_INSTANCE_ENV,
 )
@@ -864,6 +865,10 @@ async def _spawn_admitted(self: AcpRuntime) -> None:
             env[KIROCREW_RUNTIME_AGENT_ENV] = self._agent
         else:
             env.pop(KIROCREW_RUNTIME_AGENT_ENV, None)
+        # A process serves many sessions, so it never names one session's
+        # agent: claude's envelope does (``_name_the_session_agent``), and a
+        # value inherited from the gateway's own parent is dropped here.
+        env.pop(KIROCREW_SESSION_AGENT_ENV, None)
 
     def _env_after_scratch(env: dict[str, str]) -> None:
         # A host whose state cannot be shared between processes (codex's SQLite

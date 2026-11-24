@@ -23,6 +23,7 @@ import weakref
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from kiro_crew import steer_refusal
 from kiro_crew.config import live
 from kiro_crew.dashboard.chat_utils import (
     COMPOSER_SEND_META,
@@ -57,6 +58,28 @@ logger = logging.getLogger(__name__)
 STEER_STEERED = "steered"
 STEER_REQUEUED = "requeued"
 STEER_UNAVAILABLE = "unavailable"
+
+
+class SteerUnavailable(str):
+    """:data:`STEER_UNAVAILABLE` that also says why, as an ``kiro_crew.steer_refusal`` code.
+
+    Compares equal to :data:`STEER_UNAVAILABLE`, so every caller that tests the
+    outcome reads it unchanged; a caller that tells the sender why reads
+    :func:`steer_refusal_of`.
+    """
+
+    reason: str
+
+    def __new__(cls, reason: str) -> "SteerUnavailable":
+        outcome = super().__new__(cls, STEER_UNAVAILABLE)
+        outcome.reason = steer_refusal.known(reason) or steer_refusal.REFUSED
+        return outcome
+
+
+def steer_refusal_of(outcome: object) -> str:
+    """The ``kiro_crew.steer_refusal`` code an unavailable steer outcome carries, else ""."""
+    return getattr(outcome, "reason", "") if isinstance(outcome, SteerUnavailable) else ""
+
 
 # Lifecycle of a mid-turn steer as recorded on the persisted transcript row, in
 # `meta["steerState"]`. These are three DIFFERENT facts and the row must not
@@ -577,16 +600,16 @@ async def steer_into_running_turn(
     aimed_turn = _steer_target(slot)
     await steer_retract.wait_for_clear(slot)
     if _steer_target(slot) != aimed_turn:
-        return STEER_UNAVAILABLE
+        return SteerUnavailable(steer_refusal.TURN_ENDED)
     client = getattr(slot, "_acp_client", None)
     if client is None or not getattr(client, "supports_steer", False):
-        return STEER_UNAVAILABLE
+        return SteerUnavailable(steer_refusal.NO_STEER)
     if not user_origin and getattr(client, "steer_needs_loss_recovery", False) is True:
         # The requeue keeps a steer this harness drops but may run it twice; peers opt in.
         # A snapshot, not a load: no file read on the loop, no await before registering.
         live_config = live.snapshot()
         if live_config is None or not live_config.agent.peer_steer_loss_recovery:
-            return STEER_UNAVAILABLE
+            return SteerUnavailable(steer_refusal.PEER_STEER_OFF)
     if _engine_has_no_prompt(client):
         # The slot reads running from the moment its turn task exists, which is
         # before the prompt reaches the engine (context build) and after it
@@ -594,11 +617,11 @@ async def steer_into_running_turn(
         # prompt and nothing consumes it; the queue path delivers it as
         # the next turn instead.
         logger.info("no prompt in flight for slot %s; queueing instead of steering", slot.key)
-        return STEER_UNAVAILABLE
+        return SteerUnavailable(steer_refusal.BETWEEN_STEPS)
     if getattr(slot, "_compact_command_turn", False) is True:
         # The turn IS a manual /compact: no prompt runs that a steer could join.
         logger.info("slot %s is compacting; queueing instead of steering", slot.key)
-        return STEER_UNAVAILABLE
+        return SteerUnavailable(steer_refusal.COMPACTING)
 
     # Register as pending BEFORE the await: ``steer()`` suspends on
     # ``stdin.drain()``, and if the turn's finally runs during that suspension
@@ -638,7 +661,7 @@ async def steer_into_running_turn(
     # guard has to read it or the uniqueness it promises is not enforced.
     if slot._pending_steers.count(message) or message in slot._steer_delivery_ids:
         logger.info("identical steer already pending for slot %s; queueing instead", slot.key)
-        return STEER_UNAVAILABLE
+        return SteerUnavailable(steer_refusal.SAME_PENDING)
 
     retained_steer_count = len(
         set(slot._pending_steers).union(
@@ -660,7 +683,7 @@ async def steer_into_running_turn(
             slot.key,
             MAX_PENDING_STEERS,
         )
-        return STEER_UNAVAILABLE
+        return SteerUnavailable(steer_refusal.TOO_MANY)
 
     # A real identity, not a content match: text cannot survive the transitions,
     # because consumed, requeued, drained, or merged into a larger row all look
@@ -899,7 +922,7 @@ async def steer_into_running_turn(
             slot._steer_act_now.discard(message)
             slot._steer_decision_strips.pop(message, None)
             slot._steer_automation.pop(message, None)
-            return STEER_UNAVAILABLE
+            return SteerUnavailable(getattr(client, "steer_refusal", ""))
         if stopped:
             # Still registered means the teardown has not run yet and will
             # requeue it, so the text still runs — the caller must NOT resend.
@@ -949,7 +972,7 @@ async def steer_into_running_turn(
         # path ran it.
         if stopped:
             _log_stop_race(slot, stop_gen, preserved=False)
-        return STEER_UNAVAILABLE
+        return SteerUnavailable(steer_refusal.TURN_ENDED)
     if stopped:
         # Consumed, then stopped: the text is already delivered and its side
         # effects may be complete, so this must never tell the caller to resend.
@@ -1283,8 +1306,12 @@ def queue_for_next_turn(
     banner: str = "",
     queued_work: Any = None,
     knowledge: dict[str, Any] | None = None,
+    steer_refused: str = "",
 ) -> str:
     """Append *message* to the slot's queue and announce it; return the queue id.
+
+    *steer_refused* is the ``kiro_crew.steer_refusal`` code of a steer that fell
+    back to this entry; a known one rides its meta as ``steerRefusal``.
 
     *queued_work* is the fair-admission result for a parked send; its work id is
     stamped on the entry before the durable verdict, because the write weighs it.
@@ -1395,6 +1422,9 @@ def queue_for_next_turn(
         meta[COMMANDS_OFF_META_KEY] = True
     if composer_send:
         meta[COMPOSER_SEND_META] = True
+    if refusal := steer_refusal.known(steer_refused):
+        # The cause of the steer this entry fell back from, for the row's chip.
+        meta[steer_refusal.QUEUE_META_KEY] = refusal
     if author:
         # *author* is the server-derived Shared Crew author of a person's send
         # (``attribution.author_meta``). The drain unions it onto the row and
@@ -1457,6 +1487,9 @@ def queue_for_next_turn(
         push.setdefault("meta", {})[CHAT_BANNER_META_KEY] = banner
     if knowledge:
         push.setdefault("meta", {}).update(knowledge)
+    if refusal:
+        # The live card's reason chip, as a reload draws it from the entry.
+        push.setdefault("meta", {})[steer_refusal.QUEUE_META_KEY] = refusal
     # Accepted, and possibly not persisted: the write ceilings refuse an entry
     # past the count cap or the byte budget and the send is still accepted, so
     # that case is logged at WARNING and drawn on the card this frame makes.
@@ -1758,6 +1791,10 @@ def queue_entry_view(item: dict[str, Any]) -> dict[str, Any]:
     label = (item.get("meta") or {}).get("appLabel")
     if isinstance(label, str) and label:
         view.setdefault("meta", {})["appLabel"] = label
+    # Why a steer this entry fell back from could not go in, so the card says what
+    # it waits for. Known codes only: the card draws its words from the code.
+    if refusal := steer_refusal.known((item.get("meta") or {}).get(steer_refusal.QUEUE_META_KEY)):
+        view.setdefault("meta", {})[steer_refusal.QUEUE_META_KEY] = refusal
     # Entries loaded from disk on restart carry RESTORED_QUEUE_KEY=True.
     # Projecting this as a boolean lets the client skip a restored queued row
     # when deciding whether to offer Resume — matching the backend gate in

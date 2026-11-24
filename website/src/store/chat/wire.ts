@@ -116,6 +116,13 @@ export function queueEntryBanner(meta: unknown): { banner?: string } {
   return typeof b === 'string' && b.trim() && [...b].length <= 500 ? { banner: b } : {}
 }
 
+/** Why a steer fell back to this queued row (`meta.steerRefusal`, a
+ *  `kiro_crew.steer_refusal` code), kept on the row for its reason chip. */
+export function queueEntrySteerRefusal(meta: unknown): { steerRefusal?: string } {
+  const c = meta && typeof meta === 'object' ? (meta as Record<string, unknown>).steerRefusal : undefined
+  return typeof c === 'string' && c ? { steerRefusal: c } : {}
+}
+
 /** The gateway-set cross-session sender (`meta.relay`) of a queued peer send,
  *  validated the way the transcript reads it, so the `queue_pop` rebuild draws
  *  the same incoming card a reload does. */
@@ -187,7 +194,7 @@ export function queueEntryAttachments(meta: unknown): QueueEntryAttachments {
 
 /** One queued-message entry as normalized by `fetchSlotDetail` from the backend
  *  slot-detail `queue` field. */
-export type SlotQueueItem = { sendId?: string; content: string; queueId: string; ts: string; kind?: string; appLabel?: string; quote?: MessageQuote; banner?: string; restored?: boolean; held?: boolean; written?: boolean; durable?: false; knowledgeEnvelope?: KnowledgeEnvelopeMark; editRev?: number } & QueueEntryAttachments
+export type SlotQueueItem = { sendId?: string; content: string; queueId: string; ts: string; kind?: string; appLabel?: string; quote?: MessageQuote; banner?: string; steerRefusal?: string; restored?: boolean; held?: boolean; written?: boolean; durable?: false; knowledgeEnvelope?: KnowledgeEnvelopeMark; editRev?: number } & QueueEntryAttachments
 
 /** Coerce one workflow wire field to the string `WorkflowRunProgress` declares.
  *
@@ -229,5 +236,5 @@ export function normalizeSlotDetail(key: string, d: Awaited<ReturnType<Response[
  *  payload without the store, so both surfaces see one entry shape. */
 export function normalizeQueueEntries(raw: unknown): SlotQueueItem[] {
   type QueueItem = string | { content: string; id: string; meta?: unknown; editRev?: unknown }
-  return ((Array.isArray(raw) ? raw : []) as QueueItem[]).map((q: QueueItem) => typeof q === 'string' ? { content: q, queueId: crypto.randomUUID(), ts: new Date().toISOString() } : { content: q.content, queueId: q.id, ts: new Date().toISOString(), ...(typeof (q.meta as Record<string, unknown> | undefined)?.kind === 'string' ? { kind: (q.meta as Record<string, unknown>).kind as string } : {}), ...(typeof (q.meta as Record<string, unknown> | undefined)?.appLabel === 'string' ? { appLabel: (q.meta as Record<string, unknown>).appLabel as string } : {}), ...((q.meta as Record<string, unknown> | undefined)?.restored === true ? { restored: true as const } : {}), ...((q.meta as Record<string, unknown> | undefined)?.held === true ? { held: true as const } : {}), ...((q.meta as Record<string, unknown> | undefined)?.written === true ? { written: true as const } : {}), ...((q.meta as Record<string, unknown> | undefined)?.durable === false ? { durable: false as const } : {}), ...queueEntryAttachments(q.meta), ...queueEntryQuote(q.meta), ...queueEntryBanner(q.meta), ...queueEntrySendId(q.meta), ...queueEntryKnowledgeEnvelope(q.meta), ...(Number.isInteger(q.editRev) ? { editRev: q.editRev as number } : {}) })
+  return ((Array.isArray(raw) ? raw : []) as QueueItem[]).map((q: QueueItem) => typeof q === 'string' ? { content: q, queueId: crypto.randomUUID(), ts: new Date().toISOString() } : { content: q.content, queueId: q.id, ts: new Date().toISOString(), ...(typeof (q.meta as Record<string, unknown> | undefined)?.kind === 'string' ? { kind: (q.meta as Record<string, unknown>).kind as string } : {}), ...(typeof (q.meta as Record<string, unknown> | undefined)?.appLabel === 'string' ? { appLabel: (q.meta as Record<string, unknown>).appLabel as string } : {}), ...((q.meta as Record<string, unknown> | undefined)?.restored === true ? { restored: true as const } : {}), ...((q.meta as Record<string, unknown> | undefined)?.held === true ? { held: true as const } : {}), ...((q.meta as Record<string, unknown> | undefined)?.written === true ? { written: true as const } : {}), ...((q.meta as Record<string, unknown> | undefined)?.durable === false ? { durable: false as const } : {}), ...queueEntryAttachments(q.meta), ...queueEntryQuote(q.meta), ...queueEntryBanner(q.meta), ...queueEntrySteerRefusal(q.meta), ...queueEntrySendId(q.meta), ...queueEntryKnowledgeEnvelope(q.meta), ...(Number.isInteger(q.editRev) ? { editRev: q.editRev as number } : {}) })
 }
