@@ -198,6 +198,9 @@ _SETTING_ORDER: dict[str, tuple[Any, ...]] = {
     "knowledge.auto_add_documents": (False, True),
     # On, a personal KAS chat may read the memories other Kiro clients saved.
     "agent.orchestrator_memory": (False, True),
+    # On, a Claude Code chat with Crew's tools asks Crew before a call its own
+    # settings would approve; off lets those calls skip Crew's gate.
+    "agent.claude_guards": (True, False),
     # Fair admission on holds each person to their limit; off lets one person
     # take the whole host.
     "dashboard.shared_crew.admission_enabled": (True, False),

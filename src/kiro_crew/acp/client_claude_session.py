@@ -35,12 +35,12 @@ from kiro_crew.acp.claude_agent_options import (
     apply_crewmate_claude_options,
     apply_spec_claude_options,
 )
+from kiro_crew.acp.claude_guards import claude_guards_setting_on
 from kiro_crew.acp.claude_settings_sources import (
     CLAUDE_SETTINGS_MAX_BYTES,
     claude_config_dir,
     read_claude_settings_bytes,
 )
-from kiro_crew.acp.client_claude_guards import claude_guards_setting_on
 from kiro_crew.acp.client_permissions import _scrub_observed
 from kiro_crew.acp.client_timeouts import _INIT_TIMEOUT
 from kiro_crew.acp.harness import claude as claude_mod
@@ -968,7 +968,7 @@ async def _pin_claude_starting_mode(self: ClaudeAcpClient, resp: dict) -> None:
     approver behind it. Any other session keeps the mode it started in unless
     ``KIROCREW_CC_PIN_INHERITED_MODE`` is on (``resolve_cc_pin_inherited_mode``)
     or the ``agent.claude_guards`` setting is (``claude_guards_setting_on``,
-    read when the session starts); both are off by default, and a user
+    read only once the pin would act); both are off by default, and a user
     ``~/.claude`` mode reaching the session is then the inherited-config gap
     the spec names. With either on, the pin also
     runs on every session whose start sent Crew's MCP array; a session that
@@ -1014,10 +1014,11 @@ async def _pin_claude_starting_mode(self: ClaudeAcpClient, resp: dict) -> None:
     zero_tools = getattr(self, "_spec_zero_tools", False)
     depends_on_options = excludes_local or side or zero_tools
     narrowed = getattr(self, "_claude_worker_builtin_tools", None) is not None
-    pin_inherited = not depends_on_options and (
-        resolve_cc_pin_inherited_mode() or await claude_guards_setting_on()
-    )
-    if not (depends_on_options or narrowed or pin_inherited):
+    # The env lever is read here; the setting only once a pin could follow (below),
+    # so a start the pin would not act on (an adopt, no Crew tools) reads no config.
+    pin_env = not depends_on_options and resolve_cc_pin_inherited_mode()
+    mounts = getattr(self, "_mcp_mount_servers", None)
+    if not (depends_on_options or narrowed or pin_env or mounts):
         return
     below_floor = self._claude_adapter_below_setting_sources_floor()
     if below_floor and self._claude_session_needs_options():
@@ -1038,9 +1039,7 @@ async def _pin_claude_starting_mode(self: ClaudeAcpClient, resp: dict) -> None:
     # The array this start sent. The re-seed after the capture cleared the
     # projection cache, so deriving it again here would read the spec and the
     # settings files on the event loop.
-    if not depends_on_options and (
-        below_floor or not pin_inherited or not getattr(self, "_mcp_mount_servers", None)
-    ):
+    if not depends_on_options and (below_floor or not mounts):
         return
     if zero_tools and not (excludes_local or side):
         # A zero-tool session mounts no tool, so its mode has nothing to approve.
@@ -1054,6 +1053,8 @@ async def _pin_claude_starting_mode(self: ClaudeAcpClient, resp: dict) -> None:
     if isinstance(current, str) and (
         current not in _CLAUDE_GATE_ESCAPING_MODES or current == requested
     ):
+        return
+    if not (depends_on_options or pin_env or await claude_guards_setting_on()):
         return
     logger.warning(
         "claude session started in mode %r, which approves calls without asking "

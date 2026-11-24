@@ -15220,7 +15220,7 @@
         "orchestrator_memory_save_failed": "无法保存 Kiro Memory 设置，请重试。",
         "claude_guards_label": "保护 Claude Code 聊天",
         "claude_guards_description": "Claude Code 聊天在使用工具前会先询问 {{productName}}，即使你自己的 Claude Code 设置允许它们不经询问就运行工具。更改在聊天启动时生效；已打开的聊天保持当前模式。",
-        "claude_guards_hint": "{{productName}} 的禁止命令、受保护文件、审批和策略随后适用于每个带有 {{productName}} 工具的 Claude Code 聊天。在 Normal 模式下，你审批每个需要询问的调用；在 YOLO 模式下，除非 {{productName}} 的规则阻止，否则调用会运行。你自己的 Claude Code 设置已允许的工具仍会不经询问运行，处于 Auto 模式的聊天会保持该模式。",
+        "claude_guards_hint": "随后，{{productName}} 的禁止命令、受保护文件、审批和策略适用于所有带有 {{productName}} 工具的 Claude Code 聊天。在 Normal 模式下，每次需要询问时由你审批；在 YOLO 模式下，调用会直接运行，除非被 {{productName}} 规则阻止。若你在 Claude Code 设置中已允许某个工具，它仍会直接运行；处于 Auto 模式的聊天也会保持该模式。",
         "claude_guards_save_failed": "无法保存“保护 Claude Code 聊天”设置。请重试。",
         "approval_agent_spec": "每次用工具前都会先问，因为 {{productName}} 就是这么定的。",
         "approval_seeded_settings": "只有它自己的设置这么写时，才会每次用工具前先问。{{productName}} 会写入这项设置，但无法确认是否真的生效。",

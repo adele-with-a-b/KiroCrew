@@ -5146,7 +5146,7 @@
 "pages.chatSidebar.switch_all_to_model": "Alle auf Modell umstellen…",
 "pages.chatSidebar.switch_to_board_view": "Zur Board-Ansicht wechseln",
 "pages.chatSidebar.switch_to_list_view": "Zur Listenansicht wechseln",
-"pages.developer.agentBackendTab.claude_guards_label": "Claude-Code-Chats absichern",
+"pages.developer.agentBackendTab.claude_guards_label": "Claude Code-Chats absichern",
 "pages.developer.agentBackendTab.orchestrator_memory_label": "Kiro Memory",
 "pages.developer.featurePreviewsTab.artifact_deploy": "Artifact Deploy",
 "pages.developer.featurePreviewsTab.bridge_approvals": "Ausstehende Freigaben an Chat-Apps senden",

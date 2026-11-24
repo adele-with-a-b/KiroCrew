@@ -240,7 +240,7 @@ _EDITABLE_CONFIG: dict[str, dict] = {
     # session creation, so no restart; see ``acp/kas_memory.py``.
     "agent.orchestrator_memory": {"type": "bool"},
     # Moves every claude session that carries Crew's tools to the asking mode.
-    # Read when each session starts, so no restart; see ``acp/client_claude_guards.py``.
+    # Read when each session starts, so no restart; see ``acp/claude_guards.py``.
     "agent.claude_guards": {"type": "bool"},
     "agent.completion_keep": {"type": "enum", "values": ["head", "tail", "both"]},
     "agent.completion_keep_chars": {

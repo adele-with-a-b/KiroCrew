@@ -626,7 +626,7 @@ def resolve_cc_pin_inherited_mode() -> bool:
     """Whether the env lever pins a claude session's starting mode.
 
     One of two levers, either enough: the ``agent.claude_guards`` setting is the
-    other, read by ``acp.client_claude_guards.claude_guards_setting_on``; this module
+    other, read by ``acp.claude_guards.claude_guards_setting_on``; this module
     is on ``KiroCrewConfig.load()``'s own import path, so it reads no config.
 
     Off by default: such a session keeps the mode the user's own settings or its

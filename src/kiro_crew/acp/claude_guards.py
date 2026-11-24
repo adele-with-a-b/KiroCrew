@@ -7,15 +7,17 @@ Two levers turn it on, and either is enough: the operator environment variable
 ``KIROCREW_CC_PIN_INHERITED_MODE`` (``resolve_cc_pin_inherited_mode``) and this setting.
 The pin itself is unchanged; this module only answers whether the setting is on.
 
-It is a point-of-use read, taken once per session start: the live watcher's snapshot
-when the process has one, else a disk load off the event loop. So a change applies to
-each chat's next ``session/new`` or ``session/load`` with no restart and no applier
-(config.md, "`restart=True` is the single source of restart truth").
+It is a point-of-use read, taken at a session start that the pin would act on: the live
+watcher's snapshot when the process has one, else a disk load off the event loop. So a
+change applies to each chat's next ``session/new`` or ``session/load`` with no restart
+and no applier (config.md, "`restart=True` is the single source of restart truth").
 
-The read fails toward the pin. The setting is a guard, so a config that cannot be read,
-or whose ``agent`` section the loader discarded, reads as on for that session, with a
-warning: a person who turned it on never loses it to a torn file. The cost of that
-direction is only that a session asks Crew where it otherwise would not have.
+The read fails toward the pin, as every security read of a degraded config does
+(``config.resolution.DEGRADED_WHOLE_CONFIG``): when the loader could not read the whole
+file, or discarded the ``agent`` section, the setting is unknown and reads as on, with a
+warning. The loader remembers a degradation for the life of the process, so this holds
+until the gateway restarts, even after the file is fixed. The cost of that direction is
+only that a session asks Crew where it otherwise would not have.
 """
 
 from __future__ import annotations
@@ -48,20 +50,27 @@ async def _config_now() -> "KiroCrewConfig":
 
 async def claude_guards_setting_on() -> bool:
     """Whether ``agent.claude_guards`` is on for the session starting now."""
+    from kiro_crew.config.resolution import DEGRADED_WHOLE_CONFIG
+
     try:
         cfg = await _config_now()
     except Exception:
+        # The loader degrades rather than raising on a bad file; this is for a
+        # failure it did not foresee, which reads as on like a torn file does.
         logger.warning(
-            "could not read the config to check %s; this claude session is pinned to "
-            "the asking mode as if it were on",
+            "could not load the config to check %s, so it reads as on: this claude "
+            "session is moved to the asking mode",
             CLAUDE_GUARDS_CONFIG_KEY,
             exc_info=True,
         )
         return True
-    if "agent" in cfg.degraded_sections:
+    torn = {DEGRADED_WHOLE_CONFIG, "agent"} & set(cfg.degraded_sections)
+    if torn:
         logger.warning(
-            "the config's agent section could not be read, so %s is unknown; this "
-            "claude session is pinned to the asking mode as if it were on",
+            "the config could not be read (%s), so %s is unknown and is acting as on "
+            "until restart, whatever the switch says: this claude session is moved to "
+            "the asking mode",
+            ", ".join(sorted(torn)),
             CLAUDE_GUARDS_CONFIG_KEY,
         )
         return True
