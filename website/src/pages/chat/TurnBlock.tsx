@@ -115,12 +115,15 @@ const isConclusion = (it: TurnItem) => it.kind === 'single' && (it.msg.role === 
  * mcp_sign_in_unsupported: the session-start notice that an MCP server's sign-in
  * cannot work on this harness. It is the only sign that the server never
  * connects, so it is never folded away either.
+ * restart_receipt: a chat kept running across a restart lands it mid-turn. It is
+ * the counterpart of the "interrupted" error row a cut chat gets, which never
+ * folds by its role, so it does not fold either.
  */
 const isAlwaysVisible = (it: TurnItem) => it.kind === 'single' && (
   it.msg.role === 'mcp_oauth' || it.msg.role === 'error' || it.msg.role === 'card' ||
   it.msg.meta?.kind === 'crew_dispatch_notice' || it.msg.meta?.kind === 'crew_paused_notice' ||
   it.msg.meta?.kind === 'agent_welcome' || it.msg.meta?.kind === 'agent_no_tools' ||
-  it.msg.meta?.kind === 'mcp_sign_in_unsupported' ||
+  it.msg.meta?.kind === 'mcp_sign_in_unsupported' || it.msg.meta?.kind === 'restart_receipt' ||
   (it.msg.role === 'inject' && it.msg.meta?.injectKind === 'mcp_app')
 )
 

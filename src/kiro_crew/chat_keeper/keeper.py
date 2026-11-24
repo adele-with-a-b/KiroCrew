@@ -27,6 +27,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NoReturn
@@ -75,6 +76,9 @@ METHOD_SESSION_PROMPT = "session/prompt"
 METHOD_SET_MODE = "session/set_mode"
 METHOD_SET_MODEL = "session/set_model"
 _SESSION_STATE_METHODS = frozenset({METHOD_SET_MODE, METHOD_SET_MODEL})
+#: The adapter's request for a tool approval. The keeper times how long each open
+#: one has gone unanswered with no gateway attached, for the restart receipt.
+METHOD_REQUEST_PERMISSION = "session/request_permission"
 
 
 @dataclass(frozen=True)
@@ -173,6 +177,14 @@ class Keeper:
         #: The highest seq dropped from the journal before any gateway acked it.
         self.dropped_through = 0
         self.open_agent_requests: dict[str, tuple[int, bytes]] = {}
+        #: When each open permission request arrived (monotonic), by request id.
+        self.permission_since: dict[str, float] = {}
+        #: When the last attachment detached (monotonic); None while one is attached
+        #: and before the first ever detached.
+        self.detached_at: float | None = None
+        #: Whether a ``session/prompt`` was still unanswered at that detach: a turn
+        #: ran on through the gap.
+        self.turn_at_detach = False
         #: The ``tool_call`` line of each recent tool call, by ``toolCallId``: what a
         #: re-delivered permission request is judged and shown with.
         self.tool_calls: collections.OrderedDict[str, tuple[int, bytes]] = collections.OrderedDict()
@@ -382,6 +394,8 @@ class Keeper:
         if isinstance(method, str) and key is not None:
             if len(self.open_agent_requests) < _MAX_OPEN_REQUESTS:
                 self.open_agent_requests[key] = (seq, line)
+                if method == METHOD_REQUEST_PERMISSION:
+                    self.permission_since[key] = time.monotonic()
             else:
                 # Not re-delivered to an adopting gateway: its card would not open.
                 logger.warning(
@@ -514,6 +528,7 @@ class Keeper:
                 )
         elif method is None and key is not None:
             self.open_agent_requests.pop(key, None)
+            self.permission_since.pop(key, None)
 
     async def _on_adapter_exit(self) -> None:
         att = self.attach
@@ -613,6 +628,26 @@ class Keeper:
                 sid: {kind: line.decode("utf-8", "replace") for kind, line in kinds.items()}
                 for sid, kinds in self.session_updates.items()
             },
+            **self._gap_report(),
+        }
+
+    def _gap_report(self) -> dict[str, Any]:
+        """How long no gateway was attached, and the turn and approvals that went on in it.
+
+        Measured on this keeper's own monotonic clock, at the attach that reads it. A
+        permission request asked before the detach waited from the detach; one asked
+        during the gap, from when it arrived. Empty on a keeper's first attach.
+        """
+        detached_at = self.detached_at
+        if detached_at is None:
+            return {}
+        now = time.monotonic()
+        waits = [now - max(since, detached_at) for since in self.permission_since.values()]
+        return {
+            "detached_secs": round(now - detached_at, 1),
+            "turn_at_detach": self.turn_at_detach,
+            "permission_waits": len(waits),
+            "permission_wait_secs": round(max(waits), 1) if waits else 0.0,
         }
 
     async def _on_connect(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -671,6 +706,7 @@ class Keeper:
             ),
             "state": self.state(),
         }
+        self.detached_at = None
         writer.write(wire.json_frame(wire.K_WELCOME, welcome))
         logger.info("attached generation %d (held=%s)", att.generation, att.held)
         if not att.held:
@@ -684,6 +720,10 @@ class Keeper:
         finally:
             if self.attach is att:
                 self.attach = None
+                self.detached_at = time.monotonic()
+                self.turn_at_detach = any(
+                    entry[0] == METHOD_SESSION_PROMPT for entry in self.client_open.values()
+                )
                 logger.info("generation %d detached", att.generation)
                 self._start_orphan_timer(self.args.adopt_secs)
 

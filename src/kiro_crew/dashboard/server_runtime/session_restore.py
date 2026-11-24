@@ -49,12 +49,13 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
     never clears ends at ``_SLOT_LIST_PARTIAL_DEADLINE_S``, armed here.
     """
     reconciler_started = False
+    receipt_complete = False
     state.arm_slot_list_rebuild_deadline()
     from kiro_crew.shared_crew.wiring import prepare_gateway
 
     await prepare_gateway(state)
     try:
-        from kiro_crew.dashboard import chat_trust_restart
+        from kiro_crew.dashboard import chat_trust_restart, restart_receipt
 
         # The chats that held an approval mode when the previous process stopped,
         # read before the restore rebuilds them without it (``chat_trust_restart``;
@@ -62,6 +63,8 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
         held_modes = await asyncio.to_thread(chat_trust_restart.arm, state)
         from kiro_crew.dashboard import chat_keeper_adopt
 
+        # What this start kept, cut and held, written in the ``finally`` below.
+        restart_receipt.begin()
         # The chats a chat keeper kept running, read before the restore so it does
         # not mark their turns interrupted (``chat_keeper_adopt``).
         kept = await asyncio.to_thread(chat_keeper_adopt.arm, cfg)
@@ -135,6 +138,9 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
             )
             state._channel_slot_reconciler = _chan_reconciler  # prevent GC
             reconciler_started = True
+        # The whole restore ran: every kept chat is adopted or ended, the parked
+        # sends are drained and the background passes are started.
+        receipt_complete = True
     finally:
         # Every pass that can rebuild an owed tab has run (or the restore raised).
         state.restoring_open_slot_keys = frozenset()
@@ -142,3 +148,11 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
         if not reconciler_started:
             state.replace_channel_slot_holds((), hold_channels=False)
             state.finish_slot_list_rebuild()
+        # Last, after the restore's own bookkeeping: the receipt of what this start
+        # got to, also when the restore raised, so the boot that most needs one does
+        # not leave the previous start's as the last. Never raises, and writes
+        # nothing when ``begin`` was not reached. Imported here too, so a failed
+        # import above cannot skip the bookkeeping before it.
+        from kiro_crew.dashboard import restart_receipt
+
+        await restart_receipt.finish(state, complete=receipt_complete)

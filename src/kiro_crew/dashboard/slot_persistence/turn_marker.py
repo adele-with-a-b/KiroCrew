@@ -310,11 +310,13 @@ def _reconcile_local_turn_marker(
     # finishes it).
     from kiro_crew.dashboard.chat_keeper_adopt import kept_by_a_keeper
 
-    if (
-        not is_turn_interrupted(slot.messages)
-        and not _latest_turn_was_deliberately_stopped(slot.messages)
-        and not _latest_turn_settled_by_refused_model(slot.messages)
-    ):
+    ended_before = _latest_turn_was_deliberately_stopped(
+        slot.messages
+    ) or _latest_turn_settled_by_refused_model(slot.messages)
+    # The restart receipt's evidence: a turn the user stopped, or a refused model
+    # settled, ended before the restart, so the restart did not cut it.
+    slot._restored_turn_marker["cut"] = not ended_before
+    if not is_turn_interrupted(slot.messages) and not ended_before:
         if kept_by_a_keeper(slot):
             # Owed, not dropped: the adopt pass appends it when the keeper's turn
             # does not come back (``append_restart_interruption``).

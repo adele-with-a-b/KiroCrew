@@ -1110,7 +1110,8 @@ an old keeper and a new gateway can still talk: the ACP wire is the contract, an
 ### What the adopting gateway rebuilds
 
 The adopt pass (`dashboard.chat_keeper_adopt.adopt_kept_chats`) runs after the
-dashboard restores its open slots. For each live keeper record whose session key
+dashboard restores its open slots; it reaches `acp.client_keeper` only through
+`agent_sdk/chat_keeper.py`, the boundary gate's one surface for it. For each live keeper record whose session key
 names a restored slot, it starts that slot's session through the eager start
 (`chat_turn.eager_spawn._eager_spawn`, called directly, one chat at a time, so neither
 the `session.eager_spawn` switch nor its concurrency cap can skip it). The first try
@@ -1195,6 +1196,71 @@ since), `_sandbox_wrapped_by_crew`, `_sandbox_hidden_dirs`, `_child_env_names` a
 A refusal ends the keeper (see "Process tree and who reaps a keeper") before the
 replacement spawns, so two adapters never run one session.
 
+### The restart receipt
+
+Each gateway start that restores chats records what happened to each one
+(`dashboard.restart_receipt`). The boot restore calls `begin` before the open tabs are
+rebuilt. The adopt pass then reports each keeper's outcome: kept (attached here),
+left to another start of the chat (`left`: neither kept nor cut, because that
+start's outcome is not the pass's to report), or ended, with the reason. `finish`
+runs last in the restore's `finally`, so a restore that raised at any step after
+`begin`, including after the parked-send drain, still writes what it got to, with
+`complete: false` and `cut: null` (the
+adopt pass may not have reported the chats a keeper still holds, so none is
+claimed as cut; the summary says "cut unknown"). It adds the chats whose
+running turn the restart cut and the restored queue cards waiting for a person
+(`is_held_queue_entry`: a card the boot drain already accepted sends by itself). A
+cut chat is a restored turn marker that no keeper kept and that the restore did not
+find ended before the restart (the marker's `cut`: false after the user's own Stop
+card or a refused model). Only slots built by then count: a crewmate thread the
+member-slot retry builds, or a channel conversation reconciled later, gets its
+"interrupted" row then and is not in `cut`. It appends the whole receipt as one JSON
+line to `<data home>/logs/restart-receipts.jsonl` and logs its `summary` line at
+INFO. The file lives in the existing `logs/` directory, is owner-only, and is rotated
+at 1 MiB (`rotate_jsonl_at`). One line per start carries `v`, `started_at`,
+`written_at`, `gateway_pid`, `complete`, `kept`, `left`, `cut`, `queued`, `ended`
+and `summary`, so an installer or a Conductor reads the last start with
+`tail -1 … | jq .summary`. Every step is best effort: a receipt never fails a boot
+or an adopt.
+
+**What the keeper measures.** The welcome's state carries four more fields, which an
+older keeper omits and the gateway then reads as unknown (`AttachState.from_json`
+drops a non-number, a negative or a NaN, and believes none of the others without
+`detached_secs`):
+
+- `detached_secs`: how long no gateway was attached to this chat before this attach.
+  It is absent on a first attach. It runs to this chat's own attach, so it also holds
+  the restore and the adopts of the kept chats before it, and the row calls it the
+  time "the app was disconnected from this chat", not a tool outage.
+- `turn_at_detach`: whether a `session/prompt` was still unanswered when that gap
+  began, so a turn ran on through it.
+- `permission_waits`: the `session/request_permission` requests still unanswered at
+  this attach.
+- `permission_wait_secs`: the longest time one of them waited while detached.
+
+The keeper takes both from its own monotonic clock. A request that waits is the
+fail-closed half of the gap (see "pending approvals" above). The numbers do not depend
+on the inherited-mode pin: when no permission request was open, nothing is said about
+waits.
+
+**The row.** A kept chat the adopt pass attached whose turn was running, or whose
+approval waited, gets one `notice` row. "Running" is the keeper's `turn_at_detach`
+or the restore's `_restart_interruption_owed`; the keeper's word is needed because
+the owed flag is not set when the transcript on disk already reads as cut. An older
+keeper reports no gap and no `turn_at_detach`, so for it a restored turn marker
+with `cut` not false stands in. The row is
+`GATEWAY_NOTICE_RESTART_KEPT_RUNNING` with `meta.kind` `restart_receipt`, appended
+after the attach and before `_watch_agent_turns`, so it lands above the continuing
+turn's rows. Its `notice_args` carry `running: 1` when the turn ran on, and only the
+measured numbers: `detached_secs`, and `waits` with `wait_secs` when above 0. The
+dashboard draws it as a single line with a closed "What happened" fold
+(`RestartReceiptNotice`, lines from `restartReceiptDetails`; the "turn carried on"
+line only with `running`). An idle kept chat gets no row, only its entry in the
+record. A chat left to another start gets no row: that start attaches through
+`client_keeper.adopt_for`, which reports nothing to the receipt.
+A cut chat already has its "interrupted" row and a held card already shows in its
+chat, so neither gets a second row.
+
 ### Platforms and harnesses
 
 - **POSIX only.** The keeper relies on AF_UNIX peer credentials by pid, process groups
@@ -1218,11 +1284,11 @@ records, the keeper's request and journal bookkeeping, consumed-line accounting)
 `test/test_chat_keeper_process.py`, which runs a real keeper over
 `test/fixtures/chat_keeper/fake_adapter.py`. That file covers exactly-once replay to a
 held attach, a re-delivered open request, an old attachment's answer withheld, an exit
-while detached, the orphan timer, a terminate, a group SIGTERM, the three
+while detached, the welcome's gap and approval-wait report, the orphan timer, a terminate, a group SIGTERM, the three
 attach refusals, and a gateway on another data home whose orphan-MCP sweep, holding
 no record of a reparented keeper, passes it over while it takes a marked control. `test/test_chat_keeper_adopt.py` covers the client side: which chats
 are eligible, the adopt handshake and its refusal, an unlanded first turn, the detach
-ack, the idle safe-point ack, the restore's interruption row, and two starts of one kept chat: the second neither attaches nor ends the keeper, and the pass waits on the start holding it. `test/test_chat_keeper_sweeps.py`
+ack, the idle safe-point ack, the restore's interruption row, and two starts of one kept chat: the second neither attaches nor ends the keeper, and the pass waits on the start holding it. `test/test_restart_receipt.py` covers the receipt: the row and its ordering before the watch, no wait line without a wait, no running line for a row only a wait raised, an older keeper's running turn read from the restore's marker, the keeper's gap report on a frozen clock, and the record's kept, left, cut (a stopped turn excluded), queued (a boot-accepted card excluded) and ended entries and its single append. `test/test_slot_list_rebuild.py` pins that a restore that raises still writes its receipt, marked incomplete. `test/test_chat_keeper_sweeps.py`
 covers the sweep skip, with a positive control. The handshake the adopt relies on is
 captured live in `test/fixtures/acp_frames/claude/chat-keeper-adopt-live.jsonl`
 (claude-agent-acp 0.109.0).

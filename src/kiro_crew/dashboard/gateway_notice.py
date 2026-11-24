@@ -144,6 +144,12 @@ GATEWAY_NOTICE_CREW_TURN_NO_PERMIT = "crew_turn_no_permit"
 GATEWAY_NOTICE_TURN_INTERRUPTED_RESTART = "turn_interrupted_restart"
 GATEWAY_NOTICE_TURN_INTERRUPTED_CLOSE = "turn_interrupted_close"
 
+# The restart receipt of a chat a chat keeper kept running (``restart_receipt``).
+# ``notice_args``: ``running`` (1) when its turn ran on, ``detached_secs`` (how long
+# no gateway was attached to the chat) when the keeper measured it, and ``waits`` /
+# ``wait_secs`` only when a tool approval waited.
+GATEWAY_NOTICE_RESTART_KEPT_RUNNING = "restart_kept_running"
+
 # A capability a member's saved config needs but its backend cannot honour
 # (``turn_failures``). Fixed text; no args.
 GATEWAY_NOTICE_CAPABILITY_TOOL_LIMITS_UNSUPPORTED = "capability_tool_limits_unsupported"

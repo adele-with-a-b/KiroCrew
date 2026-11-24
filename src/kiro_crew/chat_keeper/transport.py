@@ -51,6 +51,26 @@ class KeeperAttachError(Exception):
         self.reason = reason
 
 
+#: The bound on a gap the welcome may report: past a keeper's adopt window by far.
+_GAP_SECS_MAX = 7 * 24 * 3600.0
+
+
+def _gap_secs(value: object) -> float | None:
+    """A reported gap length in seconds, or None when absent or not a sane number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not 0 <= value <= _GAP_SECS_MAX:  # also refuses NaN
+        return None
+    return float(value)
+
+
+def _gap_count(value: object) -> int:
+    """A reported count of waiting requests, 0 when absent or malformed."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
 @dataclass(frozen=True)
 class AttachState:
     """The keeper's own report, sent inside its authenticated welcome."""
@@ -66,6 +86,14 @@ class AttachState:
     open_agent_requests: int
     session_answers: dict[str, str] = field(default_factory=dict)
     session_updates: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: How long no gateway was attached before this attach; None on a keeper's first
+    #: attach, or from a keeper too old to say.
+    detached_secs: float | None = None
+    #: Whether a turn was still running when that gap began.
+    turn_at_detach: bool = False
+    #: Open permission requests that waited through that gap, and the longest wait.
+    permission_waits: int = 0
+    permission_wait_secs: float = 0.0
 
     @classmethod
     def from_json(cls, body: object) -> "AttachState":
@@ -75,7 +103,16 @@ class AttachState:
             returncode = body.get("returncode")
             answers = body.get("session_answers") or {}
             updates = body.get("session_updates") or {}
+            # The gap fields mean nothing without the gap they describe.
+            detached = _gap_secs(body.get("detached_secs"))
+            gap_known = detached is not None
             return cls(
+                detached_secs=detached,
+                turn_at_detach=gap_known and body.get("turn_at_detach") is True,
+                permission_waits=_gap_count(body.get("permission_waits")) if gap_known else 0,
+                permission_wait_secs=(
+                    (_gap_secs(body.get("permission_wait_secs")) or 0.0) if gap_known else 0.0
+                ),
                 session_key=str(body["session_key"]),
                 keeper_pid=int(body["keeper_pid"]),
                 adapter_pid=int(body["adapter_pid"]),

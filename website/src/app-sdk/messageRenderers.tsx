@@ -44,7 +44,7 @@ import { toolRailColor } from '../utils/toolRailColor'
 import SkillLoadCard, { isSkillLoadRow } from '../pages/chat/SkillLoadCard'
 import { ErrorCard } from '../pages/chat/ErrorCard'
 import { decisionStripFieldOf } from '../pages/chat/decisionRecord'
-import { agentNoToolsAgent, resolveGatewayNotice } from '../pages/chat/gatewayNotice'
+import { agentNoToolsAgent, resolveGatewayNotice, restartReceiptDetails } from '../pages/chat/gatewayNotice'
 import AgentNoToolsNotice from '../pages/chat/AgentNoToolsNotice'
 import StopEventCard from '../pages/chat/StopEventCard'
 import { warmBriefBodyOf } from '../components/chat/WarmBriefCard'
@@ -67,6 +67,8 @@ import { useReportRowActive } from '../pages/chat/rowActivity'
 // Lazy: only a KAS session with a folder agent's hooks ever draws this row, so it
 // stays out of the App chunk (Bundle Size Gate).
 const ProjectHooksNotice = lazy(() => import('../pages/chat/ProjectHooksNotice'))
+// Lazy for the same reason: only a chat kept running across a restart draws it.
+const RestartReceiptNotice = lazy(() => import('../pages/chat/RestartReceiptNotice'))
 
 /** Everything a renderer may read. Passed per row so entries stay pure functions. */
 /** What a host that offers reply threads hands the rows: the footer data per
@@ -856,6 +858,21 @@ export const defaultMessageRenderers: readonly MessageRenderer[] = [
       const notice = resolveGatewayNotice(m, ctx.messages, ctx.index)
       return ctx.row(
         <AgentNoToolsNotice content={notice?.text ?? m.content} agent={agentNoToolsAgent(m) ?? ''} />,
+      )
+    },
+  },
+  {
+    // A chat kept running across a restart: its one line and a fold with what the
+    // keeper measured. Matched on its token, like the rows above.
+    id: 'restart_receipt',
+    roles: ['notice'],
+    match: m => restartReceiptDetails(m) !== null,
+    render: (m, ctx) => {
+      const notice = resolveGatewayNotice(m, ctx.messages, ctx.index)
+      return ctx.row(
+        <Suspense fallback={<NoticeCard content={notice?.text ?? m.content} />}>
+          <RestartReceiptNotice content={notice?.text ?? m.content} details={restartReceiptDetails(m) ?? []} />
+        </Suspense>,
       )
     },
   },
