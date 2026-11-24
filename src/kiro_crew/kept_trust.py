@@ -92,7 +92,9 @@ def mark_owner_stop(how: str) -> bool:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         # O_EXCL: an earlier stop's mark is left as it is, and only the call that
         # created one may take it back (:func:`unmark_owner_stop`).
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        fd = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600
+        )
     except FileExistsError:
         return False
     except OSError:

@@ -273,7 +273,12 @@ class TestSessionControlWidth:
 
     def _manifest(self, **ctl):
         return AppManifest.from_dict(
-            {**BASE, "contributes": {"sessionControls": [{"id": "c", "entryPoint": "dist/c.mjs", **ctl}]}}
+            {
+                **BASE,
+                "contributes": {
+                    "sessionControls": [{"id": "c", "entryPoint": "dist/c.mjs", **ctl}]
+                },
+            }
         )
 
     def test_absent_is_the_default_and_omitted_from_output(self):
@@ -291,7 +296,17 @@ class TestSessionControlWidth:
 
     @pytest.mark.parametrize(
         "bad",
-        [SESSION_CONTROL_DEFAULT_WIDTH - 1, SESSION_CONTROL_MAX_WIDTH + 1, -5, 0, None, True, "396", 380.5, [396]],
+        [
+            SESSION_CONTROL_DEFAULT_WIDTH - 1,
+            SESSION_CONTROL_MAX_WIDTH + 1,
+            -5,
+            0,
+            None,
+            True,
+            "396",
+            380.5,
+            [396],
+        ],
     )
     def test_anything_else_is_refused_at_install_naming_the_bounds(self, bad):
         errs = [e for e in self._manifest(width=bad).validate(None) if "width" in e]

@@ -296,16 +296,23 @@ async def test_a_report_landing_before_the_lock_is_read_again_not_overwritten(mo
     """The worker's newer discussion is kept: the gateway builds again from it."""
     ids = await _moving()
     real_record = worker_routes._record_report
-    calls = {"n": 0}
+    calls = {"n": 0, "nested": False}
 
     async def report_first(*args: Any, **kwargs: Any) -> Any:
+        # The facade patch reaches the worker route too: its own report runs as is.
+        if calls["nested"]:
+            return await real_record(*args, **kwargs)
         calls["n"] += 1
         if calls["n"] == 1:
             newer = {"status": "progress", "summary": "Asking.", "discussion": {"phase": "asking"}}
-            assert (await _report(WORKER_A, newer))[0] == 200
+            calls["nested"] = True
+            try:
+                assert (await _report(WORKER_A, newer))[0] == 200
+            finally:
+                calls["nested"] = False
         return await real_record(*args, **kwargs)
 
-    monkeypatch.setattr(waits, "_record_report", report_first)
+    monkeypatch.setattr(routes, "_record_report", report_first)
     state = _state()
 
     assert (

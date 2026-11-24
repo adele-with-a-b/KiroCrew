@@ -700,6 +700,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _finished_watch,
         _monitor_context_refusal,
         _parsed_pull_request_target,
+        _retained_loop_refusal,
     )
     from kiro_crew.mcp_tools.control_parts.schemas import (  # noqa: F401
         _ARMING_STEER_STRUCTURED_BY_DEFAULT,

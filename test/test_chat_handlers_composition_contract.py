@@ -545,6 +545,7 @@ _OWNER_MODULES = frozenset(
         "resume_identity",
         "resume_live",
         "resume_window",
+        "send_lease",
         "session_relaunch",
         "slot_approval",
         "slot_create",
@@ -560,6 +561,7 @@ _OWNER_MODULES = frozenset(
         "slot_summary",
         "source_links",
         "sse_write",
+        "steer_decision",
         "turn_stop",
     }
 )
@@ -826,8 +828,8 @@ slot_settings | api_chat_slot_color | async function | (request: 'web.Request') 
 chat_send | _sweep_stale_permissions | function | (slot: "'_ChatSlot'") -> 'None'
 chat_send | _send_binds_agent | function | (agent: 'str', slot: 'Any') -> 'bool'
 chat_send | _send_harness_command | async function | (message: 'str', state: 'DashboardState', slot: '_ChatSlot') -> 'str'
-chat_send | steer_is_auto | function | (value: 'object') -> 'bool'
-chat_send | decided_message_handling | async function | (slot: 'Any', message: 'str') -> 'tuple[bool, dict | None]'
+steer_decision | steer_is_auto | function | (value: 'object') -> 'bool'
+steer_decision | decided_message_handling | async function | (slot: 'Any', message: 'str') -> 'tuple[bool, dict | None]'
 chat_send | api_chat | async function | (request: 'web.Request') -> 'web.StreamResponse'
 sse_write | write_sse_or_abort | async function | (request: 'web.Request', resp: 'web.StreamResponse', data: 'bytes') -> 'None'
 app_admission | _app_slot_acquisition_denial | async function | (request: 'web.Request', state: "'DashboardState'", request_app: 'str', slot_name: 'str', operation: 'str', *, session_grant_route: 'bool') -> 'tuple[web.Response | None, Any]'
@@ -1700,7 +1702,7 @@ _SYNC_IO_PLANTS = {"time": "time.sleep(1)", "os": 'os.system("true")'}
 _SYNC_IO_REACH_PENDING = frozenset({"resume", "slot_lifecycle"})
 
 #: Owners that define no coroutine, so the gate has nothing in them to reach.
-_SYNC_ONLY_OWNERS: frozenset[str] = frozenset()
+_SYNC_ONLY_OWNERS: frozenset[str] = frozenset({"send_lease"})
 
 
 def _sync_io_gate() -> types.ModuleType:

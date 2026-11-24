@@ -139,15 +139,15 @@ def test_a_facade_patch_of_every_scanned_name_reaches_every_module_holding_it() 
     assert _index().divergent() == ()
 
 
-def test_a_patched_sel_reaches_the_class_and_the_breadcrumb_reader() -> None:
-    """``sel`` is defined in the records owner and read by ``SafetyOverride`` and by
-    ``take_dropped_grant`` in two other owners; one patch through the facade is the
-    accessor both of them call."""
+def test_a_patched_sel_reaches_the_class() -> None:
+    """``sel`` is defined in the records owner and read by ``SafetyOverride`` in the
+    grant owner; one patch through the facade is the accessor it calls. The breadcrumb
+    owner writes no audit row: a grant a restart finds is restored, not dropped."""
     sentinel = object()
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(safety_override, "sel", lambda: sentinel)
-        for owner in ("kiro_crew.safety_override_grant", "kiro_crew.safety_override_breadcrumb"):
-            assert vars(sys.modules[owner])["sel"]() is sentinel, owner
+        owner = "kiro_crew.safety_override_grant"
+        assert vars(sys.modules[owner])["sel"]() is sentinel, owner
     assert vars(sys.modules["kiro_crew.safety_override_grant"])["sel"] is safety_override.sel
 
 

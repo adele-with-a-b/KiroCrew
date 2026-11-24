@@ -309,6 +309,7 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
     )
     from kiro_crew.work_plan_vocab import (  # noqa: F401
         next_pick,
+        show_step,
         widest_plan,
         widest_releases,
     )

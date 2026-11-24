@@ -1226,8 +1226,7 @@ async def test_a_late_steering_answer_does_not_end_the_agent_started_turn(
 
 # ── A steer folded into an agent-started turn ──
 #
-# Abdel, 2026-11-23, "Q1a yes": a note may cut into a turn the chat started by itself
-# and is read at its next step. claude-agent-acp 0.109.0 folds a session/prompt into
+# A note may cut into a turn the chat started by itself and is read at its next step. claude-agent-acp 0.109.0 folds a session/prompt into
 # such a turn; the frames below are in the order a live probe of it saw.
 
 _FOLD_VERSION = "0.109.0"
@@ -1264,7 +1263,9 @@ async def test_a_steer_is_folded_into_an_agent_started_turn_and_read_at_its_next
     turns: list[AcpClient] = []
     client, reader, sent = await _fold_turn(_chunk("running the job "), _TOOL_OPEN, turns=turns)
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         first = []
         while not client._active_tool_calls.possibly_open:
             first.append(await stream.__anext__())
@@ -1300,7 +1301,7 @@ async def test_a_steer_is_folded_into_an_agent_started_turn_and_read_at_its_next
     assert "session/cancel" not in proc_writes
     # The answer is the turn's own: nothing of it is left for the next reader.
     assert client._folded_prompts() == {}
-    await async_wait_until(lambda: len(turns) == 2, timeout=5)
+    await async_wait_until(lambda: len(turns) == 2, timeout=FALLBACK_TIMEOUT_SECS)
     assert client._buffer[0].params["update"]["content"]["text"] == "next turn"
     await _stop_restarted_reader(client)
 
@@ -1310,7 +1311,9 @@ async def test_a_folded_prompt_answered_before_the_close_ends_the_turn_on_its_an
     turns: list[AcpClient] = []
     client, reader, sent = await _fold_turn(_chunk("working "), turns=turns)
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("stop, that issue is fixed") is True
         [prompt_id] = _prompt_ids(sent)
@@ -1321,7 +1324,7 @@ async def test_a_folded_prompt_answered_before_the_close_ends_the_turn_on_its_an
     assert kinds.count(EVENT_COMPLETE) == 1
     assert kinds[-2:] == [EVENT_STEER_CONSUMED, EVENT_COMPLETE]
     # The trailing close is a lone marker: it starts no turn of its own.
-    await async_wait_until(lambda: client._stdout_claims == 0, timeout=5)
+    await async_wait_until(lambda: client._stdout_claims == 0, timeout=FALLBACK_TIMEOUT_SECS)
     await _stop_restarted_reader(client)
     assert turns == [client]
 
@@ -1330,7 +1333,9 @@ async def test_a_folded_prompt_answered_before_the_close_ends_the_turn_on_its_an
 async def test_a_folded_prompt_the_adapter_refuses_is_not_reported_read() -> None:
     client, reader, sent = await _fold_turn(_chunk("working "))
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("rebase first") is True
         [prompt_id] = _prompt_ids(sent)
@@ -1350,7 +1355,9 @@ async def test_a_folded_prompt_the_adapter_refuses_is_not_reported_read() -> Non
 async def test_a_stopped_turn_with_a_folded_note_reports_nothing_read() -> None:
     client, reader, sent = await _fold_turn(_chunk("working "))
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("rebase first") is True
         [prompt_id] = _prompt_ids(sent)
@@ -1369,7 +1376,9 @@ async def test_a_fold_answered_with_an_error_after_the_close_ends_the_turn() -> 
     """The adapter closes a failed cycle first, then rejects the prompt that owned it."""
     client, reader, sent = await _fold_turn(_chunk("working "))
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("rebase first") is True
         [prompt_id] = _prompt_ids(sent)
@@ -1379,7 +1388,7 @@ async def test_a_fold_answered_with_an_error_after_the_close_ends_the_turn() -> 
             "error": {"code": -32603, "message": "overloaded"},
         }
         _feed(reader, _chunk("trying"), _AUTONOMOUS_END, failure)
-        rest = await asyncio.wait_for(_collect(stream), timeout=5)
+        rest = await asyncio.wait_for(_collect(stream), timeout=FALLBACK_TIMEOUT_SECS)
 
     kinds = [e.kind for e in rest]
     assert EVENT_STEER_CONSUMED not in kinds
@@ -1395,12 +1404,14 @@ async def test_a_turn_ended_by_another_response_reports_its_fold_unread() -> Non
     """A response to a request sent during the turn ends it before the fold's answer."""
     client, reader, sent = await _fold_turn(_chunk("working "))
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("rebase first") is True
         [prompt_id] = _prompt_ids(sent)
         _feed(reader, _answer(prompt_id + 1))
-        rest = await asyncio.wait_for(_collect(stream), timeout=5)
+        rest = await asyncio.wait_for(_collect(stream), timeout=FALLBACK_TIMEOUT_SECS)
 
     assert EVENT_STEER_CONSUMED not in [e.kind for e in rest]
     assert rest[-1].kind == EVENT_COMPLETE
@@ -1417,7 +1428,9 @@ async def test_a_turn_closed_with_no_complete_requeues_its_fold_as_possibly_deli
     gate and an error also end it) still marks the unanswered fold."""
     client, reader, sent = await _fold_turn(_chunk("working "))
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("rebase first") is True
         _feed(reader, _chunk("still working"))
@@ -1432,7 +1445,9 @@ async def test_a_turn_closed_with_no_complete_requeues_its_fold_as_possibly_deli
 async def test_a_second_note_into_the_same_agent_started_turn_is_not_folded() -> None:
     client, reader, sent = await _fold_turn(_chunk("working "))
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("rebase first") is True
         assert await client.steer("and then run the tests") is False
@@ -1454,10 +1469,12 @@ async def test_an_earlier_turns_folded_answer_ends_the_turn_reading_its_tail() -
     # A fold from turn 0 whose turn ended before its answer was read.
     client._folded_prompts()[5] = (0, "old note")
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         _feed(reader, _chunk("still going"), _answer(5))
-        rest = await asyncio.wait_for(_collect(stream), timeout=5)
+        rest = await asyncio.wait_for(_collect(stream), timeout=FALLBACK_TIMEOUT_SECS)
 
     assert [e.text for e in rest if e.kind == EVENT_TEXT_CHUNK] == ["still going"]
     kinds = [e.kind for e in rest]
@@ -1470,7 +1487,9 @@ async def test_an_earlier_turns_folded_answer_ends_the_turn_reading_its_tail() -
 async def test_a_steer_after_an_agent_started_turn_ended_is_told_the_turn_ended() -> None:
     client, reader, _sent = await _fold_turn(_chunk("working "), version="0.94.2")
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         _feed(reader, _AUTONOMOUS_END)
         [e async for e in stream]
@@ -1485,7 +1504,9 @@ async def test_a_steer_after_an_agent_started_turn_ended_is_told_the_turn_ended(
 async def test_below_the_fold_floor_an_agent_started_turn_keeps_the_fallback(version) -> None:
     client, reader, sent = await _fold_turn(_chunk("working "), version=version)
 
-    async with contextlib.aclosing(client.stream_unsolicited(timeout=30)) as stream:
+    async with contextlib.aclosing(
+        client.stream_unsolicited(timeout=FALLBACK_TIMEOUT_SECS)
+    ) as stream:
         await stream.__anext__()
         assert await client.steer("rebase first") is False
         assert client.steer_refusal == "agent_turn"
