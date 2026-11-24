@@ -11,5 +11,7 @@
  * Level 12 adds `permissions.openFiles` and `useOpenFile`: an app opens a local file on a click.
  * Level 13 adds `useSessionControlJump`: a session control scrolls its own chat to
  * one of its messages, with the Back pill.
+ * Level 14 adds a session control's `keys`: a key, changeable in Settings →
+ * Shortcuts → Apps, opens its box in the chat on screen with `via: 'key'`.
  */
-export const APP_SDK_LEVEL = 13
+export const APP_SDK_LEVEL = 14

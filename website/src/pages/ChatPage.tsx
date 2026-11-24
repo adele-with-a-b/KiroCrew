@@ -1108,7 +1108,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     dismissTip,
     onSendNow: sendNowAfterRace,
   })
-  const composerSessionControls = useSessionControlChips({ sessionControls, openSessionControl, activeSlot, sessionControlStatuses })
+  const composerSessionControls = useSessionControlChips({ sessionControls, openSessionControl, activeSlot, sessionControlStatuses, appKeys: sessionControlState.appKeys })
 
   const currentChatSlot = useCallback(() => activeSlotRef.current, [activeSlotRef])
   const deliveryStrip = useDeliveryWarningStrip<SentTurnRestore>({

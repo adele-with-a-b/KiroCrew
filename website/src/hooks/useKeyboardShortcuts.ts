@@ -648,7 +648,7 @@ export function wrapIndex(len: number, curIdx: number, step: number): number {
  * real PTY keystroke there (it sends ESC — how vim users leave insert mode), so
  * the session-cycle chord must let it through rather than swallow it.
  */
-function isTerminalTarget(target: EventTarget | null): boolean {
+export function isTerminalTarget(target: EventTarget | null): boolean {
   const el = target as Element | null
   return !!el && typeof el.closest === 'function' && !!el.closest('.xterm')
 }

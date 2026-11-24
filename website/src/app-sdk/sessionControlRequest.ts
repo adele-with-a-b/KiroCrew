@@ -20,10 +20,10 @@ import type { PanelTabRequest } from './panelTabRequest'
 import { sendAppNav } from '../linkPreview/linkPreviewNav'
 import { readMessageRef } from '../linkPreview/linkPreviewProtocol'
 
-/** Where an open came from: a click on the app's own link-preview card, or a
- *  status row or go. One shape for every source, so a later one (a shortcut key
- *  pressed again while the popover is open) is a new `via`, not a new request. */
-export type SessionControlOpenVia = 'link' | 'status'
+/** Where an open came from: a click on the app's own link-preview card, a
+ *  status row or go, or one of the control's `keys` (its `arg` is the payload).
+ *  One shape for every source, so a new one is a new `via`, not a new request. */
+export type SessionControlOpenVia = 'link' | 'status' | 'key'
 
 /** One open request: `seq` grows with every open, so the same payload sent twice still reads as new. */
 export interface SessionControlRequest extends PanelTabRequest {

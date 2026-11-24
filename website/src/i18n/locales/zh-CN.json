@@ -6776,6 +6776,7 @@
       "session_control_needs_attention": "需要处理",
       "session_control_ready": "就绪",
       "session_control_chip_label": "{{label}} — {{detail}}",
+      "session_control_chip_shortcut": "{{label}} {{keys}}",
       "agent_inherited_default": "此会话跟随默认代理（{{name}}）。它没有自己的代理，因此默认代理变化时它也会变化。点击可固定一个。",
       "agent_cycle_hint": "下一个代理：Alt+Shift+A · 上一个：Alt+Shift+Z",
       "agent_cycle_hint_mac": "下一个代理：⌥⇧A · 上一个：⌥⇧Z",
@@ -20120,7 +20121,15 @@
         "clear_shortcut": "清除",
         "panel_toggles": "面板开关",
         "skips_shell_hint": "在终端内也会生效，因此 shell 将不再收到该按键——请不要选择 Ctrl+C 或 Ctrl+R。",
-        "skips_shell_hint_mac": "在终端内也会生效，因此 shell 将不再收到该按键——请不要选择 ⌃C (Ctrl+C) 或 ⌃R (Ctrl+R)。"
+        "skips_shell_hint_mac": "在终端内也会生效，因此 shell 将不再收到该按键——请不要选择 ⌃C (Ctrl+C) 或 ⌃R (Ctrl+R)。",
+        "apps": "应用",
+        "app_key_row": "{{app}} · {{label}}",
+        "app_key_off_crew": "它的按键 {{keys}} 是 Crew 的“{{holder}}”，所以已关闭。按下按键来选另一个。",
+        "app_key_off_app": "它的按键 {{keys}} 已被“{{holder}}”使用，所以已关闭。按下按键来选另一个。",
+        "app_key_refused": "{{keys}} 已被“{{holder}}”使用。按另一个键，或按 Esc 保留 {{current}}。",
+        "app_key_refused_none": "{{keys}} 已被“{{holder}}”使用。按另一个键，或按 Esc 停止。",
+        "app_key_holder_editing": "查找、发送和编辑键（复制、粘贴、撤销）",
+        "apps_hint": "应用为消息框下方它自己的框添加的按键。它们作用于屏幕上的聊天。Crew 自己的按键始终优先。"
       },
       "skillsPanel": {
         "analyze_each_completed_session_and_draft_a_reusa": "分析每个已完成会话，当该会话展示出会复现的流程（即未来会话在处理不同目标时仍会再次执行的流程）时起草可复用 SKILL.md。默认关闭。草稿会暂存到“自定义 → 技能”的待审队列中供审阅 — 未经你批准不会生效（见下文）。",
