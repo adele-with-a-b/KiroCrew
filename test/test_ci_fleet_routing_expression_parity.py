@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from ci_matrix_expression_helpers import evaluate_matrix_value
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _WORKFLOWS_DIR = _REPO_ROOT / ".github" / "workflows"
@@ -27,6 +28,28 @@ _FAST_GATE_PUSH_SKIP_CLAUSE = (
     "github.event_name != 'push' || vars.MERGE_QUEUE_ENABLED != 'true' "
     "|| github.actor != 'github-merge-queue[bot]'"
 )
+
+# Fork only: adele-with-a-b/KiroCrew drops the Windows legs of the two label
+# lanes unless `windows_tests` says so; every other repository keeps both.
+_UPSTREAM_CONTEXT = {"github.repository": "kirodotdev/KiroCrew"}
+_OWN_FORK_CONTEXTS = (
+    ({"github.repository": "adele-with-a-b/KiroCrew"}, ["ubuntu-latest"]),
+    (
+        {
+            "github.repository": "adele-with-a-b/KiroCrew",
+            "needs.changes.outputs.windows_tests": "true",
+        },
+        ["ubuntu-latest", "windows-latest"],
+    ),
+)
+
+
+def _matrix_legs(matrix: dict, context: dict[str, str]) -> list[dict]:
+    """The legs ``matrix`` instantiates under ``context``, as include-style dicts."""
+    if "os" in matrix:
+        return [{"os": os_name} for os_name in evaluate_matrix_value(matrix["os"], context)]
+    return evaluate_matrix_value(matrix["include"], context)
+
 
 _ACTOR_PREDICATE = "contains(fromJSON(vars.CODEBUILD_ACTOR_IDS || '[]'), github.actor_id)"
 # A route the fleet did not admit falls back TWICE. In this repository it takes the
@@ -678,8 +701,10 @@ def test_both_ci_label_matrix_lanes_route_each_leg_to_its_own_group() -> None:
         # check name interpolates it, so changing a value renames the context
         # branch protection and the readiness poll look for.
         matrix = job["strategy"]["matrix"]
-        legs = matrix["os"] if "os" in matrix else [e["os"] for e in matrix["include"]]
+        legs = [leg["os"] for leg in _matrix_legs(matrix, _UPSTREAM_CONTEXT)]
         assert legs == ["ubuntu-latest", "windows-latest"], job_name
+        for context, fork_legs in _OWN_FORK_CONTEXTS:
+            assert [leg["os"] for leg in _matrix_legs(matrix, context)] == fork_legs, job_name
         assert job["name"] == rendered, job_name
 
 
@@ -770,8 +795,17 @@ def test_new_test_stability_sets_each_legs_own_limit() -> None:
         "new-test-stability"
     ]
     assert job["timeout-minutes"] == "${{ matrix.timeout_minutes || 60 }}"
-    caps = {leg["os"]: leg.get("timeout_minutes") for leg in job["strategy"]["matrix"]["include"]}
-    assert caps == {"ubuntu-latest": 90, "windows-latest": 150}
+    for context in (_UPSTREAM_CONTEXT, *(context for context, _ in _OWN_FORK_CONTEXTS)):
+        legs = _matrix_legs(job["strategy"]["matrix"], context)
+        caps = {leg["os"]: leg.get("timeout_minutes") for leg in legs}
+        expected = {"ubuntu-latest": 90, "windows-latest": 150}
+        assert caps == {os_name: expected[os_name] for os_name in caps}, context
+        timeouts = {leg["os"]: leg.get("pytest_timeout") for leg in legs}
+        assert timeouts == {
+            os_name: {"ubuntu-latest": "120", "windows-latest": "180"}[os_name]
+            for os_name in timeouts
+        }, context
+    assert len(_matrix_legs(job["strategy"]["matrix"], _UPSTREAM_CONTEXT)) == 2
 
 
 def _readiness_job() -> dict:

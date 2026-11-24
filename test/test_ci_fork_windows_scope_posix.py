@@ -56,6 +56,7 @@ def _run(
     tmp_path: Path,
     *,
     fork: str = "true",
+    own_fork: str = "false",
     paths_hit: str = "false",
     labelled: str = "false",
     full_run: str = "false",
@@ -83,6 +84,7 @@ def _run(
             "PATH": os.environ.get("PATH", ""),
             "HOME": str(tmp_path),
             "FORK": fork,
+            "OWN_FORK": own_fork,
             "PATHS_HIT": paths_hit,
             "LABELLED": labelled,
             "FULL_RUN": full_run,
@@ -132,6 +134,39 @@ class TestTheForkWindowsScopeWiring:
             "'pyproject.toml'",
         ):
             assert pattern in filt
+
+
+class TestTheOwnForkWindowsScope:
+    """Fork only: adele-with-a-b/KiroCrew runs a Windows leg on request alone."""
+
+    def test_own_fork_is_a_positive_repository_check(self) -> None:
+        own_fork = _scope_step()["env"]["OWN_FORK"]
+        assert own_fork == "${{ github.repository == 'adele-with-a-b/KiroCrew' }}"
+
+    def test_own_fork_skips_even_a_windows_path_or_branch(self, tmp_path: Path) -> None:
+        for name, kwargs in (
+            ("same-repo", {"fork": "false"}),
+            ("paths", {"paths_hit": "true"}),
+            ("content", {"added": "if os.name == 'nt': pass"}),
+        ):
+            outputs, stdout = _run(tmp_path / name, own_fork="true", **kwargs)
+            assert outputs["windows_tests"] == "false", name
+            assert "ci:windows" in stdout, name
+
+    def test_own_fork_runs_on_the_label_or_full_run(self, tmp_path: Path) -> None:
+        for name, kwargs in (("label", {"labelled": "true"}), ("full", {"full_run": "true"})):
+            for fork in ("true", "false"):
+                outputs, _ = _run(tmp_path / f"{name}-{fork}", own_fork="true", fork=fork, **kwargs)
+                assert outputs["windows_tests"] == "true", (name, fork)
+
+    def test_the_windows_only_jobs_follow_the_scope_on_the_own_fork_alone(self) -> None:
+        jobs = _ci()["jobs"]
+        for name in ("backend-test-windows-fail-closed", "electron-test-windows"):
+            assert jobs[name]["if"] == (
+                "${{ !cancelled() && needs.lint-gate.result == 'success'"
+                " && (github.repository != 'adele-with-a-b/KiroCrew'"
+                " || needs.changes.outputs.windows_tests == 'true') }}"
+            ), name
 
 
 class TestTheForkWindowsScope:
