@@ -77,6 +77,7 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
     if not live:
         return 0
     from kiro_crew.acp.client_keeper import _end_unadopted
+    from kiro_crew.dashboard import restart_receipt
     from kiro_crew.dashboard.chat_utils_slots import effective_session_key
 
     enabled = _feature_on(cfg)
@@ -85,9 +86,9 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
     for record in sorted(live, key=lambda r: r.created):
         slot = slots.get(record.session_key)
         if not enabled or slot is None:
-            await _end_unadopted(
-                record, "the flag is off" if not enabled else "its chat was not restored"
-            )
+            why = "the flag is off" if not enabled else "its chat was not restored"
+            await _end_unadopted(record, why)
+            restart_receipt.note_ended(record.session_key, slot, why)
             # A slot built later (a member slot's retry) then gets its interrupted row.
             _no_longer_kept(record.session_key)
             continue
@@ -99,10 +100,13 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
                 record.instance,
                 record.session_key,
             )
+            restart_receipt.note_left(slot)
         else:
             # Not left for the first message to adopt: its prompt would then read
             # the old turn's frames as its own. The chat gets its interrupted row.
-            await _end_unadopted(record, "the eager adopt did not attach")
+            why = "the eager adopt did not attach"
+            await _end_unadopted(record, why)
+            restart_receipt.note_ended(record.session_key, slot, why)
             _no_longer_kept(record.session_key)
             _owe_no_longer(slot)
     # Every keeper is adopted or ended now: a later reconcile of these chats (Recent,
@@ -265,6 +269,10 @@ async def _start_once(
     if ttl is not None and not ttl.done():
         ttl.cancel()
     _armed_prefetches.pop(session_key, None)
+    from kiro_crew.dashboard import restart_receipt
+
+    # Before the watch, so the receipt row lands above the continuing turn's rows.
+    await restart_receipt.note_kept(state, slot, provider)
     _watch_agent_turns(state, slot, provider, cfg)
     kick = getattr(client, "_maybe_start_idle_reader", None)
     if callable(kick):

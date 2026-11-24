@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../../types'
 
+import { fmtElapsed } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 import { isRetryNotice } from '../../lib/retryNotice'
 import type { NoticeTone } from './NoticeCard'
@@ -130,6 +131,7 @@ const NOTICE_FAMILIES = {
   crew_turn_no_permit: { role: 'error', card: 'error' },
   turn_interrupted_restart: { role: 'error', card: 'error' },
   turn_interrupted_close: { role: 'error', card: 'error' },
+  restart_kept_running: { role: 'notice', card: 'notice', tone: 'info' },
   capability_tool_limits_unsupported: { role: 'error', card: 'error' },
   kas_signed_out: { role: 'error', card: 'error' },
   windows_spawn_blocked: { role: 'error', card: 'error' },
@@ -227,6 +229,7 @@ const COPY_KEY = {
   crew_turn_no_permit: 'pages.chat.gatewayNotice.crew_turn_no_permit',
   turn_interrupted_restart: 'pages.chat.gatewayNotice.turn_interrupted_restart',
   turn_interrupted_close: 'pages.chat.gatewayNotice.turn_interrupted_close',
+  restart_kept_running: 'pages.chat.gatewayNotice.restart_kept_running',
   capability_tool_limits_unsupported: 'pages.chat.gatewayNotice.capability_tool_limits_unsupported',
   kas_signed_out: 'pages.chat.gatewayNotice.kas_signed_out',
   windows_spawn_blocked: 'pages.chat.gatewayNotice.windows_spawn_blocked',
@@ -867,4 +870,35 @@ export function agentNoToolsAgent(m: ChatMessage): string | null {
   const shape = m.role === 'notice' ? shapeOf(m) : null
   if (shape?.token !== 'agent_no_tools') return null
   return typeof shape.args.agent === 'string' && shape.args.agent ? shape.args.agent : null
+}
+
+/** A whole, non-negative count of seconds from a row's args, or null. */
+function wholeSecs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null
+}
+
+/**
+ * The details-fold lines of a restart receipt row, or `null` for any other row.
+ * The row is the `restart_kept_running` family (`dashboard/restart_receipt.py`):
+ * a chat a chat keeper kept running across a restart. Each line states one thing
+ * the keeper measured, and a number the row does not carry gets no line, so a
+ * chat no approval waited in says nothing about waits.
+ */
+export function restartReceiptDetails(m: ChatMessage): string[] | null {
+  const shape = m.role === 'notice' ? shapeOf(m) : null
+  if (shape?.token !== 'restart_kept_running') return null
+  const lines = [i18nT('pages.chat.gatewayNotice.restart_receipt_kept')]
+  const down = wholeSecs(shape.args.down_secs)
+  if (down !== null) {
+    lines.push(i18nT('pages.chat.gatewayNotice.restart_receipt_down', { time: fmtElapsed(down * 1000, { wholeSeconds: true }) }))
+  }
+  const waits = typeof shape.args.waits === 'number' && shape.args.waits > 0 ? Math.round(shape.args.waits) : 0
+  const waited = wholeSecs(shape.args.wait_secs)
+  if (waits > 0 && waited !== null) {
+    lines.push(i18nT('pages.chat.gatewayNotice.restart_receipt_waited', {
+      count: waits,
+      time: fmtElapsed(waited * 1000, { wholeSeconds: true }),
+    }))
+  }
+  return lines
 }

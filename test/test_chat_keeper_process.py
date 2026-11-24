@@ -174,6 +174,40 @@ async def test_a_redelivered_permission_request_comes_after_its_tool_call(home: 
 
 
 @pytest.mark.asyncio
+async def test_the_welcome_reports_the_gap_and_the_approvals_that_waited_in_it(
+    home: Path,
+) -> None:
+    # The restart receipt's numbers: no gap on a first attach, then the detached
+    # time and the permission request left open through it.
+    first = await _start(home)
+    assert first.state.detached_secs is None and first.state.permission_waits == 0
+    assert first.state.turn_at_detach is False
+    await _send(first, {"id": 1, "method": "session/new", "params": {}})
+    await _read(first)
+    params = {"sessionId": "S1", "ask": True}
+    await _send(first, {"id": 2, "method": "session/prompt", "params": params})
+    assert (await _read(first))["id"] == 900
+    await first.detach(first.stdout.consumed_seq)
+
+    second = await _reattach(home, hold=True)
+    gap = second.state.detached_secs
+    assert gap is not None and gap >= 0
+    assert second.state.turn_at_detach is True, "the prompt was unanswered at the detach"
+    assert second.state.permission_waits == 1
+    assert 0 <= second.state.permission_wait_secs <= gap
+    assert second.resume()
+    assert (await _read(second))["id"] == 900
+    await _send(second, {"id": 900, "result": {"outcome": "allow"}})
+    assert _text(await _read(second)) == 'answered:{"outcome": "allow"}'
+    await second.detach(second.stdout.consumed_seq)
+
+    third = await _reattach(home, hold=True)
+    assert third.state.detached_secs is not None
+    assert third.state.permission_waits == 0, "an answered request no longer waits"
+    assert third.state.permission_wait_secs == 0.0
+
+
+@pytest.mark.asyncio
 async def test_a_journaled_permission_request_comes_after_its_acked_tool_call(home: Path) -> None:
     first = await _start(home)
     await _send(first, {"id": 1, "method": "session/new", "params": {}})

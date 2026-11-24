@@ -60,8 +60,10 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
         # read before the restore rebuilds them without it (``chat_trust_restart``;
         # nothing after an explicit stop, ``kept_trust``).
         held_modes = await asyncio.to_thread(chat_trust_restart.arm, state)
-        from kiro_crew.dashboard import chat_keeper_adopt
+        from kiro_crew.dashboard import chat_keeper_adopt, restart_receipt
 
+        # What this start kept, cut and held, written once the drain below is done.
+        restart_receipt.begin()
         # The chats a chat keeper kept running, read before the restore so it does
         # not mark their turns interrupted (``chat_keeper_adopt``).
         kept = await asyncio.to_thread(chat_keeper_adopt.arm, cfg)
@@ -109,6 +111,9 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
         # A crewmate thread the restore deferred is built once more after boot.
         schedule_member_slot_retry(state)
         await drain_restored_parked_sends(state)
+        # Every kept chat is adopted or ended and the parked sends are drained, so
+        # what the receipt calls queued is what waits for a person. Never raises.
+        await restart_receipt.finish(state)
 
         if state._dynamic_cards is not None:
             state._dynamic_cards.seed_open_sessions()
