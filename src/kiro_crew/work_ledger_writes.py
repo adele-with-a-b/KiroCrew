@@ -16,7 +16,12 @@ from typing import Any
 from kiro_crew import resource_status, work_preview
 from kiro_crew.atomic_write import atomic_write
 from kiro_crew.session_ledger import _store_name
-from kiro_crew.work_ledger_plan import check_parent, refuse_unbindable, require_plan_change
+from kiro_crew.work_ledger_plan import (
+    check_parent,
+    count_seated,
+    refuse_unbindable,
+    require_plan_change,
+)
 from kiro_crew.work_ledger_records import (
     BLOCKED_REASONS,
     CODE_ALREADY_BOUND,
@@ -494,7 +499,7 @@ def _admit_create_locked(slot_key: str, *, seat: bool = True) -> ConductorRecord
         )
     # The goal's own fan-out bound, only on a board that recorded a goal (a queue
     # board never does). A bound below the store's is one the user set.
-    seated = sum(1 for item in open_items if counts_toward_concurrency(item.plan))
+    seated = count_seated(open_items)
     if seat and live.goal_version > 0 and seated >= live.concurrency_cap:
         raise WorkLedgerError(
             f"this goal holds {seated} open items and its concurrency cap "

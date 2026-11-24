@@ -87,19 +87,21 @@ and an item with no `plan` is stored and read exactly as before.
 |---|---|
 | `level` | `epic`, `story` or `task`; no level reads as a story. An epic is never dispatched: its stories are, and a sub-task is done by its story's worker |
 | `parent` | the `it_` id of its epic (for a story) or its story (for a task, which needs one); an epic takes none. Every link goes exactly one level down, and a level change that would strand an item under it is refused |
-| `backlog` | `true` while the item is stored but not started. Absent means it is in the sprint |
+| `backlog` | `true` while the item is stored but not started; `false` holds it in the sprint before its worker binds. With no key the item decides: a story with a worker is in the sprint, and one with none is in the backlog (`work_plan_vocab.in_backlog`) |
 | `rank` | a finite number, lower is sooner: the backlog's order. The person's drag on the board writes it |
 | `step` | `todo`, `mocks`, `build`, `review`, `merged` or `released`. A read moves it forward by itself; see below |
 | `release` | the name of the release the item ships in |
 | `tags` | up to 8 free labels, each up to 32 chars |
 
 The sprint is the item's `round`: an item not in the backlog is in the sprint of
-its round. The board header holds the release list, `releases`: up to 16, each
+its round. Whether a story is in the backlog is worked out on every read and never
+written, so a board whose conductor never planned shows its waiting stories (no
+worker, no `backlog` key) as backlog rows without a write to its ledger. The board header holds the release list, `releases`: up to 16, each
 `{name, state, note?, shipped_at?}`, with `state` `planned` or `shipped`. A 17th
 name is refused: update a release instead of adding one.
 
 - `create` with `plan={"backlog": true, "rank": 3}` stores an item before you
-  dispatch it. A backlog item, an epic and a sub-task (`level: "task"`, done by
+  dispatch it. A marked backlog item, an epic and a sub-task (`level: "task"`, done by
   its story's worker) take no seat in the goal's `concurrency_cap` (the store's
   own open bound still counts them), and none of them can be bound, locally or on
   another crew; a plan write that would make a bound item one of them is refused.
@@ -108,14 +110,21 @@ name is refused: update a release instead of adding one.
   seat is free, so the patrol holds only once every seat is taken.
 - `plan` with `item_id` and `plan` lays the given keys over the item's plan: a
   key given replaces, a key given as `null` clears, a key left out keeps.
-  `{"backlog": false}` (or `null`) pulls the item into the sprint, which takes a
-  seat and is refused with `goal_concurrency_cap_reached` when none is free.
+  `{"backlog": false}` pulls the item into the sprint, which takes a seat and is
+  refused with `goal_concurrency_cap_reached` when none is free. `false` is stored
+  and keeps it in the sprint until its worker binds. `null` clears the key: that
+  takes a seat too (refused the same way when none is free), as any unmarked
+  story holds one, but the item stays a backlog row until a worker is bound.
 - `release` with `release={name, state?, note?}` adds a release or updates the
   one it names. Shipping it stamps `shipped_at` once.
 - `work_ledger_read`'s `conductor.next_pick` is the item to pull and dispatch
-  next when a seat frees: the lowest-ranked open backlog story (never an epic or
-  a sub-task), unranked ones after ranked ones, oldest first. It is derived on every
+  next when a seat frees: the lowest-ranked open backlog story with no worker,
+  marked or not (never an epic or a sub-task), unranked ones after ranked ones,
+  oldest first. It is derived on every
   read and never stored. A compact read carries each planned row's `plan`.
+  The Board's read also sends `conductor.seats_held`, the seats the cap counts
+  (`null` until a goal is recorded). It can exceed the stories with a worker,
+  because an unmarked story with no worker is a backlog row yet holds a seat.
 
 A planned item's `step` moves by itself on every read (`work_plan_vocab.shown_step`),
 so the conductor writes `todo`, `mocks` and `build` and never the rest:
@@ -133,7 +142,7 @@ it; the `goal-board` page, which reads the crew log's fold, shows the stored ste
 An item with no `plan` gets none.
 
 The person's drag on the Crew board writes only `plan.rank`, and only on a backlog
-row, as a `rank` entry
+row (an unplanned story with no worker is one), as a `rank` entry
 with actor `person` (`dashboard/handlers/crew_board_rank.py`, through
 `POST /api/crew-board/action` with `action: "rank"`). The rest of the plan stays
 the conductor's. Every plan write lands as a `plan` event on the item, and the

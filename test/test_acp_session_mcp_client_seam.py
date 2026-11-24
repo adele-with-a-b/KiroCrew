@@ -43,6 +43,12 @@ from kiro_crew.providers.mirrors.claude_code import ClaudeCodeMirror
 #: What a claude session asks for beside its options (``acp.raw_sdk_tasks``).
 _RAW_SDK_FILTER = list(RAW_SDK_MESSAGE_FILTER)
 
+#: A ``kirocrew`` session's agent, named to its ``claude`` child on the wire envelope.
+_NAMED_KIROCREW = {
+    "env": {"KIROCREW_SESSION_AGENT": "kirocrew"},
+    "settings": {"env": {"KIROCREW_SESSION_AGENT": "kirocrew"}},
+}
+
 
 class TestClientSeam:
     def _seeded(self, tmp_path, **kw):
@@ -585,11 +591,8 @@ class TestClientSeam:
         from kiro_crew import model_registry
 
         substitute = "global.anthropic.claude-sonnet-4-6[1m]"
-        monkeypatch.setattr(
-            model_registry,
-            "_ADVERTISED_MODELS",
-            {"claude_code": ["global.anthropic.claude-opus-5[1m]", substitute]},
-        )
+        # The pin is not advertised, so the retry adopts the substitute.
+        monkeypatch.setattr(model_registry, "_ADVERTISED_MODELS", {"claude_code": [substitute]})
         _write_spec(agents_dir, servers={"foo": {"command": "/bin/foo"}}, tools=["@foo"])
         client = AcpClient(
             work_dir=tmp_path,
@@ -630,7 +633,7 @@ class TestClientSeam:
 
         assert len(sent) == 2
         assert sent[0]["_meta"] == {
-            "claudeCode": {"options": {}, "emitRawSDKMessages": _RAW_SDK_FILTER}
+            "claudeCode": {"options": _NAMED_KIROCREW, "emitRawSDKMessages": _RAW_SDK_FILTER}
         }
         retry = sent[1]
         assert "foo" in _by_name(retry["mcpServers"])
@@ -649,7 +652,7 @@ class TestClientSeam:
         params = await self._session_new_params(client, tmp_path, monkeypatch)
         assert "foo" in _by_name(params["mcpServers"])
         assert params["_meta"] == {
-            "claudeCode": {"options": {}, "emitRawSDKMessages": _RAW_SDK_FILTER}
+            "claudeCode": {"options": _NAMED_KIROCREW, "emitRawSDKMessages": _RAW_SDK_FILTER}
         }
 
     _pin_harness = staticmethod(_pin_harness)

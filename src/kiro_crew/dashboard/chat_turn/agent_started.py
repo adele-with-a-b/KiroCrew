@@ -177,8 +177,9 @@ def _on_agent_turn(state: DashboardState, slot: _ChatSlot, provider: Any) -> Non
         # Called from the client's idle reader, whose context is the finished
         # turn's: without ``independent_turn`` this turn would run as that
         # turn's already-settled admitted work instead of being admitted itself.
-        # Protected, so a message sent meanwhile queues behind it rather than
-        # cancelling it (the client refuses a steer into this turn).
+        # Protected, so a message sent meanwhile never cancels it: a steer is
+        # folded into it where the adapter folds one, and otherwise queues
+        # behind it (``AcpClient._steer_via_folded_prompt``).
         with independent_turn():
             task = spawn_guarded_turn(
                 state,

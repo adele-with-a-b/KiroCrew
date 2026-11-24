@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from ci_matrix_expression_helpers import evaluate_matrix_value
 from coverage import CoverageData
 
 from conftest import _find_posix_test_shell
@@ -262,11 +263,18 @@ def test_workflow_routes_every_scope_without_changing_local_defaults(jobs):
         "(github.repository == 'kirodotdev/KiroCrew' && 'kirocrew-windows-4-core' "
         "|| 'windows-latest') || matrix.os }}"
     )
-    assert hosted["strategy"] == {
-        "max-parallel": 4,
-        "fail-fast": False,
-        "matrix": {"os": ["ubuntu-latest", "windows-latest"]},
-    }
+    strategy = dict(hosted["strategy"])
+    matrix = strategy.pop("matrix")
+    assert strategy == {"max-parallel": 4, "fail-fast": False}
+    assert set(matrix) == {"os"}
+    upstream = {"github.repository": "kirodotdev/KiroCrew"}
+    assert evaluate_matrix_value(matrix["os"], upstream) == ["ubuntu-latest", "windows-latest"]
+    # Fork only: adele-with-a-b/KiroCrew keeps the Linux leg, the one whose
+    # coverage the combine job requires, and adds Windows only on request.
+    own_fork = {"github.repository": "adele-with-a-b/KiroCrew"}
+    assert evaluate_matrix_value(matrix["os"], own_fork) == ["ubuntu-latest"]
+    own_fork["needs.changes.outputs.windows_tests"] = "true"
+    assert evaluate_matrix_value(matrix["os"], own_fork) == ["ubuntu-latest", "windows-latest"]
     # Not diff-gated: its only condition is the lint gate's own success.
     assert hosted["if"] == "${{ !cancelled() && needs.lint-gate.result == 'success' }}"
     assert "continue-on-error" not in hosted

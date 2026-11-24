@@ -2396,7 +2396,18 @@ loop). Guard (B) and the KAS route's missing-definition refusal
 (`apps.manager_lookup.missing_agent_reason`, for an agent no app declares) give
 that remedy too. A published `<agent>--readonly` side spec is the exception: its refusal
 explains the derived spec and names the base agent
-(`side_readonly_spec.unavailable_mode_explanation`; see [side.md](side.md)). Guard (C): the shared runtime asks its harness
+(`side_readonly_spec.unavailable_mode_explanation`; see [side.md](side.md)).
+On the Kiro CLI harness (the three raise sites pass `kiro_cli_engine`, true only
+there: `runtime_session_create`, `runtime_session_load` with
+`self._harness.backend == ACP_BACKEND_KIRO`, and `client_start`'s Kiro arm), a
+present file that sets `permissions`, `excludedTools` or `includePowers` and
+neither `allowedTools` nor `toolsSettings` gets a different answer: if
+`kiro-cli agent list` marks it `(v3 format)`, it is an agent for kiro-cli's v3
+engine, and the remedy is to spawn it with backend `kas` when a spawn naming
+`kas` would be admitted here (`kiro_on_kas_notice.kas_backend_offered`), else
+the remedy says that no backend offered on this host runs kiro-cli's v3 engine.
+`kiro-cli agent validate` passes such a file, so it is not offered there. The fields only decide
+when that sentence shows; the cause it names is what kiro-cli itself reports. Guard (C): the shared runtime asks its harness
 `activation_refusal(agent, resp)` (harness-parity H13: a seam, not a backend
 test); the spawn-time hosts answer `None`, and the KAS harness reads the
 advertised entry's `_meta.kiro.resource.source.origin`
@@ -2709,10 +2720,17 @@ key is not settled. The same names satisfy a `tools` ref on
 notice names, because `problem_summary()` already names a failed or
 awaiting-authorization server with its reason. A cron run, which prints no
 problem summary, names every not-ready declared server at the top of its
-result. A task-runner step, a workflow agent step (cold, pooled after each reset,
+result when that set changes from the job's last run
+(`declared_mcp_not_ready_change`, keyed on the job, so a stateless job's fresh
+session per fire does not reset it; an agent sequence keeps one combined note
+per run, naming each step's missing servers, under the job's key and records it
+only once the run's result is stored). A task-runner step, a workflow agent step
+(cold, pooled after each reset,
 or unpooled) and a heartbeat turn wait the same way on a new session. A task-runner
 step adds `missing_mcp_notice()` to the MCP notice it already sends; a heartbeat names every
-not-ready declared server at the top of its result, as cron does; a workflow
+not-ready declared server at the top of its result when the set changes, as
+cron does, and a `HEARTBEAT_KEEP` result, which is not delivered, does not count
+as printed; a workflow
 step's value is data the script computes with (parsed under `schema=`), so only
 the wait's own warning log names the server there. Left out: a sub-agent, whose
 first turn already carries the servers it cannot use (`_spawn_mcp_notice`) and
@@ -3466,7 +3484,7 @@ A sign-in is offered only where a turn is reading the queue, because the consent
 
 `_kiro/openExternalUrl` names neither the session nor the server, so the runtime runs at most one sign-in per process (`AcpRuntime.begin_mcp_sign_in`), gated on `ACP_BACKENDS_OPEN_EXTERNAL_URL` and refused while a credential re-attempt (below) is unanswered. The slot is held until the reset is answered, even after its session unregisters, so a departed session's late link is refused rather than handed to a newer sign-in; the slot's own timeout sits past the engine's 600 s connect ceiling. The engine answers the reset when the attempt ends or 60 s in, whichever is first, so the slot is freed while a longer attempt's listener still runs. shortcut: the slot follows the answer, not the attempt's end, which would need a status signal from the session. Until then a row first drawn after the answer is retired early, and a later message naming the server can send a second `startOAuth` reset, which the engine queues behind the first attempt; when it runs it clears the stored credentials and its consent URL goes to whichever sign-in holds the slot then. A long connect timeout also holds one of the engine's four concurrent connect permits, and for a `waitForReady` server that session's prompts, for as long while the server connects. The URL is put on the owning session's queue as an ordinary `_kiro.dev/mcp/oauth_request` frame and answered `{success: true}`; it therefore takes the same URL checks and the same Authorize banner as the kiro-cli engine's own request. It is refused with a JSON-RPC error when no sign-in is in flight, when the owning session is gone, or when the URL is not http(s); the engine raises on that error, so the attempt ends at once instead of waiting for a callback no user was shown. The engine closes an attempt's callback listener when the attempt ends, so a reset answered `success: false`, refused with an error, or never answered, on a live process is reported to the owning session's ended-attempt hook (`AcpRuntime.set_mcp_sign_in_ended_hook`, removed by `unregister_session`) with the server name, after the slot is freed and whether or not a turn is reading the session; a process that died leaves the banner to the dashboard's dead-child gate. Any other answer reports nothing, so an answer shape Crew does not know leaves an already drawn card as it was. The dashboard's mid-turn arm installs the hook through `LLMProvider.set_mcp_sign_in_ended_hook` before it draws a link, and the hook withdraws that server's open Authorize links in the chat, marking each row `expired` with `expired_reason: "attempt_ended"`; the card then says the sign-in timed out and that naming the server in a message offers a fresh link. An attempt can end before its row exists (the link waited in the queue behind a prompt the dispatch loop was answering, or endpoint discovery outlasted the connect timeout), so once the arm appends a row it asks `LLMProvider.mcp_sign_in_ended`, which on a live host that opens external URLs is true when the runtime no longer holds that session and server's slot, whatever the answer was, and retires the row the same way. A later success still turns such a row green. By default `secretStorage` is not declared, so the engine keeps the resulting grant in its own memory: Crew stores no MCP token, and a new KAS process needs a new sign-in.
 
-`agent.kas_persist_mcp_sign_in` is on by default (owner decision: `docs/decisions/2026-11-03-kas-sign-ins-stay-stored-when-the-setting-is-off.md`). The loader keeps a present key only as a real `true`, and `kas_secret_storage.persistence_enabled` reads it fail-closed: a load that raised, an unreadable `config.json` or `config.local.json`, or a degraded `agent` section (or whole config) is off, because those builds carry the field default rather than the owner's value. A stored `false` from before the change is auto-adopted once (`superseded_defaults`). The vault is gateway-wide, the same scope as the `kiro` backend's host-wide sign-in cache and Shared Crew's access model; a governance ceiling does not gate it, an accepted scope limit recorded in the decision. With it on, the spawn declares `_meta.kiro.secretStorage` on a copy of `KAS_CLIENT_CAPABILITIES` (`runtime_spawn_launch._with_mcp_sign_in_storage`, only for a harness that `opens_external_urls`) and holds a per-process `kas_secret_storage.SecretStorageServer` on the runtime. The engine then sends `_kiro/secret/get {key}`, `_kiro/secret/store {key, value}` and `_kiro/secret/delete {key}`, which name no session; the reader loop answers them off-loop only on a process whose handshake declared the capability, and `-32601` otherwise. Only keys `kiro.mcp.<sha256 hex>.(client|tokens|verifier|discovery)` and values up to 64 KiB are accepted; anything else gets a JSON-RPC error. `client` and `tokens` persist in a dedicated vault at `<data_home>/kas/mcp-grants/.vault/` (own key; not the Secrets vault, so not listed there and not grantable to a cron; under the `kas` keystone leaf), each written with `set_with_revision`. `verifier` and `discovery` stay in the server's memory and die with the process. These frames are never handed to the raw-frame recorder, and no value is logged or put in an error message. For the `tokens` entry gateway.log gets one info line per outcome, naming the server by the first 12 hex characters of the engine's connection hash: `saved sign-in found`, `no saved sign-in, the server will ask to sign in` or `saved sign-in not read (store error)` on a get (a repeat get with the same outcome adds no line), and `sign-in saved` on a store. A fail-closed `persistence_enabled` warns at most once per gateway run that sign-ins are not being saved. Concurrent sessions share one grant; each write is atomic under the vault's cross-process lock and the last writer wins. A delete removes only the entry revision this process last read or wrote (`delete_if_revision`), so a process whose refresh fails cannot erase a grant another process stored since; a key the process never read or wrote is deleted outright.
+`agent.kas_persist_mcp_sign_in` is on by default (owner decision: `docs/decisions/2026-11-03-kas-sign-ins-stay-stored-when-the-setting-is-off.md`). The loader keeps a present key only as a real `true`, and `kas_secret_storage.persistence_enabled` reads it fail-closed: a load that raised, an unreadable `config.json` or `config.local.json`, or a degraded `agent` section (or whole config) is off, because those builds carry the field default rather than the owner's value. A stored `false` from before the change is auto-adopted once (`superseded_defaults`). The vault is gateway-wide, the same scope as the `kiro` backend's host-wide sign-in cache and Shared Crew's access model; a governance ceiling does not gate it, an accepted scope limit recorded in the decision. With it on, the spawn declares `_meta.kiro.secretStorage` on a copy of `KAS_CLIENT_CAPABILITIES` (`runtime_spawn_launch._with_mcp_sign_in_storage`, only for a harness that `opens_external_urls`) and holds a per-process `kas_secret_storage.SecretStorageServer` on the runtime. The engine then sends `_kiro/secret/get {key}`, `_kiro/secret/store {key, value}` and `_kiro/secret/delete {key}`, which name no session; the reader loop answers them off-loop only on a process whose handshake declared the capability, and `-32601` otherwise. Only keys `kiro.mcp.<sha256 hex>.(client|kiro-path-client|tokens|verifier|discovery)`, the organization (identity provider) sign-in key `kiro.mcp.idp.<sha256 hex>.session`, and values up to 64 KiB are accepted; anything else gets a JSON-RPC error. `client`, `kiro-path-client`, `tokens` and the organization `session` persist in a dedicated vault at `<data_home>/kas/mcp-grants/.vault/` (own key; not the Secrets vault, so not listed there and not grantable to a cron; under the `kas` keystone leaf), each written with `set_with_revision`. `verifier` and `discovery` stay in the server's memory and die with the process. These frames are never handed to the raw-frame recorder, and no value is logged or put in an error message. For the `tokens` entry gateway.log gets one info line per outcome, naming the server by the first 12 hex characters of the engine's connection hash: `saved sign-in found`, `no saved sign-in, the server will ask to sign in` or `saved sign-in not read (store error)` on a get (a repeat get with the same outcome adds no line), and `sign-in saved` on a store. A fail-closed `persistence_enabled` warns at most once per gateway run that sign-ins are not being saved. Concurrent sessions share one grant; each write is atomic under the vault's cross-process lock and the last writer wins. A delete removes only the entry revision this process last read or wrote (`delete_if_revision`), so a process whose refresh fails cannot erase a grant another process stored since; a key the process never read or wrote is deleted outright.
 
 KAS sends no `_kiro.dev/mcp/server_initialized` frame when a sign-in completes; the server's next status entry reports `connected`, and status snapshots are classified `skip`. The tracker therefore records a tracked server that connects as a completed sign-in, and the dispatch loop yields one `EVENT_MCP_SERVER_INITIALIZED` (`runtime_global: false`) for each such server right after it reads a status snapshot, clearing the server's banner dedupe as the frame-driven branch does. A completion read by the session-start or pre-turn drain is yielded with the next turn's first frame. Only a server that was being tracked for a sign-in qualifies; an ordinary connected server yields nothing. The dashboard handles the event as it handles the engine's own frame: the Authorize banner is marked completed and its dead consent URL is withdrawn.
 
@@ -3614,11 +3632,45 @@ stdout while no request waits. Design record:
   starts first reads the frames as its own, which ends the hand-off, and
   `stream_unsolicited()` then yields nothing, as it does while any prompt is in
   flight.
-- **The turn takes no steers.** `_dispatch_events` leaves `_steering_turn_req`
-  unset under `-1`, so `steer()` returns False while the turn reads and the
-  caller queues the text as the next prompt. The dashboard's busy send button
-  defaults to Steer, and a Steer-mode send falls back to its queue on that
-  False, so a message typed during the turn runs after it.
+- **A steer is folded into the turn, on an adapter shown to fold one.** A note
+  may cut into a turn the chat started by itself and is read at its next step
+  (Abdel, 2026-11-23: "Q1a yes"; this replaces "the turn takes no steers").
+  `_dispatch_events` sets `_steering_turn_req` to `-1` for such a turn only
+  when `_folds_prompt_into_agent_turn()` is True: the base `AcpClient` answers
+  False, and `ClaudeAcpClient` answers True from claude-agent-acp
+  `CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION` (0.109.0, the one release probed).
+  There a steer goes out as a `session/prompt`
+  (`_steer_via_folded_prompt`), not a `_session/steering` request, because no
+  prompt of ours runs for that request to join. The adapter folds the prompt
+  into the running turn ("A prompt folded into an autonomous turn owns that
+  turn now", its `acp-agent.js`): the model reads the text at its next step
+  and the prompt is answered when the turn ends. Nothing is cancelled or
+  interrupted: the turn keeps running and ends on its normal end condition.
+  The steer is not held behind an open tool call, since the fold does not move
+  the tool to the background. Its id is kept in `_folded_prompt_map` with the
+  turn's `_agent_turn_serial`. While a fold of the current turn is unanswered,
+  the closing autonomous `usage_update` ends nothing; the fold's answer ends
+  the turn with its own `stopReason`. One fold per turn: a second steer while
+  one is unanswered is refused (`too_many`) and queued, because the adapter
+  answers an earlier fold when a later one arrives, which was never probed. An
+  error answer drops that steer from `_steers_accepted`; when the close already
+  came, it also ends the turn, since nothing else is left to end it. A turn
+  that ends before its fold's answer (a cancel, a response to a later request)
+  drops the fold's steer too, on every exit of `_read_turn`, so it is queued rather than reported read, and as possibly delivered (`held_steers_possibly_delivered`), since the adapter may still run it. A fold
+  answer whose turn already ended means the adapter ran that prompt on as a
+  prompt of its own: under an agent-started turn it ends that turn, as an
+  earlier prompt's response does, and under a user turn it is dropped. A
+  peer's steer reaches this path only with `agent.peer_steer_loss_recovery`
+  on, as for any claude steer from another session. A prompt written after the turn ended reached no
+  running turn: it is no fold, its id is forgotten, and `steer()` returns
+  False (`turn_ended`), so the caller queues the text, at least once, as for
+  a steering answer that lands late. The steer is reported consumed only when
+  the turn ends with `end_turn`, as any steer
+  (`_release_accepted_steers`). Below the floor, with no version, and on every
+  other backend, `_steering_turn_req` stays unset, `steer()` returns False
+  with `steer_refusal` `agent_turn`, and the caller queues the text as the
+  next prompt, its reason named to the sender and on the queued row
+  (`kiro_crew/steer_refusal.py`).
 - **A prompt queues behind the turn.** `stream_unsolicited()` holds
   `_agent_turn_gate` while it reads, and keeps it until `_prompt_loop` has
   released `_turn_lock`, since `_dispatch_events` leaves that loop to the
@@ -3629,7 +3681,8 @@ stdout while no request waits. Design record:
   `stream_unsolicited()` checks that count under the gate and yields nothing
   while it is above zero. A consumer closes the stream with `aclosing()`, as
   for `stream_events`: one left open holds the gate. This is the queue of
-  `docs/request-for-change/rfc-agent-started-turns.md` decision 3. Do not await
+  `docs/request-for-change/rfc-agent-started-turns.md` decision 3; a steer
+  folded in (above) sends no prompt through this gate. Do not await
   a prompt inside an open `stream_unsolicited()` loop: the prompt waits for that
   stream to close, so the two wait on each other.
 

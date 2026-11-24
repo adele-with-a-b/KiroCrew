@@ -41,9 +41,9 @@ name: Fast Gate
 # and main-ratchet-audit.yml's gates (heal-exempt in the runner watchdog).
 
 on:
-  # Fork only: `local/**` matches ci.yml's fork addition.
+  # Fork only: `local/**` matches ci.yml's fork addition, pull requests only.
   push:
-    branches: [main, "release/**", "local/**"]
+    branches: [main, "release/**"]
   pull_request:
     branches: [main, "release/**", "local/**"]
   # ci.yml's `await-fast-gate` waits on this workflow's run for the merge

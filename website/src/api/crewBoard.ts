@@ -90,6 +90,14 @@ export interface WorkBoardItem {
   awaits_person?: boolean
   terminal: boolean
   alive: AliveState
+  /** A worker is bound to the item: what a seat on the board counts. Derived
+   *  server-side, since the page never gets the worker's key. Absent on an older
+   *  gateway. */
+  has_worker?: boolean
+  /** The item is a backlog row, as `work_plan_vocab.in_backlog` reads it: an open
+   *  story marked `plan.backlog`, or one with no worker the conductor has not
+   *  marked `backlog: false`. Absent on an older gateway. */
+  in_backlog?: boolean
   /** Where the item sits on the board's plan. Absent on an item never planned
    *  and on an older gateway. */
   plan?: WorkItemPlan
@@ -109,7 +117,9 @@ export interface WorkItemPlan {
   parent?: string
   /** Lower is sooner. The person's drag writes it. */
   rank?: number
-  /** Stored, not started: in the backlog, not the sprint. */
+  /** `true`: stored, not started, in the backlog. `false`: in the sprint before
+   *  its worker binds. Absent: a worker puts it in the sprint, none in the backlog
+   *  (the row's `in_backlog`). */
   backlog?: boolean
   step?: PlanStep
   /** The release it ships in, by name. */
@@ -141,6 +151,10 @@ export interface WorkBoardConductor {
   /** The backlog item the conductor dispatches next: the lowest rank. Derived
    *  server-side on every read; absent on an older gateway. */
   next_pick?: string | null
+  /** The seats the goal's cap admission counts, which can exceed the stories with a
+   *  worker (a story with no plan and no worker holds one). `null` where no cap is
+   *  enforced; absent on an older gateway. */
+  seats_held?: number | null
 }
 
 export interface WorkBoardResponse {

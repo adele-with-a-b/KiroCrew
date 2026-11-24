@@ -137,7 +137,8 @@ resolves through:
 |---|---|---|
 | `fmtCurrency(value, currency = 'USD', options?)` | `@kirocrew/app-sdk` | Money in the host's locale. |
 | `APP_SDK_LEVEL` | `@kirocrew/app-sdk` | The seam level, equal to the gateway's `ctx.sdk_level`. |
-| `appWebOrigin(name)` | `@kirocrew/app-sdk` | The app's own origin on the dashboard's port, `http://<name>.apps.localhost:<port>`, for a backend with `backend.webOrigin: true`; available when the dashboard uses http on `localhost`, `127.0.0.1` or `kirocrew.localhost`, and `null` on IPv6 or any other dashboard host. The answer reads the dashboard's host name only, not whether this browser reaches the name, so probe the origin first (a `no-cors` fetch, which the dashboard CSP admits) and keep the app's own loopback frame when the probe fails. Level 8. |
+| `appWebOrigin(name)` | `@kirocrew/app-sdk` | The app's own origin on the dashboard's port, `http://<name>.apps.localhost:<port>`, for a backend with `backend.webOrigin: true`; available when the dashboard uses http on `localhost`, `127.0.0.1` or `kirocrew.localhost`, which includes a Remote Crew pane, and `null` on IPv6 or any other dashboard host. The answer reads the dashboard's host name only, not whether this browser reaches the name, so probe the origin first (a `no-cors` fetch, which the dashboard CSP admits) and keep the app's own loopback frame when the probe fails. Level 8. |
+| `appWebOriginStatus(name)` | `@kirocrew/app-sdk` | `{ origin, reason }`: `origin` is what `appWebOrigin(name)` answers, and `reason` is `'loopback'` when there is one, else `'remote-front-door'` (https, a tunnel, the relay, a published host or a phone link: open the app's upstream page in a new tab instead of framing a loopback port, which on this viewer's device is the viewer's own machine), `'ipv6'` or `'invalid-name'`. No seam level on this release line: feature-detect it by name. |
 | `Select` | `@kirocrew/app-sdk/ui` | A themed inline dropdown: `options`, `optionLabels?`, `value`, `onChange`, `clearLabel?`, `disabled?`, `aria-label?`, `title?`, `className?`. Native list on touch devices. |
 | `guideCaution` | `@kirocrew/app-sdk/ui` | Spread onto a control that removes something (`<Btn {...guideCaution}>`), so a dashboard guide shows its caution line before a press there. |
 
@@ -1081,6 +1082,50 @@ every `useAppApi` check, this one runs in the dashboard document, so it guards a
 follows the rules but does not isolate it from other code in the dashboard
 ([trust model](../architecture/app-platform-trust-model.md)). Needs `APP_SDK_LEVEL >= 12`.
 Read it off a namespace import, as above, when your UI must also load on an older host.
+
+## Session Control Jump
+
+`useSessionControlJump()` lets a session control scroll the chat it is open in to one
+of that chat's messages and light it, as a link-preview card's `card.jumpTo` does. It
+returns `jumpTo(message)`, or `null` outside a session control. `message` is the
+card's shape, `{ ts, id? }` (a card's `link.message`, or one your backend kept); the
+`id` is the message's `mid` and wins over `ts` when given; one that is not a string
+(a `null` for a row with no mid) is left out, as the card's jump does. Pass the
+message's own `ts` with its `id`: it decides at once whether the message can be in
+this chat. Only the
+control's own chat can be named.
+
+`jumpTo` resolves once the jump has ended, never on a timer. A refusal is yours to
+say: the chat shows no notice of its own for it.
+
+| Answer | When |
+|---|---|
+| `{ ok: true }` | the message is on screen and lit; one older than the loaded window is paged in first |
+| `{ ok: false, reason: 'not_found' }` | this chat has no such message: a `ts` that is not a string of 1 to 128 characters, one newer than the oldest loaded message but not loaded (answered at once, as for a chat with no older history), or one older than that once the chat's history is read to its start without it. Nothing moves |
+| `{ ok: false, reason: 'load_failed' }` | a page of older history failed to load |
+| `{ ok: false, reason: 'not_on_screen' }` | the control's chat is not the one drawn (Split View), or it was left before the message landed |
+| `{ ok: false, reason: 'replaced' }` | a newer jump (yours or any other) took its place before it landed |
+
+The popover stays open, so whatever the person typed in it is kept. A pill above the
+message box offers "Back to where you were" and returns the chat to the view it showed
+before the first jump (the bottom, following new replies again, if it rested there).
+Further jumps keep that spot unless the person moved the chat by hand since, a jump that does
+not land leaves the pill as it was, and a press on the pill leaves the popover open. A popover as wide as the message box covers the pill, which shows once
+the popover closes. Switching chats, or scrolling back to the bottom by hand, drops
+the pill. Needs `APP_SDK_LEVEL >= 13`; read it off the namespace import:
+
+```tsx
+type JumpResult = { ok: true } | { ok: false; reason: 'not_found' | 'load_failed' | 'not_on_screen' | 'replaced' }
+const useSessionControlJump = (sdk as Record<string, unknown>).useSessionControlJump as
+  (() => ((message: { ts: string; id?: string }) => Promise<JumpResult>) | null) | undefined
+
+// Inside the control (call it only when it is there):
+const jumpTo = useSessionControlJump?.() ?? null
+<button disabled={!jumpTo} onClick={async () => {
+  const r = await jumpTo!({ ts: row.ts, id: row.mid })
+  if (!r.ok) setNote(r.reason)
+}}>Go to it in the chat</button>
+```
 
 ## Chat Marker Protocol
 
@@ -2181,7 +2226,8 @@ directory entries in `credentialMasks` (`"state/"`), the dashboard's
 `link.card.openSessionControl`, a status target's `sessionControl`, the answer an open
 resolves with) and `contributes.sessionControls[].width`, and level 12 adds the
 manifest's `permissions.openFiles` with the dashboard's
-[`useOpenFile`](#opening-a-local-file); each level
+[`useOpenFile`](#opening-a-local-file), and level 13 adds the
+[session control jump](#session-control-jump) (`useSessionControlJump`); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

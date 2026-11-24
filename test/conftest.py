@@ -283,6 +283,7 @@ from conftest_resets import (  # noqa: E402,F401 -- bound for pytest and importe
     _ensure_event_loop,
     _fake_computer_use_backend,
     _forget_app_turn_approver,
+    _forget_declared_mcp_not_ready_notes,
     _forget_enterprise_profile_pin,
     _forget_gatewayd_telemetry_override,
     _forget_legacy_auth_sweep_clean_roots,
@@ -600,6 +601,13 @@ def _fresh_host_unservable_backends(_floor_monkeypatch):
     _floor_monkeypatch.setattr(backends, "_host_unservable", dict(backends._host_unservable))
     _floor_monkeypatch.setattr(backends, "_kiro_cli_offers_kas", False)
     _floor_monkeypatch.setattr(backends, "_kiro_cli_kas_probed", False)
+    # The gateway floor asks again about an unknown Kiro CLI pick after minutes; a
+    # test that drives the floor opts into those asks with delays of its own.
+    from kiro_crew.agent_sdk import kas_floor_wait
+
+    _floor_monkeypatch.setattr(
+        kas_floor_wait, "KIRO_PICK_VERDICT_RETRY_SECS", ()  # flake-ok: no ask, no wait
+    )
 
 
 @pytest.fixture(autouse=True)

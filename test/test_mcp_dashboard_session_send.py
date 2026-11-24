@@ -77,6 +77,36 @@ class TestOutcomeReports:
         assert "Queued" in out
         assert "could not go into the running turn" in out
 
+    def test_a_steer_that_fell_back_names_why_and_what_it_waits_for(self) -> None:
+        """A turn the agent started on its own can run for hours, so the sender is
+        told that, not only that its steer was queued."""
+        out, _ = _send(
+            {"target": "chat-2", "message": "rebase first", "steer": True},
+            {
+                "ok": True,
+                "target": "chat-2",
+                "started": False,
+                "steered": False,
+                "steerRefusal": "agent_turn",
+            },
+        )
+        assert "Queued" in out
+        assert "the agent started this turn on its own" in out
+        assert "can be a long while" in out
+
+    def test_an_unknown_refusal_code_reads_as_the_plain_fallback(self) -> None:
+        out, _ = _send(
+            {"target": "chat-2", "message": "stop", "steer": True},
+            {
+                "ok": True,
+                "target": "chat-2",
+                "started": False,
+                "steered": False,
+                "steerRefusal": "x",
+            },
+        )
+        assert "could not go into the running turn, so it was queued instead" in out
+
     def test_a_plain_queued_delivery_does_not_mention_steering(self) -> None:
         out, _ = _send(
             {"target": "chat-2", "message": "after this turn"},

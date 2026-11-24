@@ -754,6 +754,11 @@ its allowance is unspent), and closes soon after, only if no open came in. A pre
 and any other press outside it, a link included, closes it at once. Needs
 `APP_SDK_LEVEL >= 11`.
 
+**Scrolling its chat to a reply.** The control can scroll the chat it is open in
+to one of its messages, with the Back pill a card's `jumpTo` gives, and stay open:
+the SDK's `useSessionControlJump()`, in the
+[API reference](api-reference.md#session-control-jump). Needs `APP_SDK_LEVEL >= 13`.
+
 **Two caps, and the second one drops.** The backend allows at most **2** controls
 per app. The dashboard renders at most **2** across all apps, and controls past
 that are dropped rather than moved into an overflow menu -- the bar shares one row
@@ -1831,7 +1836,7 @@ popover says the app did not respond.
 | `backend.routes` | string | | Base route path for the backend |
 | `backend.type` | string | `""` | Backend runtime: `"python"`, `"asgi"`, `"node"`, `"exec"` (execute the entry point file as-is), or `""` (auto-detect from `entryPoint` — a `.sh` file or an extensionless executable with a non-Python shebang is treated as a shell launcher) |
 | `backend.signedPrincipal` | boolean | `false` | Add a signed `X-KiroCrew-Principal` claim to every request the reverse proxy forwards to this backend. Only the JSON boolean `true` turns it on. The claim says whether the gateway authenticated an `owner-session`, an `app-token`, an `agent-tool` call, or `none`. |
-| `backend.webOrigin` | boolean | `false` | Serve this backend on its own origin, `http://<name>.apps.localhost:<dashboard port>`, so a page the app frames rides the dashboard's own connection. Only the JSON boolean `true` turns it on, and the name must be at most 63 characters. The gateway forwards no credential and signs nothing on that origin, `Authorization` included, so the app authenticates its own pages; a framed site that signs in with bearer or Basic auth needs the backend to add that header itself. Every app origin can count as the one site `apps.localhost`, so `SameSite` cookies do not keep another app's page out: check `Origin` or a CSRF token on every route that changes state. Read the origin with `appWebOrigin(name)` from `@kirocrew/app-sdk` (level 8). |
+| `backend.webOrigin` | boolean | `false` | Serve this backend on its own origin, `http://<name>.apps.localhost:<dashboard port>`, so a page the app frames rides the dashboard's own connection. Only the JSON boolean `true` turns it on, and the name must be at most 63 characters. The gateway forwards no credential and signs nothing on that origin, `Authorization` included, so the app authenticates its own pages; a framed site that signs in with bearer or Basic auth needs the backend to add that header itself. Every app origin can count as the one site `apps.localhost`, so `SameSite` cookies do not keep another app's page out: check `Origin` or a CSRF token on every route that changes state. Inside a Remote Crew pane the remote gateway serves it on the pane's forward port once the pane has signed in. Read the origin with `appWebOrigin(name)` from `@kirocrew/app-sdk` (level 8), and why there is none with `appWebOriginStatus(name)` (feature-detect it by name). |
 
 > **Note:** the shell-launcher auto-detect reads the entry point's shebang
 > line, so a compiled/binary launcher (e.g. an ELF executable) cannot be

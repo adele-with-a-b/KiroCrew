@@ -1158,6 +1158,8 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
         from kiro_crew.shared_crew.admission_entry import admission_pending
 
         _admission_pending = admission_pending(slot.key)
+        # Why a steer asked for here fell back to the queue, when it did.
+        _steer_refused = ""
         if (
             steer
             and _person_send
@@ -1229,7 +1231,11 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
                     ),
                     user_meta,
                 )
-            # steer requested but unavailable -> fall through to queue below.
+            # steer requested but unavailable -> fall through to queue below,
+            # with its cause for the reply and the queued row.
+            from kiro_crew.dashboard.chat_delivery import steer_refusal_of
+
+            _steer_refused = steer_refusal_of(outcome)
         # Queue the message - return JSON immediately (no SSE needed).
         # The existing SSE reader will pick up queued messages as _run_chat
         # processes the queue in its finally block. The message is non-empty
@@ -1302,6 +1308,7 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             composer_send=_from_composer,
             author=_author_meta(_queued_actor_of(request)) if _person_send else None,
             queued_work=_queued_admission,
+            steer_refused=_steer_refused,
         )
         channel_prompt.stamp_queued(slot, qid, body)
         _send_race.commit_request(request, message_id=qid)
@@ -1310,7 +1317,12 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
         # guarded drain starts the entry if the slot went idle meanwhile.
         await _drain_parked_queues(state, [slot.key])
         return web.json_response(
-            {"ok": True, "queued": True, "queue_id": qid},
+            {
+                "ok": True,
+                "queued": True,
+                "queue_id": qid,
+                **({"steerRefusal": _steer_refused} if _steer_refused else {}),
+            },
             headers=_sc_entry.admission_headers(_queued_admission),
         )
 
@@ -1459,6 +1471,9 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             _hold_push.setdefault("meta", {})["durable"] = False
         if _hold_knowledge:
             _hold_push.setdefault("meta", {}).update(_hold_knowledge)
+        from kiro_crew.dashboard import responsive_chat as _rc
+
+        _rc.mark_written_on_push(slot, qid, _hold_push)
         state.broadcast_ws("queue_push", _hold_push)
         if _teardown_hold:
             # Deduped, so this only matters when no decline armed one: the retry

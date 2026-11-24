@@ -59,7 +59,7 @@ from kiro_crew.dashboard.handlers.work_ledger import (
 )
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.platform.context import redact_via_context
-from kiro_crew.work_plan_vocab import next_pick, show_step
+from kiro_crew.work_plan_vocab import in_backlog, next_pick, show_step
 from kiro_crew.work_vocab import waits_on_person
 
 logger = logging.getLogger(__name__)
@@ -751,6 +751,12 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     for item in items:
         row = item.to_dict()
         show_step(row, record.releases)
+        # Backlog or sprint, and whether a worker holds it, worked out here because
+        # the page never gets the worker's key: a story with no worker and no
+        # ``plan.backlog`` is a backlog row, on every board (``in_backlog``).
+        has_worker = bool(item.worker_session_key)
+        row["has_worker"] = has_worker
+        row["in_backlog"] = in_backlog(item.plan, state=item.state, worker_bound=has_worker)
         row["orphaned"] = work_ledger.is_orphaned(item, conductor_slot_exists=conductor_alive)
         running, closed, looping, held = work_ledger.item_liveness(
             key,
@@ -821,7 +827,16 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     payload = {
         # ``next_pick``: the top of the backlog by the person's rank, which the
         # board marks as what the conductor starts next (``work_plan_vocab``).
-        "conductor": dict(record.to_dict(), next_pick=next_pick(items)),
+        # ``seats_held``: on a board with a recorded goal, the seats that cap's
+        # admission counts, which the page's free-slot line reads when the next pick
+        # is a marked backlog row (pulling one takes a new seat). It can exceed the
+        # stories with a worker: a story with no plan and no worker is a backlog row
+        # yet still holds a seat. ``None`` where no cap is enforced (a queue board).
+        "conductor": dict(
+            record.to_dict(),
+            next_pick=next_pick(items),
+            seats_held=work_ledger.count_seated(items) if record.goal_version > 0 else None,
+        ),
         "conductor_alive": "idle" if conductor_alive else "closed",
         "items": rows,
         "asks": asks,

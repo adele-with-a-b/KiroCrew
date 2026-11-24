@@ -197,6 +197,9 @@ because that one reads added lines rather than behaviour.
 Legs do not `fail-fast`: one platform's regression is not evidence about
 another's, and a cancelled leg hides rows only that runner can produce.
 
+Fork only: on adele-with-a-b/KiroCrew the Windows leg runs only when the pull
+request carries `ci:windows` or `ci-full-run`, as `ci.yml`'s Windows scope does.
+
 ## When it goes red
 
 Read the job summary. Each listed row is an operation the corpus records as

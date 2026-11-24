@@ -59,7 +59,9 @@ from kiro_crew.acp.types import (
     METHOD_SESSION_NEW,
     METHOD_SET_MODE,
 )
+from kiro_crew.agent import DEPRECATED_AGENT_SPECS
 from kiro_crew.agent_sdk.backends import resolve_cc_pin_inherited_mode
+from kiro_crew.constants import KIROCREW_SESSION_AGENT_ENV
 from kiro_crew.platform.context import redact_log_via_context
 from kiro_crew.security import (
     redact_credentials,
@@ -199,6 +201,14 @@ CLAUDE_ACP_SETTING_SOURCES_MIN_VERSION = (0, 84, 0)
 #: answer a late steer by starting a turn of their own. Below the floor, or when
 #: the adapter reports no version, the session takes no steer and the caller queues.
 CLAUDE_ACP_STEERING_MIN_VERSION = (0, 65, 0)
+
+#: The oldest claude-agent-acp shown to fold a ``session/prompt`` into a turn Claude
+#: Code started on its own (a background task's notice): the prompt "owns that turn
+#: now" (its ``acp-agent.js``), the model reads the text at its next step, and the
+#: prompt is answered when that turn ends. Probed live on 0.109.0 only, the release
+#: this floor names; below it, or with no version, such a turn takes no steer and the
+#: caller queues (``kiro_crew.steer_refusal.AGENT_TURN``).
+CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION = (0, 109, 0)
 
 #: The oldest claude-agent-acp whose ``session/fork`` honours a fork point
 #: (``_meta.jetbrains.air.fork.messageId``). Older ones advertise
@@ -708,6 +718,14 @@ def _claude_session_meta(self: ClaudeAcpClient) -> dict[str, Any]:
             inline = getattr(self, "_session_mcp_inline_settings", None)
         if isinstance(inline, dict) and inline:
             options["settings"] = dict(inline)
+    adopted = getattr(self, "_adopted_substitute_model", None)
+    if adopted and adopted == self._model:
+        # The model a substitution retry names rides the flag tier as well as the
+        # seed: a seed a sibling session shares is not rewritten, and the flag tier
+        # outranks the user's settings the refused default came from.
+        carried_settings = dict(options.get("settings") or {})
+        carried_settings["model"] = adopted
+        options["settings"] = carried_settings
     # The spec's shell and write allowlists' ask rules ride the envelope whether or
     # not ``settings.local.json`` is Crew's: a declined project file still loads,
     # and its allow rules would otherwise approve those calls without a request.
@@ -1092,44 +1110,96 @@ def _harness_session_meta(self: ClaudeAcpClient, mcp_servers: Any) -> dict[str, 
 
     Built AFTER the array it travels with: the envelope carries the setting sources
     that array was authorized under, and a zero-tool session whose array mounts a
-    server is refused here (:func:`refuse_claude_zero_tool_mounts`).
+    server is refused here (:func:`refuse_claude_zero_tool_mounts`). It also names
+    the session's agent to its ``claude`` child (:func:`_name_the_session_agent`).
     """
     refuse_claude_zero_tool_mounts(getattr(self, "_spec_zero_tools", False), mcp_servers)
-    return self._claude_session_meta()
+    meta = self._claude_session_meta()
+    _name_the_session_agent(meta["claudeCode"]["options"], getattr(self, "_agent", None))
+    return meta
+
+
+def _name_the_session_agent(options: dict[str, Any], agent: str | None) -> None:
+    """Name the session's agent to its ``claude`` child as ``KIROCREW_SESSION_AGENT``.
+
+    The value is the client's ``_agent``, which Crew sets from the session's own
+    record when it builds the client; nothing a turn sends reaches it. A deprecated
+    alias is named by the agent it emits (``DEPRECATED_AGENT_SPECS``), as Crew
+    counts it. It is a label, not proof of who created the session: any chat able
+    to create a session can create one that runs ``kirocrew-conductor``. It goes in
+    ``env`` (spread over the adapter's process env for this session's child only)
+    and in the flag tier's ``settings.env``, which Claude Code applies after the
+    user, project and local tiers' ``env``, so no settings file a chat can write
+    renames the agent. It is always set, to the agent the session runs as, and empty
+    only if ``_agent`` is: ``env`` can only overwrite the process env it is
+    spread over, never remove a key, and a value inherited from a parent process
+    names another session's agent (the spawn builders drop that one too). Copied,
+    never mutated: the inline settings are shared.
+    """
+    value = DEPRECATED_AGENT_SPECS.get(agent or "", agent or "")
+    options["env"] = {**dict(options.get("env") or {}), KIROCREW_SESSION_AGENT_ENV: value}
+    flag = dict(options.get("settings") or {})
+    flag["env"] = {**dict(flag.get("env") or {}), KIROCREW_SESSION_AGENT_ENV: value}
+    options["settings"] = flag
 
 
 async def _retry_after_model_substitution(
     self: ClaudeAcpClient, new_params: dict[str, Any], session_resp: dict, substitute: str
 ) -> dict:
-    """Adopt the model a substitution advisory names, re-seed, and re-issue ``session/new`` once.
+    """Name a served model in the seed and re-issue ``session/new`` once after a substitution advisory.
 
     The admin-tier policy advisory ("Model X is restricted ... Using Y instead.")
     comes back as a ``-32603`` error frame with no sessionId, so the first attempt
     created nothing. ``_wait_for_response`` recorded *substitute* in
-    ``self._last_substitution_model``; this pins ``self._model`` to it, re-seeds
-    ``settings.local.json`` (the adapter builds a fresh SettingsManager per
-    ``session/new``, so the new model takes effect), rebuilds the array and the
-    envelope, and re-issues ONCE. Returns the retry's response, which the caller
-    still treats as a failure when it carries no sessionId.
+    ``self._last_substitution_model``. The refused model is the one the seed left
+    to the user's settings, not necessarily this session's pin, so the retry names
+    the pin when the backend serves it and *substitute* otherwise
+    (``_substitution_retry_model``). This sets ``self._model`` to that model,
+    re-seeds ``settings.local.json`` with it (the adapter builds a fresh
+    SettingsManager per ``session/new``, so it takes effect), rebuilds the array
+    and the envelope, and re-issues. A pin adopted in an earlier start and refused
+    now is not named again (that helper names *substitute*). When the seed
+    already names *substitute*, the backend refused it as named and a retry
+    cannot help: *session_resp* is returned unchanged. When the retry named the pin and the backend refuses that
+    too, it falls back ONCE to the model the second advisory offers. Returns the
+    last response, which the caller still treats as a failure when it carries no
+    sessionId.
     """
+    model = self._substitution_retry_model(substitute)
+    if model == getattr(self, "_adopted_substitute_model", None):
+        return session_resp
+    resp = await self._reissue_naming_model(new_params, model)
+    fallback = self._last_substitution_model
+    if resp.get("sessionId") or model == substitute or not fallback or fallback == model:
+        return resp
+    # The served pin was refused as well. A session on the model the backend
+    # offers beats one that never starts, so fall back to it once; the seed then
+    # names it, and nothing retries again.
+    return await self._reissue_naming_model(new_params, fallback)
+
+
+async def _reissue_naming_model(
+    self: ClaudeAcpClient, new_params: dict[str, Any], model: str
+) -> dict:
+    """Re-seed ``settings.local.json`` naming *model*, rebuild the array and envelope, re-issue."""
     # Redact the substitute name before logging. It is parsed straight from the
     # untrusted ACP backend advisory (data.details "Using X instead") and the
     # gateway log fans out to the dashboard activity feed and Slack -- mirror the
     # dual-redaction discipline applied to the source advisory in _wait_for_response.
-    _sub_log, _ = redact_exfiltration_urls(str(substitute))
+    _sub_log, _ = redact_exfiltration_urls(str(model))
     _sub_log, _ = redact_credentials(_sub_log)
     logger.warning(
         "ACP session/new returned a substitution advisory with no session; "
         "adopting gateway-served model %r and retrying session creation.",
         _sub_log,
     )
-    self._model = substitute
-    # Named so the re-seed writes ``model`` even on a cold advertised-model cache:
-    # without it the user's own settings still name the restricted model and the
-    # retry is refused the same way.
-    self._adopted_substitute_model = substitute
+    self._model = model
+    # Named so the re-seed writes ``model`` warm cache or cold: without it the
+    # user's own settings still name the restricted model and the retry is
+    # refused the same way.
+    self._adopted_substitute_model = model
     # Re-seed settings.local.json so the fresh SettingsManager the adapter builds
-    # for the retry resolves the substitute model (it merges settings sources each
+    # for the retry resolves that model (it merges settings sources each
     # session/new).
     try:
         await asyncio.to_thread(self._write_claude_local_settings)

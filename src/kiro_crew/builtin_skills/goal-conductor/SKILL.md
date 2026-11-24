@@ -288,6 +288,9 @@ tasks, a ranked backlog, the sprint (your round), and releases. Write it with
   another backlog item. Pull it with `action=plan plan={"backlog": false}`,
   then `session_create`, `bind` and seed as the separate steps below
   (`work_dispatch` always creates a new item).
+- **A story no worker is on is a backlog row**, even one you never planned:
+  the board shows it there and `next_pick` can name it. To show a story in
+  the sprint before its worker binds, write `plan={"backlog": false}`.
 
 ### Dispatch a round
 

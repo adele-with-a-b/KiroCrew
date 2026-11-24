@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { crewApprovalDecidableHere, crewModeRoot, crewRootOf, runsCrewMode } from '../lib/crewMode'
+import { crewApprovalDecidableHere, crewModeRoot, crewRootOf, showsAsCrewMode } from '../lib/crewMode'
 import CrewApprovalCards, { MateApprovalCards } from './crew/CrewApprovalCards'
 import MateWorkerQuestions from './crew/MateWorkerQuestions'
 import { CrewSteerUnrecordedNotice, CrewWorkerComposerGate } from './crew/CrewWorkerComposerGate'
@@ -362,11 +362,17 @@ export default function ChatPane({
   // can be seconds away. `busy` alone is the store's word, and the store has
   // no pending-turn mark for a slot that is not the active one.
   const composerBusy = busy || awaitingReply
+  // A crewmate's chat draws a queued message as the person's own bubble, which
+  // the next drain sends. A held entry (the server's `meta.held`) is the
+  // exception: no drain sends it, so it keeps the queue card and its send, edit
+  // and cancel controls.
+  const crewmateHeldQueue = useMemo(() => (crewmate ? queuedMessages.filter(m => m.meta?.held === true) : []), [crewmate, queuedMessages])
+  const crewmateBubbleQueue = useMemo(() => queuedMessages.filter(m => !crewmateHeldQueue.includes(m)), [queuedMessages, crewmateHeldQueue])
   // Queued rows are drawn in place from the slot's full row list, so a parked
   // message sits where it was sent (`withQueuedAsBubbles`).
   const messages = useMemo(
-    () => (crewmate ? filterCrewmateChatWithBrowser(withQueuedAsBubbles(allMessages, queuedMessages)) : paneMessages),
-    [crewmate, allMessages, paneMessages, queuedMessages],
+    () => (crewmate ? filterCrewmateChatWithBrowser(withQueuedAsBubbles(allMessages, crewmateBubbleQueue)) : paneMessages),
+    [crewmate, allMessages, paneMessages, crewmateBubbleQueue],
   )
   // A queued turn opens without the composer going idle (#20350).
   const projectTurnKey = useMemo(() => stagedProjectTurnKey(messages), [messages])
@@ -746,7 +752,8 @@ export default function ChatPane({
   } = useQueuedMessageActions({
     slot: slotKey,
     allQueued: allQueuedMessages,
-    visibleQueued: queuedMessages,
+    // The cards the stack draws, so a reorder moves among the cards on screen.
+    visibleQueued: crewmate ? crewmateHeldQueue : queuedMessages,
     dictationScope: PANE_DICTATION_SCOPE,
     // Adapter: the hook's third argument is the queued send's mention-alias
     // snapshot, which only ChatPage's composer can re-adopt (pendingFileTokens
@@ -1116,9 +1123,10 @@ export default function ChatPane({
             cancellable — hiding real state is worse than showing a card the
             surface did not intend. */}
         {/* A crewmate's chat draws a queued message as the person's own
-            bubble in the thread instead (`withQueuedAsBubbles`). */}
-        {!crewmate && queuedMessages.length > 0 && (
-          <QueueStack key={slotKey} messages={queuedMessages} onCancel={onCancelQueued} onInterrupt={crewmate ? undefined : onInterruptQueued} onEdit={onEditQueued} onEditOpen={onEditOpenQueued} onReorder={onReorderQueued} pendingIds={queuePendingIds} />
+            bubble in the thread instead (`withQueuedAsBubbles`), all but a
+            held entry, which waits here for the person to act on it. */}
+        {(crewmate ? crewmateHeldQueue : queuedMessages).length > 0 && (
+          <QueueStack key={slotKey} messages={crewmate ? crewmateHeldQueue : queuedMessages} onCancel={onCancelQueued} onInterrupt={onInterruptQueued} onEdit={onEditQueued} onEditOpen={onEditOpenQueued} onReorder={onReorderQueued} pendingIds={queuePendingIds} />
         )}
 
         {/* The pending ask_question card shares the message column's gutter and
@@ -1309,8 +1317,7 @@ export default function ChatPane({
           continuable={resume.composerResume}
           continueIsRecovery={resume.interrupted}
           resumeAfterSignIn={resume.resumeAfterSignIn}
-          // A crewmate's chat has no queue card to send (`withQueuedAsBubbles`).
-          restoredQueueCount={crewmate ? 0 : queuedMessages.filter(m => m.meta?.restored === true).length}
+          restoredQueueCount={crewmate ? crewmateHeldQueue.length : queuedMessages.filter(m => m.meta?.restored === true).length}
           onContinue={resume.onContinue}
           continuing={resume.continuing}
           // Steer path on the pane too (it was queue-only before): busy panes
@@ -1359,7 +1366,7 @@ export default function ChatPane({
           derivePctFromUsed={contextTokens?.used != null && contextTokens.window == null}
           // A Crew Mode root with a message offers no switch, preview on or off: the raw
           // `crew_mode_root` stamp is the gateway's own lock (`crew_mode_locked`).
-          onAgentClick={!agentLocked && !runsCrewMode(paneSlot?.agent, paneSlot?.agent_kind, paneSlot?.crew_mode_agent)
+          onAgentClick={!agentLocked && !showsAsCrewMode(paneSlot)
             && !(paneHasUserMessage && !!paneSlot?.crew_mode_root) && provider.capabilities.agentTemplates ? (rect, trigger) => { anchorAgentBtn(rect, trigger); agentDD.setOpen(!agentDD.open) } : undefined}
           onModelClick={(rect, trigger) => { anchorModelBtn(rect, trigger); modelDD.setOpen(!modelDD.open) }}
           approvalMode={displayMode}

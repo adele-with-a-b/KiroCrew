@@ -50,7 +50,8 @@ name: Denial Differential
 # (`Library/Application Support`, `/Volumes/<share>`). A Linux-only gate would
 # pass a tightening that breaks every operator on another OS -- the same class of
 # defect the Cross-Platform Portability gate exists for and cannot see, because
-# that one reads added lines rather than behaviour.
+# that one reads added lines rather than behaviour. Fork only:
+# adele-with-a-b/KiroCrew runs the Windows leg on request (see the matrix).
 #
 # No dependency install: the composite's import chain is stdlib plus the package's
 # own modules, and the child reaches them through PYTHONPATH at a materialized
@@ -111,7 +112,14 @@ jobs:
       # cancelled runner is the only one who can see.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Fork only: adele-with-a-b/KiroCrew drops the Windows leg unless the
+        # PR carries `ci:windows` or `ci-full-run`, as ci.yml's Windows scope
+        # does. Elsewhere all three legs, as before.
+        os: ${{ fromJSON(github.repository == 'adele-with-a-b/KiroCrew'
+          && !contains(github.event.pull_request.labels.*.name, 'ci:windows')
+          && !contains(github.event.pull_request.labels.*.name, 'ci-full-run')
+          && '["ubuntu-latest","macos-latest"]'
+          || '["ubuntu-latest","macos-latest","windows-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

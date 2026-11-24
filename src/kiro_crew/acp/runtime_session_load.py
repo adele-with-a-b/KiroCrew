@@ -68,6 +68,7 @@ from kiro_crew.acp.session_mcp import session_mcp_server_is_disabled
 from kiro_crew.acp.transport_errors import AcpAuthRequired
 from kiro_crew.acp.types import (
     ACP_BACKEND_KAS,
+    ACP_BACKEND_KIRO,
     ACP_BACKENDS_ADVERTISED_MODEL_SELECTION,
     ACP_BACKENDS_LOAD_WITHOUT_MODES,
     ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP,
@@ -803,7 +804,11 @@ async def load_session(
         # different (broader) default agent than the one requested.
         _ids, _current, _adv = parse_session_modes(resp)
         await self.terminate_session(resume_sid)
-        cause, remedy = await asyncio.to_thread(unavailable_mode_explanation, mode_agent)
+        cause, remedy = await asyncio.to_thread(
+            unavailable_mode_explanation,
+            mode_agent,
+            kiro_cli_engine=self._harness.backend == ACP_BACKEND_KIRO,
+        )
         raise AcpRuntimeError(
             f"Agent mode {mode_agent!r} is not available for resumed session "
             f"{resume_sid} (advertised modes: {_ids or 'none'}); {cause} Refusing "
@@ -1125,7 +1130,9 @@ async def _load_session_with_harness_state(
     pending = _PENDING_ABANDONED_CLOSES.get((id(self), resume_sid))
     if pending is not None:
         await asyncio.wait({pending})
-    agent = kwargs["agent"] or self._agent
+    # Mapped as the create twin maps it: a stored skill-view name names its source
+    # agent, which the session's env then names (``_name_the_session_agent``).
+    agent = await self._source_agent(kwargs["agent"]) or self._agent
     work_dir = await self._session_work_dir(kwargs["cwd"])
     state = await self._harness.prepare_session(
         work_dir=work_dir,

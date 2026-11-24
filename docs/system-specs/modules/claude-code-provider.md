@@ -452,12 +452,12 @@ the primary spawn (not only on the model-substitution retry) with
 `permissions.defaultMode` when requested, `permissions.deny` rules derived from
 the spec's `disabledTools`, and the `permissions.ask` rules a `toolsSettings` shell
 or write allowlist needs (above). Once the provider-advertised model cache is warm it
-writes a pinned `model`, and it writes `availableModels` only when another settings
+writes `availableModels`, and only when another settings
 source (user `settings.json`, project `.claude/settings.json`, or the managed
 `managed-settings.json` and its `managed-settings.d/*.json` drop-ins) already defines
 one; on a cold cache both keys are omitted, except for the covered names below. Claude Code's rule is that an allowlist
 entry naming a specific id disables that family's alias wildcard, so Crew's own list
-would cap `haiku` at Haiku 4.5 (issue #22995); a `model` key has no such effect. The
+would cap `haiku` at Haiku 4.5 (issue #22995). The
 adapter gives each literal `availableModels` entry one picker row, while the CLI also
 allows the newer models that a version prefix covers (`claude-opus-5` allows
 `claude-opus-5-5`). So when Crew writes its list it also names the keys of the user's
@@ -478,16 +478,51 @@ missed: the seed then
 omits Crew's list as it does on a cold cache, so a versioned `[1m]` pick can resolve
 to the 200K window under that policy.
 
-The model-substitution retry is the one case that writes `model` on a cold cache.
+**A session's pinned model is never written as `model`.** Claude Code reads a
+settings `model` as a pin and folds that model's whole family into one alias row: a
+session pinned to Opus 4.8 is offered one `opus` row (Opus 4.8) and no Opus 5 or Opus
+5.5, Crew then caches that short list as what the account is served, and an in-chat
+`/model` to the pinned id does nothing (#37240; measured with
+`@anthropic-ai/claude-agent-sdk` 0.3.312's `supportedModels()`). The pin reaches the
+session over `session/set_config_option` instead (`_apply_startup_model`), which
+narrows nothing, so the seed only has to list it when it carries `availableModels`.
+Pinned by `test/test_acp_session_mcp.py::TestLocalSettingsSeed::test_a_pinned_model_never_reaches_the_settings_file`.
+
+The model-substitution retry is the one case that writes `model`, warm cache or cold.
 When `session/new` returns the policy advisory ("Model X is restricted ... Using Y
-instead") with no session, `_new_session_following_substitution` adopts Y and re-seeds
-with `model` set to Y as the backend spelled it. Without that key the user's own
+instead") with no session, the refused X is the model the seed left to the user's
+settings (their `settings.json` `model`, or the adapter default), not necessarily the
+session's pin. So the retry re-seeds with `model` set to the session's pin when the
+pin, folded onto the advertised spelling, is in the cached advertised list (that
+list already applies the policy allowlist, so the pin is served), and to Y as the
+backend spelled it otherwise: no pin, a pin not advertised, or a cold cache
+(`_substitution_retry_model`). The session runs that model. Without the key the user's own
 `settings.json` still names X, so the retry would be refused the same way. That is
 the state of every install whose pinned model is restricted from its first session,
-because no `session/new` has ever succeeded to warm the cache. The adapter reads
+because no `session/new` has ever succeeded to warm the cache. A pin the seed already
+adopted (in this start or an earlier one, `_adopted_substitute_model`) and the backend
+now refuses is never named again, even when the advertised list still names it: that
+list can be older than the policy, so the retry names Y. Only a refusal of Y itself,
+when the seed already names Y, is not retried, since a retry cannot help; this holds
+when Y equals the pin too, because the pin never reached the refused request. The two
+`test_a_model_adopted_earlier_and_refused_now_falls_back_to_the_offered_one` tests
+(`test/test_acp_client_model_substitution.py`, `test/test_claude_shared_runtime.py`)
+pin this on both paths. When the
+retry named the pin and the backend refuses that too, the start falls back ONCE to
+the model the second advisory offers, as before the pin left the seed: a session on
+the offered model beats one that never starts. So one start sends `session/new` at
+most three times (`_SUBSTITUTION_RESENDS` re-sends on the shared runtime). The retry's
+model also rides the envelope's flag tier (`_meta.claudeCode.options.settings.model`,
+`_claude_session_meta`), since a seed a sibling session shares is not rewritten and
+the flag tier outranks the user's settings the refused default came from. The per-chat
+client (`_retry_after_model_substitution`) and the shared runtime
+(`ClaudeHarness.adopt_substituted_model`) apply the same rule. The adapter reads
 `ANTHROPIC_MODEL` ahead of every settings file, so a restricted id set there is not
 replaced by this re-seed. Pinned by
-`test/test_acp_client_model_substitution.py::TestSubstitutionFollow::test_retry_on_cold_cache_seeds_the_substitute_model`.
+`test/test_acp_client_model_substitution.py::TestSubstitutionFollow::test_retry_on_cold_cache_seeds_the_substitute_model`
+, `test_a_served_pin_survives_a_refused_inherited_default` and
+`test_a_refused_pin_falls_back_once_to_the_offered_model` (in it and in
+`test/test_claude_shared_runtime.py`).
 
 With `agent.model` at `auto` the seed writes no `model` key, so the adapter takes the
 model from the user's own settings (`ANTHROPIC_MODEL`, then `settings.model`). After
@@ -564,11 +599,11 @@ Only the model half (`availableModels`, `model`) may differ from the payload thi
 client would have written (`_share_sibling_settings_seed`). It grants no permission,
 and each session's own model reaches the adapter live: `_apply_startup_model` pushes
 it over `session/set_config_option`, which claude-agent-acp accepts only for an
-`availableModels` entry. So the seed must list this session's `model`, name none
-when this session pins none, or, when neither seed carries `availableModels`, leave
-the adapter on its own advertised list, where the push is accepted. A pinned session
-then runs its own pin, and an unpinned one starts on the adapter's default rather
-than the owner's pin. The seed's bytes are read only when they match the durable
+`availableModels` entry. So the seed must list the model this session runs (its
+adopted substitute, else its pin), name none when this session runs neither, or, when
+neither seed carries `availableModels`, leave the adapter on its own advertised list,
+where the push is accepted. A pinned session then runs its own pin, and an unpinned one
+starts on the adapter's default rather than an owner's substitute. The seed's bytes are read only when they match the durable
 record, through the same bounded, no-follow, non-blocking read the ownership check
 uses (`_settings_path_bytes`), and the share validates exactly those bytes. A seed
 that differs in a permission key — another permission mode, another agent's deny
@@ -1412,6 +1447,52 @@ the parent was tightened is destroyed and cold-started (a thread cold-starts eve
 turn). Not covered: a live chat tightened to incognito or temporary while its claude
 session runs, which keeps the envelope it started with until its next `session/new`.
 Contract tests: `test_claude_auto_memory_envelope.py`.
+
+### The session's agent in the child's env
+
+Every claude `session/new` and `session/load` envelope names the session's agent as
+`KIROCREW_SESSION_AGENT` (`constants.KIROCREW_SESSION_AGENT_ENV`), so a hook or tool
+that runs under the session's `claude` child can tell which agent the chat runs
+(Claude Code passes no `--agent` and gives hooks `agent_type: ""`).
+`client_claude_session._name_the_session_agent`, called from `_harness_session_meta`,
+writes it, so the process-per-session client and a session on the shared runtime
+(`ClaudeHarness.session_meta`) carry the same value; `KIROCREW_RUNTIME_AGENT`, the
+runtime process's own agent (`runtime_spawn_launch`), is unchanged. The value is the
+client's `_agent`, set by Crew from the session's own record when the client is
+built; nothing a turn sends writes it. It goes in `options.env`, which the adapter
+spreads over its process env for this session's child only (`{...process.env,
+...options.env}`), and in the flag tier's `settings.env`, which Claude Code copies
+after the user, project and local tiers' `env`, so no settings file a chat can write
+renames it; the agent spec's own `claudeCode.env` is applied before it. It is always
+set, to the agent the session runs as: a session with no agent on its record runs as
+`kirocrew` on the process-per-session client and as the runtime's own agent on a shared
+runtime (`agent or self._agent`), and names that; a client whose `_agent` is empty
+writes an empty value. A deprecated alias (`DEPRECATED_AGENT_SPECS`, so
+`kirocrew-ledger-conductor`) is named by the agent whose spec it emits
+(`kirocrew-conductor`). `options.env` can overwrite a key but not remove one,
+and a process env inherited from a parent (a gateway started from a chat's shell)
+names another session's agent. No ACP backend process names one: both ACP spawn
+builders drop an inherited value (`client_spawn_env._apply_session_identity_env` for a
+process-per-session child, `_env_after_marker` in `runtime_spawn_launch` for a shared
+runtime), so an agent child of any backend starts without it and only claude's envelope
+sets it. Other children of such a gateway (a script or command cron, a pooled MCP
+server) still inherit the gateway's own value; an app backend's allowlisted env
+(`minimal_env`) does not carry it. A resumed session
+on a shared runtime names the agent its stored skill-view name was built from, as a new
+one does (`_load_session_with_harness_state` maps it through `_source_agent`).
+
+It is a label from Crew's own session record, not a credential: it names the agent
+template the session runs, not who started it. Any chat able to create a session
+(`session_create`, a sub-agent spawn) can create one that runs `kirocrew-conductor`, and
+that session carries the name. A gate that reads it stops a worker from acting as a
+Conductor by mistake, not a chat that sets out to; a signal of who created the session,
+from the same record, is the known next step. Every process the child starts (a Bash
+command, a nested `claude`, a hook) inherits it, and a command can set it for what it
+starts, so a reader that acts on it must take it from the chat's own `claude` and tell a
+subagent's hook call apart (`agent_id`) itself. A chat the chat keeper adopts keeps
+the envelope its child started with, so a child started before this variable existed
+carries none until its session restarts.
+Contract tests: `test_claude_session_agent_env.py`.
 
 ### `/clear` is answered by the dashboard
 

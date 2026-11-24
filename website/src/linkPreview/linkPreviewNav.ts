@@ -47,11 +47,19 @@ export function jsonBytes(value: unknown): number {
   }
 }
 
+/** How one jump ended: `true` the message is on screen; `not_found` this chat
+ *  has no such message (all its history read); `load_failed` a page of older
+ *  history failed to load; `not_on_screen` the chat is not the one on screen, or
+ *  was left first; `replaced` a newer jump took its place. */
+export type JumpOutcome = true | 'not_found' | 'load_failed' | 'not_on_screen' | 'replaced'
+
 export type LinkPreviewNav =
   /** Open `target` of `appName` and hand it `payload`; `via` says who asked (a card's click, a status go). */
   | { kind: 'open'; slot: string; appName: string; target: AppOpenTarget; payload: unknown; via: 'link' | 'status' }
-  /** Scroll to `target`; `from` is the message the card's text sits in. */
-  | { kind: 'jump'; slot: string; target: MessageRef; from?: MessageRef }
+  /** Scroll to `target`; `from` is the message the card's text sits in. A jump
+   *  from a session control has no such message: `from: 'view'` keeps the view
+   *  on screen now as the Back pill's spot, and `onDone` is told how it ended. */
+  | { kind: 'jump'; slot: string; target: MessageRef; from?: MessageRef | 'view'; onDone?: (o: JumpOutcome) => void }
 
 /** `true` took it, `false` not mine, a refusal: mine, and refused. */
 type Listener = (req: LinkPreviewNav) => boolean | OpenRefusal

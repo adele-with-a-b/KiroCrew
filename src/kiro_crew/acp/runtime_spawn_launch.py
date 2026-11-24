@@ -87,6 +87,7 @@ from kiro_crew.config.paths import data_home, kiro_agents_dir
 from kiro_crew.constants import (
     INITIALIZE_TIMEOUT_SECS,
     KIROCREW_RUNTIME_AGENT_ENV,
+    KIROCREW_SESSION_AGENT_ENV,
     KIROCREW_SPAWN_HOME_ENV,
     KIROCREW_SPAWN_INSTANCE_ENV,
 )
@@ -864,6 +865,10 @@ async def _spawn_admitted(self: AcpRuntime) -> None:
             env[KIROCREW_RUNTIME_AGENT_ENV] = self._agent
         else:
             env.pop(KIROCREW_RUNTIME_AGENT_ENV, None)
+        # A process serves many sessions, so it never names one session's
+        # agent: claude's envelope does (``_name_the_session_agent``), and a
+        # value inherited from the gateway's own parent is dropped here.
+        env.pop(KIROCREW_SESSION_AGENT_ENV, None)
 
     def _env_after_scratch(env: dict[str, str]) -> None:
         # A host whose state cannot be shared between processes (codex's SQLite
@@ -1340,7 +1345,7 @@ async def _handshake_client_capabilities(self: AcpRuntime) -> dict[str, Any]:
     (``kas_never_defer_ids``, expanding whole-server grants from
     :func:`_known_server_tool_names`) and ``enabled`` goes out as an explicit
     false. A spec that grants the loader is sent the spawn agent's declared job
-    tools (``job_tool_ids``), so the calls that agent's prompt makes its
+    tools (``job_tool_ids``, a custom agent's own row), so the calls its prompt makes its
     procedure cost no load round trip, and nothing when it declares none. An
     operator who set their own never-defer list (``operator_mandatory_mcps``)
     has decided what stays direct: Crew adds no job tool beside it.
@@ -1377,10 +1382,10 @@ async def _handshake_client_capabilities(self: AcpRuntime) -> dict[str, Any]:
         return base
 
     def spec_and_added() -> tuple[dict[str, Any] | None, tuple[str, ...]]:
-        # Only KAS reads this channel. There the Crew servers a custom agent was
-        # given, not its author's, stay behind KAS's loader (``crew_added_servers``).
+        # Only KAS reads this channel. There the Crew servers a custom agent was given,
+        # not its author's, stay behind KAS's loader, loader or not, bar its job tools.
         spec = self._projected_spawn_spec()
-        if not self._harness.client_meta_settings or spec_grants_tool_search(spec):
+        if not self._harness.client_meta_settings:
             return spec, ()
         return spec, crew_added_servers(self._agent, spec)
 
@@ -1400,7 +1405,7 @@ async def _handshake_client_capabilities(self: AcpRuntime) -> dict[str, Any]:
                 kas_never_defer_ids, spec, _known_server_tool_names
             )
     elif operator_mandatory_mcps() is None:
-        never_defer = job_tool_ids(self._agent, spec)
+        never_defer = job_tool_ids(self._agent, spec, custom=bool(added))
     settings = kas_client_meta_settings(
         self._tool_search, loader_granted=loader_granted, never_defer=never_defer
     )

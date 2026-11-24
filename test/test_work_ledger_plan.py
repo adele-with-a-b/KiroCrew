@@ -35,6 +35,7 @@ from kiro_crew.work_ledger_rules import is_stale
 from kiro_crew.work_plan_vocab import (
     MAX_RELEASES,
     coerce_plan,
+    in_backlog,
     next_pick,
     plan_problem,
     rank_value,
@@ -98,7 +99,9 @@ def test_a_backlog_item_cannot_be_bound_until_it_is_pulled() -> None:
         wl.apply_conductor_action(CONDUCTOR, "bind", item_id=later, worker_session_key="chat-9-w")
     assert caught.value.field == "plan.backlog"
     wl.apply_plan_write(CONDUCTOR, later, {"backlog": False, "step": "build"})
-    assert wl.read_work_item(CONDUCTOR, later).plan == {"step": "build"}
+    # ``false`` is kept: it holds the story in the sprint until its worker binds.
+    assert wl.read_work_item(CONDUCTOR, later).plan == {"backlog": False, "step": "build"}
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=later, worker_session_key="chat-9-w")
 
 
 def test_a_sub_task_rides_its_storys_seat_and_neither_it_nor_an_epic_can_be_bound() -> None:
@@ -165,9 +168,8 @@ def test_a_bad_plan_key_is_refused_by_name(plan: dict[str, Any], field: str) -> 
     assert caught.value.field == field
 
 
-def test_each_parent_link_goes_exactly_one_level_down(monkeypatch) -> None:
-    # One second per stamp: the store lists items by ``created_at``, so the open task
-    # below is the older child by the clock, not by its random id.
+def _tick_the_clock(monkeypatch) -> None:
+    """One second per stamp, so ``created_at`` orders items by when they were made."""
     from kiro_crew import work_ledger_store, work_ledger_writes
 
     ticks = iter(range(10_000))
@@ -178,6 +180,12 @@ def test_each_parent_link_goes_exactly_one_level_down(monkeypatch) -> None:
 
     for module in (work_ledger_store, work_ledger_writes):
         monkeypatch.setattr(module, "_now_iso", _tick)
+
+
+def test_each_parent_link_goes_exactly_one_level_down(monkeypatch) -> None:
+    # The store lists items by ``created_at``, so the open task below is the older
+    # child by the clock, not by its random id.
+    _tick_the_clock(monkeypatch)
     _board(cap=8)
     epic = _create("epic", {"level": "epic"})
     other = _create("other epic", {"level": "epic"})
@@ -263,11 +271,83 @@ def test_a_person_rank_moves_only_the_rank() -> None:
         with pytest.raises(wl.WorkLedgerError) as caught:
             wl.apply_person_rank(CONDUCTOR, item_id, bad)
         assert caught.value.field == "plan.rank"
-    sprint = _create("in the sprint")
+    held = _create("held in the sprint", {"backlog": False})
+    bound = _create("a worker is on it")
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=bound, worker_session_key="chat-9-w")
+    for sprint in (held, bound):
+        before = wl.read_work_item(CONDUCTOR, sprint).plan
+        with pytest.raises(wl.WorkLedgerError) as caught:
+            wl.apply_person_rank(CONDUCTOR, sprint, 1)
+        assert caught.value.field == "plan.backlog"
+        assert wl.read_work_item(CONDUCTOR, sprint).plan == before
+    # An epic marked backlog is ranked as it always was: the mark is what it reads.
+    epic = _create("an epic for later", {"level": "epic", "backlog": True})
+    wl.apply_person_rank(CONDUCTOR, epic, 2)
+    assert wl.read_work_item(CONDUCTOR, epic).plan == {"level": "epic", "backlog": True, "rank": 2}
+
+
+def test_the_board_counts_the_seats_the_cap_admission_counts() -> None:
+    """A story with no plan and no worker is a backlog row, yet it holds a seat."""
+    _board(cap=2)
+    bound = _create("a worker is on it")
+    waiting = _create("waiting, never planned")
+    _create("marked for later", {"backlog": True})
+    _create("an epic", {"level": "epic"})
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=bound, worker_session_key="chat-9-w")
+    items = wl.list_work_items(CONDUCTOR)
+    assert wl.count_seated(items) == 2
+    assert wl.count_seated(items, exclude=waiting) == 1
+    # The count is what the cap refuses on: no third seat, though one worker is on.
     with pytest.raises(wl.WorkLedgerError) as caught:
-        wl.apply_person_rank(CONDUCTOR, sprint, 1)
-    assert caught.value.field == "plan.backlog"
-    assert wl.read_work_item(CONDUCTOR, sprint).plan is None
+        _create("one more")
+    assert caught.value.code == wl.CODE_GOAL_CONCURRENCY_CAP_REACHED
+
+
+def test_a_story_no_worker_is_on_is_a_backlog_row_its_conductor_never_planned(
+    monkeypatch,
+) -> None:
+    """Blick's board: no plan on any row. The waiting stories rank and pick as backlog."""
+    # The unranked pick is the oldest, so each create needs its own second.
+    _tick_the_clock(monkeypatch)
+    _board(cap=8)
+    first, second, third = _create("first"), _create("second"), _create("third")
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=first, worker_session_key="chat-9-w")
+    items = wl.list_work_items(CONDUCTOR)
+    assert next_pick(items) == second
+    wl.apply_person_rank(CONDUCTOR, third, 1)
+    # Ranking writes only the rank: the row stays derived, and nothing else is stored.
+    assert wl.read_work_item(CONDUCTOR, third).plan == {"rank": 1}
+    assert wl.read_work_item(CONDUCTOR, second).plan is None
+    assert next_pick(wl.list_work_items(CONDUCTOR)) == third
+    # A derived backlog row binds as it always did: only the stored mark refuses.
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=second, worker_session_key="chat-8-w")
+    assert next_pick(wl.list_work_items(CONDUCTOR)) == third
+
+
+@pytest.mark.parametrize(
+    ("plan", "state", "bound", "want"),
+    [
+        (None, "open", False, True),
+        (None, "open", True, False),
+        ({"rank": 3}, "open", False, True),
+        ({"backlog": True}, "open", False, True),
+        ({"backlog": False}, "open", False, False),
+        ({"backlog": False}, "open", True, False),
+        (None, "accepted", False, False),
+        ({"backlog": True}, "abandoned", False, False),
+        ({"level": "epic"}, "open", False, False),
+        ({"level": "task", "parent": "it_00000001"}, "open", False, False),
+        ({"level": "task", "backlog": True}, "open", False, False),
+        ({"level": "story"}, "open", False, True),
+    ],
+)
+def test_in_backlog_reads_the_mark_then_the_worker(plan, state, bound, want) -> None:
+    assert in_backlog(plan, state=state, worker_bound=bound) is want
+
+
+def test_a_stored_backlog_false_survives_the_plan_round_trip() -> None:
+    assert coerce_plan({"backlog": False}) == {"backlog": False}
+    assert coerce_plan({"backlog": "no"}) is None
 
 
 def test_an_oversized_integer_rank_is_refused_not_raised() -> None:
@@ -313,11 +393,16 @@ def test_the_next_pick_is_the_lowest_ranked_open_backlog_story() -> None:
         {"item_id": "it_00000003", "state": "open", "plan": {"backlog": True, "rank": 2}},
         {"item_id": "it_00000004", "state": "open", "plan": {"level": "epic", "backlog": True}},
         {"item_id": "it_00000005", "state": "done", "plan": {"backlog": True, "rank": 0}},
-        {"item_id": "it_00000006", "state": "open", "plan": {"rank": 1}},
+        {"item_id": "it_00000006", "state": "open", "plan": {"backlog": False, "rank": 1}},
+        {"item_id": "it_00000008", "state": "open", "plan": {"rank": 0}, "worker_session_key": "w"},
+        {"item_id": "it_00000009", "state": "open", "created_at": "2"},
         {"item_id": "it_00000007", "state": "open", "plan": {"level": "task", "backlog": True}},
     ]
     rows[-1]["plan"]["rank"] = 0
     assert next_pick(rows) == "it_00000003"
+    # Unranked, a story with no plan and no worker sorts by age among the marked ones.
+    assert next_pick([rows[0], rows[7]]) == "it_00000001"
+    assert next_pick(rows[5:8]) == "it_00000009"
     assert next_pick(rows[:1]) == "it_00000001"
     assert next_pick([]) is None
 
@@ -462,7 +547,11 @@ async def test_the_rank_route_moves_a_backlog_row_and_refuses_the_rest(monkeypat
     status, body = await _record(CONDUCTOR, {"action": "goal", "goal": "ship it", "round": 1})
     assert status == 200, body
     ids = {}
-    for title, plan in (("later", {"backlog": True, "rank": 2}), ("now", None)):
+    for title, plan in (
+        ("later", {"backlog": True, "rank": 2}),
+        ("now", {"backlog": False}),
+        ("waiting", None),
+    ):
         payload = {"action": "create", "title": title, "acceptance": ACCEPTANCE}
         status, body = await _record(CONDUCTOR, {**payload, **({"plan": plan} if plan else {})})
         assert status == 200, body
@@ -471,8 +560,13 @@ async def test_the_rank_route_moves_a_backlog_row_and_refuses_the_rest(monkeypat
 
     status, body = await _rank_post(ids["later"], 0.5)
     assert status == 200 and body["plan"] == {"backlog": True, "rank": 0.5}, body
+    # A story its conductor never planned, with no worker, is a backlog row too.
+    status, body = await _rank_post(ids["waiting"], 3)
+    assert status == 200 and body["plan"] == {"rank": 3}, body
     wl.rebuild_from_projection(CONDUCTOR)
     assert wl.read_work_item(CONDUCTOR, ids["later"]).plan == {"backlog": True, "rank": 0.5}
+    assert wl.read_work_item(CONDUCTOR, ids["now"]).plan == {"backlog": False}
+    assert wl.read_work_item(CONDUCTOR, ids["waiting"]).plan == {"rank": 3}
 
     for item_id, rank, want in (
         (ids["later"], "first", (400, "invalid_value")),

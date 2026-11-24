@@ -642,7 +642,8 @@ export { useLanguageGeneration } from '../i18n/useLanguageGeneration'
 export { activeLocale, fmtNumber, fmtCurrency, fmtDate, fmtTime, fmtDateTime, fmtRelative, compareText } from '../i18n/format'
 export type { NumberOptions, DateStyleOptions, RelativeStyle } from '../i18n/format'
 // An app's own origin on the dashboard's port, for a backend that frames its own pages (level 8).
-export { appWebOrigin } from './webOrigin'
+export { appWebOrigin, appWebOriginStatus } from './webOrigin'
+export type { AppWebOriginReason, AppWebOriginStatus } from './webOrigin'
 // What this app's side-panel tab was opened with by its own link-preview card
 // (`card.openPanelTab`). Feature-detected by name: an older host has no export.
 export { usePanelTabRequest } from './panelTabRequest'
@@ -651,6 +652,9 @@ export type { PanelTabRequest } from './panelTabRequest'
 // link-preview card (`card.openSessionControl`) or a status go (level 11).
 export { useSessionControlRequest } from './sessionControlRequest'
 export type { SessionControlRequest } from './sessionControlRequest'
+// A session control scrolls its own chat to one of its messages, with the Back pill (level 13).
+export { useSessionControlJump } from './sessionControlRequest'
+export type { SessionControlJumpResult } from './sessionControlRequest'
 // The way back after a status item's go sent the operator to this tab's chat.
 // Feature-detected by name, as `usePanelTabRequest` is.
 export { useStatusGoBack } from './statusGoBack'
