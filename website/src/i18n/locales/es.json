@@ -7148,6 +7148,7 @@
       "session_control_needs_attention": "Requiere atención",
       "session_control_ready": "Listo",
       "session_control_chip_label": "{{label}} — {{detail}}",
+      "session_control_chip_shortcut": "{{label}} {{keys}}",
       "agent_inherited_default": "Esta sesión sigue el agente predeterminado ({{name}}). No tiene un agente propio, así que cambia si cambia el predeterminado. Haz clic para fijar uno.",
       "agent_cycle_hint": "Agente siguiente: Alt+Mayús+A · Anterior: Alt+Mayús+Z",
       "agent_cycle_hint_mac": "Agente siguiente: ⌥⇧A · Anterior: ⌥⇧Z",
@@ -21178,7 +21179,15 @@
         "clear_shortcut": "Borrar",
         "panel_toggles": "Alternar paneles",
         "skips_shell_hint": "También funciona dentro del terminal, por lo que tu shell deja de recibir esta tecla: no elijas Ctrl+C ni Ctrl+R.",
-        "skips_shell_hint_mac": "También funciona dentro del terminal, por lo que tu shell deja de recibir esta tecla: no elijas ⌃C (Ctrl+C) ni ⌃R (Ctrl+R)."
+        "skips_shell_hint_mac": "También funciona dentro del terminal, por lo que tu shell deja de recibir esta tecla: no elijas ⌃C (Ctrl+C) ni ⌃R (Ctrl+R).",
+        "apps": "Apps",
+        "app_key_row": "{{app}} · {{label}}",
+        "app_key_off_crew": "Su tecla {{keys}} es «{{holder}}» de Crew, así que está desactivada. Pulsa teclas para elegir otra.",
+        "app_key_off_app": "Su tecla {{keys}} la usa «{{holder}}», así que está desactivada. Pulsa teclas para elegir otra.",
+        "app_key_refused": "{{keys}} la usa «{{holder}}». Pulsa otra tecla, o Esc para conservar {{current}}.",
+        "app_key_refused_none": "{{keys}} la usa «{{holder}}». Pulsa otra tecla, o Esc para parar.",
+        "app_key_holder_editing": "Teclas de buscar, enviar y editar (copiar, pegar, deshacer)",
+        "apps_hint": "Teclas que una app añade para su cuadro bajo el cuadro de mensaje. Actúan en el chat en pantalla. Las teclas propias de Crew siempre ganan."
       },
       "skillsPanel": {
         "analyze_each_completed_session_and_draft_a_reusa": "Analiza cada sesión completada y redacta un SKILL.md reutilizable cuando la sesión demuestra un procedimiento recurrente — uno que una sesión futura, trabajando sobre un objetivo distinto, volvería a ejecutar. Desactivado por defecto. Los borradores pasan a la cola de pendientes de Personalizar → Habilidades para su revisión — nada se activa sin tu aprobación (ver más abajo).",

@@ -22,6 +22,7 @@ import { shallowEqual } from 'react-redux'
 import { api } from '../api/client'
 import { isPermissionRefusal } from '../api/apiError'
 import { SESSION_CONTROL_STATUS_PATH_RE } from '../lib/sessionControlStatusPath'
+import { parseDeclaredKeys, type DeclaredSessionKey } from '../lib/appSessionKeys'
 
 /** Hard cap on controls rendered inline across ALL apps.
  *
@@ -89,6 +90,10 @@ export interface ResolvedSessionControl {
   /** Whether the owner approved `permissions.openFiles` (the row's `openFilesGrant`),
    *  so the control's `useOpenFile` is served. */
   openFiles: boolean
+  /** The keys that open this control's box (`keys`), read defensively. */
+  keys: DeclaredSessionKey[]
+  /** The app's install time (ISO), '' when unknown: the earlier app keeps a key two default to. */
+  installedAt: string
 }
 
 /** Chip state an app may report for the active session. */
@@ -135,6 +140,7 @@ interface AppLike {
   version?: string
   displayName?: string
   enabled?: boolean
+  installedAt?: string
   openFilesGrant?: { approved?: boolean }
   manifest?: {
     version?: string
@@ -147,6 +153,7 @@ interface AppLike {
         icon?: string
         statusPath?: string
         width?: number
+        keys?: unknown
       }[]
     }
     permissions?: { api?: string[]; events?: string[] }
@@ -216,6 +223,8 @@ export function resolveSessionControls(apps: AppLike[]): ResolvedSessionControl[
         processBacked: Boolean(app.manifest?.backend?.entryPoint),
         width: controlWidth(ctl.width),
         openFiles: app.openFilesGrant?.approved === true,
+        keys: parseDeclaredKeys(ctl.keys),
+        installedAt: typeof app.installedAt === 'string' ? app.installedAt : '',
       })
     }
   }

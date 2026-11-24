@@ -1006,7 +1006,9 @@ under the message box, [`contributes.sessionControls`](manifest-reference.md#con
 person opened the chip by hand and outside a session control. `via` says who asked:
 `'link'` for this app's own link-preview card (`link.card.openSessionControl(control,
 payload)`), `'status'` for one of its status rows or its `go` (`target.sessionControl`,
-with `target.arg` as the payload). A request sent before the control's module loaded is
+with `target.arg` as the payload), `'key'` for one of the control's own
+[`keys`](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)
+(its `arg` as the payload; level 14). A request sent before the control's module loaded is
 read on its first render, and an open while the popover is already open keeps it mounted
 and only raises `seq`, so act on a `seq` you have not handled. The request is dropped when
 the popover closes. A card's open resolves with the dashboard's answer, `{ ok: true }` or
@@ -1015,7 +1017,7 @@ manifest reference). Needs `APP_SDK_LEVEL >= 11`; read it off the namespace impo
 
 ```tsx
 const useSessionControlRequest = (sdk as Record<string, unknown>).useSessionControlRequest as
-  (() => { seq: number; payload: unknown; via: 'link' | 'status' } | null) | undefined
+  (() => { seq: number; payload: unknown; via: 'link' | 'status' | 'key' } | null) | undefined
 
 // Inside the control (call it only when it is there):
 const req = useSessionControlRequest?.()
@@ -2226,7 +2228,8 @@ directory entries in `credentialMasks` (`"state/"`), the dashboard's
 resolves with) and `contributes.sessionControls[].width`, and level 12 adds the
 manifest's `permissions.openFiles` with the dashboard's
 [`useOpenFile`](#opening-a-local-file), and level 13 adds the
-[session control jump](#session-control-jump) (`useSessionControlJump`); each level
+[session control jump](#session-control-jump) (`useSessionControlJump`), and level 14
+adds `contributes.sessionControls[].keys` with a request's `via: 'key'`; each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

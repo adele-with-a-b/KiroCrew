@@ -48,6 +48,76 @@ MAX_SESSION_CONTROLS_PER_APP = 2
 #: chip at the box's left edge stays over the composer.
 SESSION_CONTROL_DEFAULT_WIDTH = 340
 SESSION_CONTROL_MAX_WIDTH = 396
+#: Keys one session control may declare (``keys``), and the most bytes a key's
+#: ``arg`` may take as JSON. Mirrored by ``MAX_SESSION_CONTROL_KEYS`` and
+#: ``parseKeyDefault`` in ``website/src/lib/appSessionKeys.ts``.
+MAX_SESSION_CONTROL_KEYS = 4
+SESSION_CONTROL_KEY_ARG_MAX_BYTES = 4096
+_KEY_MODIFIERS = ("mod", "ctrl", "alt", "shift")
+_KEY_NAMED = frozenset({"Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"})
+_KEY_PUNCT = frozenset(",./\\[]`-=;'")
+
+
+def session_control_key_default_error(raw: str) -> str:
+    """Why ``raw`` is not a key default, or ``''`` when it is one.
+
+    The grammar: ``Mod``, ``Ctrl``, ``Alt`` and ``Shift`` (any case, each at most
+    once) joined by ``+``, then one key: a letter, a digit, US punctuation
+    (``, . / \\ [ ] ` - = ; '``), ``Enter`` or an arrow. ``Mod`` is Cmd on a Mac and
+    Ctrl elsewhere. It must hold Mod, Ctrl or Alt: a bare key, or Shift and a key,
+    would fire while the person types.
+    """
+    parts = raw.split("+")
+    key = parts[-1]
+    mods = [p.lower() for p in parts[:-1]]
+    if any(m not in _KEY_MODIFIERS for m in mods) or len(set(mods)) != len(mods):
+        return "modifiers must be Mod, Ctrl, Alt or Shift, each once, joined by +"
+    if not (
+        (len(key) == 1 and (key.isascii() and key.isalnum() or key in _KEY_PUNCT))
+        or key in _KEY_NAMED
+    ):
+        return "the key must be a letter, a digit, US punctuation, Enter or an arrow"
+    if not {"mod", "ctrl", "alt"} & set(mods):
+        return "it must hold Mod, Ctrl or Alt"
+    return ""
+
+
+@dataclass
+class SessionControlKey:
+    """A key a person can press to open the control's box in the chat on screen.
+
+    The person sees one row per key in Settings → Shortcuts → Apps and may
+    change it there; ``default`` is only the starting key, and a default one of
+    Crew's own keys (or an earlier app's) holds is turned off rather than taken.
+    The box reads ``arg`` through ``useSessionControlRequest()`` as
+    ``{via: 'key', payload: arg}``.
+    """
+
+    id: str = ""  # slug, unique within the control
+    label: str = ""  # names the Settings row, after the app's name
+    # Optional, e.g. "Alt+Shift+Q"; anything but a string is kept as is for
+    # ``validate`` to refuse.
+    default: Any = ""
+    arg: Any = None  # optional JSON handed to the box; None = none
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {"id": self.id, "label": self.label}
+        if self.default:
+            d["default"] = self.default
+        if self.arg is not None:
+            d["arg"] = self.arg
+        return d
+
+    @classmethod
+    def from_dict(cls, data: Any) -> SessionControlKey:
+        if not isinstance(data, dict):
+            return cls()
+        return cls(
+            id=str(data.get("id", "")),
+            label=data.get("label", "") if isinstance(data.get("label", ""), str) else "",
+            default=data.get("default", ""),
+            arg=data.get("arg"),
+        )
 
 
 @dataclass
@@ -87,11 +157,17 @@ class SessionControlContribution:
     # Optional popover width on a desktop window, in CSS px; 0 = the default.
     # Anything but an int in [default, max] is refused at install (-1 here).
     width: int = 0
+    # Keys that open this control's box (see SessionControlKey).
+    keys: list[SessionControlKey] = field(default_factory=list)
+    #: Whether ``keys`` was present but not a list, for ``validate`` to refuse.
+    bad_keys: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"id": self.id, "entryPoint": self.entryPoint}
         if self.width:
             d["width"] = self.width
+        if self.keys:
+            d["keys"] = [k.to_dict() for k in self.keys]
         if self.label:
             d["label"] = self.label
         if self.icon:
@@ -102,6 +178,7 @@ class SessionControlContribution:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SessionControlContribution:
+        raw_keys = data.get("keys", [])
         return cls(
             id=str(data.get("id", "")),
             entryPoint=str(data.get("entryPoint", "")),  # noqa: N815
@@ -109,6 +186,8 @@ class SessionControlContribution:
             icon=str(data.get("icon", "")),
             statusPath=_normalize_status_path(data.get("statusPath", "")),  # noqa: N815
             width=_session_control_width(data["width"]) if "width" in data else 0,
+            keys=[SessionControlKey.from_dict(k) for k in raw_keys] if isinstance(raw_keys, list) else [],
+            bad_keys=not isinstance(raw_keys, list),
         )
 
 
