@@ -64,6 +64,7 @@ class _ChatSlot:
         "segment_shown_sha",
         "segment_removed",
         "segment_message_id",
+        "segment_reply_end",
         "key",
         "title",
         "agent",
@@ -558,6 +559,7 @@ class _ChatSlot:
     segment_shown_sha: Any  # a ``hashlib.sha256()`` object
     segment_removed: dict[str, str]
     segment_message_id: str
+    segment_reply_end: bool
     _task: asyncio.Task[Any] | None
     _turn_admission_reserved: bool
     _turn_generation: int

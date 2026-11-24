@@ -44,6 +44,7 @@ from kiro_crew.acp import (
     pi_steer_turn,
     plan_checklist,
     raw_sdk_tasks,
+    reply_end,
 )
 from kiro_crew.acp._dispatch import (
     DRAIN_YIELD_AFTER_S,
@@ -1032,6 +1033,7 @@ async def _dispatch_events(
     # not just forgotten: the engine holds its tool call open until then.
     await self.cancel_pending_elicitations()
     self._stale_eligible = False
+    reply_end.reset(self)
     self._tool_dispatched = False
     if self._active_tool_calls.evicted_count:
         # The previous turn's overflow, counted and said once (the same
@@ -1235,6 +1237,9 @@ async def _dispatch_events(
             if _child_consumed:
                 continue
             self._track_usage_update(msg)
+            _reply_end = reply_end.on_frame(self, msg, self.backend)
+            if _reply_end is not None:
+                yield _reply_end
             self._note_background_launch(msg)
             # pi's consumed notification for a steer is the gate extension's own
             # frame, never text of the turn (``acp.pi_steer_turn``).
@@ -1282,13 +1287,15 @@ async def _dispatch_events(
                     self.last_prompt_stats.text_chunks += 1
                     self._stale_eligible = not self._active_tool_calls.possibly_open
                     self._prompt_or_tool_seen = True
-                yield AcpEvent(
+                _chunk_event = AcpEvent(
                     kind=kind,
                     text=chunk,
                     control_notice=_notice_chunk,
                     message_id=parse_message_id((msg.params or {}).get("update")),
                     harness_notice=_notice,
                 )
+                reply_end.note_event(self, _chunk_event)
+                yield _chunk_event
                 if not is_thinking and _is_tool_interrupted_marker(chunk):
                     # kiro-cli's built-in security filter cancelled the turn's tools.
                     # It will not send a ``complete`` response — synthesize one so the
@@ -1333,6 +1340,7 @@ async def _dispatch_events(
                 # is Pre-only). No-op unless audit_source is set.
                 await self._skill_reads.note(tool_event)
                 await self._maybe_fire_pre_tool_hooks(tool_event)
+                reply_end.note_event(self, tool_event)
                 yield tool_event
             # Real-time tool result from `tool_call_update` session updates.
             # kiro-cli emits these the moment a tool completes — fires before

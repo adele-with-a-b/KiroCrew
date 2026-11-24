@@ -60,6 +60,7 @@ from kiro_crew.acp.types import (
     EVENT_MCP_SERVER_INIT_FAILURE,
     EVENT_MCP_SERVER_INITIALIZED,
     EVENT_MODEL_FALLBACK,
+    EVENT_REPLY_END,
     EVENT_STEER_CONSUMED,
     EVENT_STEER_DROPPED,
     STOP_CLASS_FAILED,
@@ -263,6 +264,7 @@ from kiro_crew.dashboard.chat_turn.stop_recovery import (
     _turn_stop_recovery,
 )
 from kiro_crew.dashboard.chat_turn.stream_chunks import (
+    _on_reply_end,
     _on_text_chunk,
     _on_thinking_chunk,
     _release_held_text,
@@ -1311,6 +1313,8 @@ async def _run_chat(
                 await _on_subagent_list(turn, event)
             elif event.kind == EVENT_SUBAGENT_ACTIVITY:
                 await _on_subagent_activity(turn, event)
+            elif event.kind == EVENT_REPLY_END:
+                _on_reply_end(turn)
             elif event.kind == EVENT_COMPLETE:
                 _flow = await _on_complete(turn, event)
                 if _flow is _Flow.BREAK:

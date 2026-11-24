@@ -728,6 +728,8 @@ class AcpClient:
         # serialized here; if that ever changes, the readuntil race could recur.
         self._turn_lock: asyncio.Lock = asyncio.Lock()
         self._stale_eligible: bool = False  # set by _dispatch_events after text chunks
+        self._reply_text_open = False  # text came since the last tool call (acp.reply_end)
+        self._reply_end_pending = False  # a message ended on that text (acp.reply_end)
         # Set when a tool_call is yielded, cleared when the tool resolves
         # (tool_call_update result) or the turn starts/completes.  NOT cleared
         # on arbitrary inbound frames — that would disarm the watchdog after a
