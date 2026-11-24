@@ -597,13 +597,14 @@ The browser and private-namespace lanes above are Linux-only.
 on **macOS and Windows too**, and `ci.yml`'s
 `e2e-boot-matrix` job is what runs it: `fail-fast: false`,
 `needs: [changes, await-fast-gate, lint-gate]`, 20 minutes. `strategy.matrix.os` has three
-states:
+states, plus a fork-only row:
 
 | Event | OS legs | `needs` |
 |---|---|---|
 | `pull_request`, `merge_group` | `ubuntu-latest`, `windows-latest` | must succeed (`lint-gate` too) |
 | push to `main` the merge queue landed (`MERGE_QUEUE_ENABLED == 'true'`, `github.actor == 'github-merge-queue[bot]'`) | `macos-15` alone | skipped (including `lint-gate`); the condition admits the push |
 | any other push to `main` | `ubuntu-latest`, `macos-15`, `windows-latest` | must succeed (`lint-gate` too) |
+| Fork only: a pull request on adele-with-a-b/KiroCrew | `ubuntu-latest`, `macos-15`; `windows-latest` too with `ci:windows` or `ci-full-run` | must succeed (`lint-gate` too) |
 
 The mac leg is event-conditional for the queue, not the runtime: a `macos-15`
 runner waits about 200 minutes, so a mac leg on every pull request would hold

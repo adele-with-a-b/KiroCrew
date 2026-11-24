@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ci_matrix_expression_helpers import evaluate_matrix_value
 from macos_lane_helpers import load_workflow
 
 
@@ -167,6 +168,18 @@ class TestTheOwnForkWindowsScope:
                 " && (github.repository != 'adele-with-a-b/KiroCrew'"
                 " || needs.changes.outputs.windows_tests == 'true') }}"
             ), name
+
+    def test_denial_differential_drops_windows_on_the_own_fork_alone(self) -> None:
+        job = load_workflow("denial-differential.yml")["jobs"]["denial-differential"]
+        legs = job["strategy"]["matrix"]["os"]
+        every_leg = ["ubuntu-latest", "macos-latest", "windows-latest"]
+        upstream = {"github.repository": "kirodotdev/KiroCrew"}
+        assert evaluate_matrix_value(legs, upstream) == every_leg
+        own_fork = {"github.repository": "adele-with-a-b/KiroCrew"}
+        assert evaluate_matrix_value(legs, own_fork) == ["ubuntu-latest", "macos-latest"]
+        for label in ("ci:windows", "ci-full-run"):
+            labelled = {**own_fork, "labels": f"other,{label}"}
+            assert evaluate_matrix_value(legs, labelled) == every_leg, label
 
 
 class TestTheForkWindowsScope:

@@ -110,6 +110,8 @@ jobs:
       # 'false' only on a fork pull request that touches nothing Windows-shaped
       # (see "Decide the fork Windows scope"). Every other run reads 'true', and
       # an absent output (this job failed) reads as "run", never as a skip.
+      # Fork only: on adele-with-a-b/KiroCrew it is 'false' unless the PR
+      # carries `ci:windows` or `ci-full-run`.
       windows_tests: ${{ steps.windows-scope.outputs.windows_tests }}
       # Central runner labels: eligible repository/event/actor combinations
       # use CodeBuild. Any other run EXECUTING in this repository uses the
@@ -2156,6 +2158,9 @@ jobs:
   # cannot live in this file. The opt-in real-Darwin run is its own workflow
   # (macos-on-demand.yml, which calls platform-tests.yml), outside readiness'
   # lane list.
+  # Fork only: adele-with-a-b/KiroCrew's pull requests boot one macos-15 leg
+  # in `e2e-boot-matrix`. Its hosted macOS runner waits about a minute, and
+  # with no push run on `local/**` the PR is its only macOS verdict.
   # test_macos_platform_tests_gate.py pins all of it.
 
   # ── New-test stability gate ──────────────────────────────────────────────

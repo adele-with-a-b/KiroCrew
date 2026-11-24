@@ -18,6 +18,9 @@ from typing import Any
 _CONTEXT_REF = re.compile(
     r"\b(?:needs\.[\w-]+\.(?:result|outputs\.\w+)|github(?:\.\w+)+|vars\.\w+)"
 )
+_LABEL_TEST = re.compile(
+    r"(!?)contains\(github\.event\.pull_request\.labels\.\*\.name,\s*'([^']+)'\)"
+)
 
 
 def evaluate_matrix_value(value: str, context: dict[str, str]) -> Any:
@@ -31,6 +34,11 @@ def evaluate_matrix_value(value: str, context: dict[str, str]) -> Any:
     expr = expr[3:-2].strip()
     assert expr.startswith("fromJSON(") and expr.endswith(")"), value
     expr = expr[len("fromJSON(") : -1]
+    # The pull request's labels: ``context["labels"]`` lists them, comma-separated.
+    labels = {label for label in context.get("labels", "").split(",") if label}
+    expr = _LABEL_TEST.sub(
+        lambda m: f"({'not ' if m.group(1) else ''}{m.group(2) in labels})", expr
+    )
     expr = _CONTEXT_REF.sub(lambda m: repr(context.get(m.group(0), "")), expr)
     expr = expr.replace("&&", " and ").replace("||", " or ")
 
@@ -39,6 +47,8 @@ def evaluate_matrix_value(value: str, context: dict[str, str]) -> Any:
             return walk(node.body)
         if isinstance(node, ast.Constant):
             return node.value
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return not walk(node.operand)
         if isinstance(node, ast.BoolOp):
             result: object = None
             for operand in node.values:

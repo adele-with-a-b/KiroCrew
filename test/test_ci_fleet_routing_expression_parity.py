@@ -46,9 +46,14 @@ _OWN_FORK_CONTEXTS = (
 
 def _matrix_legs(matrix: dict, context: dict[str, str]) -> list[dict]:
     """The legs ``matrix`` instantiates under ``context``, as include-style dicts."""
+
+    def value(key: str) -> list:
+        raw = matrix[key]
+        return raw if isinstance(raw, list) else evaluate_matrix_value(raw, context)
+
     if "os" in matrix:
-        return [{"os": os_name} for os_name in evaluate_matrix_value(matrix["os"], context)]
-    return evaluate_matrix_value(matrix["include"], context)
+        return [{"os": os_name} for os_name in value("os")]
+    return value("include")
 
 
 _ACTOR_PREDICATE = "contains(fromJSON(vars.CODEBUILD_ACTOR_IDS || '[]'), github.actor_id)"
@@ -764,7 +769,10 @@ def test_merge_queue_readiness_budget_covers_ci_critical_path() -> None:
             caps = [int(m.group(1))]
             key = re.search(r"matrix\.(\w+)\s*\|\|", value)
             if key:
-                legs = ((spec.get("strategy") or {}).get("matrix") or {}).get("include") or []
+                include = ((spec.get("strategy") or {}).get("matrix") or {}).get("include")
+                if isinstance(include, str):
+                    include = evaluate_matrix_value(include, _UPSTREAM_CONTEXT)
+                legs = include or []
                 caps += [int(leg[key.group(1)]) for leg in legs if key.group(1) in leg]
             return max(caps)
         return int(value)
@@ -776,6 +784,8 @@ def test_merge_queue_readiness_budget_covers_ci_critical_path() -> None:
         upstream = max((longest_path(n) for n in needs), default=0)
         return upstream + rounds(spec) * cap_minutes(spec)
 
+    # A per-leg cap read from an expression-built matrix still reaches the sum.
+    assert cap_minutes(jobs["new-test-stability"]) == 150
     critical_path = max(longest_path(job_id) for job_id in jobs)
     assert budget_minutes >= critical_path, (
         f"TOTAL_BUDGET is {budget_minutes:.0f} min but ci.yml's longest needs-chain "
