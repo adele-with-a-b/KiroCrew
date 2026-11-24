@@ -133,8 +133,10 @@ async def test_the_session_new_request_carries_the_switch(tmp_path, agents_dir, 
 
     assert killed == []
     options = dict(sent)["session/new"]["_meta"]["claudeCode"]["options"]
-    assert options.get("env") == (None if mode == "persistent" else _OFF)
-    assert (options.get("settings") or {}).get("env") == (None if mode == "persistent" else _OFF)
+    # Beside the switch, the wire envelope names the session's agent.
+    expected = {"KIROCREW_SESSION_AGENT": "kirocrew", **({} if mode == "persistent" else _OFF)}
+    assert options.get("env") == expected
+    assert (options.get("settings") or {}).get("env") == expected
 
 
 @pytest.mark.asyncio

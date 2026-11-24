@@ -36,6 +36,12 @@ _ZERO_TOOL_OPTIONS = {
     "allowDangerouslySkipPermissions": False,
 }
 
+#: The session's agent, named to its ``claude`` child on the wire envelope.
+_NAMED = {
+    "env": {"KIROCREW_SESSION_AGENT": "kirocrew"},
+    "settings": {"env": {"KIROCREW_SESSION_AGENT": "kirocrew"}},
+}
+
 #: What a claude session asks for beside its options (``acp.raw_sdk_tasks``).
 _RAW_SDK_FILTER = list(RAW_SDK_MESSAGE_FILTER)
 
@@ -98,7 +104,10 @@ async def test_a_zero_tool_session_is_sent_no_tool(tmp_path, agents_dir, monkeyp
     assert client.spec_zero_tools is True
     assert params["mcpServers"] == []
     assert params["_meta"] == {
-        "claudeCode": {"options": _ZERO_TOOL_OPTIONS, "emitRawSDKMessages": _RAW_SDK_FILTER}
+        "claudeCode": {
+            "options": {**_ZERO_TOOL_OPTIONS, **_NAMED},
+            "emitRawSDKMessages": _RAW_SDK_FILTER,
+        }
     }
 
 

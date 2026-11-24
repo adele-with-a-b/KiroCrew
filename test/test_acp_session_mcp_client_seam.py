@@ -43,6 +43,12 @@ from kiro_crew.providers.mirrors.claude_code import ClaudeCodeMirror
 #: What a claude session asks for beside its options (``acp.raw_sdk_tasks``).
 _RAW_SDK_FILTER = list(RAW_SDK_MESSAGE_FILTER)
 
+#: A ``kirocrew`` session's agent, named to its ``claude`` child on the wire envelope.
+_NAMED_KIROCREW = {
+    "env": {"KIROCREW_SESSION_AGENT": "kirocrew"},
+    "settings": {"env": {"KIROCREW_SESSION_AGENT": "kirocrew"}},
+}
+
 
 class TestClientSeam:
     def _seeded(self, tmp_path, **kw):
@@ -630,7 +636,7 @@ class TestClientSeam:
 
         assert len(sent) == 2
         assert sent[0]["_meta"] == {
-            "claudeCode": {"options": {}, "emitRawSDKMessages": _RAW_SDK_FILTER}
+            "claudeCode": {"options": _NAMED_KIROCREW, "emitRawSDKMessages": _RAW_SDK_FILTER}
         }
         retry = sent[1]
         assert "foo" in _by_name(retry["mcpServers"])
@@ -649,7 +655,7 @@ class TestClientSeam:
         params = await self._session_new_params(client, tmp_path, monkeypatch)
         assert "foo" in _by_name(params["mcpServers"])
         assert params["_meta"] == {
-            "claudeCode": {"options": {}, "emitRawSDKMessages": _RAW_SDK_FILTER}
+            "claudeCode": {"options": _NAMED_KIROCREW, "emitRawSDKMessages": _RAW_SDK_FILTER}
         }
 
     _pin_harness = staticmethod(_pin_harness)

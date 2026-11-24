@@ -1413,6 +1413,52 @@ turn). Not covered: a live chat tightened to incognito or temporary while its cl
 session runs, which keeps the envelope it started with until its next `session/new`.
 Contract tests: `test_claude_auto_memory_envelope.py`.
 
+### The session's agent in the child's env
+
+Every claude `session/new` and `session/load` envelope names the session's agent as
+`KIROCREW_SESSION_AGENT` (`constants.KIROCREW_SESSION_AGENT_ENV`), so a hook or tool
+that runs under the session's `claude` child can tell which agent the chat runs
+(Claude Code passes no `--agent` and gives hooks `agent_type: ""`).
+`client_claude_session._name_the_session_agent`, called from `_harness_session_meta`,
+writes it, so the process-per-session client and a session on the shared runtime
+(`ClaudeHarness.session_meta`) carry the same value; `KIROCREW_RUNTIME_AGENT`, the
+runtime process's own agent (`runtime_spawn_launch`), is unchanged. The value is the
+client's `_agent`, set by Crew from the session's own record when the client is
+built; nothing a turn sends writes it. It goes in `options.env`, which the adapter
+spreads over its process env for this session's child only (`{...process.env,
+...options.env}`), and in the flag tier's `settings.env`, which Claude Code copies
+after the user, project and local tiers' `env`, so no settings file a chat can write
+renames it; the agent spec's own `claudeCode.env` is applied before it. It is always
+set, to the agent the session runs as: a session with no agent on its record runs as
+`kirocrew` on the process-per-session client and as the runtime's own agent on a shared
+runtime (`agent or self._agent`), and names that; a client whose `_agent` is empty
+writes an empty value. A deprecated alias (`DEPRECATED_AGENT_SPECS`, so
+`kirocrew-ledger-conductor`) is named by the agent whose spec it emits
+(`kirocrew-conductor`). `options.env` can overwrite a key but not remove one,
+and a process env inherited from a parent (a gateway started from a chat's shell)
+names another session's agent. No ACP backend process names one: both ACP spawn
+builders drop an inherited value (`client_spawn_env._apply_session_identity_env` for a
+process-per-session child, `_env_after_marker` in `runtime_spawn_launch` for a shared
+runtime), so an agent child of any backend starts without it and only claude's envelope
+sets it. Other children of such a gateway (a script or command cron, a pooled MCP
+server) still inherit the gateway's own value; an app backend's allowlisted env
+(`minimal_env`) does not carry it. A resumed session
+on a shared runtime names the agent its stored skill-view name was built from, as a new
+one does (`_load_session_with_harness_state` maps it through `_source_agent`).
+
+It is a label from Crew's own session record, not a credential: it names the agent
+template the session runs, not who started it. Any chat able to create a session
+(`session_create`, a sub-agent spawn) can create one that runs `kirocrew-conductor`, and
+that session carries the name. A gate that reads it stops a worker from acting as a
+Conductor by mistake, not a chat that sets out to; a signal of who created the session,
+from the same record, is the known next step. Every process the child starts (a Bash
+command, a nested `claude`, a hook) inherits it, and a command can set it for what it
+starts, so a reader that acts on it must take it from the chat's own `claude` and tell a
+subagent's hook call apart (`agent_id`) itself. A chat the chat keeper adopts keeps
+the envelope its child started with, so a child started before this variable existed
+carries none until its session restarts.
+Contract tests: `test_claude_session_agent_env.py`.
+
 ### `/clear` is answered by the dashboard
 
 A dashboard `/clear` on a claude session never reaches the adapter: claude is in
