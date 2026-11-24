@@ -201,7 +201,9 @@ class TestTheCliStop:
     def test_the_desktop_apps_pid_pinned_stop_does_not_mark(
         self, home: Path, stops: list, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("sys.argv", ["kirocrew", "stop", "--port", "5476", "--expect-pid", "4242"])
+        monkeypatch.setattr(
+            "sys.argv", ["kirocrew", "stop", "--port", "5476", "--expect-pid", "4242"]
+        )
         cli.main()
         assert stops == [(5476, 4242, False)]
 
@@ -269,7 +271,9 @@ class TestTheStopsTarget:
         owner["listening"] = [777]
         assert _stops_this_homes_gateway(9999) is False
 
-    def test_a_failed_probe_is_no_target(self, owner: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_failed_probe_is_no_target(
+        self, owner: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from kiro_crew.cli_server_stop import _stops_this_homes_gateway
 
         def _boom(port):
@@ -280,7 +284,9 @@ class TestTheStopsTarget:
 
 
 @pytest.mark.skipif(not hasattr(os, "geteuid"), reason="POSIX root only")
-def test_a_root_stop_leaves_no_root_owned_directory(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_root_stop_leaves_no_root_owned_directory(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(os, "geteuid", lambda: 0)
     assert kept_trust.mark_owner_stop("kirocrew stop") is False
     assert not (home / kept_trust.KEPT_DIR).exists()

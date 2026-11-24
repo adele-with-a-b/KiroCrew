@@ -40,10 +40,17 @@ LAYERS: dict[str, frozenset[str]] = {
     "kiro_crew.apps.manifest_containment": frozenset(),
     "kiro_crew.apps.manifest_sections": frozenset({"kiro_crew.apps.manifest_names"}),
     "kiro_crew.apps.manifest_contributes": frozenset(
-        {"kiro_crew.apps.manifest_route_grammar", "kiro_crew.apps.manifest_status_items"}
+        {
+            "kiro_crew.apps.manifest_route_grammar",
+            "kiro_crew.apps.manifest_session_controls",
+            "kiro_crew.apps.manifest_status_items",
+        }
     ),
     "kiro_crew.apps.manifest_agent_tools": frozenset(),
     "kiro_crew.apps.manifest_route_grammar": frozenset(),
+    "kiro_crew.apps.manifest_session_controls": frozenset(
+        {"kiro_crew.apps.manifest_route_grammar"}
+    ),
     "kiro_crew.apps.manifest_status_items": frozenset({"kiro_crew.apps.manifest_route_grammar"}),
 }
 OWNERS = (
@@ -53,6 +60,7 @@ OWNERS = (
     "kiro_crew.apps.manifest_contributes",
     "kiro_crew.apps.manifest_agent_tools",
     "kiro_crew.apps.manifest_route_grammar",
+    "kiro_crew.apps.manifest_session_controls",
     "kiro_crew.apps.manifest_status_items",
 )
 APPS_DIR = Path(manifest.__file__).resolve().parent

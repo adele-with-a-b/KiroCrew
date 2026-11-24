@@ -470,13 +470,11 @@ class TestOneRecordPerHomeIsSafe:
     """
 
     def test_the_record_sits_in_the_directory_the_gateway_lock_guards(self) -> None:
-        from kiro_crew import gateway_lock
-        from kiro_crew.config.loader import config_dir
-
         # Built from the module constant rather than from ``_breadcrumb_path()``,
         # which the autouse fixture redirects into tmp_path -- asserting on the
         # patched accessor would only test the fixture.
-        from kiro_crew import kept_trust
+        from kiro_crew import gateway_lock, kept_trust
+        from kiro_crew.config.loader import config_dir
 
         real_record = kept_trust.kept_path(so._BREADCRUMB_FILE)
         # Under the same home, so the lock that admits one gateway per home is the
@@ -695,7 +693,7 @@ def test_a_revoke_is_on_disk_when_it_returns(
     from kiro_crew import safety_override_breadcrumb as bc
 
     override = so.safety_override()
-    override.activate("dashboard", ttl=1800)
+    override.activate("dashboard", ttl=1800)  # flake-ok: the grant's lifetime, not a wait
     assert _published(_isolated_breadcrumb)
     threads: list[threading.Thread] = []
 

@@ -649,9 +649,10 @@ export type { AppWebOriginReason, AppWebOriginStatus } from './webOrigin'
 export { usePanelTabRequest } from './panelTabRequest'
 export type { PanelTabRequest } from './panelTabRequest'
 // What this app's session control (its chip's popover) was opened with by its own
-// link-preview card (`card.openSessionControl`) or a status go (level 11).
+// link-preview card (`card.openSessionControl`) or a status go (level 11), or one of
+// its manifest `keys` (`via: 'key'`, level 14).
 export { useSessionControlRequest } from './sessionControlRequest'
-export type { SessionControlRequest } from './sessionControlRequest'
+export type { SessionControlRequest, SessionControlOpenVia } from './sessionControlRequest'
 // A session control scrolls its own chat to one of its messages, with the Back pill (level 13).
 export { useSessionControlJump } from './sessionControlRequest'
 export type { SessionControlJumpResult } from './sessionControlRequest'

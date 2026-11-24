@@ -6614,7 +6614,7 @@
         "failed_desktop_unsupported": "„{{app}}“ kann in der Desktop-Version von {{productName}} nicht installiert werden, und es wurde nichts geändert.",
         "failed_desktop_unsupported_help": "Sie braucht Python-Pakete, die der Desktop-Build nicht hinzufügen kann; bitte den Autor der App, sie mit der App auszuliefern, oder öffne {{productName}} statt in der Desktop-Version in einem Webbrowser.",
         "open_files_heading": "Sie kann Dateien öffnen, wenn du darin klickst",
-        "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die Kiro Crew privat hält, werden abgelehnt."
+        "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die {{productName}} privat hält, werden abgelehnt."
       },
       "registryTier": {
         "curated": "Vom Team geprüft",
@@ -6962,6 +6962,7 @@
       "session_control_needs_attention": "Aktion erforderlich",
       "session_control_ready": "Bereit",
       "session_control_chip_label": "{{label}} — {{detail}}",
+      "session_control_chip_shortcut": "{{label}} {{keys}}",
       "agent_inherited_default": "Diese Sitzung folgt dem Standard-Agenten ({{name}}). Sie hat keinen eigenen Agenten, ändert sich also mit dem Standard. Zum Anheften klicken.",
       "agent_cycle_hint": "Nächster Agent: Alt+Umschalt+A · Vorheriger: Alt+Umschalt+Z",
       "agent_cycle_hint_mac": "Nächster Agent: ⌥⇧A · Vorheriger: ⌥⇧Z",
@@ -11958,7 +11959,7 @@
       },
       "grants_reconsent_composer_actions": "Eingabefeld-Schaltflächen: Die App darf diese Schaltflächen zum +-Menü des Eingabefelds hinzufügen. Ein Klick fügt den Text der App in deinen Entwurf ein; die App kann den Entwurf weder sehen noch senden.",
       "grants_reconsent_selection_actions": "Aktionen für ausgewählten Text: Die Einträge der App erhalten Text, den du in Chat-Antworten auswählst, und können ein Ergebnis zum Kopieren oder Öffnen anbieten.",
-      "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die Kiro Crew privat hält, werden abgelehnt.",
+      "open_files_desc": "Nachdem du darin klickst, kann sie eine Datei ihrer Wahl in deren Standard-App auf diesem Computer öffnen. Ein Skript oder eine App wird beim Öffnen ausgeführt. Dateien, die {{productName}} privat hält, werden abgelehnt.",
       "grants_reconsent_open_files": "Eine Datei ihrer Wahl in deren Standard-App öffnen, nachdem du darin klickst. Ein Skript oder eine App wird beim Öffnen ausgeführt."
     },
     "appPage": {
@@ -20655,7 +20656,15 @@
         "clear_shortcut": "Leeren",
         "panel_toggles": "Panels umschalten",
         "skips_shell_hint": "Funktioniert auch im Terminal, sodass Ihre Shell diese Taste nicht mehr erhält — wählen Sie nicht Strg+C oder Strg+R.",
-        "skips_shell_hint_mac": "Funktioniert auch im Terminal, sodass Ihre Shell diese Taste nicht mehr erhält — wählen Sie nicht ⌃C (Strg+C) oder ⌃R (Strg+R)."
+        "skips_shell_hint_mac": "Funktioniert auch im Terminal, sodass Ihre Shell diese Taste nicht mehr erhält — wählen Sie nicht ⌃C (Strg+C) oder ⌃R (Strg+R).",
+        "apps": "Apps",
+        "app_key_row": "{{app}} · {{label}}",
+        "app_key_off_crew": "Ihre Taste {{keys}} gehört zu Crews „{{holder}}“, daher ist sie aus. Drücken Sie Tasten, um eine andere zu wählen.",
+        "app_key_off_app": "Ihre Taste {{keys}} wird von „{{holder}}“ verwendet, daher ist sie aus. Drücken Sie Tasten, um eine andere zu wählen.",
+        "app_key_refused": "{{keys}} wird von „{{holder}}“ verwendet. Drücken Sie eine andere Taste oder Esc, um {{current}} zu behalten.",
+        "app_key_refused_none": "{{keys}} wird von „{{holder}}“ verwendet. Drücken Sie eine andere Taste oder Esc zum Beenden.",
+        "app_key_holder_editing": "Tasten zum Suchen, Senden und Bearbeiten (Kopieren, Einfügen, Rückgängig)",
+        "apps_hint": "Tasten, die eine App für ihr Feld unter dem Nachrichtenfeld hinzufügt. Sie wirken im Chat auf dem Bildschirm. Crews eigene Tasten haben immer Vorrang."
       },
       "skillsPanel": {
         "analyze_each_completed_session_and_draft_a_reusa": "Jede abgeschlossene Sitzung analysieren und eine wiederverwendbare SKILL.md entwerfen, wenn die Sitzung ein wiederkehrendes Verfahren zeigt — eines, das eine künftige Sitzung an einem anderen Ziel erneut ausführen würde. Standardmäßig aus. Entwürfe werden in der Warteschlange unter „Anpassen → Fähigkeiten“ zur Überprüfung bereitgestellt — nichts geht ohne deine Genehmigung live (siehe unten).",

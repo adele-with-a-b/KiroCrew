@@ -355,7 +355,9 @@ def _settle_restored(state: Any, restored: list[tuple[HeldMode, Any]]) -> None:
                 if trust_reaches_subagents(slot) or _yolo_reaches(state, slot):
                     sessions.set_approval_policy(effective_session_key(slot), "auto")
             except Exception:
-                logger.warning("Could not settle the session policy of chat %s", slot.key, exc_info=True)
+                logger.warning(
+                    "Could not settle the session policy of chat %s", slot.key, exc_info=True
+                )
     for entry, slot in restored:
         try:
             from kiro_crew.sel import sel

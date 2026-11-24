@@ -33,7 +33,6 @@ from typing import Optional
 
 from kiro_crew.atomic_write import atomic_write
 from kiro_crew.config.loader import config_dir
-from kiro_crew.safety_override_records import sel
 
 # Logs under the facade's name: a record names the import path callers use.
 logger = logging.getLogger("kiro_crew.safety_override")

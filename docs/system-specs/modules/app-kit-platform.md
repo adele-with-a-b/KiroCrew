@@ -6331,7 +6331,7 @@ Now one request shape opens either: `AppOpenTarget = {kind: 'panelTab' |
   open), and any other outside press, a link's included, closes at once.
 - **Width.** `contributes.sessionControls[].width`, an int in
   [`SESSION_CONTROL_DEFAULT_WIDTH` 340, `SESSION_CONTROL_MAX_WIDTH` 396]
-  (`apps/manifest_contributes.py`, mirrored by `SESSION_CONTROL_WIDTH` in
+  (`apps/manifest_session_controls.py`, mirrored by `SESSION_CONTROL_WIDTH` in
   `hooks/useSessionControls.ts`), refused at install otherwise (an explicit `0` or
   `null` too, which would read as absent) and clamped again
   on read. Drawn only at `innerWidth >= MOBILE_BREAKPOINT` (768); below it the
@@ -6352,7 +6352,8 @@ Writers: `website/src/linkPreview/linkPreviewNav.ts`,
 `website/src/app-sdk/sessionControlRequest.ts`,
 `website/src/components/SessionControlHost.tsx`,
 `website/src/hooks/useSessionControls.ts`, `apps/app_frame.py`,
-`apps/manifest_contributes.py`, `apps/manifest.py`, `apps/app_sdk_level.py`.
+`apps/manifest_session_controls.py`, `apps/manifest_contributes.py`, `apps/manifest.py`,
+`apps/app_sdk_level.py`.
 
 ## 18o. A session control scrolls its own chat to a reply (seam level 13)
 
@@ -6430,6 +6431,77 @@ Writers: `website/src/app-sdk/sessionControlRequest.ts`,
 `website/src/pages/chat/page/BackToSpotPill.tsx`, `website/src/pages/ChatPage.tsx`
 (hands `scrollBottom` to the jumps), `website/src/components/SessionControlHost.tsx`,
 `apps/app_sdk_level.py`.
+
+## 18p. A key opens a session control's box (seam level 14)
+
+A session control declares `keys` (at most 4), each `{id, label, default?, arg?}`.
+A key opens the control's box in the chat on screen with its `arg` as the
+request's payload and `via: 'key'`. The host has no app id in it: every rule below
+is the same for every app.
+
+- **Install.** `manifest_session_controls.SessionControlKey` parses the keys and
+  `manifest._session_control_key_errors` refuses a bad one at install, with the
+  reason: an id that is missing, not kebab-case, or used twice; a missing label; a
+  `default` outside the grammar (`session_control_key_default_error`: `Mod`,
+  `Ctrl`, `Alt`, `Shift`, each once, then a letter, a digit, US punctuation,
+  `Enter` or an arrow, holding `Mod`, `Ctrl` or `Alt`); an `arg` over 4 KB as
+  JSON; more than 4. The dashboard parses the same grammar
+  (`lib/appSessionKeys.ts` `parseKeyDefault`) and drops what it would refuse, so
+  a manifest from an older host is read the same way.
+- **Who holds a key.** `resolveAppKeys` gives each key its chord: the person's
+  choice (localStorage `mc-app-session-keys`, keyed `<app>:<control>:<key>`,
+  `null` for cleared; a durable pref) over the `default`. Crew's own keys win:
+  `crewKeyOwner` checks every shortcut registry entry's live chord and aliases
+  (the a-z and 1-9 families included, so ⌥ with a letter or a digit is Crew's),
+  the panel toggles, the search key, and the chords Crew's message box, find
+  and the browser's editing take outside the registry (`EDITING_CHORDS`: ⌘/Ctrl
+  with F, Enter, A, C, V, X, Y, Z; ⌃Enter on a Mac; raw paste ⌘/Ctrl+Shift+V and
+  ⌘⌥⇧V; redo ⌘/Ctrl+Shift+Z). A key Crew holds is off (`chord: null`,
+  `wanted` kept, `off` naming the holder). Between two apps, keys are taken in
+  `installedAt` order, so the app installed first keeps a shared chord. A key
+  stays off while the holder holds it; a change to Crew's keys or another app's
+  is re-resolved at once (the panel-toggle, search and app-key change events and
+  `storage`).
+- **The key in the chat.** One document capture-phase `keydown` listener in
+  `useComposerSessionControls`. Capture on the document runs after the
+  window-capture recorders (which stop the event) and before the popover's own
+  `stopPropagation`, so the key also works while focus is inside the box. It
+  passes on a prevented or composing event, a key no live chord matches, AltGr
+  (`getModifierState('AltGraph')`: Windows reports it as Ctrl+Alt, and it is a
+  character being typed), a terminal target (`.xterm`), an open modal dialog
+  (`utils/blockingOverlay.hasBlockingOverlay`, push-to-talk's test: the ⌥K sheet,
+  a confirm, the palette; the box itself is a non-modal `role="dialog"` and does
+  not count), and shortcuts turned off (`mc-keyboard-shortcuts` `'0'`). It acts
+  only in `activeSlot` and only when the control's chip is drawn with a layout
+  box (`getClientRects()`), so a chat page kept mounted but hidden, or a page with
+  no composer, lets it pass. Taken, it is prevented and stopped, its auto-repeats
+  too (⌥⇧Q would type Œ into the draft), but a repeat does nothing.
+- **Open, switch, close.** The same key again, on the box it opened in the same
+  chat, closes it. Any other open (a second key of the box, a link, a status row,
+  a click) forgets which key opened it, so the next key press re-opens with its
+  own `arg` instead of closing: the box stays mounted and only `seq` rises. A key
+  for another app's box closes the open one and opens its own, as a click does.
+- **Settings.** Settings → Shortcuts → Apps lists each key as `<app> · <label>`
+  with the panel toggles' recorder and Clear. Recording takes the window capture
+  phase and reads the matcher's token (`shortcutRegistry.eventKeyToken`), held to
+  the manifest grammar, so a bare modifier's own keydown, a numpad or ISO key and
+  AltGr keep it waiting and a recorded key fires from the key pressed; a chord Crew or another app key holds is refused with a `role="status"`
+  line naming the holder, and recording goes on; Escape keeps the old key. A key
+  that is off names its holder under its row.
+- **The chip.** Its title adds the first live key (`Questions ⌥⇧Q`) and it
+  carries `aria-keyshortcuts`.
+
+Not covered: the ⌥K shortcuts list, and phones (no keyboard row).
+
+Writers: `src/kiro_crew/apps/manifest_session_controls.py`,
+`src/kiro_crew/apps/manifest_contributes.py`, `src/kiro_crew/apps/manifest.py`,
+`apps/app_sdk_level.py`, `website/src/lib/appSessionKeys.ts`,
+`website/src/hooks/useAppSessionKeys.ts`, `website/src/hooks/useSessionControls.ts`,
+`website/src/pages/chat/page/sessionControls.ts`,
+`website/src/components/chat-input/ContextShelf.tsx`,
+`website/src/pages/settings/ShortcutsPanel.tsx`,
+`website/src/utils/blockingOverlay.ts` (shared with `usePushToTalk`),
+`website/src/app-sdk/sessionControlRequest.ts`.
 
 ## 19. Spec Builder's backend is composed by lifecycle owner
 
@@ -7077,7 +7149,8 @@ This section records which module owns which part, so a change lands in its owne
 | `manifest_names.py` | The app-name contract (`app_name_error`, `is_reserved_app_name`, the reserved sets, `KEBAB_RE`) and the version grammar (`SEMVER_RE`) |
 | `manifest_containment.py` | App-root containment of declared resource paths through the shared path screen (`_app_path_refusal`, `screen_app_path`, the `Containment` answers) and of the agents a contributed command selects (`_declared_agent_names`, `contain_command_agents`) |
 | `manifest_sections.py` | The typed `app.json` blocks other than `contributes`: `CronEntry`, `UIConfig` with its pages, overlays and sidebar, `BackendConfig` with `HooksConfig`, `Permissions`, `SetupConfig`, `Dependencies`, `PlatformConfig`, `PublishProviderConfig` and `NotificationsConfig` |
-| `manifest_contributes.py` | The `contributes` block: session controls, Command Bar commands and their argument, side-panel tabs, file-menu rows, `Contributes`, and the caps and grammars the dashboard mirrors for them |
+| `manifest_contributes.py` | The `contributes` block: Command Bar commands and their argument, side-panel tabs, file-menu rows, `Contributes`, and the caps and grammars the dashboard mirrors for them; it re-exports the session-control names below |
+| `manifest_session_controls.py` | Session controls: `SessionControlContribution`, `SessionControlKey`, their caps and widths, and the key-default grammar (`session_control_key_default_error`) the dashboard mirrors |
 | `job_sdk.py` | The facade, plus `JobSDK`, the per-app `JobStore`, the process-wide SDK registry, the interruption message `reconcile` composes (`_interrupt_error`), the process identity (`_ORIGIN`) and the tunables only they read |
 | `job_sdk_records.py` | The run record (`JobRun`), its lifecycle states and interruption causes, the params bounds and the ingest redaction (`_validated_params`, `_redact`), the `JobHandle` a runner holds, and the Job SDK exceptions |
 | `job_sdk_returns.py` | What a runner hands back: `_undriven_result`, `_stop_returned_work`, `_close_quietly`, and the registration-time `_lazy_call_shape` |
@@ -7115,7 +7188,8 @@ fails. `test_setup_hooks_contract.py` excludes `manifest_sections.py`, where eve
 `apps/job_sdk_records.py`, whose `_redact` is the ingest scrub.
 
 Writers: `apps/manifest.py`, `apps/manifest_names.py`, `apps/manifest_containment.py`,
-`apps/manifest_sections.py`, `apps/manifest_contributes.py`, `apps/job_sdk.py`,
+`apps/manifest_sections.py`, `apps/manifest_contributes.py`,
+`apps/manifest_session_controls.py`, `apps/job_sdk.py`,
 `apps/job_sdk_records.py`, `apps/job_sdk_returns.py`, `apps/job_sdk_retention.py`.
 
 ### 26.1 Retention is a per-kind count cap, opt-in

@@ -332,7 +332,12 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
             "payload": {"label": "[R4]", "at": "1970-01-01T00:00:00.000Z"},
         },
         {"type": "openPanelTab", "invocation": 4, "tab": "questions", "payload": None},
-        {"type": "openSessionControl", "invocation": 4, "control": "questions", "payload": {"label": "[Q4a]"}},
+        {
+            "type": "openSessionControl",
+            "invocation": 4,
+            "control": "questions",
+            "payload": {"label": "[Q4a]"},
+        },
         {"type": "jump", "invocation": 4, "ts": "t", "id": "m"},
         {"type": "jump", "invocation": 4, "ts": "t2"},
     ]

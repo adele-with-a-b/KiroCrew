@@ -28,10 +28,10 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
-from kiro_crew.acp.types import ACP_BACKEND_CLAUDE, PROVIDER_LABEL_CLAUDE
+from kiro_crew.agent_sdk.backend_identity import ACP_BACKEND_CLAUDE
+from kiro_crew.agent_sdk.drivers.acp import provider_label_for_backend
 from kiro_crew.dashboard.chat_utils_slots import effective_session_key
-from kiro_crew.dashboard.handlers._shared_access import require_owner_dashboard_request
-from kiro_crew.dashboard.handlers._shared_request_body import read_bounded_json
+from kiro_crew.dashboard.handlers._shared import read_bounded_json, require_owner_dashboard_request
 from kiro_crew.dashboard.session_transfer_layers import _slot_starts_on
 from kiro_crew.dashboard.slot_ownership import slot_not_found
 
@@ -126,7 +126,8 @@ async def api_chat_slot_attach_conversation(request: web.Request) -> web.Respons
                 },
                 status=409,
             )
-        sessions.seed_conversation(key, sid, provider=PROVIDER_LABEL_CLAUDE, cwd=cwd_or_reason)
+        provider = provider_label_for_backend(ACP_BACKEND_CLAUDE)
+        sessions.seed_conversation(key, sid, provider=provider, cwd=cwd_or_reason)
     return web.json_response(
         {"slot": name, "session_id": sid, "cwd": cwd_or_reason, "transcript": str(path)}
     )

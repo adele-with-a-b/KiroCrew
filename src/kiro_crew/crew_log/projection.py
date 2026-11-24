@@ -658,6 +658,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _work_reason,
         _work_render,
         _work_reset_board,
+        _work_set_plan,
         _work_set_round,
         _work_settle,
         _work_stamp,
@@ -903,6 +904,10 @@ if TYPE_CHECKING:  # names it serves from outside the fold family, from their ho
     )
     from kiro_crew.session_ledger import SCHEMA_VERSION as LEDGER_SCHEMA_VERSION  # noqa: F401
     from kiro_crew.session_ledger import TERMINAL_PHASES as LEDGER_TERMINAL_PHASES  # noqa: F401
+    from kiro_crew.work_plan_vocab import (  # noqa: F401
+        coerce_plan,
+        coerce_releases,
+    )
     from kiro_crew.work_vocab import (  # noqa: F401
         WORK_BLOCKED_REASONS,
         WORK_CLOSED_WINDOW,

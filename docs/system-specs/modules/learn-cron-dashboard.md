@@ -2367,8 +2367,12 @@ specified compatibility change.
     per-source cap the note route shares;
   - `slot_note` — the note route, its deferred hold, and `deliver_note`, the
     delivery half the merge-back route (`chat_merge_back.py`) shares;
-  - `chat_send`: the send path (`api_chat`) and the steer-or-queue decision a
-    busy slot's human send asks for;
+  - `chat_send`: the send path (`api_chat`) and the send claim it settles first
+    (`_settle_send_race`);
+  - `steer_decision`: the steer-or-queue decision a busy slot's human send asks
+    for (`steer_is_auto`, `decided_message_handling`);
+  - `send_lease`: the composer's typing lease (`_composer_locked_answer`) and the
+    commit of an accepted send's claim (`_committed_if_accepted`);
   - `crew_steer` — a person's steer into a Crew Mode worker: whether a send is
     one (`_person_crew_worker_root`), the queue-entry marker the drain records it
     by (`mark_crew_steer`), and the hold on a steer written into a running turn

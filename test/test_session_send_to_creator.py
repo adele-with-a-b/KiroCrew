@@ -441,7 +441,7 @@ def test_a_creator_mirrored_to_a_channel_is_not_reachable(tmp_path, _floor_monke
     state = _make_state(tmp_path)
     _, _, conductor, worker, _ = _team(state)
     _floor_monkeypatch.setattr(
-        ta, "_has_channel_mirror", lambda _state, slot, **_kw: slot.key == conductor.key
+        sc, "_has_channel_mirror", lambda _state, slot, **_kw: slot.key == conductor.key
     )
 
     assert _refusal(state, worker, conductor.key, creator_message=True).code == "mirrored_target"

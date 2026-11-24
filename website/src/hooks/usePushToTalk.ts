@@ -65,6 +65,7 @@ import {
   type StopIntent,
   type VoiceControls,
 } from '../lib/pttSession'
+import { hasBlockingOverlay } from '../utils/blockingOverlay'
 
 // The interface predates the shared core and every consumer (including both
 // hook test suites) imports it from here, so it stays part of this module's
@@ -108,19 +109,6 @@ export interface UsePushToTalkOpts {
 function isTerminalTarget(target: EventTarget | null): boolean {
   const el = target as Element | null
   return !!el && typeof el.closest === 'function' && !!el.closest('.xterm')
-}
-
-/** An open modal dialog (ARIA-marked, or a Radix dialog in its open state)
- *  owns the keyboard, so the key may not START a capture under it. No composer
- *  that owns the binding lives inside a dialog, so any open one blocks. A Radix
- *  Popover also renders `role="dialog"` + `data-state="open"`, but it is
- *  non-modal and sits in a popper wrapper, so it does not count. */
-function hasBlockingOverlay(): boolean {
-  if (document.querySelector('[aria-modal="true"]')) return true
-  for (const el of document.querySelectorAll('[role="dialog"][data-state="open"]')) {
-    if (!el.closest('[data-radix-popper-content-wrapper]')) return true
-  }
-  return false
 }
 
 export function usePushToTalk(voice: VoiceControls, { disabled, shiftDraftStop = false }: UsePushToTalkOpts = {}) {

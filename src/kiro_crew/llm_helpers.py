@@ -118,6 +118,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _start_fresh_conversation,
         background_turn,
         repair_lite_spec,
+        reset_after_background_model_change,
         run_bg_oneliner,
     )
     from kiro_crew.llm_helpers_parts.model_fallback import (  # noqa: F401

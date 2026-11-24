@@ -255,6 +255,7 @@ describe('useSessionControlChips — the chip detail', () => {
         openSessionControl: null,
         activeSlot: 'chat-1',
         sessionControlStatuses: statuses,
+        appKeys: [],
       }),
     ).result.current
 
