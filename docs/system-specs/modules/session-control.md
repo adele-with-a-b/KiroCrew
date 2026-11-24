@@ -2475,7 +2475,9 @@ when no branch is known, then `gh pr checks`), then states what it found; `last_
 yet)` or an empty `pr`/`branch` only means no report arrived, and a quiet worker may have
 finished and failed to report. It never claims a worker "stopped
 without telling me why", nor "PR: none yet" unless `gh` found none. The checks use only verbs
-the exemption admits; `read`/`summary` stay refused.
+the exemption admits; `read`/`summary` stay refused. The wake itself carries the same ask once,
+as `ledger_wake.STALL_POINTER`, because its brief's `last_status` is most often `progress` and
+every status rule says to ignore that (monitor-architecture.md, the work-ledger wake).
 A worker is one level deep: `code_channel_root` reads the worker record `create_session`
 writes into the code-channel store at birth -- for the resolved slot AND every live slot that
 answers to the same caller key (`_slots_sharing_identity`), since `caller_slot_key` takes the

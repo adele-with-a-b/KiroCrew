@@ -743,6 +743,72 @@ def test_a_new_report_on_an_already_woken_item_still_wakes(monkeypatch):
     assert f"item={item} status=question" in str(again.value)
 
 
+def test_a_progress_report_then_idle_past_the_window_wakes_exactly_once(monkeypatch):
+    """The live case: a worker reports ``progress`` ("build running") and ends its turn.
+
+    Nothing about ``is_stale`` is faked here. The store stamps the report on the same
+    clock the kernel and the rule read, the worker runs for a while and then stops,
+    and the conductor must get ONE wake for that transition: none while the worker
+    runs, one once the store's own window has passed, none on every later tick, and
+    one more only after a new report turns into a new silence. The delivered turn
+    text carries the instruction a stall needs, because its brief reads
+    ``last_status=progress`` and every status rule says to ignore that.
+    """
+    from kiro_crew import irq, work_ledger_records, work_ledger_rules
+    from kiro_crew.cron_script import Report, Skip
+    from kiro_crew.testing.clock import ManualClock
+
+    clock = ManualClock()
+    for module in (irq, lw):
+        clock.install(monkeypatch, module)
+    for module in (work_ledger_records, work_ledger_rules):
+        clock.install(monkeypatch, module, time=False, datetime=True)
+    window = work_ledger.DEFAULT_STALE_WINDOW_SECS
+    every = 300.0
+
+    _open_ledger()
+    item = _create()
+    work_ledger.apply_conductor_action(
+        CONDUCTOR, "bind", item_id=item, worker_session_key="chat-worker"
+    )
+    _report(item, "progress", summary="rebuild running, review running")
+    running = {"now": True}
+
+    from kiro_crew.probes.work_ledger import WorkLedgerProbe
+
+    def tick() -> str | None:
+        probe = WorkLedgerProbe(worker_running=lambda _key: running["now"])
+        try:
+            irq.run(_ctx(), probe)
+        except Report as report:
+            return str(report)
+        except Skip:
+            return None
+        return None
+
+    def ticks_for(secs: float) -> list[str]:
+        woke = []
+        for _ in range(int(secs // every)):
+            clock.advance(every)
+            text = tick()
+            if text is not None:
+                woke.append(text)
+        return woke
+
+    assert ticks_for(3 * window) == [], "no wake while the worker's session runs"
+
+    running["now"] = False
+    idle = ticks_for(irq.DEFAULT_REALERT_SECS + 2 * window)
+    stalls = [text for text in idle if f"item={item} reason=stall" in text]
+    assert len(stalls) == 1, idle
+    assert "last_status=progress" in stalls[0]
+    assert lw.STALL_POINTER in lw.wake_turn_text(stalls[0])
+
+    _report(item, "progress", summary="rebuild done, suites running")
+    again = ticks_for(2 * window)
+    assert len([text for text in again if f"item={item} reason=stall" in text]) == 1, again
+
+
 def _waking(item: str) -> list[str]:
     tick = _observe(_probe(), _ctx())
     return [o.brief for o in tick.observations if item in o.brief and "reason=stall" not in o.brief]

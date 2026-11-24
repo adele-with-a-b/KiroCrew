@@ -162,11 +162,11 @@ patrol: arm nothing. Otherwise arm a loop on your own session with
 `monitor_start`, carrying the cycle
 instructions AND the exit condition, then end the turn. **Always pass
 `watch="work-ledger"`**: a quiet cycle then costs no turn, and a worker
-reporting `blocked`, `question` or `done` wakes you within seconds. Only those
-three do. A worker reporting `progress`, parking itself in a wait, ending a
-turn, or closing its session leaves your interval alone, so a worker that
-crashed or went silent reaches you as an item flagged `stale` or `orphaned` on
-an ordinary cycle rather than as a wake — read those flags every cycle. A loop
+reporting `blocked`, `question` or `done` wakes you within seconds. A
+`progress` report does not. A worker that then goes quiet with the move still
+its own (it ended its turn, crashed or closed its session, and nothing runs)
+turns `stale`, and that wakes you once, as a `reason=stall` wake, never while
+the worker is running. Read the `stale` and `orphaned` flags every cycle too. A loop
 without the watch must be fixed with
 `monitor_update(watch="work-ledger")` before anything else. Leave gate at its default. Never pass gate:false on a patrol. Pass no
 `interval_secs`, no `max_cycles` and no `max_runtime_secs`: a
@@ -218,6 +218,13 @@ three of them:
   turn: `what` you need, `why` only they can, each option with its `outcome`,
   and your `pick` with `pick_why`.
 - **`progress`** — informational. Do nothing.
+
+A `stale` item, or a `[work-ledger wake]` that reads `reason=stall`, is not
+`progress` whatever its `last_status` says: its worker is not running and still
+owes the next move. In that turn check the worker's `session_status` and its
+pull request; if it is idle, `session_send` it the next step now and record
+`action=decide`, or re-dispatch or close the item. "On track" is never the
+answer to a stall.
 **A claimed `pr` is not an acceptance condition.** When a worker reports a pull
 request while the item's stored `acceptance` still holds a placeholder, the batch
 deliberately leaves that item out rather than reading the claim as the bar.

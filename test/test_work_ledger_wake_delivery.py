@@ -103,6 +103,29 @@ class TestWakeTurnText:
         )
         assert len(text) < ledger_wake.MAX_WAKE_BRIEF_CHARS * 2
 
+    def test_a_stall_wake_says_what_to_do_and_a_report_wake_does_not(self):
+        """A stall brief reads ``last_status=progress``, which every rule says to ignore.
+
+        So the wake itself says what the stale flag proved and what to do, once per
+        wake however many quiet items it names, between the news and the read pointer.
+        """
+        stall = ledger_wake.stall_brief(item_id="it_1", status="progress")
+        text = ledger_wake.wake_turn_text(
+            "\n".join([stall, ledger_wake.stall_brief(item_id="it_2", status=None)])
+        )
+        assert text.count(ledger_wake.STALL_POINTER) == 1
+        assert text.index("item=it_2") < text.index(ledger_wake.STALL_POINTER)
+        assert text.index(ledger_wake.STALL_POINTER) < text.index(ledger_wake.WAKE_READ_POINTER)
+        assert "session_send" in ledger_wake.STALL_POINTER
+        report = ledger_wake.wake_turn_text(ledger_wake.wake_brief(item_id="it_1", status="done"))
+        assert ledger_wake.STALL_POINTER not in report
+
+    def test_a_stall_past_the_brief_cut_still_gets_its_instruction(self):
+        stall = ledger_wake.stall_brief(item_id="it_9", status="progress")
+        text = ledger_wake.wake_turn_text("x" * ledger_wake.MAX_WAKE_BRIEF_CHARS + "\n" + stall)
+        assert "(brief list truncated)" in text
+        assert ledger_wake.STALL_POINTER in text
+
 
 # ── the board is the conductor's own read, never the wake's ───────────────
 

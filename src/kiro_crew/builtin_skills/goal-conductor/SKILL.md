@@ -504,6 +504,18 @@ Each cycle:
    | `blocked` | an external dependency stopped the work | clear it or re-plan around it; when you answer the worker, `session_send` it, then `work_ledger_record` `action=decide` |
    | `question` | your own decision is needed | `session_send` the answer, then `work_ledger_record` `action=decide`; `session_read_message` the reply |
 
+   **A `stale` item is not `progress`, whatever its status says.** The gateway
+   wakes you once each time an item turns stale, with a `[work-ledger wake]`
+   line that reads `reason=stall`, and never while that item's worker is
+   running. Its `last_status` is the worker's last word, most often `progress`
+   ("build running"), but the flag means nothing is running and the next move
+   is still the worker's: nobody is working the item. In that turn, check the
+   worker's `session_status` and its pull request; if it is idle, `session_send`
+   it the next step now and record `work_ledger_record` `action=decide`, or
+   re-dispatch or close the item. "On track" is never the answer to a stall.
+   An item no worker is bound to was never dispatched: dispatch it or leave it.
+   `orphaned` never wakes you, because it means your own session is gone.
+
    **A person's steer outranks your decision.** When the person types into a
    worker from the Crew panel, its item gets a `steer` event (`kind: steer`, the
    person's own words, redacted). Before any `action=decide`, and before any
