@@ -11,7 +11,10 @@ from __future__ import annotations
 from typing import Any
 
 from kiro_crew.agent_sdk.backends import ACP_BACKEND_CLAUDE
-from kiro_crew.validation import MODEL_PICKER_HIDDEN_MODEL_ID_RE, MODEL_PICKER_HIDDEN_MODELS_MAX
+from kiro_crew.validation_parts.input_bounds import (
+    MODEL_PICKER_HIDDEN_MODEL_ID_RE,
+    MODEL_PICKER_HIDDEN_MODELS_MAX,
+)
 
 # Backends whose picker offers the added ids. Claude Code runs a model per chat
 # process, so a pick reaches the adapter's own ``set_config_option``; a backend on

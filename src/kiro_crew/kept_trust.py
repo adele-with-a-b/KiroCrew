@@ -33,6 +33,7 @@ import threading
 from pathlib import Path
 
 from kiro_crew.config.loader import config_dir
+from kiro_crew.owner_only_files import mkdirs_owner_only
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def mark_owner_stop(how: str) -> bool:
         if path.parent.is_symlink():
             logger.warning("Not marking the owner stop: %s is a link", path.parent)
             return False
-        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        mkdirs_owner_only(path.parent)
         # O_EXCL: an earlier stop's mark is left as it is, and only the call that
         # created one may take it back (:func:`unmark_owner_stop`).
         fd = os.open(

@@ -681,7 +681,7 @@ async def _read_turn(
                     if isinstance(msg.result, dict):
                         result = msg.result
                 # Before the complete: its reader releases the accepted steers on it.
-                _requeue_unanswered_folds(self, folded)
+                self._requeue_unanswered_folds(folded)
                 if not result.get("stopReason"):
                     reason = STOP_REASON_CANCELLED if self._cancelled else STOP_REASON_END_TURN
                     result = {"stopReason": reason}
@@ -691,7 +691,7 @@ async def _read_turn(
         if req_id == _AGENT_STARTED_REQUEST_ID:
             # Also on the exits that yield no complete: the stale-turn gate, a
             # closed stream, an error.
-            _requeue_unanswered_folds(self, folded)
+            self._requeue_unanswered_folds(folded)
         self._release_stdout()
 
 

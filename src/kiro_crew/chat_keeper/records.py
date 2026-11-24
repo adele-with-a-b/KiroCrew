@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from kiro_crew.chat_keeper import SOCKET_SUFFIX, keepers_dir
+from kiro_crew.owner_only_files import mkdirs_owner_only
 
 logger = logging.getLogger("kiro_crew.chat_keeper")
 
@@ -79,7 +80,7 @@ class KeeperRecord:
 def ensure_dir(home: Path | None = None) -> Path:
     """Create the keepers directory owner-only, refusing a link at its name."""
     path = keepers_dir(home)
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    mkdirs_owner_only(path)
     info = os.lstat(path)
     if not stat.S_ISDIR(info.st_mode):
         raise OSError(f"{path} is not a directory")

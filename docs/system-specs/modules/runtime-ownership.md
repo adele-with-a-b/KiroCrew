@@ -971,6 +971,10 @@ these hold:
 - the session is not a Side Chat;
 - the backend is in `ACP_BACKENDS_CHAT_KEEPER`.
 
+A provider that is not eligible, has no keeper, or whose detach raises is shut down
+as before (`session_lifecycle_parts.fleet._close_one`), so a failed detach never
+leaves its process running unowned.
+
 A detach:
 
 1. stops the client's idle reader, so the frames it held go back into the buffer;

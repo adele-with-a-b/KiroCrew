@@ -344,6 +344,27 @@ class TestPoolDrainOnShutdown:
         p2.shutdown.assert_awaited_once()
         assert mgr._warm_pool.qsize() == 0
 
+    @pytest.mark.asyncio
+    async def test_close_all_shuts_down_only_what_its_keeper_did_not_take(self):
+        """A detach that answers True hands the chat to its keeper and skips the
+        shutdown; one that answers False or raises leaves the provider ours, so
+        it is shut down as with no keeper (runtime-ownership.md)."""
+        mgr, _ = _make_manager(pool_size=3)
+        handed, refused, failed = _make_provider(), _make_provider(), _make_provider()
+        handed.detach_for_gateway_exit = AsyncMock(return_value=True)
+        refused.detach_for_gateway_exit = AsyncMock(return_value=False)
+        failed.detach_for_gateway_exit = AsyncMock(side_effect=OSError("keeper socket gone"))
+        for provider in (handed, refused, failed):
+            mgr._warm_pool.put_nowait((provider, time.monotonic()))
+
+        await mgr.close_all()
+
+        for provider in (handed, refused, failed):
+            provider.detach_for_gateway_exit.assert_awaited_once_with()
+        handed.shutdown.assert_not_awaited()
+        refused.shutdown.assert_awaited_once()
+        failed.shutdown.assert_awaited_once()
+
 
 # Config wiring
 

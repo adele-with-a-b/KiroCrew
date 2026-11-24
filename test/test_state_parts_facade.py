@@ -608,6 +608,7 @@ _BASE_SLOT_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "_regenerate_target": ("value", "None"),
     "_rejection_reasons": ("value", "{}"),
     "_responsive": ("value", "None"),
+    "_restart_interruption_owed": ("value", "False"),
     "_resumed_count": ("value", "0"),
     "_revived_by": ("value", "''"),
     "_row_links_memo": ("value", "None"),

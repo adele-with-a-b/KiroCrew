@@ -406,8 +406,8 @@ _LAZY_IMPORTS = {
     "kiro_crew.crew_log": "crew_log_emit _read_budget",
     "kiro_crew.edition_locks": "local_enable_locked relay_selected",
     "kiro_crew.dashboard": (
-        "chat_trust_restart crew_mode_migration display_verdicts handlers_instances stale_wake "
-        "tailnet_direct_listener"
+        "chat_keeper_adopt chat_trust_restart crew_mode_migration display_verdicts "
+        "handlers_instances stale_wake tailnet_direct_listener"
     ),
     "kiro_crew.dashboard.card_send": "card_turn_arrival_middleware card_turn_delegation_middleware",
     "kiro_crew.dashboard.chat": "_run_chat",
@@ -420,6 +420,7 @@ _LAZY_IMPORTS = {
         "lts_gate_middleware_for lts_login_source install_lts_gate"
     ),
     "kiro_crew.lts_boot": "require_kiro_login",
+    "kiro_crew.llm_helpers_parts.background_turns": "reset_after_background_model_change",
     "kiro_crew.dashboard.handlers": "config_pending remote_puller wf_handlers work_ledger",
     "kiro_crew.dashboard.handlers.agents": "_remove_member_leftovers",
     "kiro_crew.dashboard.handlers.artifact_download": "register_artifact_download_routes",

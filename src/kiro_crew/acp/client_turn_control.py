@@ -718,7 +718,7 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
     the turn did not take (``steer_needs_loss_recovery``).
     """
     aimed_at = self._steering_turn_req
-    refusal = _steering_refusal(self, aimed_at)
+    refusal = self._steering_refusal(aimed_at)
     if refusal or aimed_at is None:
         self.steer_refusal = refusal or steer_refusal.REFUSED
         return False
