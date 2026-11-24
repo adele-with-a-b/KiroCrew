@@ -165,6 +165,7 @@ async def test_a_turn_that_ends_before_the_steer_lands_queues_it():
         wire.end_turn()
         events = await await_until(turn, what="the turn")
         assert await await_until(steer, what="the steer") is False
+        assert client.steer_refusal == "turn_ended"
         assert [e.kind for e in events] == [EVENT_COMPLETE]
         # The late answer, read by a later loop, is skipped as stray, not settled.
         assert (
@@ -185,6 +186,7 @@ async def test_a_prompt_required_answer_is_undelivered():
         steer = _spawn(spawned, client.steer("between turns"))
         wire.answer(await wire.next_steering_id(), "promptRequired")
         assert await await_until(steer, what="the steer") is False
+        assert client.steer_refusal == "refused"
         wire.end_turn()
         assert [e.kind for e in await await_until(turn, what="the turn")] == [EVENT_COMPLETE]
 
@@ -276,6 +278,7 @@ async def test_a_steer_past_the_text_bound_sends_nothing():
         wire = _Wire(client)
         turn = await _start_turn(client, spawned)
         assert await client.steer("x" * (MAX_STEERING_TEXT_CHARS + 1)) is False
+        assert client.steer_refusal == "too_long"
         assert wire.steering_frames() == []
         wire.end_turn()
         await await_until(turn, what="the turn")
@@ -306,6 +309,7 @@ async def test_below_the_floor_a_steer_sends_nothing():
         wire = _Wire(client)
         turn = await _start_turn(client, spawned)
         assert await client.steer("hello") is False
+        assert client.steer_refusal == "no_steer"
         assert wire.sent == []
         wire.end_turn()
         await await_until(turn, what="the turn")
@@ -337,6 +341,7 @@ async def test_no_steer_is_sent_while_the_turn_is_parked_on_an_approval():
         )
         assert first.kind == EVENT_PERMISSION_REQUEST
         assert await client.steer("while you wait") is False
+        assert client.steer_refusal == "permission_wait"
         assert wire.steering_frames() == []
         wire.end_turn()
 

@@ -28,7 +28,7 @@ from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Collection
 
-from kiro_crew import mediated_request_capability
+from kiro_crew import mediated_request_capability, steer_refusal
 from kiro_crew import sel as sel_module
 from kiro_crew.acp import batch_guard, launch_tuning, pi_steer_turn, transport_framing
 from kiro_crew.acp.client_claude_session import (
@@ -593,7 +593,11 @@ async def steer(self: AcpClient, message: str) -> bool:
 
     A steer that went out gets a point span in the turn it went into
     (``tracing/steps.py``): its mode, never its text.
+
+    A False answer may name its cause in :attr:`steer_refusal`, which each call
+    resets first.
     """
+    self.steer_refusal = ""
     text = (message or "").strip()
     if not text or not self._session_id:
         return False
@@ -712,13 +716,9 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
     the turn did not take (``steer_needs_loss_recovery``).
     """
     aimed_at = self._steering_turn_req
-    if (
-        aimed_at is None
-        or self._turn_done.is_set()
-        or self._cancelled
-        or self._parked_on_permission
-        or not self._steering_request_ready()
-    ):
+    refusal = _steering_refusal(self, aimed_at)
+    if refusal:
+        self.steer_refusal = refusal
         return False
     waiters = self._steering_waiters()
     accepted = getattr(self, "_steers_accepted", None)
@@ -726,16 +726,42 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
         accepted = []
         self._steers_accepted = accepted
     held = self._held_steers()
-    if len(text) > MAX_STEERING_TEXT_CHARS or len(waiters) + len(accepted) + len(held) >= (
-        MAX_STEERING_ANSWERS
-    ):
+    if len(text) > MAX_STEERING_TEXT_CHARS:
+        self.steer_refusal = steer_refusal.TOO_LONG
+        return False
+    if len(waiters) + len(accepted) + len(held) >= MAX_STEERING_ANSWERS:
+        self.steer_refusal = steer_refusal.TOO_MANY
         return False
     if held or self._active_tool_calls.possibly_open:
         held.append((aimed_at, text))
         self._last_steer_monotonic = time.monotonic()
         self._release_held_steers()
         return True
-    return await self._send_steering_request(aimed_at, text) is True
+    if await self._send_steering_request(aimed_at, text) is True:
+        return True
+    self.steer_refusal = (
+        steer_refusal.TURN_ENDED
+        if self._turn_done.is_set() or self._steering_turn_req != aimed_at
+        else steer_refusal.REFUSED
+    )
+    return False
+
+
+def _steering_refusal(self: AcpClient, aimed_at: int | None) -> str:
+    """Why this turn takes no ``_session/steering`` steer now, or "" when it does.
+
+    The checks :meth:`_steer_via_steering_request` makes before it writes, each
+    named by its ``kiro_crew.steer_refusal`` code.
+    """
+    if aimed_at is None:
+        return getattr(self, "_steering_closed_by", "") or steer_refusal.REFUSED
+    if self._turn_done.is_set() or self._cancelled:
+        return steer_refusal.TURN_ENDED
+    if self._parked_on_permission:
+        return steer_refusal.PERMISSION_WAIT
+    if not self._steering_request_ready():
+        return steer_refusal.NO_STEER
+    return ""
 
 
 def _held_steers(self: AcpClient) -> list[tuple[int, str]]:

@@ -1164,6 +1164,7 @@ async def test_an_agent_started_turn_takes_no_steer_and_the_next_user_turn_does(
         assert (await stream.__anext__()).kind == EVENT_TEXT_CHUNK
         # False sends the caller down its queue path.
         assert await client.steer("change course") is False
+        assert client.steer_refusal == "agent_turn"
         _feed(reader, _AUTONOMOUS_END)
         rest = [e async for e in stream]
 

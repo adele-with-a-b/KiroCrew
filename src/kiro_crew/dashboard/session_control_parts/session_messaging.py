@@ -14,9 +14,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from kiro_crew import steer_refusal
 from kiro_crew.context_assembly.markers import _apply_marker_spans, _marker_spans
 from kiro_crew.dashboard import session_managers
-from kiro_crew.dashboard.chat_delivery import sanitize_outbound
+from kiro_crew.dashboard.chat_delivery import sanitize_outbound, steer_refusal_of
 from kiro_crew.dashboard.relay_archive import (
     RELAY_ARCHIVE_CODE,
     RELAY_ARCHIVE_ERROR,
@@ -428,6 +429,10 @@ async def send_to_target(
 
     steered = False
     requeued = False
+    # Why a steer could not go in (``kiro_crew.steer_refusal``), "" otherwise. The
+    # queue arm stamps it on the entry, so the queued card says why it waits, and
+    # the result carries it, so the sender is told at send time.
+    refusal = ""
     # Containment names that newly held when a successful steer's turn was stopped;
     # empty on every other path. Read by the audit below.
     steer_audience_changed: list[str] = []
@@ -683,6 +688,8 @@ async def send_to_target(
             # another peer's concurrent steer keeps its own.
             slot._steer_audience_fences.pop(audience_fence, None)
         if not steered and not requeued:
+            refusal = steer_refusal_of(outcome) or steer_refusal.REFUSED
+
             # STEER_UNAVAILABLE: no live steer-capable client, an RPC that lost the
             # text, or an identical steer already in flight. The message falls back
             # to the queue arm rather than being dropped — but that arm records the
@@ -768,7 +775,11 @@ async def send_to_target(
                 # stamp is what lets that drop be reported back to us instead of
                 # ending at the target's own transcript. The marker is what
                 # `session_queue` reads as "yours"; no steer requeue writes it.
-                queue_meta={**send_origin_meta(state, caller_key), SESSION_SEND_QUEUED_META: True},
+                queue_meta={
+                    **send_origin_meta(state, caller_key),
+                    SESSION_SEND_QUEUED_META: True,
+                    **({steer_refusal.QUEUE_META_KEY: refusal} if refusal else {}),
+                },
                 relay_meta=relay_meta,
             )
             == session_deliver.DELIVERED_TURN
@@ -808,6 +819,10 @@ async def send_to_target(
         },
     )
     result = {"ok": True, "target": slot.key, "started": started, "steered": steered}
+    if refusal and not started:
+        # Only for a steer that fell back and now waits on the queue: one that found
+        # the turn over and started its own has nothing left to wait for.
+        result["steerRefusal"] = refusal
     if to_creator:
         # The caller cannot read or queue-check its creator, so the tool reply
         # must not tell it to (``mcp_dashboard_session_runs``).
@@ -1242,6 +1257,7 @@ async def broadcast_to_targets(
                 "ok": True,
                 "started": bool(sent.get("started")),
                 "steered": bool(sent.get("steered")),
+                **({"steerRefusal": sent["steerRefusal"]} if sent.get("steerRefusal") else {}),
             }
         )
 

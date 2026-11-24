@@ -1540,6 +1540,14 @@ class AcpClient:
     # steered. Mirrors AcpSessionHandle.last_steer_monotonic — the dashboard's
     # keepalive route reads whichever of the two backs the live session.
     _last_steer_monotonic: float = 0.0
+    #: Why the last ``steer()`` that answered False refused, as an
+    #: ``kiro_crew.steer_refusal`` code, or "" when it named none. Read by the caller
+    #: right after the refusal, to tell the sender why its steer was queued.
+    steer_refusal: str = ""
+    #: Why the running turn takes no ``_session/steering`` steer, set with
+    #: ``_steering_turn_req`` at the turn's start: the turn the agent started on
+    #: its own, or a command turn.
+    _steering_closed_by: str = ""
 
     @property
     def last_steer_monotonic(self) -> float:

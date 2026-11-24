@@ -213,6 +213,27 @@ class TestBroadcastReports:
         assert "cut into its running turn" in out
         assert "steer fell back to the queue" in out
 
+    def test_a_fallen_back_row_names_its_cause(self) -> None:
+        """Each target's row says why its steer did not go in, so a conductor can
+        tell a short wait from a long one."""
+        out, _ = _bc(
+            {"message": "rebase", "mode": "steer", "all": True},
+            {
+                "ok": True,
+                "mode": "steer",
+                "requested": 2,
+                "delivered": 2,
+                "results": [
+                    _row("chat-2", steerRefusal="agent_turn"),
+                    _row("chat-3", steerRefusal="permission_wait"),
+                ],
+            },
+        )
+        (row2,) = [line for line in out.splitlines() if "chat-2" in line]
+        (row3,) = [line for line in out.splitlines() if "chat-3" in line]
+        assert "started this turn on its own" in row2 and "long while" in row2
+        assert "waiting on a tool approval" in row3
+
     def test_a_queue_broadcast_never_mentions_steering(self) -> None:
         out, _ = _bc(
             {"message": "rebase", "mode": "queue", "all": True},

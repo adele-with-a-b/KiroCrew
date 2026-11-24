@@ -282,6 +282,53 @@ async def test_a_steer_the_client_cannot_take_falls_back_to_the_queue(tmp_path):
     assert out["steered"] is False
     assert out["started"] is False
     assert any("check the other branch first" in q.get("content", "") for q in target._queue)
+    # The sender and the queued row both learn why it could not go in.
+    assert out["steerRefusal"] == "no_steer"
+    (entry,) = [q for q in target._queue if "check the other branch first" in q["content"]]
+    assert entry["meta"]["steerRefusal"] == "no_steer"
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_the_client_names_reaches_the_sender_and_the_row(tmp_path):
+    """The client's own reason (here: the agent started this turn by itself) is the
+    one the sender reads and the person sees on the queued row."""
+    state = _make_state(tmp_path)
+    caller = _slot(state, "chat-1")
+    target = _busy(_peer_target(state, "chat-2", caller))
+    target._acp_client = _steerable(accepted=False)
+    target._acp_client.steer_refusal = "agent_turn"
+
+    out = await sc.send_to_target(
+        state,
+        caller_session_key=_key(caller),
+        target="chat-2",
+        message="rebase before you push",
+        steer=True,
+    )
+
+    assert out["steered"] is False
+    assert out["steerRefusal"] == "agent_turn"
+    (entry,) = [q for q in target._queue if "rebase before you push" in q["content"]]
+    assert entry["meta"]["steerRefusal"] == "agent_turn"
+    assert cd.queue_entry_view(entry)["meta"]["steerRefusal"] == "agent_turn"
+
+
+@pytest.mark.asyncio
+async def test_a_plain_queued_send_carries_no_refusal(tmp_path):
+    state = _make_state(tmp_path)
+    caller = _slot(state, "chat-1")
+    target = _busy(_peer_target(state, "chat-2", caller))
+
+    out = await sc.send_to_target(
+        state,
+        caller_session_key=_key(caller),
+        target="chat-2",
+        message="after this turn",
+    )
+
+    assert "steerRefusal" not in out
+    (entry,) = [q for q in target._queue if "after this turn" in q["content"]]
+    assert "steerRefusal" not in (entry.get("meta") or {})
 
 
 @pytest.mark.asyncio

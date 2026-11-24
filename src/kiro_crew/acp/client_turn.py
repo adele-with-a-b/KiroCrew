@@ -35,6 +35,7 @@ import time
 from contextlib import aclosing
 from typing import TYPE_CHECKING, AsyncGenerator, AsyncIterator, Callable
 
+from kiro_crew import steer_refusal
 from kiro_crew.acp import (
     batch_guard,
     disposed_session,
@@ -1057,6 +1058,13 @@ async def _dispatch_events(
     self._steering_turn_req = (
         None if extract_agent_from_result or req_id == _AGENT_STARTED_REQUEST_ID else req_id
     )
+    # What a steer this turn refuses tells its sender (``kiro_crew.steer_refusal``).
+    if req_id == _AGENT_STARTED_REQUEST_ID:
+        self._steering_closed_by = steer_refusal.AGENT_TURN
+    elif extract_agent_from_result:
+        self._steering_closed_by = steer_refusal.COMMAND_TURN
+    else:
+        self._steering_closed_by = ""
 
     _prompt_events = self._prompt_loop(req_id, timeout)
     async for action, msg in _prompt_events:
