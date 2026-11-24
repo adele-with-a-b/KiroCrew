@@ -915,6 +915,29 @@ class AgentConfig:
             "Linux only. Applies to chats started after the change.",
         ),
     )
+    claude_guards: bool = field(
+        default=False,
+        metadata=_meta(
+            "Guard Claude Code Chats",
+            "Make every claude chat that has Crew's tools ask Crew before a tool "
+            "call, even when your own Claude Code settings (~/.claude) or a resumed "
+            "conversation start it in a mode that approves calls on its own "
+            "(bypassPermissions or auto). The chat is moved to Claude Code's "
+            "asking mode before its first message, so Crew's blocked commands, "
+            "protected paths, approvals and policy apply to it. A call your own "
+            "Claude Code allow rules already approve still runs without asking, "
+            "and a chat that asked for auto keeps it. A chat that reports no mode "
+            "is moved too, and one Claude Code will not move is stopped before its "
+            "first message. A chat on a claude-agent-acp older than 0.84.0, or one "
+            "that names no version, keeps its mode. Setting "
+            "KIROCREW_CC_PIN_INHERITED_MODE=1 turns it on "
+            "whatever this switch says, and a config file Crew could not read keeps "
+            "it on until the gateway restarts. Applies to chats started or resumed "
+            "after the change; an open chat, including one Chat Keeper keeps "
+            "running across a restart, keeps its mode until its agent starts "
+            "again. Other backends ignore it. Off by default.",
+        ),
+    )
     max_subagents: int = field(
         default=0,
         metadata=_meta(

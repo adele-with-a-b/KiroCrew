@@ -417,7 +417,8 @@ def _write_claude_local_settings(self: ClaudeAcpClient) -> None:
        decisions to the host as ``session/request_permission``, which is what
        puts a claude session under the same gate kiro-cli sessions run under.
        Omitted when no mode was requested: the user's own settings then name
-       the starting mode. With ``KIROCREW_CC_PIN_INHERITED_MODE`` on,
+       the starting mode. With ``KIROCREW_CC_PIN_INHERITED_MODE`` or
+       ``agent.claude_guards`` on,
        :meth:`_pin_claude_starting_mode` moves an ``auto`` or
        ``bypassPermissions`` start of a session that carries Crew's tools to
        ``default``.

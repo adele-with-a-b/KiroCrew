@@ -62,6 +62,17 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "description": "Each change is checked before it saves. Change a setting here, or follow its link to the page where it lives. A read-only row says why."
   },
   {
+    "id": "agent.guard-claude-code-chats",
+    "label": "Guard Claude Code Chats",
+    "labelKey": "pages.developer.agentBackendTab.claude_guards_label",
+    "description": "Claude Code chats ask Kiro Crew before they use a tool, even when your own Claude Code settings let them run tools without asking. Changes apply when a chat starts; an open chat keeps its current mode.",
+    "hint": "Kiro Crew’s blocked commands, protected files, approvals and policies then apply to every Claude Code chat that has Kiro Crew’s tools. With Normal you approve each call that asks; with YOLO it runs unless a Kiro Crew rule blocks it. A tool your own Claude Code settings already allow still runs without asking, and a chat set to Auto mode keeps it.",
+    "tab": "agent",
+    "type": "toggle",
+    "occurrence": 1,
+    "configKey": "agent.claude_guards"
+  },
+  {
     "id": "agent.kiro-memory",
     "label": "Kiro Memory",
     "labelKey": "pages.developer.agentBackendTab.orchestrator_memory_label",

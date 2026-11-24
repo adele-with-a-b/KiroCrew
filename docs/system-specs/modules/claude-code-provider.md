@@ -189,8 +189,10 @@ session reaches a terminal status without a `session/request_permission`,
 no opt-in no `defaultMode` is written at all. Such a session starts in the mode the
 user's own settings name (a resumed one in the mode its transcript was left in), and
 by default keeps it unless it takes the exclusion path or is a Side Chat.
-`KIROCREW_CC_PIN_INHERITED_MODE` (`resolve_cc_pin_inherited_mode`, off by default)
-turns on the broader pin: `_pin_claude_starting_mode` then moves a session that
+`KIROCREW_CC_PIN_INHERITED_MODE` (`resolve_cc_pin_inherited_mode`) or the
+`agent.claude_guards` setting (Settings → Agent Harness → Claude Code, "Guard Claude
+Code Chats"; `acp/claude_guards.claude_guards_setting_on`), both off by default and
+either one enough, turns on the broader pin: `_pin_claude_starting_mode` then moves a session that
 carries Crew's tools out of an `auto` or `bypassPermissions` start to `default` before
 the first prompt, on an adapter at or above `CLAUDE_ACP_SETTING_SOURCES_MIN_VERSION`
 ("A project-owned settings file" below). Crew never seeds `bypassPermissions`:
@@ -825,8 +827,8 @@ inherited"), which this path does not widen. The exclusion is never taken below
 pin moves the session to `default` like any other approving starting mode, and the
 session keeps Crew's tools in the asking mode instead of losing them all (#33829).
 
-With `KIROCREW_CC_PIN_INHERITED_MODE` on (`resolve_cc_pin_inherited_mode`; off by
-default, because it moves sessions out of a mode the user chose), the pin also runs on
+With `KIROCREW_CC_PIN_INHERITED_MODE` or `agent.claude_guards` on (off by default,
+because it moves sessions out of a mode the user chose), the pin also runs on
 every other claude session that carries Crew's MCP array, after `session/new` and after
 `session/load`; a session without that array is left as it started. Which session
 carries it is read from the array its start sent (`_mcp_mount_servers`), not projected
@@ -841,6 +843,29 @@ re-read runs only on this path. A session the setting brings in keeps the mode i
 started in on an adapter below `CLAUDE_ACP_SETTING_SOURCES_MIN_VERSION`, or on one that
 reports no version, rather than being stopped, because the pin has not been checked on
 an adapter older than 0.84.0.
+
+The env var is read first. Only when it is off, and only once the pin would act (the
+session carries Crew's array, the adapter is at the floor, and it started in an
+approving mode it did not request), does the pin read `agent.claude_guards`: the
+config watcher's snapshot when the process has one (the gateway), else a
+`KiroCrewConfig.load()` in a worker thread, never on the loop. A start the pin would
+leave alone reads no config. So a change reaches each session's next `session/new` or
+`session/load`; a session already running keeps its mode, and so does a chat its keeper
+carries across a restart, because an adopt is not a start (runtime-ownership.md, "The
+inherited-mode pin is skipped on an adopt"). A pre-warmed pool session
+(`session.pool_size`, 0 by default) made its `session/new` when the pool filled, so one
+filled before the change keeps the mode it started in. The read fails toward the pin,
+as every security read of a degraded config does: when the loader could not read the
+whole file (`DEGRADED_WHOLE_CONFIG`) or discarded the `agent` section, the setting is
+unknown, reads as on, and logs a warning naming `agent.claude_guards`. The loader
+remembers a degradation for the life of the process (`config/resolution.py`,
+`_OBSERVED_DEGRADED_SECTIONS`, the loader record the `tool_approval` and `deny_override`
+reads also test, seen here through the watcher's snapshot in a gateway; this read adds
+no record of its own), so that holds until the gateway restarts,
+even after the file is fixed and with the switch off: each such start logs that the
+setting "is acting as on until restart". A value of the wrong type (a quoted `"true"`) is the loader's
+ordinary type mismatch: it warns and uses the default, off. Pinned by
+`test_acp_claude_mode_pin_seam.py::TestClaudeGuardsSetting`.
 
 The adapter behaviour the pin rests on is captured, not assumed:
 `test/fixtures/claude_mode_pin/` holds live claude-agent-acp 0.84.0 frames driven with
@@ -1513,7 +1538,8 @@ user's real `~/.claude`. Project-scope `settings.local.json` outranks it for
 `defaultMode`, but Crew's seed names one only when the session requested a mode, so
 with no request a `defaultMode` there that approves on its own (`auto`,
 `bypassPermissions`) is the mode the session starts in and, by default, keeps.
-`KIROCREW_CC_PIN_INHERITED_MODE` closes that mode half of the gap: with it on, a
+`KIROCREW_CC_PIN_INHERITED_MODE`, or its Settings switch `agent.claude_guards`, closes
+that mode half of the gap: with either on, a
 session that carries Crew's tools and requested no mode is moved to `default` before
 its first prompt, on an adapter at or above `CLAUDE_ACP_SETTING_SOURCES_MIN_VERSION`
 (the pin above); below it, with no version reported, or on a session without Crew's

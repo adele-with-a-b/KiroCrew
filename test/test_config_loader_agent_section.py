@@ -217,6 +217,22 @@ def test_orchestrator_memory_loads_from_disk_and_round_trips(document, expected)
     assert reloaded.agent.orchestrator_memory is expected
 
 
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        pytest.param({"agent": {"claude_guards": True}}, True, id="enabled"),
+        pytest.param({"agent": {"claude_guards": False}}, False, id="disabled"),
+        pytest.param({"agent": {}}, False, id="absent-default"),
+    ],
+)
+def test_claude_guards_loads_from_disk_and_round_trips(document, expected) -> None:
+    loaded = _load_from_dict(document)
+    assert loaded.agent.claude_guards is expected
+
+    reloaded = _load_from_dict(loaded.to_dict())
+    assert reloaded.agent.claude_guards is expected
+
+
 class TestSessionControlLoad:
     """agent.session_control load-time coercion.
 

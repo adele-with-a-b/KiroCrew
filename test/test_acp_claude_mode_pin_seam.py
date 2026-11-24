@@ -466,3 +466,219 @@ class TestResolveCcPinInheritedMode:
             assert backends.resolve_cc_pin_inherited_mode() is False
         assert _PIN_SETTING_ENV in caplog.text
         assert "not recognised" in caplog.text
+
+
+class TestClaudeGuardsSetting:
+    """``agent.claude_guards``, the Settings switch, turns the same pin on.
+
+    The env var stays unset in every test here (``no_ambient_pin_setting``), so a
+    pin seen here came from the setting.
+    """
+
+    _adapter_transport = staticmethod(_adapter_transport)
+    _seeded = TestUnrequestedModePin._seeded
+
+    @pytest.fixture(autouse=True)
+    def _no_snapshot(self, _floor_monkeypatch, no_ambient_pin_setting):
+        """No adopted snapshot unless a test supplies one, so the disk file is read."""
+        from kiro_crew.config import live
+
+        _floor_monkeypatch.setattr(live, "snapshot", lambda: None)
+
+    def _write_config(self, document: dict) -> None:
+        from kiro_crew.config.paths import config_dir
+
+        (config_dir() / "config.json").write_text(json.dumps(document), encoding="utf-8")
+
+    async def _start(self, tmp_path, agents_dir, monkeypatch, started_mode="bypassPermissions"):
+        _write_spec(agents_dir, servers={"foo": {"command": "/bin/foo"}}, tools=["@foo"])
+        client = self._seeded(tmp_path, agent="kirocrew", acp_backend=ACP_BACKEND_CLAUDE)
+        sent, killed = self._adapter_transport(client, monkeypatch, started_mode=started_mode)
+        await client._initialize_session()
+        assert client._session_id == "s-new"
+        assert killed == []
+        return [p for m, p in sent if m == "session/set_mode"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("started_mode", ["auto", "bypassPermissions"])
+    @pytest.mark.parametrize(("on", "pinned"), [(True, True), (False, False), (None, False)])
+    async def test_the_setting_reaches_the_pin_from_the_config_file(
+        self, tmp_path, agents_dir, monkeypatch, started_mode, on, pinned
+    ):
+        """On pins an approving start; off and absent leave it as today."""
+        self._write_config({"agent": {} if on is None else {"claude_guards": on}})
+        set_mode = await self._start(tmp_path, agents_dir, monkeypatch, started_mode)
+        assert set_mode == ([{"sessionId": "s-new", "modeId": "default"}] if pinned else [])
+
+    @pytest.mark.asyncio
+    async def test_the_setting_keeps_a_mode_that_asks(self, tmp_path, agents_dir, monkeypatch):
+        """The setting adds no move: a session that starts in ``default`` gains no call."""
+        self._write_config({"agent": {"claude_guards": True}})
+        assert await self._start(tmp_path, agents_dir, monkeypatch, "default") == []
+
+    @pytest.mark.asyncio
+    async def test_an_adopted_snapshot_is_read_without_the_disk(
+        self, tmp_path, agents_dir, monkeypatch
+    ):
+        """In a gateway the watcher's snapshot answers, so no file is read on the start."""
+        from dataclasses import replace
+
+        from kiro_crew.config import live
+        from kiro_crew.config.loader import KiroCrewConfig
+
+        base = KiroCrewConfig()
+        snap = replace(base, agent=replace(base.agent, claude_guards=True))
+        monkeypatch.setattr(live, "snapshot", lambda: snap)
+
+        def _no_disk():
+            raise AssertionError("the snapshot should have answered")
+
+        monkeypatch.setattr(KiroCrewConfig, "load", staticmethod(_no_disk))
+        set_mode = await self._start(tmp_path, agents_dir, monkeypatch)
+        assert set_mode == [{"sessionId": "s-new", "modeId": "default"}]
+
+    @pytest.mark.asyncio
+    async def test_a_discarded_agent_section_pins(self, tmp_path, agents_dir, monkeypatch, caplog):
+        """A guard is not lost to a torn file: an unknown setting reads as on, and says so."""
+        from dataclasses import replace
+
+        from kiro_crew.config import live
+        from kiro_crew.config.loader import KiroCrewConfig
+
+        torn = replace(KiroCrewConfig(), _degraded_sections=frozenset({"agent"}))
+        monkeypatch.setattr(live, "snapshot", lambda: torn)
+        with caplog.at_level("WARNING"):
+            set_mode = await self._start(tmp_path, agents_dir, monkeypatch)
+        assert set_mode == [{"sessionId": "s-new", "modeId": "default"}]
+        assert "could not be read (agent), so agent.claude_guards" in caplog.text
+
+    def _write_raw(self, text: str) -> None:
+        from kiro_crew.config.paths import config_dir
+
+        (config_dir() / "config.json").write_text(text, encoding="utf-8")
+
+    @pytest.mark.asyncio
+    async def test_a_config_file_that_does_not_parse_pins(
+        self, tmp_path, agents_dir, monkeypatch, caplog
+    ):
+        """A torn file loads as defaults flagged whole-file degraded: the setting is unknown."""
+        self._write_raw('{"agent": {"claude_guards": false')
+        with caplog.at_level("WARNING"):
+            set_mode = await self._start(tmp_path, agents_dir, monkeypatch)
+        assert set_mode == [{"sessionId": "s-new", "modeId": "default"}]
+        assert "the config could not be read (*" in caplog.text
+        assert "is acting as on until restart" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_torn_file_keeps_it_on_after_the_repair_until_restart(
+        self, tmp_path, agents_dir, monkeypatch, caplog
+    ):
+        """The loader's record of the tear outlives the repair, so the switch's off
+        is not followed until the process restarts: never toward guards-off."""
+        self._write_raw('{"agent": {"claude_guards": false')
+        assert await self._start(tmp_path, agents_dir, monkeypatch) != []
+        self._write_config({"agent": {"claude_guards": False}})
+        caplog.clear()
+        with caplog.at_level("WARNING"):
+            set_mode = await self._start(tmp_path / "second", agents_dir, monkeypatch)
+        assert set_mode == [{"sessionId": "s-new", "modeId": "default"}]
+        assert "is acting as on until restart" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_loader_failure_pins(self, tmp_path, agents_dir, monkeypatch, caplog):
+        """A failure the loader did not degrade around reads as on rather than failing the start."""
+        from kiro_crew.config.loader import KiroCrewConfig
+
+        def _raises():
+            raise RuntimeError("an unforeseen loader failure")
+
+        monkeypatch.setattr(KiroCrewConfig, "load", staticmethod(_raises))
+        with caplog.at_level("WARNING"):
+            set_mode = await self._start(tmp_path, agents_dir, monkeypatch)
+        assert set_mode == [{"sessionId": "s-new", "modeId": "default"}]
+        assert "could not load the config to check agent.claude_guards" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_torn_agent_section_pins_on_the_real_loader(
+        self, tmp_path, agents_dir, monkeypatch, caplog
+    ):
+        """The loader drops a non-object ``agent`` section and flags it; that reads as on."""
+        self._write_config({"agent": []})
+        with caplog.at_level("WARNING"):
+            set_mode = await self._start(tmp_path, agents_dir, monkeypatch)
+        assert set_mode == [{"sessionId": "s-new", "modeId": "default"}]
+        assert "could not be read (agent), so agent.claude_guards" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("started_mode", ["default", "auto"])
+    async def test_a_start_the_pin_would_not_act_on_reads_no_config(
+        self, tmp_path, agents_dir, monkeypatch, started_mode
+    ):
+        """The setting is read only once a pin could follow.
+
+        A start that already asks, and one whose mode is the one it requested, keep their
+        mode whatever the setting says, so neither pays for a config read.
+        """
+        from kiro_crew.acp import client_claude_session
+
+        async def _not_read():
+            raise AssertionError("the setting was read for a start it cannot change")
+
+        monkeypatch.setattr(client_claude_session, "claude_guards_setting_on", _not_read)
+        _write_spec(agents_dir, servers={"foo": {"command": "/bin/foo"}}, tools=["@foo"])
+        client = self._seeded(
+            tmp_path,
+            agent="kirocrew",
+            acp_backend=ACP_BACKEND_CLAUDE,
+            permission_mode=None if started_mode == "default" else started_mode,
+        )
+        sent, _ = self._adapter_transport(client, monkeypatch, started_mode=started_mode)
+        await client._initialize_session()
+        assert [p for m, p in sent if m == "session/set_mode"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("case", ["no_crew_tools", "below_floor"])
+    async def test_a_start_the_pin_leaves_reads_no_config_though_it_approves(
+        self, tmp_path, agents_dir, monkeypatch, case
+    ):
+        """A start with no Crew tools, or on an adapter below the floor, is left in its
+        approving mode by both levers, so it returns before the setting is read."""
+        from kiro_crew.acp import client_claude_session
+
+        async def _not_read():
+            raise AssertionError("the setting was read for a start it cannot change")
+
+        monkeypatch.setattr(client_claude_session, "claude_guards_setting_on", _not_read)
+        if case == "no_crew_tools":
+            _write_spec(agents_dir, servers={}, tools=None)
+        else:
+            _write_spec(agents_dir, servers={"foo": {"command": "/bin/foo"}}, tools=["@foo"])
+        client = self._seeded(tmp_path, agent="kirocrew", acp_backend=ACP_BACKEND_CLAUDE)
+        version = "0.83.0" if case == "below_floor" else "0.84.0"
+        sent, _ = self._adapter_transport(
+            client, monkeypatch, started_mode="bypassPermissions", version=version
+        )
+        await client._initialize_session()
+        assert [p for m, p in sent if m == "session/set_mode"] == []
+        # Each case leaves by its own gate: no array sent, or Crew's array below the floor.
+        sent_names = set(_by_name(client._mcp_mount_servers or []))
+        assert sent_names == set() if case == "no_crew_tools" else "foo" in sent_names
+
+    @pytest.mark.asyncio
+    async def test_another_section_torn_leaves_the_setting_as_written(
+        self, tmp_path, agents_dir, monkeypatch
+    ):
+        """Only the agent section holds the setting, so only its loss reads as on."""
+        from dataclasses import replace
+
+        from kiro_crew.config import live
+        from kiro_crew.config.loader import KiroCrewConfig
+
+        torn = replace(KiroCrewConfig(), _degraded_sections=frozenset({"slack"}))
+        monkeypatch.setattr(live, "snapshot", lambda: torn)
+        assert await self._start(tmp_path, agents_dir, monkeypatch) == []
+
+    def test_the_settings_page_may_write_it(self):
+        from kiro_crew.dashboard.handlers.core_config_schema import _EDITABLE_CONFIG
+
+        assert _EDITABLE_CONFIG["agent.claude_guards"] == {"type": "bool"}

@@ -581,7 +581,8 @@ def resolve_cc_permission_mode(explicit: str | None, backend: str) -> str | None
     who wants every session on the backend's classifier. ``None`` leaves the
     seeded ``settings.local.json`` without a ``defaultMode`` key at all, so the
     user's own settings name the starting mode. With
-    :data:`CC_PIN_INHERITED_MODE_ENV` on, ``AcpClient._pin_claude_starting_mode``
+    :data:`CC_PIN_INHERITED_MODE_ENV` or the ``agent.claude_guards`` setting on,
+    ``AcpClient._pin_claude_starting_mode``
     then moves an ``auto`` or ``bypassPermissions`` start of a session that
     carries Crew's tools to ``default``, at or above the adapter's version floor.
 
@@ -622,7 +623,11 @@ CC_PIN_INHERITED_MODE_ENV = "KIROCREW_CC_PIN_INHERITED_MODE"
 
 
 def resolve_cc_pin_inherited_mode() -> bool:
-    """Whether a claude session that carries Crew's tools has its starting mode pinned.
+    """Whether the env lever pins a claude session's starting mode.
+
+    One of two levers, either enough: the ``agent.claude_guards`` setting is the
+    other, read by ``acp.claude_guards.claude_guards_setting_on``; this module
+    is on ``KiroCrewConfig.load()``'s own import path, so it reads no config.
 
     Off by default: such a session keeps the mode the user's own settings or its
     resumed transcript start it in, ``auto`` included. On, an ``auto`` or

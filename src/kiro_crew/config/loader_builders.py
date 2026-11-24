@@ -928,6 +928,8 @@ def _agent_section_fields(agent_data: dict) -> AgentConfig:
         session_control=section.read("session_control", _safe_bool),
         orchestrator_memory=section.read("orchestrator_memory", _safe_bool),
         # Default false: a missing key and a malformed one both leave it off.
+        claude_guards=section.read("claude_guards", _safe_bool),
+        # Default false: a missing key and a malformed one both leave it off.
         session_manager_chain=section.read("session_manager_chain", _safe_bool),
         peer_steer_loss_recovery=section.read("peer_steer_loss_recovery", _safe_bool),
         # Default true preserves the zero-configuration member-dispatch

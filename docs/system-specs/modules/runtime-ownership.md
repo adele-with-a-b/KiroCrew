@@ -1320,7 +1320,8 @@ captured live in `test/fixtures/acp_frames/claude/chat-keeper-adopt-live.jsonl`
   a stop or restart whatever `setsid` did. The keeper's SIGTERM handler then ends
   the chat as without the keeper.
 - **The inherited-mode pin is skipped on an adopt.** With
-  `KIROCREW_CC_PIN_INHERITED_MODE` on, `_pin_claude_starting_mode` returns early
+  `KIROCREW_CC_PIN_INHERITED_MODE` or `agent.claude_guards` on,
+  `_pin_claude_starting_mode` returns early
   when `_mcp_mount_servers` is empty, and an adopted client has none, so the pin a
   load would apply under that switch does not run on an adopt.
 - **The sessions list previews only the rest of a cut reply.** The sidebar's one-line

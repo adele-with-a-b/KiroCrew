@@ -54,9 +54,9 @@ class ClaudeAcpClient(AcpClient, serves=ACP_BACKEND_CLAUDE):
         # The permission mode the caller asked for (``AcpClient._permission_mode``):
         # None = nothing asked for a mode, so _write_claude_local_settings seeds no
         # defaultMode and the session starts in the mode the user's own settings
-        # name. With KIROCREW_CC_PIN_INHERITED_MODE on, _pin_claude_starting_mode
-        # then moves a session carrying Crew's tools that starts in "auto" or
-        # "bypassPermissions" to "default". A Side Chat session
+        # name. With KIROCREW_CC_PIN_INHERITED_MODE or agent.claude_guards on,
+        # _pin_claude_starting_mode then moves a session carrying Crew's tools
+        # that starts in "auto" or "bypassPermissions" to "default". A Side Chat session
         # (``_side_read_only``) starts with only the read built-ins and no MCP
         # server, and its mode is pinned to ``default``. A sub-agent spawned with
         # ``include_memory=false`` (``_include_memory``) gets an envelope that turns
