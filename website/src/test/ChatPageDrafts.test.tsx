@@ -23,6 +23,7 @@ import {
 } from '../utils/errorReport'
 import { PREFILL_STORAGE_KEY, writePrefill } from '../utils/navIntent'
 import { __resetSteerTakeBacksForTests } from '../hooks/useSteerRetract'
+import { __resetForTests as __resetDraftsForTests } from '../utils/chatDrafts'
 import { api } from '../api/client'
 
 vi.mock('react-virtuoso', () => ({
@@ -168,6 +169,10 @@ beforeEach(() => {
   localStorage.clear()
   __resetNavSeamForTests()
   __resetSteerTakeBacksForTests()
+  // The draft store's per-chat stamps live in memory past `localStorage.clear()`:
+  // a test that froze `Date.now` (primeEditedSteerTakeBack) would leave the next
+  // test's draft stamped on that day, and the 30-day TTL drops it once it passes.
+  __resetDraftsForTests()
   vi.mocked(api.chatSlotDetail).mockReset().mockResolvedValue({
     messages: [{ role: 'assistant', content: 'hi', cls: '' }],
     running: false, has_more: false, total: 1,

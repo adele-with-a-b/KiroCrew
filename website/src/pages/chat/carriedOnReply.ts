@@ -17,6 +17,9 @@
  */
 import type { ChatMessage } from '../../types'
 import { isSystemNoticeRow } from './CompactionCard'
+// groupDisplayItems imports this module too; the predicate is only called, never
+// read while either module loads, so the cycle is safe.
+import { isReasoningRole } from './groupDisplayItems'
 
 /** The backend's `REPLY_CARRIES_ON_META_KEY`. */
 export const CARRIES_ON_META_KEY = 'carries_on'
@@ -39,7 +42,7 @@ const isAgentStartedReply = (m: ChatMessage): boolean => {
 const passesOver = (m: ChatMessage): boolean =>
   m.role === 'notice' ||
   m.role === 'permission' ||
-  (m.role === 'thinking' && !m.content) ||
+  (isReasoningRole(m) && !m.content) ||
   isSystemNoticeRow(m)
 
 /** Index of the row that carries on the cut reply at `idx`, or -1. */

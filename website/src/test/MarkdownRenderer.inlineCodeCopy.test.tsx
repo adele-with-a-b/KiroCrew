@@ -485,7 +485,8 @@ describe('InlineCode click-to-copy (non-path chips)', () => {
     render(<MarkdownRenderer content={'Run `ls -la`.'} />)
     const code = await screen.findByText('ls -la')
     expect(code.className).toContain('font-mono')
-    expect(code.className).toContain('bg-bg-elevated')
+    // A theme pack's --inline-code-bg first, the stock elevated surface unset.
+    expect(code.className).toContain('bg-[var(--inline-code-bg,var(--bg-elevated))]')
     expect(code.className).toContain('cursor-copy')
     expect(code.className).toContain('decoration-dotted')
     expect(code.className).not.toContain('cursor-pointer')

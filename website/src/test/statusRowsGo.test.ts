@@ -17,8 +17,8 @@ import {
   parseStatusCardParam,
   setActiveStatusGo,
   setPrimaryStatusGo,
-} from '../shell/topbar/statusGo'
-import { STATUS_CARD_WAIT_MS, requestStatusCard, takeStatusCardRequest } from '../shell/topbar/statusCardRequest'
+} from '../lib/statusGo'
+import { STATUS_CARD_WAIT_MS, requestStatusCard, takeStatusCardRequest } from '../lib/statusCardRequest'
 import { STATUS_GO_CHORD, chordMatchesEvent, shortcutEntry } from '../lib/shortcutRegistry'
 import { renderHookWithProviders } from './helpers'
 import { useStatusLinks } from '../pages/chat/useStatusLinks'

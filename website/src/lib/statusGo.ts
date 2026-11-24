@@ -13,19 +13,22 @@
  * Every field comes from a third-party app's route, so it is untrusted: this
  * module is the one place it is checked. Nothing here knows any app.
  *
- * @module shell/topbar/statusGo
+ * The shell's top bar, the chat page, the keyboard shortcuts and the App SDK all
+ * read it, so it lives outside the shell.
+ *
+ * @module lib/statusGo
  */
 import { useCallback, useSyncExternalStore } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { isCrewLinkKey } from '../../lib/crewDeepLink'
-import { useGuardedLeave } from '../../components/NavigationLeaveGuard'
-import { useAppDispatch, useAppSelector, useAppStore } from '../../store'
-import { api } from '../../api/client'
-import { resumeFromHistory, setSwitchSlotGone, switchSlot } from '../../store/chatSlice'
-import { isChatRoute } from '../nav/routeActive'
-import { sessionDisplayTitle } from '../../utils/sessionDisplayTitle'
-import type { AppOpenTarget } from '../../linkPreview/linkPreviewNav'
+import { isCrewLinkKey } from './crewDeepLink'
+import { useGuardedLeave } from '../components/NavigationLeaveGuard'
+import { useAppDispatch, useAppSelector, useAppStore } from '../store'
+import { api } from '../api/client'
+import { resumeFromHistory, setSwitchSlotGone, switchSlot } from '../store/chatSlice'
+import { isChatRoute } from './chatRoute'
+import { sessionDisplayTitle } from '../utils/sessionDisplayTitle'
+import type { AppOpenTarget } from '../linkPreview/linkPreviewNav'
 
 /** Most rows a card draws. The card is a glance, not a page: an app with more
  *  says so in its heading and keeps the rest on its own tab. */

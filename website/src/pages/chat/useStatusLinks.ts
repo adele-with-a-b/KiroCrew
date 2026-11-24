@@ -2,9 +2,9 @@
  * The chat page's half of app status items (`contributes.statusItems`):
  *
  *  - `?status=<app>:<item>` asks the mounted status bar to open that item's
- *    card (`shell/topbar/statusCardRequest.ts`). The URL sync drops the
+ *    card (`lib/statusCardRequest.ts`). The URL sync drops the
  *    parameter on its next write, so it opens the card once.
- *  - A status go (`shell/topbar/statusGo.ts`) that switched to this chat hands
+ *  - A status go (`lib/statusGo.ts`) that switched to this chat hands
  *    its open request (a side-panel tab or a session control) over once the chat
  *    is on screen, and ends when the operator leaves that chat any other way.
  *
@@ -13,8 +13,8 @@
 import { useEffect, useRef } from 'react'
 
 import { sendAppNav, type AppOpenTarget, type OpenRefusal } from '../../linkPreview/linkPreviewNav'
-import { requestStatusCard } from '../../shell/topbar/statusCardRequest'
-import { getActiveStatusGo, parseStatusCardParam, setActiveStatusGo, useActiveStatusGo } from '../../shell/topbar/statusGo'
+import { requestStatusCard } from '../../lib/statusCardRequest'
+import { getActiveStatusGo, parseStatusCardParam, setActiveStatusGo, useActiveStatusGo } from '../../lib/statusGo'
 
 /** Open `target` of `appName` in chat `slot` with `arg`: true when the chat took it, else why not. */
 export type OpenAppTarget = (slot: string, appName: string, target: AppOpenTarget, arg: unknown) => true | OpenRefusal

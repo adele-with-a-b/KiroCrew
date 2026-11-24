@@ -83,6 +83,11 @@ vi.mock('../hooks/useSessionControls', async (importOriginal) => {
         allowedEvents: [],
         statusPath: '',
         processBacked: false,
+        // What the hook's normalizer gives a control that sets none of them.
+        width: actual.SESSION_CONTROL_WIDTH.default,
+        openFiles: false,
+        keys: [],
+        installedAt: '',
       }],
       error: null,
     }),

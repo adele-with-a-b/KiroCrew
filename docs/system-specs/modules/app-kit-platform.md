@@ -6163,8 +6163,9 @@ draws it; the app supplies only data.
   (the chat page and Crewmates). The row is shrinkable and the values
   truncate, so it gives way before the bell or the session title; the desktop
   collapse ladder measures max-content widths, so its rungs fold first.
-- **Places and the go** (`website/src/shell/topbar/statusGo.ts`, the one owner
-  of the answer's checks and of where a target goes). The answer may add
+- **Places and the go** (`website/src/lib/statusGo.ts`, the one owner
+  of the answer's checks and of where a target goes; outside the shell, since
+  the chat page, the keyboard shortcuts and the App SDK read it too). The answer may add
   `heading` (48), up to 10 `rows[]` (`lead` 12, `text` 48, `detail` 160, `tone`,
   `target`) and one `go` (`label` 24, `target`); every string goes through the
   same cleaner as `text`. A target is `{sid, panelTab?, sessionControl?, arg?}`:
@@ -6202,7 +6203,7 @@ draws it; the app supplies only data.
   so ⌥⇧G never types its Option-layer character (`˝` on a US Mac) into the
   composer.
 - **Card link.** `/chat?status=<appName>:<id>` (with `sid` as usual) asks for the
-  item's card (`shell/topbar/statusCardRequest.ts`); the param is consumed from
+  item's card (`lib/statusCardRequest.ts`); the param is consumed from
   the URL on the next sync. The mounted bar opens the card, with focus, once that
   item has a reading, and drops a request older than 15 s. A URL never fires a go.
 - **Failure.** The app list failing on its FIRST load draws nothing in the bar:
@@ -6219,7 +6220,7 @@ draws it; the app supplies only data.
 Writers: `apps/manifest_status_items.py`, `apps/manifest_route_grammar.py`,
 `apps/manifest_contributes.py`, `website/src/hooks/useAppStatusItems.ts`,
 `website/src/shell/topbar/AppStatusItems.tsx`, `website/src/shell/topbar/shellHeader.tsx`,
-`website/src/shell/topbar/statusGo.ts`, `website/src/shell/topbar/statusCardRequest.ts`,
+`website/src/lib/statusGo.ts`, `website/src/lib/statusCardRequest.ts`,
 `website/src/pages/chat/useStatusLinks.ts`, `website/src/pages/chat/page/StatusGoBackCrumb.tsx`,
 `website/src/app-sdk/statusGoBack.ts`.
 
@@ -6348,7 +6349,7 @@ Writers: `website/src/linkPreview/linkPreviewNav.ts`,
 `website/src/linkPreview/LinkPreviewLayer.tsx`,
 `website/src/pages/chat/page/sessionControls.ts`,
 `website/src/pages/chat/linkPreviewPanelTabs.ts`,
-`website/src/pages/chat/useStatusLinks.ts`, `website/src/shell/topbar/statusGo.ts`,
+`website/src/pages/chat/useStatusLinks.ts`, `website/src/lib/statusGo.ts`,
 `website/src/app-sdk/sessionControlRequest.ts`,
 `website/src/components/SessionControlHost.tsx`,
 `website/src/hooks/useSessionControls.ts`, `apps/app_frame.py`,

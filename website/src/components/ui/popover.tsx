@@ -82,11 +82,13 @@ PopoverTrigger.displayName = PopoverPrimitive.Trigger.displayName
 const PopoverAnchor = PopoverPrimitive.Anchor
 
 /** `default` is the padded card; `list` is a picker list (a tight inset, the
- *  larger Glass radius and a deeper shadow), so a list caller does not restyle
- *  the primitive from outside. */
+ *  larger Glass radius and a deeper shadow); `status` is an app status item's
+ *  card in the top bar (the theme's large radius, the strong border, a compact
+ *  inset and 13 px text), so neither caller restyles the primitive from outside. */
 const POPOVER_VARIANTS = {
   default: 'rounded-md p-4 shadow-md',
   list: 'rounded-2xl p-1.5 shadow-lg',
+  status: 'rounded-[var(--radius-lg)] border-border-strong px-3.5 py-3 text-[13px] shadow-lg',
 } as const
 
 // Portals into the owning pane's overlay root, so content opened in the local

@@ -10,8 +10,8 @@ import { useShortcutsEnabled } from '../../hooks/useNavShortcutHint'
 import { fmtList, fmtRelative } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 import { errMessage } from '../../utils/thunkError'
-import { takeStatusCardRequest, usePendingStatusCard } from './statusCardRequest'
-import { setPrimaryStatusGo, useStatusGo, type StatusGo, type StatusRow, type StatusTarget } from './statusGo'
+import { takeStatusCardRequest, usePendingStatusCard } from '../../lib/statusCardRequest'
+import { setPrimaryStatusGo, useStatusGo, type StatusGo, type StatusRow, type StatusTarget } from '../../lib/statusGo'
 
 /**
  * App-contributed top-bar readouts (`contributes.statusItems`): small pills on
@@ -285,7 +285,8 @@ function AppStatusButton({ groups, size, goTo }: { groups: StatusItemGroup[]; si
       <PopoverContent
         align="end"
         sideOffset={6}
-        className={`${wide ? 'w-[400px]' : 'w-[300px]'} max-w-[calc(100vw-1rem)] rounded-[var(--radius-lg)] border-border-strong px-3.5 py-3 text-[13px] shadow-lg`}
+        variant="status"
+        className={`${wide ? 'w-[400px]' : 'w-[300px]'} max-w-[calc(100vw-1rem)]`}
         data-testid="app-status-card"
         aria-label={cardName}
         onPointerEnter={hoverOpen}

@@ -8,7 +8,7 @@
  *
  * @module app-sdk/statusGoBack
  */
-import { useStatusGoBack as useHostStatusGoBack } from '../shell/topbar/statusGo'
+import { useStatusGoBack as useHostStatusGoBack } from '../lib/statusGo'
 
 export function useStatusGoBack(): (() => void) | null {
   return useHostStatusGoBack()?.back ?? null

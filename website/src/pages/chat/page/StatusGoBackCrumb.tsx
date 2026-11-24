@@ -6,7 +6,7 @@
 import { ChevronLeft } from 'lucide-react'
 
 import { i18nT } from '../../../i18n/t'
-import { useActiveStatusGo, useStatusGoBack } from '../../../shell/topbar/statusGo'
+import { useActiveStatusGo, useStatusGoBack } from '../../../lib/statusGo'
 
 /** Reads only the go store, so a header that holds no go (and a test that
  *  renders it bare) needs no store or router context. */
