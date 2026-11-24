@@ -118,5 +118,8 @@ def test_readiness_reads_the_exact_trigger_line_ci_yml_carries() -> None:
     line = '    branches: [main, "release/**", "local/**"]'
     ci = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     readiness = (root / ".github" / "workflows" / "pr-readiness.yml").read_text(encoding="utf-8")
-    assert ci.splitlines().count(line) == 2
+    # Fork only: `local/**` rides the pull_request trigger alone; a push to it
+    # repeats the merged PR's run, so the push line leaves it out.
+    assert ci.splitlines().count(line) == 1
+    assert ci.splitlines().count('    branches: [main, "release/**"]') == 1
     assert f"grep -qxF '{line}'" in readiness

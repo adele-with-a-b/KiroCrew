@@ -37,6 +37,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from ci_matrix_expression_helpers import evaluate_matrix_value
 from git_maintenance_helpers import git_maintenance_off_entries
 from macos_lane_helpers import verdict_script as _verdict_script
 
@@ -126,18 +127,25 @@ class TestThePullRequestPathInstantiatesNoMacRunner:
         # read, so an inverted condition (macOS on PRs, not on main) fails here
         # rather than in a three-hour queue.
         matrix_os = _load("ci.yml")["jobs"]["e2e-boot-matrix"]["strategy"]["matrix"]["os"]
-        pull_request_side, _, push_side = matrix_os.partition("||")
-
-        assert "macos" not in pull_request_side.lower()
-        assert "macos-15" in push_side
-        push_literals = [side for side in push_side.split("||") if "[" in side]
-        assert len(push_literals) == 2, f"expected a queue-on and a queue-off literal: {push_side}"
-        assert all("macos-15" in side for side in push_literals)
-        # Still a real gateway boot on the other two platforms in front of a PR: a
-        # Windows-only delegation break that every unit test mocked past is the
-        # escape this job exists for, and only a real boot can see it.
-        assert "windows-latest" in pull_request_side
-        assert "ubuntu-latest" in pull_request_side
+        upstream = {"github.repository": "kirodotdev/KiroCrew"}
+        for event in ("pull_request", "merge_group"):
+            platforms = evaluate_matrix_value(matrix_os, {**upstream, "github.event_name": event})
+            assert not any("macos" in platform for platform in platforms), event
+            # Still a real gateway boot on the other two platforms in front of a
+            # PR: a Windows-only delegation break that every unit test mocked
+            # past is the escape this job exists for, and only a real boot can
+            # see it.
+            assert platforms == ["ubuntu-latest", "windows-latest"], event
+        push = {**upstream, "github.event_name": "push"}
+        queue_on = {**push, "vars.MERGE_QUEUE_ENABLED": "true"}
+        queue_on["github.actor"] = "github-merge-queue[bot]"
+        assert "macos-15" in evaluate_matrix_value(matrix_os, queue_on)
+        assert "macos-15" in evaluate_matrix_value(matrix_os, push)
+        # Fork only: adele-with-a-b/KiroCrew has no merge queue and no push run
+        # on its working branch, so its pull request carries the one macOS boot.
+        own_fork = {"github.repository": "adele-with-a-b/KiroCrew"}
+        own_fork["github.event_name"] = "pull_request"
+        assert evaluate_matrix_value(matrix_os, own_fork) == ["ubuntu-latest", "macos-15"]
 
     def test_ci_no_longer_owns_the_macos_pytest_job(self) -> None:
         assert "backend-test-macos" not in _load("ci.yml")["jobs"]

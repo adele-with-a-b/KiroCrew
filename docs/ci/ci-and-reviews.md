@@ -737,7 +737,7 @@ yet decided: install from a committed constraints file, or set
 | `e2e-private-namespace` | "E2E (private member namespace, hosted)". The one E2E step the fleet cannot host: `test/e2e/test_private_workflow_memory.py` runs a Crew Member's private workflow MCP inside the member sandbox, which needs `unshare --map-root-user`. Hosted off the fleet (the `kirocrew-runners` group here, `ubuntu-latest` in a fork), clears the AppArmor userns restriction first, no SPA or browser |
 | `integration` | "Integration (in-process gateway)". The middle layer: `test/integration/` boots the real `GatewayOrchestrator.run()` inside the pytest process on a scratch `KIROCREW_HOME` with the packaged fake ACP backend and talks HTTP to the port it bound, so one test can assert across a restart, across two concurrent requests on one event loop, or on a file the boot itself wrote. Opt-in by `KIROCREW_INTEGRATION=1`, so the unit shards collect and skip it; Linux only. Gated on ROUTE coverage -- `scripts/check_integration_route_coverage.py` reports the share of registered dashboard routes the suite requested (`--min` is a ratchet kept a little under what `main` measures) and the report is uploaded as the `integration-route-coverage` artifact. Details: `docs/system-specs/common/testing-conventions.md`, "The integration layer" |
 | `wheel-engine-real-venv` | "Wheel Engine (real venv build)". Runs the one `real_venv`-marked test (`test/test_wheel_engine_lifecycle.py::TestBuildChildEnvironment::test_build_and_verify_a_real_shadow_venv`) on `ubuntu-latest`; the shards deselect that marker |
-| `e2e-boot-matrix` | Boots a real fake-backed gateway and pins seven tests on Linux and Windows for PRs and merge groups; a queue-landed push to `main` runs `macos-15` alone, and any other push to `main` runs all three. Every leg is fail-closed on missing prerequisites or a collapsed pass count |
+| `e2e-boot-matrix` | Boots a real fake-backed gateway and pins seven tests on Linux and Windows for PRs and merge groups; a queue-landed push to `main` runs `macos-15` alone, and any other push to `main` runs all three. Fork only: a pull request on adele-with-a-b/KiroCrew runs Linux and `macos-15`, plus Windows with `ci:windows` or `ci-full-run`. Every leg is fail-closed on missing prerequisites or a collapsed pass count |
 
 `backend-lint` also runs `scripts/check_python_audit.py` (report-only findings,
 fail-closed execution). It is on the gate path because it is
@@ -1339,7 +1339,9 @@ which is where `kirocrew-runners-windows` holds the one below.
 `denial-differential.yml`'s `denial-differential` and the `adjudicate` job of
 both scope lanes -- `fork-security-scope-review.yml`'s and
 `security-scope-review.yml`'s -- each run one Linux, one macOS
-and one Windows leg off `os: [ubuntu-latest, macos-latest, windows-latest]`.
+and one Windows leg off `os: [ubuntu-latest, macos-latest, windows-latest]`
+(Fork only: on adele-with-a-b/KiroCrew, `denial-differential`'s Windows leg runs
+only with `ci:windows` or `ci-full-run`).
 Their Linux and Windows legs now resolve to `kirocrew-linux-4-core` and
 `kirocrew-windows-4-core`, dispatched on `matrix.os` in a single `runs-on`
 expression -- the shape `ci.yml`'s `e2e-boot-matrix` already uses. `matrix.os`
