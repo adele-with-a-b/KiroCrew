@@ -351,6 +351,12 @@ _ALLOWED_REDIRECTS: dict[str, tuple[int, str]] = {
         "a detached gateway's descriptors 1 and 2 already point at gateway.log and"
         " follow it across a rename; the null device only once the log cannot be written",
     ),
+    "chat_keeper/keeper.py": (
+        3,
+        "the keeper's own process, for good, once its one ready line is written:"
+        " stdin and stdout leave the launcher's pipes, which carry nothing after it,"
+        " and stderr goes to the keeper's log, so nothing written is discarded",
+    ),
     "connections/l1_smoke.py": (1, "stdout is already dead; rebound so shutdown can flush"),
     "consolidation_write_child.py": (4, "first statements of a child's entry point"),
     "crew_log/slot_backfill_child.py": (2, "first statements of a child's entry point"),

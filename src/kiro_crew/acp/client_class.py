@@ -1414,6 +1414,7 @@ class AcpClient:
     _stop_idle_reader = _client_transport._stop_idle_reader
     _cancel_idle_reader = _client_transport._cancel_idle_reader
     _agent_turn_pending = _client_transport._agent_turn_pending
+    _requeue_unanswered_folds = _client_transport._requeue_unanswered_folds
     _maybe_start_idle_reader = _client_transport._maybe_start_idle_reader
     _idle_read_loop = _client_transport._idle_read_loop
     _note_advertised_commands = _client_transport._note_advertised_commands
@@ -1481,6 +1482,7 @@ class AcpClient:
     _folded_prompts = _client_turn_control._folded_prompts
     _steer_via_folded_prompt = _client_turn_control._steer_via_folded_prompt
     _drop_folded_steer = _client_turn_control._drop_folded_steer
+    _steering_refusal = _client_turn_control._steering_refusal
     _held_steers = _client_turn_control._held_steers
     _release_held_steers = _client_turn_control._release_held_steers
     _held_steer_writes = _client_turn_control._held_steer_writes

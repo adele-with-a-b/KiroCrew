@@ -633,7 +633,7 @@ def voice_runtime_workspace_conflict(
     if sys.platform != "darwin":
         return None
     if backend is not None:
-        from kiro_crew.agent_sdk.backends_launch import (
+        from kiro_crew.agent_sdk.backends import (
             ACP_BACKENDS_INTERNAL_SANDBOX,
             ACP_BACKENDS_RELAY_INTERNAL_SANDBOX,
         )

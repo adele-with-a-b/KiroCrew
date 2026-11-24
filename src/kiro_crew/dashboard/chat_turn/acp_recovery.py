@@ -298,7 +298,8 @@ async def _on_process_died(turn: _ChatTurn, exc) -> None:
         # Detached at a gateway exit, not lost: the turn runs on under its chat keeper
         # and the next gateway finishes it, so nothing is reset, retried, queued or
         # announced (runtime-ownership.md, "Chats that outlive the gateway").
-        turn.needs_session_reset = False
+        needs_session_reset = False
+        turn.needs_session_reset = needs_session_reset
         return
     # WHOSE failure was this? A process this slot was sharing -- with a
     # sub-agent of its own, or with a co-tenant session -- died for reasons
@@ -432,7 +433,8 @@ async def _on_acp_retryable(turn: _ChatTurn, exc) -> None:
         # Detached at a gateway exit, not lost: the turn runs on under its chat keeper
         # and the next gateway finishes it, so nothing is reset, retried, queued or
         # announced (runtime-ownership.md, "Chats that outlive the gateway").
-        turn.needs_session_reset = False
+        needs_session_reset = False
+        turn.needs_session_reset = needs_session_reset
         return
     # Option Y: pipe-death ("process exited"/"not running") shares the
     # _acp_pipe_death_retries counter with the AcpProcessDied handler;

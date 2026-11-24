@@ -44,7 +44,7 @@ import { isEditableTarget } from '../utils/editableTarget'
 import { closeShownCrewWindow, crewWindowShown } from '../pages/chat/crew-window/crewWindowStore'
 import { stepTurn } from '../pages/chat/turnStep'
 import { noteEscapeStoppedSpeech } from '../utils/speechStopKey'
-import { firePrimaryStatusGo } from '../shell/topbar/statusGo'
+import { firePrimaryStatusGo } from '../lib/statusGo'
 
 /** Shortcuts scoped to the session on screen (see the crew-window guard). */
 const CREW_WINDOW_SCOPED: ReadonlySet<string> = new Set([

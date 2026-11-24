@@ -89,6 +89,10 @@ describe('shell boot order', () => {
     H.log.forEach((entry, i) => { if (SHELL_READS.has(entry) && !first.has(entry)) first.set(entry, i) })
     const order = [...first.entries()].sort((a, b) => a[1] - b[1]).map(([entry]) => entry)
     expect(order).toEqual([
+      // The top bar's app status items, a child, start the ['apps'] read in the
+      // first commit, and a child's effects run before the shell's; the shell's
+      // apps mount read joins that request (one listApps, asserted below).
+      'api.listApps',
       'api.dashboardConfig',
       'api.approvals',
       'fetch:/api/terminal/sessions',
@@ -96,7 +100,6 @@ describe('shell boot order', () => {
       // The shell's switch reads (the Command Bar's `dashboard.command_bar_enabled`,
       // a rail surface's `configSwitch`), one shared request.
       'api.kirocrewConfig',
-      'api.listApps',
       'api.listRegistry',
       'api.crons',
       'api.sessionsUsage',

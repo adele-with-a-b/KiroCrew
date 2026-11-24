@@ -491,13 +491,17 @@ async def close_all(self: SessionLifecycleService, drain_timeout: float | None =
 
     async def _close_one(provider: Any) -> None:
         async with close_sem:
+            # A chat under a chat keeper is handed back, not ended: its turn runs
+            # on and the next gateway adopts it (runtime-ownership.md, "Gateway
+            # exit: detach, never kill"). Every other provider shuts down, and so
+            # does one whose detach failed, as it would with no keeper.
+            detach = getattr(provider, "detach_for_gateway_exit", None)
             try:
-                # A chat under a chat keeper is handed back, not ended: its turn runs
-                # on and the next gateway adopts it (runtime-ownership.md, "Gateway
-                # exit: detach, never kill"). Every other provider shuts down.
-                detach = getattr(provider, "detach_for_gateway_exit", None)
                 if callable(detach) and await detach() is True:
                     return
+            except Exception:
+                logger.debug("close_all: chat keeper detach failed", exc_info=True)
+            try:
                 await provider.shutdown()
             except Exception:
                 pass

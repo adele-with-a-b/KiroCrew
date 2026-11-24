@@ -24,7 +24,7 @@ import {
   useSessionControlJump,
   useSessionControlRequest,
 } from '../app-sdk/sessionControlRequest'
-import { normalizeStatusTarget, setActiveStatusGo, getActiveStatusGo } from '../shell/topbar/statusGo'
+import { normalizeStatusTarget, setActiveStatusGo, getActiveStatusGo } from '../lib/statusGo'
 import { useStatusLinks } from '../pages/chat/useStatusLinks'
 import SessionControlHost from '../components/SessionControlHost'
 import type { ResolvedSessionControl } from '../hooks/useSessionControls'

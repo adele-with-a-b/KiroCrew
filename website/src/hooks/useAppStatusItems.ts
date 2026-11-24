@@ -21,7 +21,7 @@ import {
   normalizeStatusRows,
   type StatusGo,
   type StatusRow,
-} from '../shell/topbar/statusGo'
+} from '../lib/statusGo'
 
 /** Hard cap on status items DRAWN across ALL apps.
  *

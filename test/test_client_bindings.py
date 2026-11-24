@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import hashlib
+import importlib
 import inspect
 import re
 import sys
@@ -65,6 +66,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_agent_turn_gate": ("data", False, "", ""),
     "_agent_turn_held": ("data", False, "", ""),
     "_agent_turn_pending": ("function", False, "a6632a57e602", "client_transport"),
+    "_agent_turn_serial": ("data", False, "", ""),
     "_agent_turn_start": ("data", False, "", ""),
     "_append_member_dispatch_server": ("function", False, "94c1c94e7642", "client_mcp_array"),
     "_append_member_panel_server": ("function", False, "94c1c94e7642", "client_mcp_array"),
@@ -110,6 +112,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_drain_notifications": ("function", True, "23967cf3fb9c", "client_transport"),
     "_drain_post_compaction_metadata": ("function", True, "65fe4b4d1210", "client_usage"),
     "_drain_stderr": ("function", True, "550410b8da31", "client_lifecycle"),
+    "_drop_folded_steer": ("function", False, "ce7410240196", "client_turn_control"),
     "_drop_superseded_config_frames": ("function", False, "b60c5fea256e", "client_permissions"),
     "_emit_tool_interrupted_sel": ("function", False, "866fc4f75f7c", "client_tool_events"),
     "_ends_background_only_turns": ("data", False, "", ""),
@@ -121,6 +124,9 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_extract_tool_call_refinement": ("function", False, "e64128661dfa", "client_tool_events"),
     "_extract_tool_call_update": ("function", False, "e64128661dfa", "client_tool_events"),
     "_extract_tool_event": ("function", False, "e64128661dfa", "client_tool_events"),
+    "_folded_prompt_map": ("annotation", False, "", ""),
+    "_folded_prompts": ("function", False, "b0bcca61ff86", "client_turn_control"),
+    "_folds_prompt_into_agent_turn": ("function", False, "a6632a57e602", "client_class"),
     "_foreign_mcp_identity": ("function", False, "2dfacffa6279", "client_permissions"),
     "_forget_sent_images": ("function", False, "b60c5fea256e", "client_turn"),
     "_fork_session": ("function", True, "bca802976336", "client_class"),
@@ -156,6 +162,9 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_jsonl_tool_results": ("staticmethod", False, "db2ae4946f1c", "client_tool_events"),
     "_judge_activated_model": ("function", True, "b60c5fea256e", "client_model_selection"),
     "_judges_permission_requests": ("property", False, "a6632a57e602", "client_class"),
+    "_keeper_adopt_spent": ("data", False, "", ""),
+    "_keeper_adopted_process": ("data", False, "", ""),
+    "_keeper_adopting": ("data", False, "", ""),
     "_kill_process": ("function", True, "6134da811033", "client_lifecycle"),
     "_last_steer_monotonic": ("data", False, "", ""),
     "_local_settings_exclusion": ("function", False, "9b2f6da70957", "client_class"),
@@ -234,6 +243,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_release_stdout": ("function", False, "b60c5fea256e", "client_transport"),
     "_refuse_harness_default_model": ("function", False, "b60c5fea256e", "client_class"),
     "_republish_pi_mcp_handoff": ("function", True, "b60c5fea256e", "client_mcp_array"),
+    "_requeue_unanswered_folds": ("function", False, "f5597f1483b0", "client_transport"),
     "_reseed_after_capture": ("function", True, "b60c5fea256e", "client_class"),
     "_reset_harness_compaction": ("function", False, "b60c5fea256e", "client_class"),
     "_reset_native_child_turn": ("function", False, "b60c5fea256e", "client_native_children"),
@@ -273,10 +283,13 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_stdout_claims": ("data", False, "", ""),
     "_steer_echo_event": ("function", False, "e64128661dfa", "client_turn_control"),
     "_steer_via_concurrent_prompt": ("function", True, "e2662ac6ac7a", "client_turn_control"),
+    "_steer_via_folded_prompt": ("function", True, "e2662ac6ac7a", "client_turn_control"),
     "_steer_via_request": ("function", True, "89e0aff1cade", "client_turn_control"),
     "_steer_via_steering_request": ("function", True, "e2662ac6ac7a", "client_turn_control"),
     "_steering_adapter_floor_met": ("function", False, "a6632a57e602", "client_class"),
     "_steering_advertised": ("data", False, "", ""),
+    "_steering_closed_by": ("data", False, "", ""),
+    "_steering_refusal": ("function", False, "20c353da86af", "client_turn_control"),
     "_steering_request_ready": ("function", False, "a6632a57e602", "client_turn_control"),
     "_steering_turn_req": ("data", False, "", ""),
     "_steering_waiters": ("function", False, "425ee0793b31", "client_turn_control"),
@@ -368,6 +381,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "spec_zero_tools": ("property", False, "a6632a57e602", "client_class"),
     "steer": ("function", True, "b0a837a37097", "client_turn_control"),
     "steer_needs_loss_recovery": ("property", False, "a6632a57e602", "client_class"),
+    "steer_refusal": ("data", False, "", ""),
     "stream_command": ("function", "agen", "07d1ae72fdc6", "client_turn_control"),
     "stream_events": ("function", "agen", "8f253734e7ae", "client_turn"),
     "stream_unsolicited": ("function", "agen", "26ad8f8f419b", "client_turn"),
@@ -420,6 +434,7 @@ _CLAUDE_MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_ensure_served_default": ("function", True, "b60c5fea256e", "client_claude_session"),
     "_exclude_foreign_local_settings": ("function", False, "0b50a902117a", "client_claude_session"),
     "_expected_settings_fingerprint": ("function", False, "77be1e224b87", "client_seed_ownership"),
+    "_folds_prompt_into_agent_turn": ("function", False, "a6632a57e602", "client_claude_turn"),
     "_foreign_settings_is_crew_seed": ("function", False, "a6fc7539bdf3", "client_seed_ownership"),
     "_foreign_settings_owner": ("function", False, "0d96e8ab9b17", "client_seed_ownership"),
     "_fork_session": ("function", True, "bca802976336", "client_claude_session"),
@@ -908,12 +923,31 @@ def test_the_owner_import_scan_can_fail() -> None:
     }
 
 
+#: ``client_*`` modules that are not owners: every function takes the client as an
+#: ordinary argument and none is bound on a class, so the facade does not serve them
+#: and any owner may import them.
+_HELPERS = frozenset({f"{_PACKAGE}.client_keeper"})
+
+
+def test_every_client_module_is_an_owner_or_a_helper() -> None:
+    """A helper binds no ``self`` function and imports no owner, so it sits below every
+    owner; any other ``client_*`` module must be listed in ``_CLIENT_OWNERS``."""
+    package_dir = Path(acp_client.__file__ or "").parent
+    modules = {f"{_PACKAGE}.{path.stem}" for path in package_dir.glob("client_*.py")}
+    assert sorted(modules - _HELPERS) == sorted(acp_client._CLIENT_OWNERS)
+    for helper in sorted(_HELPERS):
+        tree = _tree(importlib.import_module(helper))
+        assert [fn.name for fn in _self_functions(tree, helper)] == [], helper
+        assert sorted(_owner_imports(tree)) == [], helper
+
+
 def test_each_owner_imports_only_owners_listed_before_it() -> None:
     """``_CLIENT_OWNERS`` lists the owners lowest layer first: an owner imports only
-    owners earlier in the tuple, so the order is the import order."""
+    owners earlier in the tuple, so the order is the import order. A helper is below
+    every owner (``test_every_client_module_is_an_owner_or_a_helper``)."""
     owners = acp_client._CLIENT_OWNERS
     later = {
-        owner: sorted(_owner_imports(_tree(sys.modules[owner])) - set(owners[:i]))
+        owner: sorted(_owner_imports(_tree(sys.modules[owner])) - set(owners[:i]) - _HELPERS)
         for i, owner in enumerate(owners)
     }
     assert later == {owner: [] for owner in owners}

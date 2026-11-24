@@ -1,7 +1,7 @@
 /**
  * An open of an app's own side-panel tab (target `panelTab`): a link-preview
  * card's `card.openPanelTab(tab, payload)` (`linkPreview/linkPreviewProtocol.ts`)
- * or a status go's `panelTab` (`shell/topbar/statusGo.ts`).
+ * or a status go's `panelTab` (`lib/statusGo.ts`).
  *
  * Taken only for the chat on screen, and only for a tab the app itself declares
  * (`contributes.panelTabs[]`; any other is refused `not_declared`): the payload

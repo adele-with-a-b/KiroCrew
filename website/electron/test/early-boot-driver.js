@@ -116,6 +116,8 @@ const app = {
   getAppPath: () => path.join(__dirname, ".."),
   requestSingleInstanceLock,
   setAppUserModelId() {},
+  // quit-intent.js wraps it at load, to tell a relaunch from the user's quit.
+  relaunch() {},
   on() {},
   once() {},
   whenReady: () => new Promise(() => {}),

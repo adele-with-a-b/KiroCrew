@@ -73,11 +73,18 @@ FORBIDDEN_BEFORE_THE_LIST = (
 #: Raised by 1 for ``mcp-core`` (488 to 489), fork only: the sensitive-path floor every
 #: listing loads imports ``kiro_crew.security.operator_sensitive``, which reads the
 #: operator's ``extra_sensitive_paths.txt`` when the floor is built.
+#: Raised for all four, fork only (core by 4, 489 to 493; cron, guide and mate by 5, to
+#: 364, 358 and 359): every listing loads ``security.operator_sensitive``, which the raise
+#: above counted on core alone; the config load reads ``config.picker_extra_models`` for the
+#: picker's added ids; and the app manifest reader imports its three owners
+#: ``apps.manifest_route_grammar``, ``.manifest_status_items`` and
+#: ``.manifest_session_controls``. Each is one file whose own imports were already loaded:
+#: these five are the whole difference from upstream v0.13.1's listings, on Linux and macOS.
 PACKAGE_MODULE_CEILING = {
-    "mcp-core": 489,
-    "mcp-cron": 359,
-    "mcp-guide": 353,
-    "mcp-mate": 354,
+    "mcp-core": 493,
+    "mcp-cron": 364,
+    "mcp-guide": 358,
+    "mcp-mate": 359,
 }
 
 #: The modules that read the two live values in the spawn tools' descriptions. They are

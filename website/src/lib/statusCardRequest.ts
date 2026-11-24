@@ -8,7 +8,7 @@
  * lands, and an item that never answers opens nothing. It only ever opens a
  * card: a URL never fires a go.
  *
- * @module shell/topbar/statusCardRequest
+ * @module lib/statusCardRequest
  */
 import { useSyncExternalStore } from 'react'
 
