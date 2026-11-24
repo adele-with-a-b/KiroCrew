@@ -37,6 +37,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from ci_matrix_expression_helpers import evaluate_matrix_value
 from test_docs_gate_table_matches_fast_gate import fast_gate_source_gate_scripts
 
 from kiro_crew.subprocess_utf8 import UTF8_TEXT
@@ -461,31 +462,44 @@ def _assert_push_to_main_reaches_exactly_the_macos_boot_leg(ci: dict) -> None:
     assert "(github.event_name == 'push' ||" not in boot_guard
 
     matrix_os = str(boot["strategy"]["matrix"]["os"])
-    sides = matrix_os.split("||")
-    assert (
-        len(sides) == 3
-    ), f"expected non-push / queue-on / queue-off matrix split, got: {matrix_os}"
-    non_push_side, queue_on_side, queue_off_side = sides
-    assert "github.event_name != 'push'" in non_push_side
-    assert "vars.MERGE_QUEUE_ENABLED == 'true' && " + _QUEUE_ACTOR in queue_on_side
-    assert "&&" not in queue_off_side, "the fallback literal must be unguarded"
-
-    def platforms(side: str) -> list[str]:
-        # The quoted literal, not the first bracket: the queue-landed side's
-        # actor check, 'github-merge-queue[bot]', carries one ahead of it.
-        start = side.index("'[") + 1
-        end = side.index("]", start) + 1
-        parsed = json.loads(side[start:end])
-        assert isinstance(parsed, list) and all(isinstance(item, str) for item in parsed)
-        return parsed
-
-    non_push_platforms = platforms(non_push_side)
-    queue_on_platforms = platforms(queue_on_side)
-    queue_off_platforms = platforms(queue_off_side)
-    assert non_push_platforms == ["ubuntu-latest", "windows-latest"]
-    assert queue_on_platforms == ["macos-15"]
-    assert queue_off_platforms == ["ubuntu-latest", "macos-15", "windows-latest"]
-    assert not any("macos" in platform for platform in non_push_platforms)
+    # The last side is the unguarded fallback: every push no merge group vouched for.
+    assert "&&" not in matrix_os.rsplit("||", 1)[1], "the fallback literal must be unguarded"
+    queue_on = {
+        "github.event_name": "push",
+        "vars.MERGE_QUEUE_ENABLED": "true",
+        "github.actor": "github-merge-queue[bot]",
+    }
+    for repository in ("kirodotdev/KiroCrew", "adele-with-a-b/KiroCrew"):
+        on_repo = {"github.repository": repository}
+        for event in ("pull_request", "merge_group"):
+            platforms = evaluate_matrix_value(matrix_os, {**on_repo, "github.event_name": event})
+            if repository == "kirodotdev/KiroCrew":
+                assert platforms == ["ubuntu-latest", "windows-latest"], event
+            else:
+                # Fork only: adele-with-a-b/KiroCrew boots its owner's macOS on
+                # every pull request, and Windows only when `windows_tests` says so.
+                assert platforms == ["ubuntu-latest", "macos-15"], event
+                labelled = {
+                    **on_repo,
+                    "github.event_name": event,
+                    "needs.changes.outputs.windows_tests": "true",
+                }
+                assert evaluate_matrix_value(matrix_os, labelled) == [
+                    "ubuntu-latest",
+                    "macos-15",
+                    "windows-latest",
+                ], event
+        assert evaluate_matrix_value(matrix_os, {**on_repo, **queue_on}) == ["macos-15"]
+        for queue_off in (
+            {"github.event_name": "push"},
+            {"github.event_name": "push", "vars.MERGE_QUEUE_ENABLED": "true"},
+            {"github.event_name": "push", "github.actor": "github-merge-queue[bot]"},
+        ):
+            assert evaluate_matrix_value(matrix_os, {**on_repo, **queue_off}) == [
+                "ubuntu-latest",
+                "macos-15",
+                "windows-latest",
+            ], queue_off
 
 
 class TestTheGatesLiveInTheGateWorkflow:
@@ -592,7 +606,8 @@ class TestTheGatesLiveInTheGateWorkflow:
         ci_on = dict(ci.get("on", ci.get(True)))
         fg_on = dict(fast_gate.get("on", fast_gate.get(True)))
         expected = {
-            "push": {"branches": ["main", "release/**", "local/**"]},
+            # Fork only: `local/**` on pull requests alone, never on a push.
+            "push": {"branches": ["main", "release/**"]},
             "pull_request": {"branches": ["main", "release/**", "local/**"]},
             "merge_group": {"types": ["checks_requested"]},
         }
@@ -894,7 +909,7 @@ class TestOnlyThePushOnlyCancelJobCanWrite:
         # `refs/heads/main` test is what keeps this job off a release push.
         # PyYAML reads the bare key `on` as boolean True.
         triggers = ci.get(True) or ci.get("on") or {}
-        assert triggers["push"] == {"branches": ["main", "release/**", "local/**"]}
+        assert triggers["push"] == {"branches": ["main", "release/**"]}
         assert "github.ref == 'refs/heads/main'" in guard
 
     def test_the_cancel_job_runs_beside_the_barrier_and_gates_nothing(self, ci: dict) -> None:
