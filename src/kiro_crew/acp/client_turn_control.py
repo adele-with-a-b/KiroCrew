@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Collection
 
 from kiro_crew import mediated_request_capability
 from kiro_crew import sel as sel_module
+from kiro_crew import steer_refusal
 from kiro_crew.acp import batch_guard, launch_tuning, pi_steer_turn, transport_framing
 from kiro_crew.acp.client_claude_session import (
     CLAUDE_ACP_STEERING_MIN_VERSION,
@@ -46,6 +47,7 @@ from kiro_crew.acp.client_timeouts import (
     _STEERING_WAIT_SLICE_SECS,
     _effective_prompt_timeout_async,
 )
+from kiro_crew.acp.client_transport import _AGENT_STARTED_REQUEST_ID
 from kiro_crew.acp.command_refused import AcpCommandRefused
 from kiro_crew.acp.stale_compaction import consume_stale_compaction_status
 from kiro_crew.acp.transport_errors import AcpError, AcpProcessDied, AcpTimeoutError
@@ -593,7 +595,11 @@ async def steer(self: AcpClient, message: str) -> bool:
 
     A steer that went out gets a point span in the turn it went into
     (``tracing/steps.py``): its mode, never its text.
+
+    A False answer may name its cause in :attr:`steer_refusal`, which each call
+    resets first.
     """
+    self.steer_refusal = ""
     text = (message or "").strip()
     if not text or not self._session_id:
         return False
@@ -712,13 +718,9 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
     the turn did not take (``steer_needs_loss_recovery``).
     """
     aimed_at = self._steering_turn_req
-    if (
-        aimed_at is None
-        or self._turn_done.is_set()
-        or self._cancelled
-        or self._parked_on_permission
-        or not self._steering_request_ready()
-    ):
+    refusal = _steering_refusal(self, aimed_at)
+    if refusal:
+        self.steer_refusal = refusal
         return False
     waiters = self._steering_waiters()
     accepted = getattr(self, "_steers_accepted", None)
@@ -726,16 +728,136 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
         accepted = []
         self._steers_accepted = accepted
     held = self._held_steers()
-    if len(text) > MAX_STEERING_TEXT_CHARS or len(waiters) + len(accepted) + len(held) >= (
-        MAX_STEERING_ANSWERS
-    ):
+    if len(text) > MAX_STEERING_TEXT_CHARS:
+        self.steer_refusal = steer_refusal.TOO_LONG
         return False
+    if len(waiters) + len(accepted) + len(held) >= MAX_STEERING_ANSWERS:
+        self.steer_refusal = steer_refusal.TOO_MANY
+        return False
+    if aimed_at == _AGENT_STARTED_REQUEST_ID:
+        return await self._steer_via_folded_prompt(text)
     if held or self._active_tool_calls.possibly_open:
         held.append((aimed_at, text))
         self._last_steer_monotonic = time.monotonic()
         self._release_held_steers()
         return True
-    return await self._send_steering_request(aimed_at, text) is True
+    if await self._send_steering_request(aimed_at, text) is True:
+        return True
+    self.steer_refusal = (
+        steer_refusal.TURN_ENDED
+        if self._turn_done.is_set() or self._steering_turn_req != aimed_at
+        else steer_refusal.REFUSED
+    )
+    return False
+
+
+def _steering_refusal(self: AcpClient, aimed_at: int | None) -> str:
+    """Why this turn takes no ``_session/steering`` steer now, or "" when it does.
+
+    The checks :meth:`_steer_via_steering_request` makes before it writes, each
+    named by its ``kiro_crew.steer_refusal`` code.
+    """
+    if aimed_at is None:
+        return getattr(self, "_steering_closed_by", "") or steer_refusal.REFUSED
+    if self._turn_done.is_set() or self._cancelled:
+        return steer_refusal.TURN_ENDED
+    if self._parked_on_permission:
+        return steer_refusal.PERMISSION_WAIT
+    if aimed_at == _AGENT_STARTED_REQUEST_ID:
+        # Set only on an adapter that folds a prompt into such a turn (``_dispatch_events``).
+        if not self._folds_prompt_into_agent_turn():
+            return steer_refusal.AGENT_TURN
+        # One fold per turn: only a single folded note was probed, and the adapter
+        # answers an earlier fold when a later one comes, mid-turn.
+        serial = self._agent_turn_serial
+        if any(fold_serial == serial for fold_serial, _text in self._folded_prompts().values()):
+            return steer_refusal.TOO_MANY
+        return ""
+    if not self._steering_request_ready():
+        return steer_refusal.NO_STEER
+    return ""
+
+
+def _folded_prompts(self: AcpClient) -> dict[int, tuple[int, str]]:
+    """The folded steers whose ``session/prompt`` is unanswered (``_folded_prompt_map``).
+    Created on first use so a client built without ``__init__`` (test doubles) has one."""
+    folded = getattr(self, "_folded_prompt_map", None)
+    if folded is None:
+        folded = {}
+        self._folded_prompt_map = folded
+    return folded
+
+
+async def _steer_via_folded_prompt(self: AcpClient, text: str) -> bool:
+    """Deliver a steer into a turn the agent started on its own, as a ``session/prompt``.
+
+    Such a turn has no prompt of ours for ``_session/steering`` to join, so the text
+    goes as a prompt, which an adapter at
+    :data:`~kiro_crew.acp.client_claude_session.CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION`
+    folds into the running turn: the model reads it at its next step, and the prompt
+    is answered when that turn ends. Nothing is cancelled or interrupted: the turn
+    keeps running and ends on its own end condition, and its reader
+    (``_read_turn``) ends it on the folded prompt's answer instead of on the cycle's
+    closing usage update, so the note's own reply is part of the turn.
+
+    True once the prompt is written while the turn still runs: the steer is
+    accepted into it, and reported consumed only when the turn ends with
+    ``end_turn`` (:meth:`_release_accepted_steers`); an error answer drops it
+    again (``_read_turn``), and the caller's pending entry is then queued. It is
+    not held behind an open tool call: the adapter folds it without moving the
+    tool to the background. A prompt written after the turn ended runs as a turn
+    of its own, so it is no fold: False, and the caller queues the text (at least
+    once, as for a steering answer that lands after its turn).
+    """
+    folded = self._folded_prompts()
+    serial = self._agent_turn_serial
+    sent: list[int] = []
+
+    def _register(request_id: int) -> None:
+        # Before the write, so the turn's reader knows the answer when it comes.
+        sent.append(request_id)
+        folded[request_id] = (serial, text)
+
+    batch_guard.note_prompt(getattr(self, "_batch_window", None), text)
+    try:
+        await self._send_request(
+            METHOD_PROMPT,
+            {"sessionId": self._session_id, "prompt": [{"type": "text", "text": text}]},
+            on_id=_register,
+        )
+    except Exception as exc:
+        if getattr(exc, "ambiguous_delivery", False) is True:
+            # Written into a pipe the child may still read: its answer stays known.
+            raise
+        if sent:
+            folded.pop(sent[0], None)
+        logger.debug("folded steer not written: %s", type(exc).__name__)
+        self.steer_refusal = steer_refusal.REFUSED
+        return False
+    if (
+        self._turn_done.is_set()
+        or self._steering_turn_req != _AGENT_STARTED_REQUEST_ID
+        or self._agent_turn_serial != serial
+    ):
+        # The prompt reached no running turn, so the adapter runs it as a turn of
+        # its own, which ends on its answer like any prompt's tail.
+        folded.pop(sent[0], None)
+        self.steer_refusal = steer_refusal.TURN_ENDED
+        return False
+    self._steers_accepted.append((_AGENT_STARTED_REQUEST_ID, wrap_user_message(text)))
+    self._last_steer_monotonic = time.monotonic()
+    trace_steps.steered(trace_steps.STEER_INTERRUPT, source=self)
+    return True
+
+
+def _drop_folded_steer(self: AcpClient, text: str) -> None:
+    """Forget a folded steer the adapter refused, so the turn does not report it consumed."""
+    wrapped = wrap_user_message(text)
+    accepted = getattr(self, "_steers_accepted", None) or []
+    for index, (aimed_at, entry) in enumerate(accepted):
+        if aimed_at == _AGENT_STARTED_REQUEST_ID and entry == wrapped:
+            del accepted[index]
+            return
 
 
 def _held_steers(self: AcpClient) -> list[tuple[int, str]]:
@@ -934,6 +1056,8 @@ def _release_accepted_steers(self: AcpClient, req_id: int, reason: str, refusal:
     self._steers_held = []
     if self._steering_turn_req == req_id:
         self._steering_turn_req = None
+    # The turn is over, whatever closed it to steers: a steer now finds it ended.
+    self._steering_closed_by = steer_refusal.TURN_ENDED
     if self._cancelled or refusal or reason != STOP_REASON_END_TURN:
         return []
     return [wrapped for aimed_at, wrapped in accepted if aimed_at == req_id]

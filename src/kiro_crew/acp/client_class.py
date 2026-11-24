@@ -1148,6 +1148,12 @@ class AcpClient:
         sends it. None this class drives does."""
         return False
 
+    def _folds_prompt_into_agent_turn(self) -> bool:
+        """Whether this adapter's release folds a ``session/prompt`` into a turn the
+        agent started on its own, so a steer can go into that turn. None this class
+        drives is shown to."""
+        return False
+
     async def _fork_session(
         self, source_sid: str, message_id: str, capabilities: dict
     ) -> str | None:
@@ -1472,6 +1478,9 @@ class AcpClient:
     _unanswered_steering_ids = _client_turn_control._unanswered_steering_ids
     _settle_steering_answer = _client_turn_control._settle_steering_answer
     _steer_via_steering_request = _client_turn_control._steer_via_steering_request
+    _folded_prompts = _client_turn_control._folded_prompts
+    _steer_via_folded_prompt = _client_turn_control._steer_via_folded_prompt
+    _drop_folded_steer = _client_turn_control._drop_folded_steer
     _held_steers = _client_turn_control._held_steers
     _release_held_steers = _client_turn_control._release_held_steers
     _held_steer_writes = _client_turn_control._held_steer_writes
@@ -1540,6 +1549,20 @@ class AcpClient:
     # steered. Mirrors AcpSessionHandle.last_steer_monotonic — the dashboard's
     # keepalive route reads whichever of the two backs the live session.
     _last_steer_monotonic: float = 0.0
+    #: Why the last ``steer()`` that answered False refused, as an
+    #: ``kiro_crew.steer_refusal`` code, or "" when it named none. Read by the caller
+    #: right after the refusal, to tell the sender why its steer was queued.
+    steer_refusal: str = ""
+    #: Why the running turn takes no ``_session/steering`` steer, set with
+    #: ``_steering_turn_req`` at the turn's start: the turn the agent started on
+    #: its own, or a command turn.
+    _steering_closed_by: str = ""
+    #: Counts the turns the agent started on its own, so a steer folded into one
+    #: (``_steer_via_folded_prompt``) is told from one folded into an earlier one.
+    _agent_turn_serial: int = 0
+    #: Each steer folded into an agent-started turn whose ``session/prompt`` is not
+    #: answered yet: request id -> (``_agent_turn_serial`` of its turn, text).
+    _folded_prompt_map: dict[int, tuple[int, str]]
 
     @property
     def last_steer_monotonic(self) -> float:

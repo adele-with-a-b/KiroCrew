@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 from urllib.parse import quote
 
+from kiro_crew import steer_refusal
 from kiro_crew.conductor_patrol import reply_line
 from kiro_crew.mcp_dashboard_caller_scope import (
     CREW_MODE_FOLDER_NOTE,
@@ -900,15 +901,17 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
             f"\U0001f4e8 Delivered to `{target}` — it started a turn on your message. "
             "Watch the result with session_read_message." + caps
         )
-    # A steer that could not be injected lands here, on the queue: say so, or
-    # the caller reads "queued" as "the target was busy" and never learns its
-    # steer did not cut anything.
-    queued_note = (
-        " Your steer could not go into the running turn, so it was queued instead." if steer else ""
-    )
+    # A steer that could not be injected lands here, on the queue: say why and
+    # what it now waits for, or the caller reads "queued" as "the target was
+    # busy" and never learns its steer did not cut anything.
+    if steer:
+        return (
+            f"\U0001f4e8 Queued for `{target}`. {steer_refusal.describe(resp.get('steerRefusal'))} "
+            "Poll with session_read_message." + caps
+        )
     return (
         f"\U0001f4e8 Queued for `{target}` — it is mid-turn, so your message runs "
-        f"when the current turn ends.{queued_note} Poll with session_read_message." + caps
+        "when the current turn ends. Poll with session_read_message." + caps
     )
 
 
@@ -988,8 +991,13 @@ def _run_session_broadcast(args: dict[str, Any], ctx: ToolContext) -> str:
         else:
             # A steer that could not be injected lands here, for the reason
             # session_send spells out: reporting a plain queue would leave the
-            # caller believing that target was interrupted.
-            fell_back = " (steer fell back to the queue)" if mode == "steer" else ""
+            # caller believing that target was interrupted. The cause says how
+            # long it may wait.
+            fell_back = (
+                f" ({steer_refusal.describe_short(row.get('steerRefusal'))})"
+                if mode == "steer"
+                else ""
+            )
             lines.append(f"  \u2705 `{target}` — queued until its turn ends{fell_back}")
     if delivered < requested:
         lines.append(

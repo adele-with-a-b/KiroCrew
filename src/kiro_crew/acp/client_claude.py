@@ -361,4 +361,5 @@ class ClaudeAcpClient(AcpClient, serves=ACP_BACKEND_CLAUDE):
     _claims_native_compaction = _client_claude_turn._claims_native_compaction
     _note_unhandled_session_update = _client_claude_turn._note_unhandled_session_update
     _steering_adapter_floor_met = _client_claude_turn._steering_adapter_floor_met
+    _folds_prompt_into_agent_turn = _client_claude_turn._folds_prompt_into_agent_turn
     _settle_background_only = _client_claude_turn._settle_background_only

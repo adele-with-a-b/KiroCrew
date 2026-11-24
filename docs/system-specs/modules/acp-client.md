@@ -3614,11 +3614,45 @@ stdout while no request waits. Design record:
   starts first reads the frames as its own, which ends the hand-off, and
   `stream_unsolicited()` then yields nothing, as it does while any prompt is in
   flight.
-- **The turn takes no steers.** `_dispatch_events` leaves `_steering_turn_req`
-  unset under `-1`, so `steer()` returns False while the turn reads and the
-  caller queues the text as the next prompt. The dashboard's busy send button
-  defaults to Steer, and a Steer-mode send falls back to its queue on that
-  False, so a message typed during the turn runs after it.
+- **A steer is folded into the turn, on an adapter shown to fold one.** A note
+  may cut into a turn the chat started by itself and is read at its next step
+  (Abdel, 2026-11-23: "Q1a yes"; this replaces "the turn takes no steers").
+  `_dispatch_events` sets `_steering_turn_req` to `-1` for such a turn only
+  when `_folds_prompt_into_agent_turn()` is True: the base `AcpClient` answers
+  False, and `ClaudeAcpClient` answers True from claude-agent-acp
+  `CLAUDE_ACP_AGENT_TURN_FOLD_MIN_VERSION` (0.109.0, the one release probed).
+  There a steer goes out as a `session/prompt`
+  (`_steer_via_folded_prompt`), not a `_session/steering` request, because no
+  prompt of ours runs for that request to join. The adapter folds the prompt
+  into the running turn ("A prompt folded into an autonomous turn owns that
+  turn now", its `acp-agent.js`): the model reads the text at its next step
+  and the prompt is answered when the turn ends. Nothing is cancelled or
+  interrupted: the turn keeps running and ends on its normal end condition.
+  The steer is not held behind an open tool call, since the fold does not move
+  the tool to the background. Its id is kept in `_folded_prompt_map` with the
+  turn's `_agent_turn_serial`. While a fold of the current turn is unanswered,
+  the closing autonomous `usage_update` ends nothing; the fold's answer ends
+  the turn with its own `stopReason`. One fold per turn: a second steer while
+  one is unanswered is refused (`too_many`) and queued, because the adapter
+  answers an earlier fold when a later one arrives, which was never probed. An
+  error answer drops that steer from `_steers_accepted`; when the close already
+  came, it also ends the turn, since nothing else is left to end it. A turn
+  that ends before its fold's answer (a cancel, a response to a later request)
+  drops the fold's steer too, on every exit of `_read_turn`, so it is queued rather than reported read, and as possibly delivered (`held_steers_possibly_delivered`), since the adapter may still run it. A fold
+  answer whose turn already ended means the adapter ran that prompt on as a
+  prompt of its own: under an agent-started turn it ends that turn, as an
+  earlier prompt's response does, and under a user turn it is dropped. A
+  peer's steer reaches this path only with `agent.peer_steer_loss_recovery`
+  on, as for any claude steer from another session. A prompt written after the turn ended reached no
+  running turn: it is no fold, its id is forgotten, and `steer()` returns
+  False (`turn_ended`), so the caller queues the text, at least once, as for
+  a steering answer that lands late. The steer is reported consumed only when
+  the turn ends with `end_turn`, as any steer
+  (`_release_accepted_steers`). Below the floor, with no version, and on every
+  other backend, `_steering_turn_req` stays unset, `steer()` returns False
+  with `steer_refusal` `agent_turn`, and the caller queues the text as the
+  next prompt, its reason named to the sender and on the queued row
+  (`kiro_crew/steer_refusal.py`).
 - **A prompt queues behind the turn.** `stream_unsolicited()` holds
   `_agent_turn_gate` while it reads, and keeps it until `_prompt_loop` has
   released `_turn_lock`, since `_dispatch_events` leaves that loop to the
@@ -3629,7 +3663,8 @@ stdout while no request waits. Design record:
   `stream_unsolicited()` checks that count under the gate and yields nothing
   while it is above zero. A consumer closes the stream with `aclosing()`, as
   for `stream_events`: one left open holds the gate. This is the queue of
-  `docs/request-for-change/rfc-agent-started-turns.md` decision 3. Do not await
+  `docs/request-for-change/rfc-agent-started-turns.md` decision 3; a steer
+  folded in (above) sends no prompt through this gate. Do not await
   a prompt inside an open `stream_unsolicited()` loop: the prompt waits for that
   stream to close, so the two wait on each other.
 
