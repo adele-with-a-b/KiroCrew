@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.config import live
+from kiro_crew.dashboard import queue_age
 from kiro_crew.dashboard.chat_utils import (
     COMPOSER_SEND_META,
     STEER_POSSIBLY_DELIVERED_META,
@@ -604,7 +605,8 @@ async def steer_into_running_turn(
     client = getattr(slot, "_acp_client", None)
     if client is None or not getattr(client, "supports_steer", False):
         return SteerUnavailable(steer_refusal.NO_STEER)
-    if not user_origin and getattr(client, "steer_needs_loss_recovery", False) is True:
+    loses_steers = getattr(client, "steer_needs_loss_recovery", False) is True
+    if not user_origin and loses_steers:
         # The requeue keeps a steer this harness drops but may run it twice; peers opt in.
         # A snapshot, not a load: no file read on the loop, no await before registering.
         live_config = live.snapshot()
@@ -798,6 +800,9 @@ async def steer_into_running_turn(
         # taking drains as its own row, and that row must still be the nudge.
         slot._steer_automation[message] = dict(nudge_meta)
     slot._pending_steers.append(message)
+    # How long it sits unread is what wakes its sender (``queue_age.waits``). A
+    # harness that reports a steer read only at turn end gives no unread to count.
+    queue_age.note_steered(slot, message, read_reported=not loses_steers)
     possibly_delivered = False
     slot._steer_rpc_in_flight.add(message)
     try:

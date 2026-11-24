@@ -314,14 +314,20 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         BROADCAST_TIMEOUT_CODE,
         BROADCAST_VIA,
         MAX_SEND_MESSAGE_CHARS,
+        _asking_generation,
         _DeliveryProgress,
         _neutralize_send_provenance,
+        _note_awaiting_reply,
         _retain_orphaned_steer_delivery,
         _start_auto_tag,
+        _take_awaited_reply,
         _timeout_delivery_observation,
         _too_many_targets,
+        awaits_reply,
         broadcast_audience,
         broadcast_to_targets,
+        holds_persons_standing,
+        manages_target,
         send_to_target,
     )
     from kiro_crew.dashboard.session_control_parts.session_revive import (  # noqa: F401
@@ -492,6 +498,7 @@ if TYPE_CHECKING:  # names this module re-exported from other modules
     from kiro_crew.context_assembly.markers import _marker_spans  # noqa: F401
     from kiro_crew.crew_log import emit as crew_log_emit  # noqa: F401
     from kiro_crew.crew_log.session_tree_projection import projection  # noqa: F401
+    from kiro_crew.dashboard import queue_age  # noqa: F401
     from kiro_crew.dashboard import session_managers  # noqa: F401
     from kiro_crew.dashboard.approval_inheritance import inherit_posture  # noqa: F401
     from kiro_crew.dashboard.chat_delivery import sanitize_outbound  # noqa: F401

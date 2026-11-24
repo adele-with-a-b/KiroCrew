@@ -68,9 +68,7 @@ def _ping(
     """
     reply: dict = {"ok": True}
     wait_id = str(body.get("wait_id") or "").strip()[:64]
-    with patch(
-        "kiro_crew.dashboard.chat_utils.dashboard_slot_key", return_value=tab
-    ) as slot_key:
+    with patch("kiro_crew.dashboard.chat_utils.dashboard_slot_key", return_value=tab) as slot_key:
         _service_wait_ping(state, session_key, wait_id, body, reply, provider)
     slot_key.assert_called_once_with(session_key)
     return reply
@@ -468,9 +466,7 @@ class TestNoDashboardTab:
         state = _mock_state()
         reply: dict = {"ok": True}
 
-        with patch(
-            "kiro_crew.dashboard.chat_utils.dashboard_slot_key", return_value=""
-        ):
+        with patch("kiro_crew.dashboard.chat_utils.dashboard_slot_key", return_value=""):
             _service_wait_ping(
                 state,
                 "slack:1785370133.085469",
@@ -679,11 +675,11 @@ class TestSteerEndsWait:
         assert slot._wait_steer_baseline == 0.0
 
         prov.last_steer_monotonic = 500.0  # steer lands mid-sleep
-        reply = _ping(
-            state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov
-        )
+        reply = _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov)
 
         assert reply["end_wait"] == "w1"
+        # So the tool says a message came in, rather than naming the person.
+        assert reply["end_wait_reason"] == "steer"
         # Same retirement the button path performs: nothing left to re-fire on.
         assert slot._wait_state is None
         assert slot._wait_steer_baseline == 0.0
@@ -698,9 +694,7 @@ class TestSteerEndsWait:
 
         _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 600}, provider=prov)
         assert slot._wait_steer_baseline == 500.0
-        reply = _ping(
-            state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov
-        )
+        reply = _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov)
 
         assert "end_wait" not in reply
         assert slot._wait_state is not None
@@ -715,14 +709,10 @@ class TestSteerEndsWait:
 
         _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 600}, provider=prov)
         prov.last_steer_monotonic = 500.0
-        first = _ping(
-            state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov
-        )
+        first = _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov)
         # Model calls wait again; the SAME steer is still unconsumed.
         _ping(state, {"wait_id": "w2", "seconds": 600, "remaining": 600}, provider=prov)
-        second = _ping(
-            state, {"wait_id": "w2", "seconds": 600, "remaining": 595}, provider=prov
-        )
+        second = _ping(state, {"wait_id": "w2", "seconds": 600, "remaining": 595}, provider=prov)
 
         assert first["end_wait"] == "w1"
         assert "end_wait" not in second
@@ -744,9 +734,7 @@ class TestSteerEndsWait:
                 state, {"wait_id": "w2", "seconds": 600, "remaining": 600}, provider=prov
             )
             prov.last_steer_monotonic = 500.0
-            reply = _ping(
-                state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov
-            )
+            reply = _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov)
 
         assert slot._wait_contested is True
         assert "end_wait" not in reply_contest
@@ -774,9 +762,7 @@ class TestSteerEndsWait:
         prov = self._provider(0.0)
 
         _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 600}, provider=prov)
-        reply = _ping(
-            state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov
-        )
+        reply = _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov)
 
         assert "end_wait" not in reply
         assert slot._wait_state is not None
@@ -789,9 +775,7 @@ class TestSteerEndsWait:
         prov = SimpleNamespace(last_steer_monotonic="not-a-number")
 
         _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 600}, provider=prov)
-        reply = _ping(
-            state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov
-        )
+        reply = _ping(state, {"wait_id": "w1", "seconds": 600, "remaining": 595}, provider=prov)
 
         assert "end_wait" not in reply
         assert slot._wait_state is not None

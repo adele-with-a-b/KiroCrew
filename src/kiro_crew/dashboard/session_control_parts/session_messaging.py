@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.context_assembly.markers import _apply_marker_spans, _marker_spans
-from kiro_crew.dashboard import session_managers
+from kiro_crew.dashboard import queue_age, session_managers
 from kiro_crew.dashboard.chat_delivery import sanitize_outbound, steer_refusal_of
 from kiro_crew.dashboard.relay_archive import (
     RELAY_ARCHIVE_CODE,
@@ -214,6 +214,88 @@ def _retain_orphaned_steer_delivery(
     task.add_done_callback(_done)
 
 
+def manages_target(caller_key: str, caller_slot: Any, slot: Any, *, bound: bool) -> bool:
+    """Whether a send from *caller_key* to *slot* that names no delivery steers.
+
+    True when the caller is the target's manager (:func:`session_managers.holder`:
+    its creator until a ``session_handoff`` names another) or *bound* says the
+    target's work-ledger binding names the caller. Never for the session that
+    created the caller: a worker's message to its conductor keeps the queue, the
+    one delivery the creator opening admits.
+    """
+    if not caller_key or slot is None:
+        return False
+    if caller_slot is not None and _is_callers_creator(caller_slot, slot):
+        return False
+    return bound or session_managers.holder(slot) == caller_key
+
+
+def holds_persons_standing(slot: Any) -> bool:
+    """Whether *slot*'s running turn is still one the person or the owner sent.
+
+    Any peer text steered into a turn takes that standing away for the rest of it
+    (``chat_delivery`` clears ``_turn_user_sent`` and ``_turn_owner_sent``), so a
+    DEFAULT steer, a manager's or a reply's, keeps the queue for such a turn: the person is driving it,
+    and the sender is woken if the message sits (``queue_age``). Asking for the
+    steer by name still cuts in, as it always did.
+    """
+    if slot is None or not getattr(slot, "turn_running", False):
+        return False
+    return bool(getattr(slot, "_turn_user_sent", False) or getattr(slot, "_turn_owner_sent", False))
+
+
+def awaits_reply(caller_key: str, slot: Any) -> bool:
+    """Whether *slot* is still in the turn in which it messaged *caller_key*.
+
+    The other half of the default steer: a session that asked another one
+    something and waits in the same turn reads the answer at its next step, so a
+    wait it runs in that turn can see it. Read off the slot's own record, which
+    only :func:`_note_awaiting_reply` writes, never from the request.
+    """
+    if not caller_key or slot is None or not getattr(slot, "turn_running", False):
+        return False
+    waiting = getattr(slot, "_awaiting_replies", None) or {}
+    return waiting.get(caller_key) == getattr(slot, "_turn_generation", None)
+
+
+def _take_awaited_reply(caller_key: str, slot: Any, generation: Any) -> None:
+    """Spend *slot*'s record that turn *generation* waits on *caller_key*.
+
+    One cut-in per ask. Only that turn's record goes: a later turn that asked the
+    same session while this reply's delivery suspended keeps its own.
+    """
+    waiting = getattr(slot, "_awaiting_replies", None)
+    if isinstance(waiting, dict) and waiting.get(caller_key) == generation:
+        waiting.pop(caller_key, None)
+
+
+def _asking_generation(caller_slot: Any) -> int | None:
+    """The generation of *caller_slot*'s running turn, or ``None`` when idle."""
+    if caller_slot is None or not getattr(caller_slot, "turn_running", False):
+        return None
+    generation = getattr(caller_slot, "_turn_generation", None)
+    return generation if isinstance(generation, int) else None
+
+
+def _note_awaiting_reply(caller_slot: Any, target_key: str, generation: int | None) -> None:
+    """Record that *caller_slot*'s turn *generation* messaged *target_key*.
+
+    *generation* is the one the send was admitted under; a turn that ended while
+    the delivery suspended records nothing, so a later turn is never credited
+    with an ask it did not make. Entries from earlier turns are dropped on each
+    write, so the record holds the current turn's targets only.
+    """
+    if generation is None or getattr(caller_slot, "_turn_generation", None) != generation:
+        return
+    if not getattr(caller_slot, "turn_running", False):
+        return
+    recorded = getattr(caller_slot, "_awaiting_replies", None)
+    recorded = recorded if isinstance(recorded, dict) else {}
+    kept = {k: g for k, g in recorded.items() if g == generation}
+    kept[target_key] = generation
+    caller_slot._awaiting_replies = kept
+
+
 def _start_auto_tag(state: DashboardState, slot: Any) -> None:
     """Tag a session whose turn this send started, as a typed message would.
 
@@ -240,18 +322,39 @@ async def send_to_target(
     caller_session_key: str,
     target: str,
     message: str,
-    steer: bool = False,
+    steer: bool | None = False,
+    caller_bound_worker: str = "",
     caller_fenced: bool | None = None,
     via: str = "session_send",
     creator_message: bool = False,
+    records_ask: bool = True,
     _delivery_progress: "_DeliveryProgress | None" = None,
 ) -> dict[str, Any]:
     """Deliver *message* to *target* as its next agent turn.
 
+    ``steer=None`` means the sender named no delivery. It steers when the caller
+    is the target's manager (:func:`manages_target`: it created the target, was
+    handed it, or its work-ledger binding names the caller for the slot the gate
+    resolved, *caller_bound_worker*) and queues otherwise, so a conductor's message
+    to its own busy worker is read at the worker's next step instead of when its
+    turn ends, which can be hours. It also steers a reply (:func:`awaits_reply`):
+    the target messaged the caller in the turn it is still running, so the answer
+    reaches the turn that asked; a reply that cut in spends that record. Either
+    default still queues for a turn the person is driving
+    (:func:`holds_persons_standing`), marked as wanting the turn, and a reply held
+    that way spends nothing. ``steer=False`` is the queue asked for by
+    name. The result carries
+    ``steerDefault`` (``"reply"`` or ``"manager"``) when the default chose the steer.
+
     ``creator_message`` lets the send reach the session that created the caller
     (:func:`authorize_target`). Only the ``session_send`` route passes it, so a
     broadcast, a create's seed, a workflow send and any later caller keep the
-    creator fence unless they ask; a steer never gets it.
+    creator fence unless they ask; a steer gets it only as a defaulted reply into
+    the creator's asking turn. It is also what records the ask a reply may cut in
+    for (:func:`_note_awaiting_reply`): a seed, a broadcast or a workflow send asks
+    nothing, and *records_ask* false is the route's seed (``work_dispatch``) asking
+    nothing either. A reply asks too, so an answer that carries a question gets its answer
+    into the same turn; each message cuts in at most once.
 
     ``via`` names the VERB in the provenance envelope the target reads. It exists
     because :func:`broadcast_to_targets` delivers through this function, and a
@@ -319,6 +422,11 @@ async def send_to_target(
         _delivery_progress if _delivery_progress is not None else _DeliveryProgress()
     )
 
+    # The turn this send asks from, read before the first await: a turn that ends
+    # while the send suspends must not credit its successor with the ask.
+    asking_slot = state.get_slot(caller_slot_key(state, caller_session_key))
+    asking_generation = _asking_generation(asking_slot)
+
     # The delivery appends to the target's rows: a target restored as a
     # sidebar row loads its window first, ahead of the prewarm below.
     await load_target_window(state, target)
@@ -354,15 +462,29 @@ async def send_to_target(
         creator_message=creator_message and not steer,
     )
     caller_slot = state.get_slot(caller_slot_key(state, caller_session_key))
+    # The sender named no delivery: its own worker, or a session still in the turn
+    # that messaged it, takes the message at its next step. Decided here, after the
+    # gate, from the slot the gate resolved.
+    own_key = caller_slot_key(state, caller_session_key)
+    awaited = steer is None and awaits_reply(own_key, slot)
+    # The asking turn this reply answers; only that turn's ask is spent below.
+    awaited_generation = getattr(slot, "_turn_generation", None) if awaited else None
+    bound = bool(caller_bound_worker) and caller_bound_worker == slot.key
+    manager_default = steer is None and manages_target(own_key, caller_slot, slot, bound=bound)
+    # A default the person's turn holds off, a reply's included, still wanted that
+    # turn, so its queue entry is marked for the unread wake like a refused steer,
+    # and the ask it would have answered stays unspent.
+    held_for_person = (manager_default or awaited) and holds_persons_standing(slot)
+    steer_default = (manager_default or awaited) and not held_for_person
+    is_creator = caller_slot is not None and _is_callers_creator(caller_slot, slot)
+    # A reply into the creator's asking turn is the one steer the creator opening
+    # admits; the steer arm's re-gates pass the opening for it alone.
+    reply_to_creator = steer_default and awaited and is_creator and creator_message
+    steer = bool(steer) or steer_default
     # Only the plain send the opening is for: a caller that reaches its creator by
     # another road (a handoff made it the creator's manager) may steer it, and a
-    # steer is not answered as a report.
-    to_creator = (
-        creator_message
-        and not steer
-        and caller_slot is not None
-        and _is_callers_creator(caller_slot, slot)
-    )
+    # steer is not answered as a report. A reply into the asking turn still is one.
+    to_creator = creator_message and (not steer or reply_to_creator) and is_creator
 
     # A relay archive is read-only: the delivery below would run the crew's old
     # session on THIS machine, the same thing the send / regenerate / rewind /
@@ -540,6 +662,8 @@ async def send_to_target(
                 target=target,
                 operation="send",
                 precomputed_ownership_fenced=caller_fenced,
+                # Its fallback is the plain queued report the opening is for.
+                creator_message=reply_to_creator,
             )
             if regated is not slot:
                 # Object identity, for the reason the in-frame arm gives: a target
@@ -560,7 +684,11 @@ async def send_to_target(
                 slot,
                 prompt,
                 session_deliver.peer(steer=False, sender=caller_session_key),
-                queue_meta={**send_origin_meta(state, caller_key), SESSION_SEND_QUEUED_META: True},
+                queue_meta={
+                    **send_origin_meta(state, caller_key),
+                    SESSION_SEND_QUEUED_META: True,
+                    queue_age.STEER_WANTED_META: True,
+                },
                 relay_meta=relay_meta,
             )
             logger.info(
@@ -715,6 +843,8 @@ async def send_to_target(
                 target=target,
                 operation="send",
                 precomputed_ownership_fenced=caller_fenced,
+                # Its fallback is the plain queued report the opening is for.
+                creator_message=reply_to_creator,
             )
             if regated is not slot:
                 # Object identity, not ``regated.key != slot.key``. The delivery
@@ -779,6 +909,9 @@ async def send_to_target(
                     **send_origin_meta(state, caller_key),
                     SESSION_SEND_QUEUED_META: True,
                     **({steer_refusal.QUEUE_META_KEY: refusal} if refusal else {}),
+                    # The sender wanted the running turn and got the queue, so it
+                    # is woken if this sits unread (``queue_age``).
+                    **({queue_age.STEER_WANTED_META: True} if steer or held_for_person else {}),
                 },
                 relay_meta=relay_meta,
             )
@@ -786,6 +919,13 @@ async def send_to_target(
         )
         if started:
             _start_auto_tag(state, slot)
+    if awaited and steered:
+        # The reply reached the turn that asked: that ask is answered.
+        _take_awaited_reply(own_key, slot, awaited_generation)
+    # This turn now waits on the target: its reply cuts into it (``awaits_reply``).
+    # Only a session_send asks, a reply included: it may ask something back.
+    if creator_message and records_ask and caller_slot is asking_slot:
+        _note_awaiting_reply(caller_slot, slot.key, asking_generation)
     try:
         state.push_slots_update()
     except Exception:  # pragma: no cover - sidebar refresh is best-effort
@@ -804,6 +944,9 @@ async def send_to_target(
             "steer_requested": bool(steer),
             "steered": steered,
             "chars": len(body),
+            # Present only when the default chose the steer, so the trail can
+            # tell it from a caller that asked.
+            **({"steer_default": True} if steer_default else {}),
             # Only when a steer's turn was actually stopped, so the common shape is
             # unchanged. Names the constraints that newly held, which is what a
             # reader needs to tell this apart from an ordinary delivery: the message
@@ -819,6 +962,10 @@ async def send_to_target(
         },
     )
     result = {"ok": True, "target": slot.key, "started": started, "steered": steered}
+    if steer_default and not started:
+        # The sender asked for nothing, so its reply names why the steer was chosen
+        # for it: a reply into the turn that asked, or the caller's own session.
+        result["steerDefault"] = "reply" if awaited else "manager"
     if refusal and not started:
         # Only for a steer that fell back and now waits on the queue: one that found
         # the turn over and started its own has nothing left to wait for.

@@ -7,7 +7,7 @@ bookkeeping, deferred resets, eager spawn and the MCP report.
 
 Instance fields of ``_ChatSlot`` this module reads and writes:
 
-Writes: ``_app``, ``_auto_tagged``, ``_binding``, ``_channel_runtime_origin``, ``_created_by``,
+Writes: ``_app``, ``_auto_tagged``, ``_awaiting_replies``, ``_binding``, ``_channel_runtime_origin``, ``_created_by``,
 ``_created_by_sid``, ``_crew_log_opened_sid``, ``_crew_log_pending_channel``,
 ``_crew_log_previous_from_mapping``, ``_crew_log_previous_sid``,
 ``_crew_log_previous_undecided``, ``_detail_render_lock``, ``_eager_spawn_failures``,
@@ -343,6 +343,11 @@ def init_session_fields(self: _ChatSlot) -> None:
     #: crewmate's worker report may wake its creator
     #: (``dashboard.mate_thread_wakes``); never persisted or restored.
     self._reports_to_creator = False
+    #: ``{target slot key: _turn_generation}`` for each session this slot sent a
+    #: session-control message to during a turn. A reply from that target while
+    #: the same turn still runs cuts into it (``session_messaging.awaits_reply``).
+    #: In-process only.
+    self._awaiting_replies = {}
     #: Slot key of the session-control caller that REVIVED this slot from
     #: history, or "". Cap attribution only: ``creator_slot_count`` counts it
     #: beside ``_created_by`` for the per-caller slot cap, since a revive keeps

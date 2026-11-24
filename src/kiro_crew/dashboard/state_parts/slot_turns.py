@@ -23,7 +23,7 @@ Writes: ``_acp_client``, ``_active_turn_session_key``, ``_approval_futures``,
 ``_on_question_retired``, ``_on_row``, ``_pending``, ``_preparing_count``, ``_preparing_texts``, ``_pending_consumers``,
 ``_pending_context``, ``_pending_release_deferred``, ``_pending_variants``,
 ``_question_pending``, ``_queue``, ``_queue_persist_inflight``, ``_queue_persist_owed``,
-``_queue_persisted_sig``, ``_queue_repository``, ``_regenerate_target``,
+``_queue_persisted_sig``, ``_queue_repository``, ``_queued_at``, ``_steered_at``, ``_regenerate_target``,
 ``_rejection_reasons``, ``_responsive``, ``_side``,
 ``_restart_interruption_owed``, ``_restored_turn_marker``, ``_run_started_at``, ``_run_started_turns``,
 ``_stop_declined_at``, ``_stop_escalated_card_id``, ``_stop_event_id``,
@@ -335,6 +335,11 @@ def init_turns_fields(self: _ChatSlot) -> None:
     # Newest enqueue instant, read only while ``_queue`` is non-empty — see
     # ``_note_enqueue``.
     self._last_enqueue_ts = ""
+    # ``{queue entry id: enqueue instant}`` beside the queue (``queue_age``).
+    self._queued_at = {}
+    # ``{steer text: (instant the running turn accepted it, counts as unread)}``,
+    # for the steers it has not read yet (``queue_age.note_steered``).
+    self._steered_at = {}
     self._approval_futures = {}  # type: ignore[type-arg]
     # Bind the host permission-row identity to the exact future, not the
     # connection-scoped request id that a reconnect can reuse.

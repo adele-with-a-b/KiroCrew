@@ -160,34 +160,45 @@ session does.
 |---|---|---|
 | `target` | yes | Session key, or its exact title |
 | `message` | yes | Becomes the target's next user-role turn |
-| `steer` | no (default `false`) | Cut into the turn already running |
+| `steer` | no (see below) | `true` cuts into the turn already running, `false` queues behind it |
 
 Three outcomes, and the reply tells you which one happened:
 
 | Target state | `steer` | What happens |
 |---|---|---|
-| idle | either | It starts a turn on your message straight away |
+| idle | any | It starts a turn on your message straight away |
 | busy | `false` | Queued; it runs when the current turn ends |
 | busy | `true` | Injected into the running turn, so the target reads it mid-work |
 
+**Leaving `steer` out cuts in where a queue would strand the message.** It
+steers when the target is your own session (one you created, or the worker bound
+to your work-ledger item), and when you are replying to a session whose running
+turn messaged you and is still going: a conductor waiting on its worker's answer
+reads the reply now instead of after its turn ends. Each message it sent you buys
+one such reply. Neither cuts into a turn the person is driving: there the message
+queues until that turn ends. To any other session,
+and to a session on another crew, it queues. Pass `steer=false` to queue a note
+for the turn boundary on purpose.
+
 A steer that cannot be injected **falls back to the queue** rather than being
 dropped, and the reply says that explicitly. `steer` is ignored on an idle
-target, because the message starts a turn either way.
+target, because the message starts a turn either way. A target's
+`session_status` row and its `session_read_message` reply say how many messages
+are queued and how long the oldest has waited.
 
 A queued message is checked again just before it runs. If the target gained a
 channel link or mirror in the meantime, the message is dropped instead of run,
 and your own transcript gets a notice saying so — unless your session was closed
 or replaced while it waited, when there is nowhere to write it.
 
-Use `steer=true` only when waiting would waste the work in flight — the target
-is heading the wrong way, or the thing it is grinding on is already done.
-
 The message lands in the target's transcript tagged as sent by your session, so
 the person reading it can tell it from their own typing.
 
 A session an agent created may send to the one session that created it, to report
-back. Only a plain message: `steer=true` and every other verb on that session are
-refused `not_creator`, and a broadcast does not reach it.
+back. A plain message only, with one exception: a reply while the creator's turn
+that messaged it is still running cuts into that turn, as described above. An
+explicit `steer=true` and every other verb on that session are refused
+`not_creator`, and a broadcast does not reach it.
 
 A send to a busy session whose queue already holds 50 waiting messages is refused
 `queue_full` (429); send again once it drains. A send to an idle session always

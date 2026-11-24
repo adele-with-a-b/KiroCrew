@@ -491,6 +491,10 @@ Each cycle:
    comes back trimmed with `truncated: true` and says what it left out. An item is never `stale` on the strength of silence alone: its worker
    also has to be not running, and its last word has to have left the next move
    with the worker, so a `done` item waiting on you is not flagged. An item whose
+   `messages_unread` is set has messages you sent still sitting in its worker's
+   queue, unread; one that has waited long wakes you with `reason=message_unread`.
+   Its turn could not take the message, so read the worker's `session_status`
+   before you send again. An item whose
    `report_undelivered` is set had a worker that TRIED to report or read its brief
    and the harness never delivered the call: check that worker's `session_status`
    and its pull request, and tell the user what you find ("couldn't send its
@@ -802,12 +806,17 @@ running, deal with that item now — `session_stop` it and `close` its ledger it
 or `session_send` the correction straight into it with `steer: true`. Do not
 tear down the whole round for one item.
 
-**Steer corrections, queue everything else.** A plain `session_send` to a busy
-worker waits for its current turn to end. Pass `steer: true` for a correction, a
-changed direction, or "stop, that is already done": it lands in the running
-turn, and on an idle worker it starts or queues a turn like a plain send. Leave `steer` off for answers
-to a `question`, seeds, and anything that can wait for the turn boundary.
-A steer does not withdraw what is already queued: if `session_read_message`
+**Your message reaches your worker now.** A `session_send` with no `steer` to a
+busy worker you created, were handed, or bound cuts into its running turn: it
+reads it at its next step, after the tool call it is in returns, instead of when
+its turn ends, which can be hours. That covers answers to a `question` and
+corrections alike. Pass `steer: false` only for something that must wait for the
+turn boundary. A worker's reply to you while you are still in the turn that
+messaged it cuts into that turn the same way, so `wait` for it rather than a
+shell sleep: `wait` returns early when the reply lands, and a Bash call does not.
+Neither default cuts into a turn the person is driving, yours or the worker's:
+there the message queues until that turn ends, and a `wait` for it runs its full
+length. A steer does not withdraw what is already queued: if `session_read_message`
 reports a non-zero `queue_depth`, those messages still run after the turn, so
 say in the steered message which earlier instruction it supersedes.
 

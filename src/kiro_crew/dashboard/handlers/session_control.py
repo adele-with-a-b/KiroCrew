@@ -46,6 +46,11 @@ logger = logging.getLogger(__name__)
 # route, never by anything outside this module.
 _MEMBER_ADMITTED = "session_control_member_admitted"
 
+#: The ``/api/session-control/send`` body flag ``work_dispatch`` sets on its seed:
+#: a seed records no ask a reply could cut into the sender's turn for. It can only
+#: take that away, so a caller that sets it gains nothing.
+SEED_FIELD = "dispatch_seed"
+
 
 def _carried_fence(request: web.Request) -> bool | None:
     """The ownership-fence verdict this request's admission already settled.
@@ -999,6 +1004,24 @@ async def api_session_control_history(request: web.Request) -> web.Response:
     return web.json_response(result)
 
 
+async def _bound_worker(state: DashboardState, caller_key: str, target: str) -> str:
+    """The slot key *target* names when its work-ledger binding names *caller_key*.
+
+    Resolved the way the gate resolves it (key, transcript name or title), because
+    the binding stores the worker's key and a caller may address it by title.
+    ``send_to_target`` compares this against the slot its gate resolved, so a
+    title that moves to another session in between earns nothing. Anything that
+    does not resolve to one slot reads as unbound; the gate gives the refusal.
+    """
+    try:
+        slot = sc._resolve_slot(state, target)
+    except sc.SessionControlError:
+        return ""
+    if slot is None:
+        return ""
+    return slot.key if await work_ledger_routes.read_send_binding(caller_key, slot.key) else ""
+
+
 @_counted("send")
 async def api_session_control_send(request: web.Request) -> web.Response:
     """POST /api/session-control/send — deliver a message to another session."""
@@ -1017,9 +1040,11 @@ async def api_session_control_send(request: web.Request) -> web.Response:
             raise sc.SessionControlError("message is required", code="message_required")
         # Strictly typed, never truthiness: this body is app-controlled, and
         # coercing "false" (a non-empty string) into True would silently cut into
-        # a running turn for a caller that asked for the queue.
-        steer = body.get("steer", False)
-        if not isinstance(steer, bool):
+        # a running turn for a caller that asked for the queue. Absent (or null)
+        # is the third answer: the sender named no delivery, and
+        # ``send_to_target`` picks it from who the sender is to the target.
+        steer = body.get("steer")
+        if steer is not None and not isinstance(steer, bool):
             raise sc.SessionControlError("steer must be a boolean", code="invalid_steer")
         # The waiting item this send would answer, read BEFORE delivery so the
         # hand-back below answers the report the conductor saw, never one the
@@ -1035,15 +1060,23 @@ async def api_session_control_send(request: web.Request) -> web.Response:
             _target(body),
             caller_fenced=_carried_fence(request),
         )
+        # A conductor's own bound worker gets that default even when another
+        # session created it. Read only when it can matter.
+        bound_worker = (
+            await _bound_worker(state, _read_session_key(request), target) if steer is None else ""
+        )
         result = await sc.send_to_target(
             state,
             caller_session_key=_read_session_key(request),
             target=target,
             message=message,
             steer=steer,
+            caller_bound_worker=bound_worker,
             caller_fenced=_carried_fence(request),
             # The one caller that may reach the session that created the caller.
             creator_message=True,
+            # A work_dispatch seed is a seed: it asks nothing a reply could cut in for.
+            records_ask=body.get(SEED_FIELD) is not True,
         )
     except sc.SessionControlError as exc:
         return _refusal(exc)

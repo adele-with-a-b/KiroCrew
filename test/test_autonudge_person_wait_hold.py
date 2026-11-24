@@ -440,6 +440,36 @@ def test_an_undelivered_report_moves_the_person_wait_fingerprint(monkeypatch):
     assert probe.person_wait_fingerprint(CONDUCTOR) == held
 
 
+def test_an_overdue_unread_message_moves_the_person_wait_fingerprint():
+    """The conductor's own message sitting unread moves no report field either, so
+    the hold would keep the probe's unread wake from it. Past the threshold it moves
+    the fingerprint once per stuck message; younger or none leaves it held."""
+    from kiro_crew import ledger_wake
+
+    worker = "chat-9-997"
+    item_id = _item("a")
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=item_id, worker_session_key=worker)
+    wl.apply_worker_report(CONDUCTOR, item_id, status="blocked", summary="x", reason="approval")
+    held = probe.person_wait_fingerprint(CONDUCTOR)
+    answer: dict = {"now": (1, ledger_wake.UNREAD_WAKE_SECS - 1, "q1")}
+    asked: list = []
+
+    def _unread(worker_key, sender_key):
+        asked.append((worker_key, sender_key))
+        return answer["now"]
+
+    assert held and probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == held
+    assert asked == [(worker, CONDUCTOR)]
+    answer["now"] = (1, ledger_wake.UNREAD_WAKE_SECS, "q1")
+    stuck = probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread)
+    assert stuck and stuck != held, "an overdue message is news"
+    assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == stuck
+    answer["now"] = (2, ledger_wake.UNREAD_WAKE_SECS * 2, "q2")
+    assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) not in (held, stuck)
+    answer["now"] = None
+    assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == held
+
+
 def test_an_item_whose_worker_is_gone_is_not_a_person_wait():
     item_id = _item("a")
     wl.apply_conductor_action(CONDUCTOR, "bind", item_id=item_id, worker_session_key="chat-9-999")

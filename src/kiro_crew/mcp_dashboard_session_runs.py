@@ -865,15 +865,20 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
         from kiro_crew.mcp_session_crew import run_crew_send
 
         return run_crew_send(args, ctx)
-    steer = bool(args.get("steer"))
+    # ``None`` when the call names no delivery: sent absent, so the gateway picks
+    # it from who this caller is to the target.
+    steer = args.get("steer")
+    # ``receipt``: this call's row draws the outgoing card from what the gateway
+    # delivered (``dashboard.session_send_receipts``).
+    payload: dict[str, Any] = {
+        "target": args["target"],
+        "message": args["message"],
+        "receipt": True,
+    }
+    if isinstance(steer, bool):
+        payload["steer"] = steer
     try:
-        resp = ctx.client.post(
-            "/api/session-control/send",
-            # ``receipt``: this call's row draws the outgoing card from what the
-            # gateway delivered (``dashboard.session_send_receipts``).
-            {"target": args["target"], "message": args["message"], "steer": steer, "receipt": True},
-            session_key=ctx.caller_key,
-        )
+        resp = ctx.client.post("/api/session-control/send", payload, session_key=ctx.caller_key)
     except DashboardError as refused:
         return f"Error: could not send to that session: {refused.error}"
     target = resp.get("target", args["target"])
@@ -881,20 +886,30 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
     if resp.get("toCreator"):
         # The session that created the caller takes this message and nothing
         # else, so pointing at session_read_message would send it to a refusal.
-        how = (
-            "it started a turn on your message"
-            if resp.get("started")
-            else "it is mid-turn, so your message runs when the current turn ends"
-        )
+        if resp.get("steered"):
+            how = "it is still in the turn that messaged you, so it reads this at its next step"
+        elif resp.get("started"):
+            how = "it started a turn on your message"
+        else:
+            how = "it is mid-turn, so your message runs when the current turn ends"
         return (
             f"\U0001f4e8 Sent to `{target}`, the session that created you: {how}. "
             "You cannot read or check it from here." + caps
         )
+    # The gateway chose the steer because the call named no delivery: say why,
+    # and the word that queues instead.
+    own = {
+        "manager": " It is your own session, so a message to it cuts in unless you pass steer=false.",
+        "reply": (
+            " It is still in the turn that messaged you, so a reply cuts in unless "
+            "you pass steer=false."
+        ),
+    }.get(str(resp.get("steerDefault") or ""), "")
     if resp.get("steered"):
         return (
             f"\U0001f4e8 Steered `{target}` — your message went into the turn it "
-            "is running, so it reads it mid-work. Watch what it does with it "
-            "with session_read_message." + caps
+            "is running, so it reads it at its next step." + own + " Watch what it "
+            "does with it with session_read_message." + caps
         )
     if resp.get("started"):
         return (
@@ -904,7 +919,7 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
     # A steer that could not be injected lands here, on the queue: say why and
     # what it now waits for, or the caller reads "queued" as "the target was
     # busy" and never learns its steer did not cut anything.
-    if steer:
+    if steer or resp.get("steerDefault"):
         return (
             f"\U0001f4e8 Queued for `{target}`. {steer_refusal.describe(resp.get('steerRefusal'))} "
             "Poll with session_read_message." + caps
@@ -1101,7 +1116,7 @@ def _run_session_status(args: dict[str, Any], ctx: ToolContext) -> str:
             continue
         title = str(row.get("title", ""))
         depth = int(row.get("queue_depth", 0) or 0)
-        queued = f", {depth} queued" if depth else ""
+        queued = f", {depth} queued{_oldest_wait(row)}" if depth else ""
         if status == "unknown":
             # Its OWN mark, not the glyph map's default. Falling through to that
             # default draws idle's sleep glyph -- "open and doing nothing", the
@@ -1223,6 +1238,27 @@ def _status_activity_suffix(row: dict[str, Any]) -> str:
     return parts
 
 
+def _oldest_wait(resp: dict[str, Any]) -> str:
+    """``, the oldest waiting 2h 5m`` from a read's ``queue_oldest_secs``, else ``""``.
+
+    A queued message is read only when the target's running turn ends, so the
+    age is what tells a sender whether its note is about to land or has sat for
+    hours. Absent (entries restored after a restart carry no stamp) adds nothing.
+    """
+    secs = resp.get("queue_oldest_secs")
+    if not isinstance(secs, int) or isinstance(secs, bool) or secs < 0:
+        return ""
+    hours, rest = divmod(secs, 3600)
+    minutes, seconds = divmod(rest, 60)
+    if hours:
+        age = f"{hours}h {minutes}m"
+    elif minutes:
+        age = f"{minutes}m"
+    else:
+        age = f"{seconds}s"
+    return f", the oldest waiting {age}"
+
+
 def _pending_approval_phrase(resp: dict[str, Any]) -> str:
     """The state words for a session parked on a tool approval."""
     tool = str(resp.get("pending_approval_tool") or "")
@@ -1247,7 +1283,7 @@ def _run_session_read_message(args: dict[str, Any], ctx: ToolContext) -> str:
         state_line = _pending_approval_phrase(resp)
     queued = resp.get("queue_depth", 0)
     if queued:
-        state_line += f", {queued} message(s) queued"
+        state_line += f", {queued} message(s) queued{_oldest_wait(resp)}"
     if resp.get("model"):
         state_line += f", model {redact(str(resp['model']))}"
     if resp.get("pending_model"):
@@ -1439,7 +1475,8 @@ def _run_work_dispatch(args: dict[str, Any], ctx: ToolContext) -> str:
         return _dispatch_failed("bind", outcome, code, refused.error, (item_id, target), tail)
 
     # Step 4: seed. Only reached once the bind succeeded.
-    seed = {"target": target, "message": args["seed"], "steer": False}
+    # ``dispatch_seed``: the seed records no ask (``handlers.session_control.SEED_FIELD``).
+    seed = {"target": target, "message": args["seed"], "steer": False, "dispatch_seed": True}
     try:
         sent = ctx.client.post("/api/session-control/send", seed, session_key=ctx.caller_key)
     except DashboardError as refused:

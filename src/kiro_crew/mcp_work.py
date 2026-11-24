@@ -524,7 +524,7 @@ def _ledger_tool_definitions() -> list[dict[str, Any]]:
                 "whole board, each item with its last 20 events; every argument NARROWS "
                 "it. compact=true is the cheap patrol read: per item only item_id, title, "
                 "state, created_at, status, reason, summary, decision, verdict, pr, worker_session_key, "
-                "last_report_at and the six flags — no events, acceptance or "
+                "last_report_at, messages_unread and the six flags — no events, acceptance or "
                 "accept_batch. item_id=<id> reads one item in full; state= and since= "
                 "select rows (accept_batch is always the whole board); events=<n> "
                 "shortens the tails. A reply over the tool-result budget is trimmed to "
@@ -557,7 +557,9 @@ def _ledger_tool_definitions() -> list[dict[str, Any]]:
                 "(the harness could not deliver it) and no work tool call has got through since: the "
                 "worker tried to report, so check its session_status and pull request "
                 "and tell the person it couldn't send its report, rather than calling it "
-                "stalled. Answers 'no_ledger' when this session owns "
+                "stalled. messages_unread {count, oldest_secs}: what you sent the worker "
+                "that it has not read yet. "
+                "Answers 'no_ledger' when this session owns "
                 "none yet."
             ),
             "inputSchema": {
@@ -590,7 +592,7 @@ def _ledger_tool_definitions() -> list[dict[str, Any]]:
                         "description": (
                             "Status columns and the orphaned / stale / "
                             "acceptance_concrete / unpatrolled / pending_overdue / "
-                            "report_undelivered flags "
+                            "report_undelivered flags and messages_unread "
                             "only — no events, acceptance or accept_batch."
                         ),
                     },

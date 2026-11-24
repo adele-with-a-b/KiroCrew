@@ -834,12 +834,16 @@ def _ledger_has_open_items(conductor_key: str) -> bool:
 
 
 def _ledger_person_wait_fp(
-    conductor_key: str, worker_closed: Callable[[str], bool] | None = None
+    conductor_key: str,
+    worker_closed: Callable[[str], bool] | None = None,
+    worker_unread: Callable[[str, str], tuple[int, float | None, str] | None] | None = None,
 ) -> str | None:
     """The ledger's fingerprint while every open item waits on a person. Blocking."""
     from kiro_crew.probes.work_ledger import person_wait_fingerprint
 
-    return person_wait_fingerprint(conductor_key, worker_closed=worker_closed)
+    return person_wait_fingerprint(
+        conductor_key, worker_closed=worker_closed, worker_unread=worker_unread
+    )
 
 
 async def _holds_for_person_wait(self: AutoNudgeService, loop: NudgeLoop) -> bool:
@@ -863,7 +867,7 @@ async def _holds_for_person_wait(self: AutoNudgeService, loop: NudgeLoop) -> boo
         self._ledger_tick_fp.pop(loop.id, None)
         return False
     fp = await asyncio.get_running_loop().run_in_executor(
-        None, _ledger_person_wait_fp, loop.slot_key, self._worker_closed
+        None, _ledger_person_wait_fp, loop.slot_key, self._worker_closed, self._worker_unread
     )
     self._ledger_tick_fp[loop.id] = fp or ""
     if fp and loop.ledger_seen_fp == fp:

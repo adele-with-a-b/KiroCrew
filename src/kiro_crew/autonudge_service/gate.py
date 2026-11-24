@@ -848,6 +848,7 @@ async def _monitor_tick_is_quiet(self: AutoNudgeService, loop: NudgeLoop) -> boo
         worker_closed=self._worker_closed,
         worker_looping=self._worker_looping,
         worker_loop_held=self._worker_loop_held,
+        worker_unread=self._worker_unread,
     )
     if probe is None:
         return False
@@ -1769,6 +1770,7 @@ async def _terminal_still_holds(
         worker_closed=self._worker_closed,
         worker_looping=self._worker_looping,
         worker_loop_held=self._worker_loop_held,
+        worker_unread=self._worker_unread,
     )
     if (
         target is None

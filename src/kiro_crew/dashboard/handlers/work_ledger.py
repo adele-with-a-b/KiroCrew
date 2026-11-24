@@ -125,6 +125,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _read_waiting_item,
         _report_identity,
         logger,
+        read_send_binding,
         read_send_handback,
         stamp_send_handback,
     )
@@ -272,6 +273,7 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
         unit_for_session_key,
     )
     from kiro_crew.dashboard import (  # noqa: F401
+        queue_age,
         session_control,
         trace_binding,
     )

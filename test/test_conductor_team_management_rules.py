@@ -36,7 +36,7 @@ def _goal() -> str:
 def test_goal_conductor_steers_a_working_fleet_like_one_worker():
     section = _section(_goal(), "### Goal changes mid-flight", "## When a conductor dispatched you")
     # The fleet case points at the existing rule rather than restating it.
-    assert "**Steer corrections, queue everything else.**" in section
+    assert "**Your message reaches your worker now.**" in section
     assert (
         "send a correction to several workers with `session_broadcast` with `mode: steer`"
         in section

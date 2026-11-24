@@ -314,7 +314,7 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
     steer_retract.on_turn_ending(state, slot)
     if not slot._pending_steers:
         return
-    from kiro_crew.dashboard import responsive_chat
+    from kiro_crew.dashboard import queue_age, responsive_chat
 
     requeued = slot._pending_steers[:]
     slot._pending_steers.clear()
@@ -458,6 +458,9 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
         if responsive_meta is not None:
             _meta.update(responsive_meta)
             _requeue_user_origin = True
+        # A peer's steer wanted this turn and got the queue: its sender is woken if
+        # it sits, counted from when it was sent (``queue_age``).
+        _meta.update(queue_age.requeued_steer_meta(_recorded))
         qid = slot.queue_insert(
             0,
             steer_msg,
@@ -466,6 +469,7 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
             directive_channel_origin=_channel,
             directive_owner_origin=_owner and _requeue_user_origin,
         )
+        queue_age.carry_steered(slot, steer_msg, qid)
         if _wake is not None:
             # The turn this entry drains into carries the loop's wake, so its fault
             # is charged to that loop; not a durable queue key, so never persisted.
