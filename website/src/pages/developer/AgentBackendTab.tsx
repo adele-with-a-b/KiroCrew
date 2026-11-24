@@ -24,6 +24,7 @@ import { i18nT } from '../../i18n/t'
 import { clearCachedModels } from '../../providers/adapters/acp'
 import { KiroSignInCard } from './KiroSignInCard'
 import { OrchestratorMemoryDeepLink, OrchestratorMemoryToggle } from './OrchestratorMemoryToggle'
+import { ClaudeGuardsDeepLink, ClaudeGuardsToggle } from './ClaudeGuardsToggle'
 import { StrandsSetupCard } from './StrandsSetupCard'
 import { MCP_SERVERS_HREF } from '../connections/connectionsLinks'
 import { KIRO_SIGN_IN_BACKEND, KIRO_SIGN_IN_SETTING_ID } from './kiroSignInLink'
@@ -1529,6 +1530,7 @@ export function AgentBackendTab() {
           Rendered only under a router: the panel is also rendered bare, in tests
           and captures, where there is no URL to read. */}
       {inRouter && <OrchestratorMemoryDeepLink onOpen={() => highlightRow(KAS)} />}
+      {inRouter && <ClaudeGuardsDeepLink onOpen={() => highlightRow(CLAUDE)} />}
       {inRouter && (
         <SignInDeepLink
           onSignIn={() => {
@@ -1742,6 +1744,7 @@ export function AgentBackendTab() {
                       />
                     )}
                     {value === KAS && offered.includes(KAS) && <OrchestratorMemoryToggle />}
+                    {value === CLAUDE && offered.includes(CLAUDE) && <ClaudeGuardsToggle />}
                     {/* Kiro sign-in, inside the one row whose harness uses it. The
                         identity the card stores is consumed by the KAS relay alone
                         (`ACP_BACKENDS_HOST_AUTH_CALLBACK`), so it is offered exactly

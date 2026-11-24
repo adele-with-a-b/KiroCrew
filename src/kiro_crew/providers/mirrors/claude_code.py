@@ -120,7 +120,7 @@ class ClaudeCodeMirror(AgentConfigMirror):
                 _D.DELIVERED,
                 "settings.local.json permissions.defaultMode when the session asked "
                 "for one; omitted otherwise, and with KIROCREW_CC_PIN_INHERITED_MODE "
-                "on, a session carrying Crew's tools then has its starting mode read "
+                "or agent.claude_guards on, a session carrying Crew's tools then has its starting mode read "
                 "back and pinned off auto or bypassPermissions "
                 "(_pin_claude_starting_mode)",
             ),

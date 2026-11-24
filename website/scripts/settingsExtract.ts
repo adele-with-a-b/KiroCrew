@@ -278,6 +278,7 @@ export const PANEL_TAB_MAP: Record<string, PanelTarget> = {
   // (`agent.kiro-sign-in` in settingsManual.ts) stays anchored to its source.
   'KiroSignInCard.tsx': 'agent',
   'OrchestratorMemoryToggle.tsx': 'agent',
+  'ClaudeGuardsToggle.tsx': 'agent',
   // The conductor remote-dispatch card FeaturePreviewsSection mounts: its
   // `work_ledger.remote_dispatch` switch is a Developer-tab row.
   'RemoteDispatchCard.tsx': DEVELOPER_PREVIEWS,
@@ -562,6 +563,7 @@ export function panelRoots(srcDir: string): ExtractRoot[] {
     { dir: path.join(srcDir, 'pages', 'developer'), file: 'KasBundleCard.tsx' },
     { dir: path.join(srcDir, 'pages', 'developer'), file: 'KiroSignInCard.tsx' },
     { dir: path.join(srcDir, 'pages', 'developer'), file: 'OrchestratorMemoryToggle.tsx' },
+    { dir: path.join(srcDir, 'pages', 'developer'), file: 'ClaudeGuardsToggle.tsx' },
     { dir: path.join(srcDir, 'pages', 'chat', 'command-center'), file: 'AutomaticCardSetting.tsx' },
     // A Connections card's OAuth app part, opened in place on Settings → Connections.
     { dir: path.join(srcDir, 'pages', 'connections'), file: 'OAuthAppPanel.tsx' },

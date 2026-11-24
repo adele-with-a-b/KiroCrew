@@ -40,6 +40,7 @@ from kiro_crew.acp.claude_settings_sources import (
     claude_config_dir,
     read_claude_settings_bytes,
 )
+from kiro_crew.acp.client_claude_guards import claude_guards_setting_on
 from kiro_crew.acp.client_permissions import _scrub_observed
 from kiro_crew.acp.client_timeouts import _INIT_TIMEOUT
 from kiro_crew.acp.harness import claude as claude_mod
@@ -965,9 +966,11 @@ async def _pin_claude_starting_mode(self: ClaudeAcpClient, resp: dict) -> None:
     Runs on the exclusion path (:meth:`_claude_session_excludes_local`) and
     on a Side Chat session (``side_read_only``), whose READ_ONLY gate has no
     approver behind it. Any other session keeps the mode it started in unless
-    ``KIROCREW_CC_PIN_INHERITED_MODE`` is on (``resolve_cc_pin_inherited_mode``,
-    off by default): a user ``~/.claude`` mode reaching it is the
-    inherited-config gap the spec names. With the setting on, the pin also
+    ``KIROCREW_CC_PIN_INHERITED_MODE`` is on (``resolve_cc_pin_inherited_mode``)
+    or the ``agent.claude_guards`` setting is (``claude_guards_setting_on``,
+    read when the session starts); both are off by default, and a user
+    ``~/.claude`` mode reaching the session is then the inherited-config gap
+    the spec names. With either on, the pin also
     runs on every session whose start sent Crew's MCP array; a session that
     sent none is left alone. There a reported mode that is the one Crew
     requested (the ``auto`` opt-in) is the session's own and is kept; any
@@ -1011,7 +1014,9 @@ async def _pin_claude_starting_mode(self: ClaudeAcpClient, resp: dict) -> None:
     zero_tools = getattr(self, "_spec_zero_tools", False)
     depends_on_options = excludes_local or side or zero_tools
     narrowed = getattr(self, "_claude_worker_builtin_tools", None) is not None
-    pin_inherited = not depends_on_options and resolve_cc_pin_inherited_mode()
+    pin_inherited = not depends_on_options and (
+        resolve_cc_pin_inherited_mode() or await claude_guards_setting_on()
+    )
     if not (depends_on_options or narrowed or pin_inherited):
         return
     below_floor = self._claude_adapter_below_setting_sources_floor()

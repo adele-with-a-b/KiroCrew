@@ -1,12 +1,10 @@
-import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
 import { api } from '../../api/client'
 import ErrorNotice from '../../components/ErrorNotice'
 import { SettingsToggle } from '../../components/settings'
 import { Badge } from '../../components/ui'
-import { resolveLegacyHighlightId } from '../../hooks/useSettingHighlight'
+import { HarnessRowDeepLink } from './HarnessRowDeepLink'
 
 export const ORCHESTRATOR_MEMORY_CONFIG_KEY = 'agent.orchestrator_memory'
 
@@ -52,15 +50,11 @@ export function OrchestratorMemoryToggle() {
 
 /** Settings search must open KAS before its memory anchor can be highlighted. */
 export function OrchestratorMemoryDeepLink({ onOpen }: { onOpen: () => void }) {
-  const [params] = useSearchParams()
-  const highlight = params.get('highlight')
-  const wanted =
-    highlight === `key:${ORCHESTRATOR_MEMORY_CONFIG_KEY}` ||
-    (highlight !== null && resolveLegacyHighlightId(highlight) === 'agent.kiro-memory')
-  const callback = useRef(onOpen)
-  callback.current = onOpen
-  useEffect(() => {
-    if (wanted) callback.current()
-  }, [wanted])
-  return null
+  return (
+    <HarnessRowDeepLink
+      configKey={ORCHESTRATOR_MEMORY_CONFIG_KEY}
+      settingId="agent.kiro-memory"
+      onOpen={onOpen}
+    />
+  )
 }
