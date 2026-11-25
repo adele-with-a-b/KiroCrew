@@ -7162,7 +7162,8 @@
         "remote_dispatch": false,
         "remote_dispatch_memory_gb": 5.0,
         "remote_dispatch_disk_gb": 5.0,
-        "remote_dispatch_retire_minutes": 30.0
+        "remote_dispatch_retire_minutes": 30.0,
+        "remote_dispatch_patrol_wake": false
       }
     },
     {
@@ -7234,6 +7235,20 @@
       "hasChildren": false,
       "enumValues": null,
       "defaultValue": 30.0
+    },
+    {
+      "path": "work_ledger.remote_dispatch_patrol_wake",
+      "kind": "core",
+      "type": "boolean",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "label": "Remote dispatch from the conductor's patrol",
+      "help": "Lets a conductor use crew= in a wake of its own shipped work-ledger patrol, so it can open, message, read, stop and close a worker on another crew while nobody is typing. Off (the default): only a turn the owner sent may. Every other automated turn (a cron, a message from another session, a worker, a loop with any other text) is refused either way. Used only with remote_dispatch on; read on every call.",
+      "hasChildren": false,
+      "enumValues": null,
+      "defaultValue": false
     },
     {
       "path": "power",

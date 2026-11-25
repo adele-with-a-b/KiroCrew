@@ -236,6 +236,5 @@ async def place(
     raise routes.CrewCallError(
         503,
         CREW_NONE_AVAILABLE,
-        f"no connected crew has room for this item{tried}; it stays open and unbound. "
-        "Retry from a turn the owner sends: a patrol wake cannot use crew placement",
+        f"no connected crew has room for this item{tried}; it stays open and unbound",
     )

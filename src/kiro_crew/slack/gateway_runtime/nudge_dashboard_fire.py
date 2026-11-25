@@ -246,6 +246,7 @@ async def _fire_dashboard_nudge(
         else ""
     )
     _terminal_line = ""
+    _fixed_patrol = False
     if wake_message is None:
         # Snapshot message, sentinel AND config generation TOGETHER, before
         # the compose_nudge_body() await: a concurrent PATCH during that
@@ -257,6 +258,11 @@ async def _fire_dashboard_nudge(
         _fired_message = loop.message
         _fired_sentinel = loop.stop_sentinel_path
         _fired_generation = loop.config_generation
+        # Judged on the same row the message is snapshotted from, before any
+        # await: a row changed during the compose below is not what this is.
+        from kiro_crew import conductor_patrol
+
+        _fixed_patrol = conductor_patrol.is_fixed_patrol_payload(loop)
         msg = await compose_nudge_body(_fired_message, _fired_sentinel, loop.slot_key)
         tagged = f"{nudge_cycle_header(loop)}\n{msg}"
         if _wake_text:
@@ -328,7 +334,14 @@ async def _fire_dashboard_nudge(
 
     async def _start_turn() -> MonitorDispatchResult:
         return await self._start_dashboard_wake_turn(
-            loop, slot, wake_message, tagged, visible, trigger_text, _fired_generation
+            loop,
+            slot,
+            wake_message,
+            tagged,
+            visible,
+            trigger_text,
+            _fired_generation,
+            fixed_patrol=_fixed_patrol,
         )
 
     # The session picks idle vs running: an idle slot runs the wake through the
@@ -379,12 +392,15 @@ async def _start_dashboard_wake_turn(
     visible: str,
     trigger_text: str | None,
     fired_generation: int,
+    *,
+    fixed_patrol: bool = False,
 ) -> MonitorDispatchResult:
     """Start *loop*'s wake turn on idle *slot*: the fire's turn starter.
 
     ``session_deliver.deliver`` calls it for an idle slot. *tagged* is the
     prompt, *visible* the nudge row, and *fired_generation* the config
-    generation the fire snapshotted with the message.
+    generation the fire snapshotted with the message. *fixed_patrol* says the
+    row that message was snapshotted from carried exactly the shipped patrol.
     """
     from kiro_crew import crew_pause
     from kiro_crew.dashboard.chat import (
@@ -401,6 +417,13 @@ async def _start_dashboard_wake_turn(
     if not await self._dashboard_mode_admits(loop, slot):
         await self._audit_fire_refused(loop, slot)
         return MonitorDispatchResult.UNAVAILABLE
+    # The patrol mark, for the shipped work-ledger patrol alone and only when
+    # the keystone-gated record says the owner dispatched under it: the loop
+    # store is agent-writable, so the stored row by itself proves nothing.
+    # Read here because it awaits, and nothing may suspend past the check below.
+    patrol_wake = fixed_patrol and bool(
+        await asyncio.to_thread(autonudge_selfarm.is_recorded_owner_patrol, loop.id, loop.slot_key)
+    )
     # Asked again after the last await before the turn is spawned: a Pause all
     # that landed during the body's ledger read or the admission check holds it.
     # From here to the spawn nothing suspends, and a spawned turn is one Pause
@@ -567,6 +590,7 @@ async def _start_dashboard_wake_turn(
     # every self-wake fire passes its true generation here.
     run_kwargs["_directive_loop_gen"] = fired_generation
     run_kwargs["_skill_trigger_text"] = trigger_text
+    run_kwargs["_directive_patrol_wake"] = patrol_wake
     if owed_terminal:
         # The runner marks this accepted only past its last refusing gate, right
         # before provider entry, so a turn refused while it is being prepared (a

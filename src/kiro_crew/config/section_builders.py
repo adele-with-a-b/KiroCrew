@@ -246,6 +246,9 @@ def _build_work_ledger_config(work_ledger_data: dict) -> WorkLedgerConfig:
         remote_dispatch_retire_minutes=_positive_gb(
             work_ledger_data, "remote_dispatch_retire_minutes"
         ),
+        remote_dispatch_patrol_wake=_safe_bool(
+            work_ledger_data.get("remote_dispatch_patrol_wake"), False
+        ),
     )
 
 

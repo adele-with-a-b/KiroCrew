@@ -928,6 +928,7 @@ On the `kas` backend, a background helper whose agent mounts no tool
 | `work_ledger.remote_dispatch_memory_gb` | Free memory one dispatched worker needs; a work-item create is refused `crew_busy` on memory when less is free. The default covers the largest measured worker session process tree (see the session-control spec). A value that is not a positive number uses the default | `5.0` |
 | `work_ledger.remote_dispatch_disk_gb` | Free disk under the scratch root one dispatched worker needs; a work-item create is refused `crew_busy` on disk when less is free. The default is about twice one measured self-contained clone with its dependencies. A value that is not a positive number uses the default | `5.0` |
 | `work_ledger.remote_dispatch_retire_minutes` | Minutes a crew a work item is bound to may stay unreachable before the conductor's next ledger read retires that binding and leaves the item unbound for redispatch on another crew. A value that is not a positive number uses the default | `30.0` |
+| `work_ledger.remote_dispatch_patrol_wake` | Lets a conductor use `crew=` in a wake of its own shipped work-ledger patrol, so it can open, message, read, stop and close a worker on another crew while nobody is typing. Off: only a turn the owner sent may. A cron, a message from another session, a worker and a loop with any other text are refused either way. Used only with `remote_dispatch` on; read on every call | `false` |
 
 ### Kiro relay viewer
 
