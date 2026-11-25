@@ -10539,6 +10539,8 @@
       "plan_tasks_toggle": "マージ済みサブタスク: {{done}} / {{total}}",
       "plan_estimate": "見積もり",
       "plan_estimate_total": "合計 {{total}}",
+      "plan_runs_on": "{{name}} で実行中",
+      "plan_waits_on_conductor": "Conductor の対応待ち {{age}}",
       "plan_estimate_sort": "見積もり順に並べ替え。もう一度クリックでランク順に戻る",
       "plan_step_todo": "未着手",
       "plan_step_mocks": "モック",

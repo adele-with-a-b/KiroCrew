@@ -139,7 +139,14 @@ A move only goes forward: a step written by hand that is already further along
 is kept. The moved step is derived, never stored, so a closed item still reaches
 `released` when its release ships. `work_ledger_read` and the Crew board show
 it; the `goal-board` page, which reads the crew log's fold, shows the stored step.
-An item with no `plan` gets none.
+In `work_ledger_read` an item with no `plan` gets none.
+
+The Crew board's read goes further, so a board nobody planned still shows each
+story's step. An open story with no pull request reads `todo` with no worker
+bound and `build` with one, and a pull request GitHub reports merged (the
+board's `pr_facts`) reads `merged`; a stored `mocks` is never moved to `build`.
+It is the read's `plan.step` only: the item keeps no plan. The same read gives
+each bound row `runs_on`, the crew its worker runs on or this machine's own name.
 
 The person's drag on the Crew board writes only `plan.rank`, and only on a backlog
 row (an unplanned story with no worker is one), as a `rank` entry

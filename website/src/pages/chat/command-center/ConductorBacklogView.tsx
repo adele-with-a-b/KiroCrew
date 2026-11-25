@@ -12,9 +12,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ArrowDown, ArrowUpDown, Check, ChevronRight, Circle, GripVertical, Square, SquareCheck, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUpDown, Check, ChevronRight, Circle, GripVertical, Laptop, Square, SquareCheck, X } from 'lucide-react'
 import { api } from '../../../api/client'
-import { crewBoardQueryKey, PLAN_STEPS, type PlanStep, type WorkBoardConductor, type WorkBoardItem } from '../../../api/crewBoard'
+import { crewBoardQueryKey, PLAN_STEPS, type CrewPrFacts, type PlanStep, type WorkBoardConductor, type WorkBoardItem } from '../../../api/crewBoard'
+import { prFactTags } from '../../../components/crew/prFactTags'
 import { backlogCompare, boardPlan, byEstimate, childProgress, epicOf, epicTone, estimateMinutes, freeSeats, isEstimateTag, isMerged, isOpen, levelOf, moveRow, planOf, projectedIndex, ranksForDrop, releaseViews, seatsBusy, stepIndex, type BoardPlan, type ReleaseView } from '../../../lib/crewPlan'
 import { useDndSensors } from '../../../hooks/useDndSensors'
 import { fmtDateFields, fmtUnit } from '../../../i18n/format'
@@ -25,7 +26,11 @@ import { errMessage } from '../../../utils/thunkError'
 /** What the panel worked out for an item from its reports: whether it waits on the
  *  person and on what, its line (what its worker last said, or what it waits on)
  *  and the time since its last report. */
-export interface BacklogRowState { needsYou: boolean; waitingOn: string; line?: ReactNode; age?: string }
+export interface BacklogRowState {
+  needsYou: boolean; waitingOn: string; line?: ReactNode; age?: string
+  /** Its worker's last report waits on the conductor: for how long, and loud once late. */
+  conductorWait?: { age: string; loud: boolean }
+}
 
 const H3 = 'text-[11px] font-semibold uppercase tracking-[1px] text-muted'
 const HINT = 'text-[11px] text-muted normal-case tracking-normal font-normal'
@@ -91,12 +96,27 @@ function Tags({ item, hideEstimate }: { item: WorkBoardItem; hideEstimate?: bool
   return <>{tags.map(t => <span key={t} className="inline-flex items-center h-[18px] px-1.5 rounded-sm bg-bg-hover text-[11px] text-muted">{t}</span>)}</>
 }
 
-/** One story's row: its title, then its epic, step, tags and PR, and on the
- *  right how many of its sub-tasks are merged, a click opening them. A row that
- *  waits on the person is marked and says on what. A sprint or done row
- *  (`withLine`) also carries its line and the time since its last report. */
-function StoryRow({ item, plan, row, onOpen, lead, estimate, withLine, rowState }: {
+/** What GitHub last said about the row's pull request (`pr_facts`): bad facts as
+ *  warn chips, then the read time, plain. The label names the PR they were read for. */
+function PrFacts({ facts }: { facts: CrewPrFacts | undefined }) {
+  const tags = prFactTags(facts)
+  if (tags.length === 0) return null
+  return <>{tags.map((tag, n) => (
+    <span key={n} data-testid="plan-pr-fact" data-bad={tag.bad || undefined} title={facts?.label}
+      className={tag.read ? 'text-[11px] text-muted' : `inline-flex items-center h-[18px] px-1.5 rounded-full border text-[11px] font-medium ${tag.bad ? 'border-current crew-tone-warn' : 'border-border text-text'}`}>{tag.text}</span>
+  ))}</>
+}
+
+/** One story's row: its title, then its epic, step, the machine its worker runs
+ *  on, tags, PR and what GitHub says of it, and on the right how many of its
+ *  sub-tasks are merged, a click opening them. A row that waits on the person is
+ *  marked and says on what. A sprint or done row (`withLine`) also carries its
+ *  line, the time since its last report, and how long a report has waited on
+ *  the conductor. */
+function StoryRow({ item, plan, row, onOpen, lead, estimate, withLine, rowState, facts }: {
   item: WorkBoardItem; plan: BoardPlan; row?: BacklogRowState; onOpen?: () => void; lead?: ReactNode
+  /** The row's pull-request facts from the board read. */
+  facts?: CrewPrFacts
   /** Set on a backlog row: draw the Estimate column. */
   estimate?: boolean
   withLine?: boolean
@@ -119,9 +139,23 @@ function StoryRow({ item, plan, row, onOpen, lead, estimate, withLine, rowState 
           <EpicChip epic={epicOf(item, plan.byId)} plan={plan} />
           <StepTag step={planOf(item).step} />
           {needs && <span className="inline-flex items-center h-[18px] px-1.5 rounded-full border border-current text-[11px] font-medium crew-tone-warn">{i18nT('components.crewMode.plan_needs_you_tag')}</span>}
+          {isOpen(item) && item.runs_on && (
+            <span data-testid="plan-runs-on" title={i18nT('components.crewMode.plan_runs_on', { name: item.runs_on })}
+              className="inline-flex items-center gap-1 h-[18px] px-1.5 rounded-sm bg-bg-hover text-[11px] text-muted max-w-[10rem]">
+              <Laptop size={11} aria-hidden="true" className="shrink-0" /><span className="truncate">{item.runs_on}</span>
+            </span>
+          )}
           <Tags item={item} hideEstimate={estimate} />
           {item.pr != null && <span className="text-[11px] text-muted tabular-nums">{i18nT('components.crewMode.plan_pr', { n: item.pr })}</span>}
+          <PrFacts facts={facts} />
         </span>
+        {withLine && row?.conductorWait && (
+          <span data-testid="plan-conductor-wait" data-loud={row.conductorWait.loud || undefined}
+            className={`flex items-center gap-1 text-[12px] ${row.conductorWait.loud ? 'crew-tone-danger font-semibold' : 'text-muted'}`}>
+            {row.conductorWait.loud && <AlertTriangle size={12} aria-hidden="true" className="shrink-0" />}
+            {i18nT('components.crewMode.plan_waits_on_conductor', { age: row.conductorWait.age })}
+          </span>
+        )}
         {needs && row?.waitingOn && (
           <span className="flex flex-wrap items-center gap-1.5 text-[12px]">
             <span className={`crew-tone-warn font-medium ${WRAP}`}>{i18nT('components.crewMode.plan_needs_you_line', { what: row.waitingOn })}</span>
@@ -170,7 +204,7 @@ function RankNumber({ n }: { n: number }) {
   return <span className="text-[12px] text-muted tabular-nums w-4 text-right">{n}</span>
 }
 
-function SortableBacklogRow({ item, plan, row, onOpen }: { item: WorkBoardItem; plan: BoardPlan; row?: BacklogRowState; onOpen?: () => void }) {
+function SortableBacklogRow({ item, plan, row, onOpen, facts }: { item: WorkBoardItem; plan: BoardPlan; row?: BacklogRowState; onOpen?: () => void; facts?: CrewPrFacts }) {
   const { setNodeRef, setActivatorNodeRef, listeners, attributes, transform, transition, isDragging, index, activeIndex, overIndex } = useSortable({ id: item.item_id })
   // Mid-drag each row shows the number it takes if the drop lands where it hovers.
   const rank = projectedIndex(index, activeIndex, overIndex) + 1
@@ -193,7 +227,7 @@ function SortableBacklogRow({ item, plan, row, onOpen }: { item: WorkBoardItem; 
           <span className="flex-1 h-0.5 rounded bg-current" /><span className="px-1 rounded bg-bg-elevated">{i18nT('components.crewMode.plan_drop_here', { n: overIndex + 1 })}</span>
         </span>
       )}
-      <div className={isDragging ? 'invisible' : undefined}><StoryRow item={item} plan={plan} row={row} onOpen={onOpen} lead={grip} estimate /></div>
+      <div className={isDragging ? 'invisible' : undefined}><StoryRow item={item} plan={plan} row={row} onOpen={onOpen} lead={grip} estimate facts={facts} /></div>
     </li>
   )
 }
@@ -308,10 +342,13 @@ function EpicDrawer({ epic, plan, rowState, openItem }: { epic: WorkBoardItem; p
   )
 }
 
-export default function ConductorBacklogView({ root, items, conductor, rowState, openItem, needsYou, needCount, overview, run, runDetail, pulse, loaded }: {
+export default function ConductorBacklogView({ root, items, conductor, prFacts, rowState, openItem, needsYou, needCount, overview, run, runDetail, pulse, loaded }: {
   root: string
   items: readonly WorkBoardItem[]
   conductor: WorkBoardConductor | undefined
+  /** The board read's pull-request facts per item (`pr_facts`). */
+  prFacts?: Record<string, CrewPrFacts>
+
   rowState: (itemId: string) => BacklogRowState | undefined
   openItem: (item: WorkBoardItem) => (() => void) | undefined
   /** The panel's Needs-you section. */
@@ -435,7 +472,7 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
       <section className="space-y-1.5" data-testid="plan-sprint">
         <h3 className={`${H3} flex items-baseline gap-1`}><span>{i18nT('components.crewMode.plan_sprint', { n: round })} <span className={HINT}>{i18nT('components.crewMode.plan_sprint_hint', { n: round })}</span></span>{pulse}</h3>
         {loaded && plan.sprint.length === 0 && <p className="text-[12px] text-muted">{i18nT('components.crewMode.plan_sprint_none')}</p>}
-        {plan.sprint.map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} withLine rowState={rowState} />)}
+        {plan.sprint.map(item => <StoryRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} withLine rowState={rowState} facts={prFacts?.[item.item_id]} />)}
         {free > 0 && backlog.length > 0 && (
           <p className="rounded-lg border border-dashed border-border px-2.5 py-1.5 text-center text-[12px] text-muted" data-testid="plan-slot-free">{i18nT('components.crewMode.plan_slot_free', { n: free })}</p>
         )}
@@ -475,7 +512,7 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
               <ol className="space-y-2" data-testid="plan-backlog-sorted">
                 {shown.map(item => (
                   <li key={item.item_id} data-testid="plan-backlog-row">
-                    <StoryRow item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} estimate
+                    <StoryRow item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} estimate facts={prFacts?.[item.item_id]}
                       lead={<span className="shrink-0 flex items-center gap-1.5 mt-0.5 pl-[20px]"><RankNumber n={rankOf.get(item.item_id) ?? 0} /></span>} />
                   </li>
                 ))}
@@ -486,7 +523,7 @@ export default function ConductorBacklogView({ root, items, conductor, rowState,
                   the server has not stored yet, and the two would interleave. */}
               <SortableContext items={backlog.map(i => i.item_id)} strategy={verticalListSortingStrategy} disabled={rank.isPending}>
                 <ol className="space-y-2 pt-2">
-                  {backlog.map(item => <SortableBacklogRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} />)}
+                  {backlog.map(item => <SortableBacklogRow key={item.item_id} item={item} plan={plan} row={rowState(item.item_id)} onOpen={openItem(item)} facts={prFacts?.[item.item_id]} />)}
                 </ol>
               </SortableContext>
               <DragOverlay>{active ? <div className="rounded-lg ring-2 ring-[var(--danger)] shadow-lg bg-bg-elevated"><StoryRow item={active} plan={plan} estimate /></div> : null}</DragOverlay>

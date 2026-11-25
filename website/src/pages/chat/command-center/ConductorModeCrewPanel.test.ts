@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import type { CrewWorker } from '../../../types'
 import type { WorkBoardItem } from '../../../api/crewBoard'
-import { CREW_BOARD_EXPANDED_KEY, crewAncestors, crewRowOpen, crewTree, doneWhen, goalDoneWhen, goalScope, goalSentence, latestChange, milestoneState, readCrewBoardExpanded, visibleCrewRows, type CrewTreeNode } from './ConductorModeCrewPanel'
+import { CREW_BOARD_EXPANDED_KEY, conductorWaitMinutes, crewAncestors, crewRowOpen, crewTree, doneWhen, goalDoneWhen, goalScope, goalSentence, latestChange, milestoneState, readCrewBoardExpanded, visibleCrewRows, type CrewTreeNode } from './ConductorModeCrewPanel'
 
 const item = (over: Partial<WorkBoardItem>): WorkBoardItem => ({
   schema: 1, item_id: 'it_1', title: 'Menu', acceptance: { kind: 'human_approval' }, state: 'open', verdict: null,
@@ -17,6 +17,33 @@ const item = (over: Partial<WorkBoardItem>): WorkBoardItem => ({
 const worker = (key: string, by: string): CrewWorker => ({
   key, title: key, agent: 'kirocrew-worker', status: 'idle', group: 'working', last_activity: '', ledger_item: '',
   created_by: by, dispatched_by: by,
+})
+
+describe('Waits on its conductor', () => {
+  const now = Date.parse('2026-11-25T12:00:00Z')
+  const at = '2026-11-25T11:10:00Z'
+  it('times a done, blocked or question report nobody decided on, from the ledger', () => {
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at }), now)).toBe(50)
+    expect(conductorWaitMinutes(item({ status: 'blocked', last_report_at: at }), now)).toBe(50)
+    expect(conductorWaitMinutes(item({ status: 'question', outstanding: true, last_report_at: at }), now)).toBe(50)
+  })
+  it('ends at a decision after the report, and never times progress, a closed item or the person\'s ask', () => {
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, decided_at: '2026-11-25T11:20:00Z' }), now)).toBeNull()
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, decided_at: '2026-11-25T11:00:00Z' }), now)).toBe(50)
+    expect(conductorWaitMinutes(item({ status: 'progress', last_report_at: at }), now)).toBeNull()
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, state: 'accepted', terminal: true }), now)).toBeNull()
+    expect(conductorWaitMinutes(item({ status: 'question', outstanding: true, awaits_person: true, last_report_at: at }), now)).toBeNull()
+  })
+  it('ends at a verdict after the report (pending or fail), and while the worker\'s turn runs again', () => {
+    const report = { id: 'e1', ts: at, item_id: 'it_1', kind: 'report' as const, status: 'done' as const, text: '' }
+    const verdict = { id: 'e2', ts: '2026-11-25T11:12:00Z', item_id: 'it_1', kind: 'verdict' as const, status: null, text: '' }
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, verdict: 'pending', events: [report, verdict] }), now)).toBeNull()
+    // A verdict from before the newest report answers nothing.
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, verdict: 'fail', events: [{ ...verdict, ts: '2026-11-25T11:00:00Z' }, report] }), now)).toBe(50)
+    // An event tail cut before the report still dates the verdict.
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, events: [verdict] }), now)).toBeNull()
+    expect(conductorWaitMinutes(item({ status: 'blocked', last_report_at: at, alive: 'running' }), now)).toBeNull()
+  })
 })
 
 describe('Goal line', () => {

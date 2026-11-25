@@ -11033,6 +11033,8 @@
       "plan_tasks_toggle": "Sous-tâches fusionnées\u202f: {{done}} sur {{total}}",
       "plan_estimate": "Estimation",
       "plan_estimate_total": "Total {{total}}",
+      "plan_runs_on": "Tourne sur {{name}}",
+      "plan_waits_on_conductor": "Attend son Conductor {{age}}",
       "plan_estimate_sort": "Trier par estimation ; clique à nouveau pour l’ordre classé",
       "plan_step_todo": "À faire",
       "plan_step_mocks": "Maquettes",

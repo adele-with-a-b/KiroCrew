@@ -10539,6 +10539,8 @@
       "plan_tasks_toggle": "병합된 하위 작업: {{total}}개 중 {{done}}개",
       "plan_estimate": "예상 시간",
       "plan_estimate_total": "합계 {{total}}",
+      "plan_runs_on": "{{name}}에서 실행 중",
+      "plan_waits_on_conductor": "Conductor 응답 대기 {{age}}",
       "plan_estimate_sort": "예상 시간순으로 정렬. 다시 클릭하면 순위순으로 돌아가요",
       "plan_step_todo": "할 일",
       "plan_step_mocks": "목업",

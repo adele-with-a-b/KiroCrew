@@ -11033,6 +11033,8 @@
       "plan_tasks_toggle": "Sottoattività unite: {{done}} di {{total}}",
       "plan_estimate": "Stima",
       "plan_estimate_total": "Totale {{total}}",
+      "plan_runs_on": "In esecuzione su {{name}}",
+      "plan_waits_on_conductor": "Attende il suo Conductor {{age}}",
       "plan_estimate_sort": "Ordina per stima; fai di nuovo clic per l’ordine per rango",
       "plan_step_todo": "Da fare",
       "plan_step_mocks": "Bozze",

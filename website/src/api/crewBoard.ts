@@ -94,12 +94,16 @@ export interface WorkBoardItem {
    *  server-side, since the page never gets the worker's key. Absent on an older
    *  gateway. */
   has_worker?: boolean
+  /** Which machine the bound worker runs on: another crew's name, or this
+   *  machine's own name. Absent with no worker and on an older gateway. */
+  runs_on?: string
   /** The item is a backlog row, as `work_plan_vocab.in_backlog` reads it: an open
    *  story marked `plan.backlog`, or one with no worker the conductor has not
    *  marked `backlog: false`. Absent on an older gateway. */
   in_backlog?: boolean
-  /** Where the item sits on the board's plan. Absent on an item never planned
-   *  and on an older gateway. */
+  /** Where the item sits on the board's plan. On the Board's read an item never
+   *  planned still carries the `step` its facts reach (never stored); absent on
+   *  an older gateway. */
   plan?: WorkItemPlan
   events: WorkBoardEvent[]
 }

@@ -151,15 +151,22 @@ def shown_step(
     state: Any,
     acceptance: Any,
     releases: list[dict[str, Any]],
+    worker_bound: bool | None = None,
+    pr_merged: bool = False,
 ) -> str | None:
     """The step a read shows for an item: the stored one, moved on by what happened.
 
     A pull request on an open item (a worker's report carried it) reaches ``review``;
-    the conductor accepting an item that has one, or whose bar is ``pr_merged``,
+    GitHub saying that pull request merged (*pr_merged*, the Board's ``pr_facts``),
+    or the conductor accepting an item that has one or whose bar is ``pr_merged``,
     reaches ``merged``; and a merged item whose ``release`` has shipped reaches
-    ``released``. A move only ever goes forward, so a step written by hand that
-    is already further along is kept. Derived on every read and never stored, so
-    a closed item, which takes no write, still moves when its release ships.
+    ``released``. With *worker_bound* given (the Board's read), an open story with
+    no pull request reaches ``build`` once a worker is bound and ``todo`` before,
+    so a board nobody planned still shows each story's step; a stored ``mocks``
+    is design work a bound worker does, so ``build`` never passes it. A move only
+    ever goes forward, so a step written by hand that is already further along is
+    kept. Derived on every read and never stored, so a closed item, which takes no
+    write, still moves when its release ships.
     """
     plan = plan or {}
     stored = plan.get("step")
@@ -168,10 +175,14 @@ def shown_step(
         isinstance(acceptance, dict) and acceptance.get("kind") == "pr_merged"
     )
     reached = None
-    if state == "accepted" and has_pr:
+    if (state == "accepted" and has_pr) or (state == "open" and pr_merged):
         reached = "merged"
     elif pr is not None and state == "open":
         reached = "review"
+    elif state == "open" and worker_bound is not None and plan.get("level") not in ("epic", "task"):
+        reached = "build" if worker_bound else "todo"
+    if reached == "build" and step == "mocks":
+        reached = None
     if reached and (step is None or PLAN_STEPS.index(reached) > PLAN_STEPS.index(step)):
         step = reached
     if step == "merged" and any(
@@ -181,13 +192,21 @@ def shown_step(
     return step
 
 
-def show_step(row: dict[str, Any], releases: list[dict[str, Any]]) -> None:
-    """Put :func:`shown_step` on a read *row* that carries a plan.
+def show_step(
+    row: dict[str, Any],
+    releases: list[dict[str, Any]],
+    *,
+    worker_bound: bool | None = None,
+    pr_merged: bool = False,
+) -> None:
+    """Put :func:`shown_step` on a read *row*.
 
-    A row with no plan is left alone: a board that never planned reads as before.
+    Without *worker_bound* (the conductor's own read) a row with no plan is left
+    alone. The Board's read passes it, so a row with no plan gets the step its facts
+    reach, as ``plan.step`` on the read only: the stored item keeps no plan.
     """
     plan = row.get("plan")
-    if not plan:
+    if not plan and worker_bound is None:
         return
     step = shown_step(
         plan,
@@ -195,9 +214,11 @@ def show_step(row: dict[str, Any], releases: list[dict[str, Any]]) -> None:
         state=row.get("state"),
         acceptance=row.get("acceptance"),
         releases=releases,
+        worker_bound=worker_bound,
+        pr_merged=pr_merged,
     )
     if step:
-        row["plan"] = dict(plan, step=step)
+        row["plan"] = dict(plan or {}, step=step)
 
 
 def counts_toward_concurrency(plan: dict[str, Any] | None) -> bool:

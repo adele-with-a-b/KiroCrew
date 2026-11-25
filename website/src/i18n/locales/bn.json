@@ -10786,6 +10786,8 @@
       "plan_tasks_toggle": "মার্জ হওয়া উপ-কাজ: {{total}}টির মধ্যে {{done}}টি",
       "plan_estimate": "আনুমানিক সময়",
       "plan_estimate_total": "মোট {{total}}",
+      "plan_runs_on": "{{name}}-এ চলছে",
+      "plan_waits_on_conductor": "নিজের Conductor-এর অপেক্ষায় {{age}}",
       "plan_estimate_sort": "আনুমানিক সময় অনুযায়ী সাজাও; র‍্যাঙ্কের ক্রমে ফিরতে আবার ক্লিক করো",
       "plan_step_todo": "করতে হবে",
       "plan_step_mocks": "মক",
