@@ -32,7 +32,13 @@ from kiro_crew.dashboard.chat_utils_injected_rows import (
     REQUEUED_STEER_ROW_MID_META,
 )
 from kiro_crew.dashboard.session_deliver import WAKE_GENERATION
-from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY, RESTORED_SEND_CHOSEN_KEY
+from kiro_crew.dashboard.slot_queue_repository import (
+    RESTORED_QUEUE_KEY,
+    RESTORED_SEND_CHOSEN_KEY,
+    after_owner_front,
+    broadcast_queue_order,
+    is_owner_queue_entry,
+)
 
 if TYPE_CHECKING:
     from kiro_crew.dashboard.chat_runner import (
@@ -300,6 +306,12 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
     Requeues at the HEAD of the slot queue — steers were meant to be injected
     before any queued item ran — preserving their relative order, and
     broadcasts a ``queue_push`` per message so open clients render the card.
+    The owner's messages run in the order he sent them: his own unread steer
+    goes back behind the entries of his already waiting at the front, and any
+    other (a peer's note, a loop wake) behind all of his
+    (``after_owner_front``), so text no person sent never runs ahead of the
+    owner's waiting message. One ``queue_reorder`` frame then tells open tabs,
+    which draw each pushed card last, where the cards really are.
     The card is visible and individually cancellable: a user whose STOP meant
     "discard" dismisses it with one click; nothing is ever silently lost.
     A hard kill never reaches here with pending steers (the force-stop
@@ -318,6 +330,9 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
 
     requeued = slot._pending_steers[:]
     slot._pending_steers.clear()
+    # Past the owner's entries already waiting at the front: his requeued
+    # steers go here, after the messages he sent before them.
+    owner_at = after_owner_front(slot._queue)
     for steer_msg in reversed(requeued):
         # The turn is over and never confirmed this steer, so the row persisted at
         # write time is now WRONG if it still reads as a successful injection.
@@ -469,6 +484,13 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
             directive_channel_origin=_channel,
             directive_owner_origin=_owner and _requeue_user_origin,
         )
+        # The loop runs newest first, so each lands ahead of the ones already
+        # put back and they keep their order: the owner's after his waiting
+        # entries, any other after all of his.
+        _entry = slot._queue.pop(0)
+        slot._queue.insert(
+            owner_at if is_owner_queue_entry(_entry) else after_owner_front(slot._queue), _entry
+        )
         queue_age.carry_steered(slot, steer_msg, qid)
         if _wake is not None:
             # The turn this entry drains into carries the loop's wake, so its fault
@@ -543,6 +565,10 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
                 slot.key,
                 exc_info=True,
             )
+    if len(slot._queue) > 1:
+        # Each `queue_push` above draws its card last; these cards sit at the
+        # front, so open tabs are told the real order, as a server move does.
+        broadcast_queue_order(state, slot, [item["id"] for item in slot._queue])
     logger.info(
         "Requeued %d unconsumed steer(s) for slot %s (turn ended before consumption)",
         len(requeued),

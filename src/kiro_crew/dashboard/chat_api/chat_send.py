@@ -1278,7 +1278,8 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
     _held = not _from_composer and _children_hold
     # Messages parked while a child was live stay parked once it is flagged
     # stalled (nothing starts a drain then). A send behind them joins the queue
-    # and drains it, so it is answered after them rather than ahead of them.
+    # and drains it: after them when they are the sender's own or a child's
+    # result, and the owner's send ahead of the rest (``owner_front_order``).
     _behind_parked = bool(
         not _children_hold
         and slot._queue
@@ -1367,6 +1368,13 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             directive_user_origin=_person_send,
             directive_owner_origin=_owner_sent,
         )
+        from kiro_crew.dashboard.slot_queue_repository import (
+            broadcast_queue_order,
+            owner_front_order,
+        )
+
+        # The owner's held send runs next too, as on the busy-slot queue.
+        _hold_order = owner_front_order(slot._queue, qid)
         _sc_entry.stamp_queued_work(slot, qid, _held_admission)
         _send_race.commit_request(request, message_id=qid)
         _redacted = queued_text_for_display(message, user_origin=_person_send)
@@ -1404,6 +1412,8 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
 
         _rc.mark_written_on_push(slot, qid, _hold_push)
         state.broadcast_ws("queue_push", _hold_push)
+        if _hold_order is not None:
+            broadcast_queue_order(state, slot, _hold_order)
         if _teardown_hold:
             # Deduped, so this only matters when no decline armed one: the retry
             # is what lands the discard and drains the queue this send joined.

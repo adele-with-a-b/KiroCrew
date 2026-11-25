@@ -551,7 +551,8 @@ ends meanwhile cannot also drain it; a refused steer puts the same entry back
 behind the entries that were ahead of it. The `between_steps` wait is spent with
 the entry on the queue, one budget for the whole carry, so a turn that ends during
 it drains the entry in its place. A steer the teardown requeued lives on as that
-requeued entry at the head of the queue. A steer that raises while its text is
+requeued entry at the head of the queue, behind the owner's own waiting entries
+there ([instances](instances.md), "never granted by a steer"). A steer that raises while its text is
 still registered does not bring the entry back. (Known edge: a text the turn read
 whose row write then raises leaves no record, and the entry is put back.)
 
