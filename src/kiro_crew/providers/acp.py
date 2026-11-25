@@ -1446,6 +1446,8 @@ class AcpProvider(LLMProvider):
     change_effort = _acp_model_effort.change_effort
     reapply_live_effort = _acp_model_effort.reapply_live_effort
     set_model = _acp_model_effort.set_model
+    recorded_model_spellings = _acp_model_effort.recorded_model_spellings
+    serves_another_model = _acp_model_effort.serves_another_model
     clear_effort = _acp_model_effort.clear_effort
     _apply_initial_effort = _acp_model_effort._apply_initial_effort
     ultracode_enabled = _acp_model_effort.ultracode_enabled

@@ -36,6 +36,7 @@ from kiro_crew.effort import EFFORT_LEVELS, is_valid_effort
 from kiro_crew.llm_helpers import slot_switch_session_lock
 from kiro_crew.members import select_provider_backend
 from kiro_crew.messaging.link import is_channel_session_key
+from kiro_crew.platform import redact_log_via_context
 from kiro_crew.security import redact, refuses
 from kiro_crew.sel import sel
 
@@ -283,6 +284,17 @@ async def set_model_target(
                 code="caller_unidentified",
                 status=403,
             )
+        replaced = slot._pending_model_pick
+        slot._model_pick_dropped = {}
+        if replaced is not None:
+            # This call replaces the whole pick, so a half it does not carry is
+            # lost; it is recorded as any other drop is.
+            lost = _pick_fields(
+                replaced.model if model_name is None else None,
+                replaced.reasoning_effort if reasoning_effort is None else None,
+            )
+            if lost:
+                _drop_pick(slot, replaced, "replaced_by_newer_call", lost, stage="set_model")
         slot._pending_model_pick = PendingModelPick(
             model=model_name,
             caller_session_key=caller_session_key,
@@ -355,14 +367,22 @@ class PendingModelPick:
     pair_id_backend: bool = False
 
 
-def _pending_pick_view(pick: PendingModelPick | None) -> dict[str, str]:
+def _pending_pick_view(
+    pick: PendingModelPick | None, dropped: dict[str, dict[str, str]] | None = None
+) -> dict[str, Any]:
     """The ``pending_*`` fields ``session_read_message`` reports for *pick*.
 
-    Redacted: the owner's picker stores whatever string it is given.
+    With *dropped* (``slot._model_pick_dropped``), also the last drop of each
+    half, as ``model_pick_dropped``. Redacted: the owner's picker stores
+    whatever string it is given.
     """
+    view: dict[str, Any] = {}
+    if dropped:
+        view["model_pick_dropped"] = {
+            half: {k: redact(str(v)) for k, v in record.items()} for half, record in dropped.items()
+        }
     if pick is None:
-        return {}
-    view: dict[str, str] = {}
+        return view
     if pick.model is not None:
         view["pending_model"] = redact(pick.model)
     if pick.reasoning_effort is not None:
@@ -696,16 +716,18 @@ def apply_pending_model_pick(state: "DashboardState", slot: "_ChatSlot") -> bool
     SYNCHRONOUS on purpose: the gate and the writes to ``slot.model`` and
     ``slot.reasoning_effort`` run with no suspension between them, so nothing
     can link or mirror the target after it was authorized and before either
-    changed. A pick the gate now refuses is dropped and audited, and the turn
-    runs on the model and effort it already had. So is each half of a pick the
-    user has overtaken with a newer choice from that half's own control.
+    changed. A pick the gate now refuses is dropped and recorded
+    (:func:`_drop_pick`), and the turn runs on the model and effort it already
+    had. So is each half of a pick the user has overtaken with a newer choice
+    from that half's own control.
 
     The ownership fence only tightens: a caller fenced at call time stays
     fenced, and one that was not is re-checked now, since it may have become a
     fenced crew member while the pick waited.
 
     Returns True when the live session must be reset before this turn uses it:
-    ``slot.model`` changed (or a fallback serves the session), a codex pin's
+    ``slot.model`` changed (or a fallback serves the session, or the live
+    session reports serving another model), a codex pin's
     legacy ``[level]`` suffix was folded away, or ``slot.reasoning_effort``
     changed.
     """
@@ -726,13 +748,7 @@ def apply_pending_model_pick(state: "DashboardState", slot: "_ChatSlot") -> bool
     effort = pick.reasoning_effort
     if model is not None and slot._model_pick_gen != pick.pick_gen:
         model = None
-        _audit(
-            caller_session_key=pick.caller_session_key,
-            operation="set_model",
-            slot_key=slot.key,
-            outcome="denied",
-            detail={"code": "superseded_by_newer_pick", "stage": "turn_start"},
-        )
+        _drop_pick(slot, pick, "superseded_by_newer_pick", _pick_fields(pick.model, None))
     # On a pair-id backend (codex) the model picker IS the effort control: a
     # user picking ``gpt-6-astra[max]`` bumps only the model generation, so a
     # newer model pick supersedes the effort half as well.
@@ -741,23 +757,13 @@ def apply_pending_model_pick(state: "DashboardState", slot: "_ChatSlot") -> bool
         or (pick.pair_id_backend and slot._model_pick_gen != pick.pick_gen)
     ):
         effort = None
-        _audit(
-            caller_session_key=pick.caller_session_key,
-            operation="set_model",
-            slot_key=slot.key,
-            outcome="denied",
-            detail={"code": "superseded_by_newer_effort", "stage": "turn_start"},
+        _drop_pick(
+            slot, pick, "superseded_by_newer_effort", _pick_fields(None, pick.reasoning_effort)
         )
     if model is None and effort is None:
         return False
     if _caller_tab_id(state, pick.caller_session_key) != pick.caller_tab_id:
-        _audit(
-            caller_session_key=pick.caller_session_key,
-            operation="set_model",
-            slot_key=slot.key,
-            outcome="denied",
-            detail={"code": "caller_replaced", "stage": "turn_start"},
-        )
+        _drop_pick(slot, pick, "caller_replaced", _pick_fields(model, effort))
         return False
     caller_key = caller_slot_key(state, pick.caller_session_key)
     fenced = pick.caller_fenced or (
@@ -776,32 +782,28 @@ def apply_pending_model_pick(state: "DashboardState", slot: "_ChatSlot") -> bool
             precomputed_ownership_fenced=fenced,
         )
     except SessionControlError as exc:
-        _audit(
-            caller_session_key=pick.caller_session_key,
-            operation="set_model",
-            slot_key=slot.key,
-            outcome="denied",
-            detail={"code": exc.code, "stage": "turn_start"},
-        )
+        _drop_pick(slot, pick, exc.code, _pick_fields(model, effort))
         return False
     if live is not slot:
-        _audit(
-            caller_session_key=pick.caller_session_key,
-            operation="set_model",
-            slot_key=slot.key,
-            outcome="denied",
-            detail={"code": "target_replaced", "stage": "turn_start"},
-        )
+        _drop_pick(slot, pick, "target_replaced", _pick_fields(model, effort))
         return False
     changed = False
     if model is not None:
+        # circular import: chat_handlers imports this module at module level.
+        from kiro_crew.dashboard.chat_handlers import live_session_runs_another_model
+
         # A fallback serving the session means the wire model differs from the
         # pin, so an equal pin still needs the session reset, as the picker
-        # treats it.
+        # treats it. So does a live session that reports another model: after a
+        # restart the pin can already name the pick while the resumed session
+        # runs the model it had, and the caller was told the target switches.
         changed = (
             (slot.model or "") != model
             or bool(slot._active_fallback_model)
             or bool(slot._refusal_fallback_primary)
+            or live_session_runs_another_model(
+                state.sessions.get_provider(effective_session_key(slot)), model
+            )
         )
         slot.model = model
         # A concrete pick answers the routing question, as it does from the picker.
@@ -829,6 +831,41 @@ def apply_pending_model_pick(state: "DashboardState", slot: "_ChatSlot") -> bool
         detail={**_pick_audit_fields(model, effort), "stage": "turn_start"},
     )
     return changed
+
+
+def _drop_pick(
+    slot: "_ChatSlot",
+    pick: PendingModelPick,
+    code: str,
+    dropped: dict[str, str],
+    *,
+    stage: str = "turn_start",
+) -> None:
+    """Record that *dropped* (all or one half of *pick*) was dropped for *code*.
+
+    Three records, because the caller was told the target will switch and each
+    reader looks in a different place: the SEL audit line, a gateway log line,
+    and ``slot._model_pick_dropped``, one entry per half, which
+    ``session_read_message`` reports. *stage* says where the drop happened:
+    ``turn_start``, ``set_model`` (a newer call replaced it) or
+    ``harness_change``.
+    """
+    _audit(
+        caller_session_key=pick.caller_session_key,
+        operation="set_model",
+        slot_key=slot.key,
+        outcome="denied",
+        detail={"code": code, "stage": stage},
+    )
+    logger.warning(
+        "session-control set_model: pick %s on %s dropped (%s): %s",
+        redact_log_via_context(json.dumps(dropped, sort_keys=True)),
+        slot.key,
+        stage,
+        code,
+    )
+    for half, value in dropped.items():
+        slot._model_pick_dropped[half] = {"value": value, "code": code, "stage": stage}
 
 
 def channel_drives_session(state: "DashboardState", slot: "_ChatSlot", session_key: str) -> bool:

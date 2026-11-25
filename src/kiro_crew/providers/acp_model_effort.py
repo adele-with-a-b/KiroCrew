@@ -22,6 +22,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from kiro_crew import model_registry
 from kiro_crew.acp._dispatch import redact_text
 from kiro_crew.acp.client import (
     DEFAULT_MODEL,
@@ -31,8 +32,10 @@ from kiro_crew.acp.client import (
     advertised_model_ids,
     catalog_row_would_drop,
 )
+from kiro_crew.acp.client_model_selection import _model_config_candidates
 from kiro_crew.acp.command_refused import AcpCommandRefused
 from kiro_crew.acp.launch_tuning import switch_launch_model, switch_launch_tuning
+from kiro_crew.acp.runtime_models import resolve_pin_spelling_on
 from kiro_crew.acp.session_handle import (
     _READ_PATH_PROBE_DEADLINE_SECS,
     _READ_PATH_REPROBE_MIN_INTERVAL_SECS,
@@ -744,6 +747,52 @@ async def set_model(self: AcpProvider, model: str) -> None:
     except Exception:
         # The model DID switch; failing here would make a fallback walk skip it.
         logger.warning("Effort re-apply after set_model(%s) failed", model, exc_info=True)
+
+
+def recorded_model_spellings(self: AcpProvider, model_id: str) -> frozenset[str]:
+    """Every id this session can record as its model once a switch to *model_id* lands.
+
+    A switch does not record *model_id* verbatim: it folds it onto the advertised
+    list (``resolve_wire_model_id``, which can land on a version-less alias), a
+    stored pin takes its advertised spelling (``resolve_pin_spelling_on``), the
+    config-option ladder keeps the rung the adapter accepted
+    (``_model_config_candidates``: verbatim, prefix-stripped, ``[1m]``-stripped),
+    and a pair id may land as its bare model. A session running *model_id*
+    reports one of these.
+    """
+    caps = self.capabilities
+    advertised = advertised_model_ids(self.available_models())
+    roots = {model_id, model_registry.resolve_wire_model_id(model_id, caps.model_id_namespace)}
+    resolved = resolve_pin_spelling_on(model_id, advertised, backend=caps.backend)
+    if resolved:
+        roots.add(resolved)
+    spellings: set[str] = set()
+    for root in roots:
+        spellings.update(_model_config_candidates(root))
+        base, effort = model_registry.split_effort_suffix(root)
+        if effort and caps.backend in ACP_BACKENDS_MODEL_EFFORT_PAIR_IDS:
+            spellings.add(base)
+    spellings.discard("")
+    return frozenset(spellings)
+
+
+def serves_another_model(self: AcpProvider, model_id: str) -> bool:
+    """Whether this session runs a model other than *model_id* that a fresh one would not.
+
+    False when the session has reported no model, when it reports any spelling a
+    switch to *model_id* can record (:func:`recorded_model_spellings`), and when a
+    new session would come back the same: this session's backend refused or
+    withheld *model_id* (``model_pin_refused``), or a policy advisory substituted
+    the model it serves.
+    """
+    served = self.served_model
+    if not served:
+        return False
+    spellings = self.recorded_model_spellings(model_id)
+    if served in spellings or self.model_pin_refused in spellings:
+        return False
+    substituted = getattr(self._client, "_last_substitution_model", None)
+    return not (isinstance(substituted, str) and substituted == served)
 
 
 async def clear_effort(self: AcpProvider, *, every_model: bool = False) -> bool | None:

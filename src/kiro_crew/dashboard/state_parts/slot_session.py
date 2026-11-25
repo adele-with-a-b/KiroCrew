@@ -16,7 +16,7 @@ Writes: ``_app``, ``_auto_tagged``, ``_awaiting_replies``, ``_binding``, ``_chan
 ``_hidden_scratch_notice_shown``, ``_human_seen``, ``_last_stop_reason``, ``_lineage_minted``,
 ``_mcp_banner_shown``, ``_mcp_report``,
 ``_mcp_report_session_id``, ``_mcp_sign_in_notice_shown``, ``_memory_assignment_from_history``, ``_model_pick_gen``,
-``_model_pick_lock``, ``_model_runtime_pick_gen``, ``_model_withheld``,
+``_model_pick_dropped``, ``_model_pick_lock``, ``_model_runtime_pick_gen``, ``_model_withheld``,
 ``_model_withheld_for``, ``_origin``, ``_pending_discard_conversation_key``,
 ``_deferred_model_switch_key``, ``_pending_discard_from_wake``, ``_pending_memory_mode``, ``_pending_model_pick``,
 ``_pending_reset_history_key``, ``_prefetch_ttl_task``, ``_project_hook_files_notice_shown``, ``_reasoning_effort``,
@@ -391,6 +391,10 @@ def init_session_fields(self: _ChatSlot) -> None:
     # the caller's authorization and commits the model in one synchronous
     # step. Runtime only: a pick does not survive a gateway restart.
     self._pending_model_pick = None
+    # The last drop of each half of such a pick, by half ("model",
+    # "reasoning_effort"): {"value", "code", "stage"}, so the caller's
+    # session_read_message can say so. Cleared by the next pick.
+    self._model_pick_dropped = {}
     # Set by api_chat_slot_model when the pick arrives while a turn is in
     # flight: slot.model is already committed, and this names the session the
     # live session was on, so the turn boundary knows which session still runs

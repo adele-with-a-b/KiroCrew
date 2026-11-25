@@ -951,8 +951,24 @@ async def api_kirocrew_agent_update(request: web.Request) -> web.Response:
                 if index == len(order):
                     await _persist()
                     await _refresh_session_defaults(request, name)
+                    # Local: ``compose`` rebinds this module's functions onto the agents
+                    # handler namespace, so a module-level import here is not in scope.
+                    from kiro_crew.dashboard.session_control_parts.model_switch import (
+                        _drop_pick,
+                        _pick_fields,
+                    )
+
                     for s in slots:
                         # The chat's own picks were made for the old harness.
+                        pick = s._pending_model_pick
+                        if pick is not None:
+                            _drop_pick(
+                                s,
+                                pick,
+                                "harness_changed",
+                                _pick_fields(pick.model, pick.reasoning_effort),
+                                stage="harness_change",
+                            )
                         s.model = ""
                         s.jev_route = False
                         s._model_pick_gen += 1

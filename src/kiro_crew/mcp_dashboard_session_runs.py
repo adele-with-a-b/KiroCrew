@@ -1277,6 +1277,15 @@ def _pending_approval_phrase(resp: dict[str, Any]) -> str:
     return "waiting on a tool approval" + (f": {redact(tool)}" if tool else "")
 
 
+#: Where a ``model_pick_dropped`` record says its pick was dropped, as the read
+#: tool words it.
+_DROP_STAGE_WORDS = {
+    "turn_start": " at its turn start",
+    "set_model": " by a newer session_set_model call",
+    "harness_change": " when its harness changed",
+}
+
+
 def _run_session_read_message(args: dict[str, Any], ctx: ToolContext) -> str:
     if "crew" in args:
         from kiro_crew.mcp_session_crew import run_crew_read
@@ -1300,6 +1309,16 @@ def _run_session_read_message(args: dict[str, Any], ctx: ToolContext) -> str:
         state_line += f", model {redact(str(resp['model']))}"
     if resp.get("pending_model"):
         state_line += f", pending model {redact(str(resp['pending_model']))} for its next turn"
+    dropped = resp.get("model_pick_dropped")
+    for half, record in (dropped.items() if isinstance(dropped, dict) else ()):
+        if not isinstance(record, dict) or not record.get("code"):
+            continue
+        what = "effort pick" if half == "reasoning_effort" else "model pick"
+        where = _DROP_STAGE_WORDS.get(str(record.get("stage", "")), "")
+        state_line += (
+            f", its last {what} {redact(str(record.get('value', '')))} was dropped{where} "
+            f"({redact(str(record['code']))})"
+        )
     if resp.get("reasoning_effort"):
         state_line += f", reasoning effort {redact(str(resp['reasoning_effort']))}"
     if resp.get("pending_reasoning_effort"):

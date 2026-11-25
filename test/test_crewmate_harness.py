@@ -735,6 +735,32 @@ class TestAHarnessChangeReloadsTheLiveChat:
         assert outcome["meta"]["kind"] == "session_reload"
 
     @pytest.mark.asyncio
+    async def test_a_pending_pick_the_harness_change_clears_is_recorded(self, chat):
+        """A session_set_model pick queued on the chat goes with the old harness's
+        picks. Its caller was told it would switch, so it is recorded at the
+        harness save, not as a turn-start drop."""
+        from kiro_crew.dashboard.session_control_parts.model_switch import PendingModelPick
+
+        chat.slot._pending_model_pick = PendingModelPick(
+            model="claude-opus-4.8",
+            caller_session_key="dashboard:chat-conductor",
+            caller_tab_id="conductor-tab",
+            caller_fenced=False,
+            pick_gen=chat.slot._model_pick_gen,
+            reasoning_effort="high",
+            effort_gen=chat.slot._effort_pick_gen,
+        )
+        status, data = await self._put(chat.app, {"acp_backend": "claude", "model": ""})
+
+        assert status == 200, data
+        assert chat.slot._pending_model_pick is None
+        dropped = {"code": "harness_changed", "stage": "harness_change"}
+        assert chat.slot._model_pick_dropped == {
+            "model": {"value": "claude-opus-4.8", **dropped},
+            "reasoning_effort": {"value": "high", **dropped},
+        }
+
+    @pytest.mark.asyncio
     async def test_an_unchanged_harness_reloads_nothing(self, chat):
         before = [dict(m) for m in chat.slot.messages]
         status, data = await self._put(chat.app, {"acp_backend": "", "description": "changed"})
