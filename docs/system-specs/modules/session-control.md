@@ -558,7 +558,10 @@ turn. A carried entry that had a turn actor stamp (`meta.turnActor`, the crew
 path) keeps it in the steer's recorded admission, which the teardown copies onto
 the entry it makes for an unread steer, so that entry does not drain as the
 person's turn. The conductor's new note records the same stamp, for the same
-reason. A steer of the sender's that the teardown requeued runs as its own turn
+reason, and both record `wasSteered`, which is how a requeued steer is known
+from a queued send whichever way the turn ended (the delivery id is only on one
+whose call was still in flight). The fallback that queues a conductor's
+steer whose request went away mid-write names the same actor on its entry. A steer of the sender's that the teardown requeued runs as its own turn
 and is never carried; while one is the oldest of the sender's entries nothing of
 theirs goes in ahead of it, so the carry ends and the new note queues behind
 (`turn_ended`).
