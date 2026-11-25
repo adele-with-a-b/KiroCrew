@@ -135,6 +135,7 @@ _CARVED_OWNERS: tuple[str, ...] = (
     "kiro_crew.platform_compat_wintree",
     "kiro_crew.platform_compat_kill",
     "kiro_crew.platform_compat_metrics",
+    "kiro_crew.platform_compat_cputimes",
 )
 
 
@@ -241,6 +242,14 @@ __all__ = sorted(
 )
 
 if TYPE_CHECKING:  # the forwarded names, visible to type checkers and IDEs
+    from kiro_crew.platform_compat_cputimes import (  # noqa: F401
+        _HOST_CPU_LOAD_INFO,
+        _HostCpuLoadInfo,
+        _linux_cpu_times,
+        _macos_cpu_times,
+        _windows_cpu_times,
+        system_cpu_times,
+    )
     from kiro_crew.platform_compat_descendants import (  # noqa: F401
         _WINDOWS_CLEANUP_IDENTITY_LIMIT,
         _WINDOWS_CLEANUP_ROOT_LIMIT,

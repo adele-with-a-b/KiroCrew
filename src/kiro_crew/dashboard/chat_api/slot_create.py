@@ -1186,6 +1186,7 @@ async def api_chat_slot_create(request: web.Request) -> web.Response:
                 bind_work_item,
                 discard_work_item,
             )
+            from kiro_crew.dashboard.remote_dispatch_headroom import carried_cpu_busy
 
             bound_item = work_item
 
@@ -1210,7 +1211,8 @@ async def api_chat_slot_create(request: web.Request) -> web.Response:
                 return False
 
             creation_stack.push_async_exit(_unbind_retracted_worker)
-            refusal = await bind_work_item(request, slot.key, work_item)
+            # The early gate's CPU reading, so the create samples the CPU once.
+            refusal = await bind_work_item(request, slot.key, work_item, carried_cpu_busy(headroom))
             if refusal is None:
                 # Reserved before the first frame, so a person's mode pick on the
                 # newborn always lands after it and clears it; armed at the end.

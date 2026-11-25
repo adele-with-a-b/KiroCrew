@@ -65,6 +65,7 @@ def preview(monkeypatch):
     )
     # The admission gate is wave 3's and has its own suite; here this crew has room.
     monkeypatch.setattr(remote_dispatch_headroom, "_short_resource", lambda *a, **k: "")
+    monkeypatch.setattr(remote_dispatch_headroom, "_cpu_busy", lambda: 0.1)  # no real sample
     return flag
 
 
@@ -248,6 +249,47 @@ async def test_a_patch_naming_a_worker_field_is_refused_and_changes_nothing(stat
     status, body = await _call(state, "PATCH", f"/api/chat/slots/{slot}/work-item", patch)
     assert status == 400, body
     assert wl.item_path(board, "it_0000abcd").read_bytes() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "samples", "shown"),
+    [({}, 0, None), ({"work_item": _work_item()}, 1, 0.42)],
+    ids=["plain-create", "work-item-create"],
+)
+async def test_a_create_samples_the_cpu_only_for_a_verdict_and_never_under_the_lock(
+    state, preview, monkeypatch, body, samples, shown
+):
+    """Each sample sleeps CPU_SAMPLE_SECONDS: a plain create takes none, a work-item
+    create one, shared by its early gate and its bind, and none waits on the lock."""
+    taken: list[bool] = []
+
+    def _counted() -> float:
+        taken.append(remote_dispatch_headroom._admission_lock.locked())
+        return 0.4204
+
+    monkeypatch.setattr(remote_dispatch_headroom, "_cpu_busy", _counted)
+    status, created = await _call(state, "POST", "/api/chat/slots", body)
+    assert status == 200, created
+    assert len(taken) == samples
+    assert not any(taken), "a CPU sample was taken under the admission lock"
+    assert created["headroom"]["cpu_busy"] == shown
+
+
+def test_a_bind_with_no_early_reading_samples_before_the_lock(preview, monkeypatch):
+    taken: list[bool] = []
+
+    def _counted() -> float:
+        taken.append(remote_dispatch_headroom._admission_lock.locked())
+        return 0.95
+
+    monkeypatch.setattr(remote_dispatch_headroom, "_cpu_busy", _counted)
+    parsed = mailbox.parse_work_item(_work_item())
+    snap, _ = remote_dispatch_headroom.bind_if_room(
+        remote_dispatch_headroom.RemoteDispatchSettings(True, 0.0, 0.0), parsed, "chat-w1"
+    )
+    assert taken == [False]
+    assert snap["cpu_busy"] == 0.95
 
 
 @pytest.mark.asyncio

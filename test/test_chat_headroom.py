@@ -25,7 +25,7 @@ from kiro_crew.dashboard import remote_dispatch_headroom as headroom_mod
 HEADROOM_FIELDS = {
     "mem_free_gb",
     "cpu_count",
-    "load_per_cpu",
+    "cpu_busy",
     "posture",
     "disk_free_gb",
     "open_workers",
@@ -53,8 +53,12 @@ def _status(**overrides) -> resource_status.ResourceStatus:
 @pytest.fixture
 def host(monkeypatch):
     """A stub host with ample everything; tests turn one resource short."""
-    reading = SimpleNamespace(status=_status(), memory_ok=True, cap=4, running=1, disk_gb=500.0)
+    reading = SimpleNamespace(
+        status=_status(), memory_ok=True, cap=4, running=1, disk_gb=500.0, cpu_busy=0.25
+    )
+    reading.real_cpu_busy = vars(headroom_mod).get("_cpu_busy")
     monkeypatch.setattr(resource_status, "probe", lambda cfg=None: reading.status)
+    monkeypatch.setattr(headroom_mod, "_cpu_busy", lambda: reading.cpu_busy, raising=False)
     monkeypatch.setattr(
         subagent_facade, "check_memory_available", lambda min_gb=2.0, **_: (reading.memory_ok, 1.0)
     )
@@ -228,7 +232,7 @@ async def test_route_answers_the_snapshot_to_the_owner(tmp_path, monkeypatch, ho
     assert set(body) == HEADROOM_FIELDS
     assert body["mem_free_gb"] == 32.0
     assert body["cpu_count"] == 8
-    assert body["load_per_cpu"] == 0.25
+    assert body["cpu_busy"] == 0.25
     assert body["posture"] == "ample"
     assert body["disk_free_gb"] == 500.0
     assert body["open_workers"] == 0
@@ -277,8 +281,8 @@ def _make_short(host, resource: str) -> None:
         host.memory_ok = False
     elif resource == "memory-posture":
         host.status = _status(posture=resource_status.POSTURE_CRITICAL)
-    elif resource == "cpu-load":
-        host.status = _status(load_per_cpu=1.0)
+    elif resource == "cpu-busy":
+        host.cpu_busy = headroom_mod.CPU_BUSY_THRESHOLD
     elif resource == "cpu-cap":
         host.cap, host.running = 4, 4
     elif resource == "disk":
@@ -291,7 +295,7 @@ def _make_short(host, resource: str) -> None:
     [
         ("memory-check", "memory"),
         ("memory-posture", "memory"),
-        ("cpu-load", "cpu"),
+        ("cpu-busy", "cpu"),
         ("cpu-cap", "cpu"),
         ("disk", "disk"),
     ],
@@ -314,7 +318,7 @@ async def test_short_work_item_create_is_crew_busy_and_creates_nothing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("how", ["memory-check", "cpu-load", "disk"])
+@pytest.mark.parametrize("how", ["memory-check", "cpu-busy", "disk"])
 async def test_create_without_work_item_is_not_gated(tmp_path, monkeypatch, host, how):
     _flag(monkeypatch, True)
     _make_short(host, how)
@@ -361,6 +365,7 @@ def test_the_execution_cap_is_full_at_one_admission_point(monkeypatch, saturatin
         subagent_facade, "check_memory_available", lambda min_gb=2.0, **_: (True, 9.0)
     )
     monkeypatch.setattr(headroom_mod, "_disk_free_gb", lambda: 500.0)
+    monkeypatch.setattr(headroom_mod, "_cpu_busy", lambda: 0.1)
     state = {
         "enabled": True,
         "effective_exec_cap": 4,
@@ -389,6 +394,7 @@ def test_an_unusable_occupancy_never_refuses(monkeypatch, state):
         subagent_facade, "check_memory_available", lambda min_gb=2.0, **_: (True, 9.0)
     )
     monkeypatch.setattr(headroom_mod, "_disk_free_gb", lambda: 500.0)
+    monkeypatch.setattr(headroom_mod, "_cpu_busy", lambda: 0.1)
     monkeypatch.setattr(controller, "current_state", lambda: state)
     _, got = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
     assert got == ""
@@ -438,15 +444,129 @@ def test_probe_raising_fails_open_with_unknown_fields(monkeypatch, host):
     snap, short = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
     assert short == ""
     assert snap["mem_free_gb"] is None and snap["cpu_count"] is None
-    assert snap["load_per_cpu"] is None and snap["posture"] == "unknown"
+    assert snap["posture"] == "unknown"
 
 
 def test_unknown_readings_never_refuse(monkeypatch, host):
     host.status = _status(available_gb=-1.0, load_per_cpu=None, posture="unknown")
-    host.cap, host.running, host.disk_gb = 0, None, None
+    host.cap, host.running, host.disk_gb, host.cpu_busy = 0, None, None, None
     snap, short = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
     assert short == ""
     assert snap["mem_free_gb"] is None and snap["disk_free_gb"] is None
+    assert snap["cpu_busy"] is None
+
+
+# -- the CPU reading is measured busy time, not the load average ---------------------
+
+
+def _counters(*readings):
+    """A ``system_cpu_times`` stub answering *readings* in turn."""
+    it = iter(readings)
+    return lambda: next(it)
+
+
+def _cpu_host(monkeypatch, host, *, load_per_cpu: float, busy: float) -> None:
+    """An 18-core host whose load average says *load_per_cpu* and whose CPU
+    counters move by *busy* of 1000 ticks over the sample."""
+    from kiro_crew import platform_compat
+
+    host.status = _status(cpu_count=18, load_per_cpu=load_per_cpu)
+    # The real sampler, with a zero-second sample and stub counters: no sleep.
+    monkeypatch.setattr(headroom_mod, "_cpu_busy", host.real_cpu_busy, raising=False)
+    monkeypatch.setattr(headroom_mod, "CPU_SAMPLE_SECONDS", 0, raising=False)
+    monkeypatch.setattr(
+        platform_compat,
+        "system_cpu_times",
+        _counters((5000.0, 20000.0), (5000.0 + busy * 1000, 21000.0)),
+        raising=False,
+    )
+
+
+def test_a_high_load_average_with_idle_cpu_admits(monkeypatch, host):
+    """The measured case: load per core 1.56 while the CPU is 60% idle."""
+    _cpu_host(monkeypatch, host, load_per_cpu=1.56, busy=0.40)
+    snap, short = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
+    assert short == ""
+    assert snap["cpu_busy"] == 0.4
+    assert "load_per_cpu" not in snap
+
+
+def test_a_saturated_cpu_refuses_whatever_the_load_average(monkeypatch, host):
+    _cpu_host(monkeypatch, host, load_per_cpu=0.2, busy=0.97)
+    snap, short = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
+    assert short == "cpu"
+    assert snap["cpu_busy"] == 0.97
+
+
+def test_the_snapshot_carries_the_number_the_gate_compared(monkeypatch, host):
+    """Just under the line: the rounded figure a hub reads is the one compared."""
+    host.cpu_busy = 0.8996
+    snap, short = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
+    assert snap["cpu_busy"] == 0.9 and short == "cpu"
+    host.cpu_busy = 0.8994
+    snap, short = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
+    assert snap["cpu_busy"] == 0.899 and short == ""
+
+
+def test_cpu_busy_fraction_samples_over_the_given_seconds():
+    slept: list[float] = []
+    got = headroom_mod.cpu_busy_fraction(
+        _counters((10.0, 100.0), (40.0, 200.0)), slept.append, seconds=0.5
+    )
+    assert got == pytest.approx(0.3)
+    assert slept == [0.5]
+
+
+@pytest.mark.parametrize(
+    "readings",
+    [
+        (None, (1.0, 2.0)),
+        ((1.0, 2.0), None),
+        ((10.0, 100.0), (10.0, 100.0)),  # no time passed
+        ((10.0, 4_000_000_000.0), (20.0, 50.0)),  # a 32-bit counter wrapped
+        ((50.0, 100.0), (40.0, 200.0)),  # busy went back
+        ((10.0, 100.0), (150.0, 200.0)),  # busy grew more than total
+    ],
+    ids=["first-missing", "second-missing", "no-delta", "wrapped", "busy-back", "busy-over"],
+)
+def test_cpu_busy_fraction_without_a_true_share_is_unknown(readings):
+    assert headroom_mod.cpu_busy_fraction(_counters(*readings), lambda s: None) is None
+
+
+def test_a_cpu_reader_that_raises_is_unknown(monkeypatch):
+    from kiro_crew import platform_compat
+
+    def boom():
+        raise OSError("no counters")
+
+    monkeypatch.setattr(platform_compat, "system_cpu_times", boom)
+    assert headroom_mod._cpu_busy() is None
+
+
+def test_this_platform_has_a_cpu_time_reading():
+    """macOS and Linux both give counters; the gate is not blind on either."""
+    import sys
+
+    from kiro_crew import platform_compat
+
+    got = platform_compat.system_cpu_times()
+    if sys.platform not in ("darwin", "linux", "win32"):
+        assert got is None
+        return
+    assert got is not None
+    busy, total = got
+    assert 0 <= busy <= total and total > 0
+
+
+def test_linux_counts_iowait_as_idle(monkeypatch):
+    import io
+
+    from kiro_crew import platform_compat_cputimes as cputimes
+
+    # user nice system idle iowait irq softirq steal guest guest_nice
+    line = "cpu  100 10 50 700 100 5 5 30 0 0\ncpu0 1 2 3 4\n"
+    monkeypatch.setattr(cputimes, "open", lambda *a, **k: io.StringIO(line), raising=False)
+    assert cputimes._linux_cpu_times() == (200.0, 1000.0)
 
 
 def test_missing_scratch_root_measures_the_nearest_existing_parent(tmp_path, monkeypatch):
@@ -498,6 +618,7 @@ def test_no_field_holds_credential_content_or_a_path(monkeypatch, host):
         posture=f"critical {secret} /root",
     )
     host.disk_gb = None
+    host.cpu_busy = f"/proc/{secret}"
     snap, _ = headroom_mod.measure(headroom_mod.RemoteDispatchSettings(True, 2.0, 10.0))
     text = json.dumps(snap)
     assert secret not in text and "/" not in text
