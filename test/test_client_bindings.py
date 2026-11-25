@@ -380,6 +380,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "shutdown": ("function", True, "b60c5fea256e", "client_lifecycle"),
     "spec_zero_tools": ("property", False, "a6632a57e602", "client_class"),
     "steer": ("function", True, "b0a837a37097", "client_turn_control"),
+    "steer_held_behind_tool": ("property", False, "a6632a57e602", "client_class"),
     "steer_needs_loss_recovery": ("property", False, "a6632a57e602", "client_class"),
     "steer_refusal": ("data", False, "", ""),
     "stream_command": ("function", "agen", "07d1ae72fdc6", "client_turn_control"),

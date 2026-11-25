@@ -18,6 +18,7 @@ not come through here; it has its own composer path.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -65,21 +66,26 @@ class Origin:
     steer: bool = False
     #: A peer's own Crew session key, for the trace link its delivery carries.
     sender: str = ""
+    #: A peer's steer whose sender has no per-target budget above it, so it may
+    #: wait longer for a turn that is still starting (``_steer_once_the_turn_has_a_prompt``).
+    patient: bool = False
 
 
 def cron(label: str) -> Origin:
     return Origin(ORIGIN_CRON, label=label)
 
 
-def peer(*, steer: bool, sender: str = "") -> Origin:
+def peer(*, steer: bool, sender: str = "", patient: bool = False) -> Origin:
     """A peer session's text.
 
     ``steer=True`` is the steer arm only: it never queues or starts a turn, so a
     caller whose turn ended before the steer ran gets :data:`NOT_DELIVERED` and
     makes the one queue-or-run delivery itself (``steer=False``). *sender* is the
     peer's session key, read only to link the turn the text starts to the sender's.
+    *patient* is for a single send: a broadcast gives each target a few seconds and
+    leaves it off.
     """
-    return Origin(ORIGIN_PEER, steer=steer, sender=sender)
+    return Origin(ORIGIN_PEER, steer=steer, sender=sender, patient=patient)
 
 
 def app(label: str) -> Origin:
@@ -365,6 +371,46 @@ def _broadcast_queue_push(state: "DashboardState", slot: "_ChatSlot", queue_id: 
     state.broadcast_ws("queue_push", push)
 
 
+#: The pause between two tries at a starting turn; a test replaces it here.
+_pause = asyncio.sleep
+
+
+async def _steer_once_the_turn_has_a_prompt(
+    state: "DashboardState",
+    slot: "_ChatSlot",
+    text: str,
+    outcome: str,
+    admission: dict | None,
+    relay_meta: dict | None,
+    patient: bool,
+) -> str:
+    """Try a peer's steer again while its only refusal is a turn with no prompt yet.
+
+    ``between_steps`` is the one refusal that ends by itself within the same turn:
+    the turn is starting (or winding up) and takes the steer once its prompt is in
+    flight. The same turn task is watched, so a turn that ends meanwhile is not
+    steered into its successor here: the caller queues the text, as before. Every
+    other outcome, and a slot that stopped running, is returned as it came.
+    """
+    from kiro_crew import steer_refusal
+    from kiro_crew.dashboard.chat_delivery import steer_into_running_turn, steer_refusal_of
+
+    turn = getattr(slot, "task", None)
+    step = steer_refusal.START_POLL_SECS
+    wait = steer_refusal.START_WAIT_PATIENT_SECS if patient else steer_refusal.START_WAIT_SECS
+    tries = int(wait / step) if step > 0 else 0
+    for _ in range(tries):
+        if steer_refusal_of(outcome) != steer_refusal.BETWEEN_STEPS:
+            break
+        await _pause(step)
+        if not slot.running or getattr(slot, "task", None) is not turn:
+            break
+        outcome = await steer_into_running_turn(
+            state, slot, text, user_origin=False, admission=admission, relay_meta=relay_meta
+        )
+    return outcome
+
+
 async def _deliver_peer(
     state: "DashboardState",
     slot: "_ChatSlot",
@@ -398,6 +444,9 @@ async def _deliver_peer(
 
         outcome = await steer_into_running_turn(
             state, slot, text, user_origin=False, admission=admission, relay_meta=relay_meta
+        )
+        outcome = await _steer_once_the_turn_has_a_prompt(
+            state, slot, text, outcome, admission, relay_meta, origin.patient
         )
         if outcome == STEER_STEERED:
             return DELIVERED_STEERED

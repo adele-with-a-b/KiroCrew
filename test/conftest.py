@@ -540,6 +540,19 @@ def assert_rejected_without_backtracking(
 
 
 @pytest.fixture(autouse=True)
+def _no_wait_for_a_starting_turn(_floor_monkeypatch):
+    """A peer's steer waits real seconds for a turn that has no prompt yet.
+
+    A test's busy slot never gets one, so every such send would spend the whole
+    wait. A test that means the wait sets its own length.
+    """
+    from kiro_crew import steer_refusal
+
+    _floor_monkeypatch.setattr(steer_refusal, "START_WAIT_SECS", 0.0)
+    _floor_monkeypatch.setattr(steer_refusal, "START_WAIT_PATIENT_SECS", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_update_ownership(_floor_monkeypatch):
     """Give every test its own update-ownership registry, and fail one that leaks a step.
 

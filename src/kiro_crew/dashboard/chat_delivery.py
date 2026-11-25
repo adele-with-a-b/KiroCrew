@@ -603,7 +603,12 @@ async def steer_into_running_turn(
     if _steer_target(slot) != aimed_turn:
         return SteerUnavailable(steer_refusal.TURN_ENDED)
     client = getattr(slot, "_acp_client", None)
-    if client is None or not getattr(client, "supports_steer", False):
+    if client is None:
+        # The turn publishes its agent once the session is up and lets it go at its
+        # end, so no agent here means the turn is starting or finishing. It says
+        # nothing about what the agent takes (``session_deliver`` waits this out).
+        return SteerUnavailable(steer_refusal.BETWEEN_STEPS)
+    if not getattr(client, "supports_steer", False):
         return SteerUnavailable(steer_refusal.NO_STEER)
     loses_steers = getattr(client, "steer_needs_loss_recovery", False) is True
     if not user_origin and loses_steers:

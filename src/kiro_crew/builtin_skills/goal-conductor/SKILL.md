@@ -809,7 +809,9 @@ tear down the whole round for one item.
 **Your message reaches your worker now.** A `session_send` with no `steer` to a
 busy worker you created, were handed, or bound cuts into its running turn: it
 reads it at its next step, after the tool call it is in returns, instead of when
-its turn ends, which can be hours. That covers answers to a `question` and
+its turn ends, which can be hours. When the reply says the worker is inside a
+tool call, it has not read your message yet, and a long call (a build, a wait)
+can hold it for minutes. That covers answers to a `question` and
 corrections alike. Pass `steer: false` only for something that must wait for the
 turn boundary. A worker's reply to you while you are still in the turn that
 messaged it cuts into that turn the same way, so `wait` for it rather than a

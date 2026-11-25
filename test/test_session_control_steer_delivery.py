@@ -394,7 +394,7 @@ def test_the_post_rpc_regate_warms_the_config_first():
     top-of-function warm is voided by the steer RPC. Asserted on source order.
     """
     send = inspect.getsource(sc.send_to_target)
-    rpc_at = send.index("session_deliver.peer(steer=True)")
+    rpc_at = send.index("session_deliver.peer(steer=True")
     regate_at = send.index("regated = authorize_target(")
     warm_at = send.index("await prewarm_enabled_check()", rpc_at)
     assert rpc_at < warm_at < regate_at, (

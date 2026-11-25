@@ -906,10 +906,17 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
         ),
     }.get(str(resp.get("steerDefault") or ""), "")
     if resp.get("steered"):
+        when = (
+            f"is running. {steer_refusal.held_note()}"
+            if resp.get("held") is True
+            else "is running, so it reads it at its next step."
+        )
         return (
             f"\U0001f4e8 Steered `{target}` — your message went into the turn it "
-            "is running, so it reads it at its next step." + own + " Watch what it "
-            "does with it with session_read_message." + caps
+            + when
+            + own
+            + " Watch what it does with it with session_read_message."
+            + caps
         )
     if resp.get("started"):
         return (

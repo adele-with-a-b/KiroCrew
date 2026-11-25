@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.context_assembly.markers import _apply_marker_spans, _marker_spans
-from kiro_crew.dashboard import broadcast_supersede, queue_age, session_managers
+from kiro_crew.dashboard import broadcast_supersede, queue_age, session_managers, steer_hold
 from kiro_crew.dashboard.chat_delivery import sanitize_outbound, steer_refusal_of
 from kiro_crew.dashboard.relay_archive import (
     RELAY_ARCHIVE_CODE,
@@ -625,7 +625,7 @@ async def send_to_target(
                 state,
                 slot,
                 prompt,
-                session_deliver.peer(steer=True),
+                session_deliver.peer(steer=True, patient=via != BROADCAST_VIA),
                 admission=admission,
                 relay_meta=relay_meta,
             )
@@ -1003,6 +1003,9 @@ async def send_to_target(
         result["heldForPerson"] = True
     if replaced:
         result["replaced"] = replaced
+    if steered and steer_hold.held_behind_tool(slot):
+        # Accepted, and waiting for the tool call the turn is in: not read yet.
+        result["held"] = True
     if refusal and not started:
         # Only for a steer that fell back and now waits on the queue: one that found
         # the turn over and started its own has nothing left to wait for.

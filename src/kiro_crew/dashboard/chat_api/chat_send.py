@@ -1047,10 +1047,12 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             if slot.task is not _turn_before:
                 _auto_queues = False
                 _auto_strip = None
-        # Only a person's send steers. A steer narrows the slot's
-        # `_turn_user_sent` but not the running turn's own `_directive_user_origin`,
-        # which its directives read, so an app's or an agent-origin send queues
-        # as a turn of its own instead.
+        # Only a person's send takes the composer's steer below. A steer narrows the
+        # slot's `_turn_user_sent` but not the running turn's own
+        # `_directive_user_origin`, which its directives read, so an app's send
+        # queues as a turn of its own instead. A hub conductor's agent-origin send
+        # that asks for a steer gets a peer's steer (`agent_steer`), which carries
+        # none of the composer's rights and stays out of a turn a person is driving.
         # A turn still waiting for fair admission has not started: steering it would
         # deliver this text outside admission, so the send queues instead.
         from kiro_crew.shared_crew.admission_entry import admission_pending
@@ -1058,6 +1060,33 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
         _admission_pending = admission_pending(slot.key)
         # Why a steer asked for here fell back to the queue, when it did.
         _steer_refused = ""
+        _held_for_person = False
+        if (
+            steer is True
+            and _agent_origin
+            and not request_app
+            and slot.turn_running
+            and not _auto_queues
+            and not _admission_pending
+        ):
+            from kiro_crew.dashboard import agent_steer
+
+            _agent_reply, _steer_refused, _held_for_person = await agent_steer.steer(
+                state, slot, message
+            )
+            if _steer_refused == agent_steer.TARGET_MOVED:
+                return web.json_response(
+                    {
+                        "error": "that target was replaced while the steer was in flight "
+                        "and the message did not survive; re-read the session list and "
+                        "send again",
+                        "code": "target_moved",
+                    },
+                    status=409,
+                )
+            if _agent_reply is not None:
+                _send_race.commit_request(request, message_id=_send_id_of(user_meta))
+                return web.json_response(_agent_reply)
         if (
             steer
             and _person_send
@@ -1214,12 +1243,17 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
         # turns out off) may have outlived the running turn's handoff: the
         # guarded drain starts the entry if the slot went idle meanwhile.
         await _drain_parked_queues(state, [slot.key])
+        # The turn a steer waited on may have ended meanwhile: the drain above then
+        # started this entry, and the hub's receipt has to say so.
+        _began = _agent_origin and not any(i.get("id") == qid for i in slot._queue)
         return web.json_response(
             {
                 "ok": True,
                 "queued": True,
                 "queue_id": qid,
+                **({"started": True} if _began else {}),
                 **({"steerRefusal": _steer_refused} if _steer_refused else {}),
+                **({"heldForPerson": True} if _held_for_person else {}),
             },
             headers=_sc_entry.admission_headers(_queued_admission),
         )

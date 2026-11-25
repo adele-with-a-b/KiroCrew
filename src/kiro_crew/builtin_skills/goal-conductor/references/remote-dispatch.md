@@ -73,8 +73,16 @@ that keeps failing, goes to the user.
 
 **Driving it.** `session_send`, `session_read_message`, `session_stop` and
 `session_close` take the same `crew=` and reach only a crew session you created
-or one an open item of yours is bound to. After a hub restart only the open
-item counts, so close the worker's session before you `close` its item. A
+or one an open item of yours is bound to. After a hub restart only an item
+counts: an open one for every verb, a finished one for `session_close` alone.
+A `session_send` with `crew=` cuts into a busy worker only when you pass
+`steer: true`; without it the message waits for the worker's turn to end. The
+reply says what the crew did: steered, started a turn (it was idle), or queued
+and why. "Inside a tool call" means the worker took your message and reads it
+when that call returns, which can be minutes; nothing was cut short. A steer
+never goes into a turn a person is driving there. If the reply says the crew's
+agent takes a peer's steer only with `agent.peer_steer_loss_recovery`, that
+setting is off on the worker's crew, and its owner turns it on there. A
 `decide` whose forward fails says it "did NOT reach the worker's crew"; record
 it again to retry. A remote row adds `worker_instance_id`, `crew_state`,
 `crew_down_since`, `pending_approval`, `remote_error` and

@@ -29,10 +29,10 @@ Four rules hold for every call, in this order:
 **Target fence (wave 1).** ``send``/``read``/``stop``/``close`` with a crew reach
 only a peer slot that THIS caller created with ``session_create(crew=)`` on THAT
 crew, as recorded in gateway memory by :func:`_record_dispatch`. The record is not
-persisted: after a hub restart the conductor cannot drive the slot, and the person
-still can from the crew window. Wave 4 replaces this record with the work
-item's ``worker_session_key`` + ``worker_instance_id`` pair, which survives a
-restart.
+persisted: after a hub restart a slot no item names cannot be driven by the
+conductor, and the person still can from the crew window. The work item's
+``worker_session_key`` + ``worker_instance_id`` pair survives a restart (wave 4):
+an open item admits every verb for its slot, a finished one admits ``close`` only.
 """
 
 from __future__ import annotations
@@ -651,7 +651,8 @@ async def _fenced_target_or_item(
     (wave 8) is dropped from the in-memory record when it is retired, so ``send``,
     ``read`` and ``stop`` reach only the current binding and need no read of the
     history; only ``close`` may name a retired slot, and only when the history can
-    be read and holds it.
+    be read and holds it. ``close`` may also name the slot a finished item is still
+    bound to: a worker is closed after its item, and by then no open item names it.
     """
     from kiro_crew.dashboard.handlers import remote_ingest
 
@@ -666,6 +667,8 @@ async def _fenced_target_or_item(
         if not _slot_ok(slot):
             raise
         if await remote_ingest.holds_peer_slot(board, instance_id, slot):
+            return slot
+        if verb == "close" and await remote_ingest.holds_finished_slot(board, instance_id, slot):
             return slot
         retired = await remote_ingest.holds_retired_slot(board, instance_id, slot)
         if retired is True and verb == "close":
@@ -832,9 +835,38 @@ async def _send(mgr: Any, instance_id: str, slot: str, body: dict[str, Any]) -> 
     )
     if not 200 <= status < 300:
         raise _peer_error(status, payload, "could not send to the crew session")
-    # What the crew did, not what was asked: a steer it could not land is queued.
-    steered = isinstance(payload, dict) and payload.get("steered") is True
-    return {"target": slot, "crew": instance_id, "delivered": True, "steered": steered}
+    # What the crew did, not what was asked: a steer it could not land is queued,
+    # and the crew's own reason for that rides back to the sender. A steer its
+    # agent holds behind a tool call is accepted, and not read yet.
+    reply = payload if isinstance(payload, dict) else {}
+    steered = reply.get("steered") is True
+    # An idle session starts a turn on the message at once; a busy one queues it.
+    # 202 is a turn held for fair admission, and ``stopped`` one a Stop ended
+    # before it began: neither has started.
+    # A queued entry the crew's drain started before it answered (the turn a steer
+    # waited on had ended) carries ``started`` beside ``queued``: it is running.
+    began = reply.get("started") is True
+    queued = (
+        (reply.get("queued") is True and not began) or status == 202 or reply.get("stopped") is True
+    )
+    result = {
+        "target": slot,
+        "crew": instance_id,
+        "delivered": True,
+        "steered": steered,
+        "started": not steered and not queued,
+    }
+    if steered and reply.get("held") is True:
+        result["held"] = True
+    from kiro_crew import steer_refusal
+
+    refusal = "" if steered or began else steer_refusal.known(reply.get("steerRefusal"))
+    if refusal:
+        result["steerRefusal"] = refusal
+    if not steered and reply.get("heldForPerson") is True:
+        # No steer was tried: a person is driving that turn on the crew.
+        result["heldForPerson"] = True
+    return result
 
 
 async def _read(mgr: Any, instance_id: str, slot: str, limit: int) -> dict[str, Any]:

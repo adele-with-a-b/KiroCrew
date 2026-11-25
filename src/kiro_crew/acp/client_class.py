@@ -1607,6 +1607,12 @@ class AcpClient:
         return self.backend in ACP_BACKENDS_STEER
 
     @property
+    def steer_held_behind_tool(self) -> bool:
+        """True while an accepted steer waits for an open tool call of the turn to end
+        (``_steer_via_steering_request``): it is not with the model yet."""
+        return bool(getattr(self, "_steers_held", None))
+
+    @property
     def steer_needs_loss_recovery(self) -> bool:
         """True when an accepted steer can still be dropped with its turn.
 

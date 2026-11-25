@@ -280,8 +280,13 @@ SEND_DISCARD_HARD_STOP_STEER = "hard_stop_steer"
 # No discard changes a constraint, so the drain's containment wording would
 # describe nothing here.
 _SEND_DISCARD_REASONS = {
-    SEND_DISCARD_QUEUE_CANCEL: "was discarded before it ran: it was cancelled from that "
-    "session's queue. It was not delivered and will not run.",
+    # The card's cancel puts the text back in that chat's message box, where it may
+    # still be sent on by hand, so this one does not say it will never run. A person
+    # or the app that owns the chat can cancel, so it names neither. Nothing matches
+    # a later send to this message, so the notice says no further word comes.
+    SEND_DISCARD_QUEUE_CANCEL: "was taken back from that session's queue at that chat, "
+    "and its text was put in the message box there. It has not run. It may still be "
+    "sent on by hand from that chat; you get no further word about it.",
     SEND_DISCARD_HARD_STOP: "was discarded before it ran: a hard stop of that session "
     "discarded its queue. It was not delivered and will not run.",
     # The turn may already have read a steer, so this one does not say it never ran.
@@ -294,7 +299,6 @@ _SEND_DISCARD_REASONS = {
 # ``send_discarded`` frame ("was discarded before it ran: {reason}. It was not
 # delivered and will not run."). A cause absent here keeps its English content.
 _SEND_DISCARD_FRAMED_REASONS = {
-    SEND_DISCARD_QUEUE_CANCEL: "it was cancelled from that session's queue",
     SEND_DISCARD_HARD_STOP: "a hard stop of that session discarded its queue",
 }
 

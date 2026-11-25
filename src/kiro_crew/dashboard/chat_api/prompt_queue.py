@@ -64,7 +64,8 @@ async def api_chat_slot_queue_cancel(request: web.Request) -> web.Response:
     slot.invalidate_source_links()
     # A cross-session delivery has a sender holding a "queued, will run later"
     # receipt, and the retracted card below is on this session, which the sender
-    # does not read. Its own transcript is told the message will never run.
+    # does not read. The text goes back to this chat's message box, where it may be
+    # dropped or sent on by hand, so the sender is told it left the queue unrun.
     # circular import: session_control imports this package's modules at module level.
     from kiro_crew.dashboard.session_control import (
         SEND_DISCARD_QUEUE_CANCEL,

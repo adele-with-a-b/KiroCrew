@@ -532,8 +532,14 @@ def test_the_item_pair_fences_a_peer_slot(recorded, peer):
         assert await remote_ingest.holds_peer_slot(CONDUCTOR, CREW, PEER_SLOT)
         assert not await remote_ingest.holds_peer_slot(CONDUCTOR, "inst-other", PEER_SLOT)
         assert not await remote_ingest.holds_peer_slot(CONDUCTOR, CREW, "chat-1")
+        assert not await remote_ingest.holds_finished_slot(CONDUCTOR, CREW, PEER_SLOT)
         await _record(CONDUCTOR, {"action": "close", "item_id": item_id, "state": "abandoned"})
         assert not await remote_ingest.holds_peer_slot(CONDUCTOR, CREW, PEER_SLOT)
+        # The finished item still names its worker, which is what lets it be closed.
+        assert await remote_ingest.holds_finished_slot(CONDUCTOR, CREW, PEER_SLOT)
+        assert not await remote_ingest.holds_finished_slot(CONDUCTOR, "inst-other", PEER_SLOT)
+        assert not await remote_ingest.holds_finished_slot(CONDUCTOR, CREW, "chat-1")
+        assert not await remote_ingest.holds_finished_slot("other-board", CREW, PEER_SLOT)
 
     asyncio.run(go())
 

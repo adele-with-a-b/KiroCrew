@@ -364,6 +364,40 @@ def test_after_a_restart_the_item_pair_still_fences_the_slot(env, monkeypatch):
     assert _call(env, "send", crew="lab", target=target, message="again")[0] == 200
 
 
+def test_after_a_restart_a_finished_items_worker_can_only_be_closed(env, monkeypatch):
+    """A worker is closed after its item is finished. With the in-memory record gone
+    no open item names its slot, so the finished item is what admits the close, and
+    it admits nothing else."""
+    from kiro_crew.dashboard.handlers import remote_ingest
+
+    target = _create(env)
+    crew._DISPATCHED.clear()
+
+    async def never(board, inst, slot):
+        return False
+
+    async def only_target(board, inst, slot):
+        return (inst, slot) == (INSTANCE, target)
+
+    monkeypatch.setattr(remote_ingest, "holds_peer_slot", never)
+    monkeypatch.setattr(remote_ingest, "holds_finished_slot", never)
+    status, body = _call(env, "close", crew="lab", target=target)
+    assert (status, body["code"]) == (403, "crew_target_not_dispatched")
+
+    monkeypatch.setattr(remote_ingest, "holds_finished_slot", only_target)
+    env.peer.calls.clear()
+    for verb, fields in (("send", {"message": "again"}), ("read", {"limit": 5}), ("stop", {})):
+        status, body = _call(env, verb, crew="lab", target=target, **fields)
+        assert (status, body["code"]) == (403, "crew_target_not_dispatched"), verb
+    assert env.peer.calls == []
+    status, body = _call(env, "close", crew="lab", target="chat-not-mine")
+    assert (status, body["code"]) == (403, "crew_target_not_dispatched")
+    assert _call(env, "close", crew="lab", target=target)[0] == 200
+    assert [(c["method"], c["path"]) for c in env.peer.calls] == [
+        ("DELETE", f"api/chat/slots/{target}")
+    ]
+
+
 def test_a_crew_create_refuses_local_only_fields(env):
     status, body = _call(env, "create", crew="lab", folder_id="f1")
     assert (status, body["code"]) == (400, "crew_field_unsupported")
@@ -642,13 +676,58 @@ def test_a_failed_rename_keeps_the_created_key(env):
 
 
 @pytest.mark.parametrize(
-    "reply, steered", [({"ok": True, "steered": True}, True), ({"ok": True, "queued": True}, False)]
+    "status, reply, expected",
+    [
+        (200, {"ok": True, "steered": True}, {"steered": True, "started": False}),
+        (
+            200,
+            {"ok": True, "steered": True, "held": True},
+            {"steered": True, "started": False, "held": True},
+        ),
+        (200, {"ok": True, "queued": True}, {"steered": False, "started": False}),
+        # The turn a steer waited on ended and the crew's drain began the entry.
+        (
+            200,
+            {"ok": True, "queued": True, "started": True, "steerRefusal": "between_steps"},
+            {"steered": False, "started": True},
+        ),
+        (
+            200,
+            {"ok": True, "queued": True, "steerRefusal": "permission_wait"},
+            {"steered": False, "started": False, "steerRefusal": "permission_wait"},
+        ),
+        (
+            200,
+            {"ok": True, "queued": True, "heldForPerson": True},
+            {"steered": False, "started": False, "heldForPerson": True},
+        ),
+        # A code this build does not know is not passed on as a reason.
+        (
+            200,
+            {"ok": True, "queued": True, "steerRefusal": "<b>made up</b>"},
+            {"steered": False, "started": False},
+        ),
+        # The crew's fair-admission queue answers 202 with no ``queued`` key.
+        (202, {"ok": True}, {"steered": False, "started": False}),
+        # An idle session: the crew names the slot it started the turn on.
+        (200, {"ok": True, "slot": "chat-77", "mid": "m-1"}, {"steered": False, "started": True}),
+        (200, {"ok": True, "held": True}, {"steered": False, "started": True}),
+        # A Stop that landed before the turn began.
+        (
+            200,
+            {"ok": True, "slot": "chat-77", "stopped": True},
+            {"steered": False, "started": False},
+        ),
+    ],
 )
-def test_the_steer_receipt_reports_what_the_crew_did(env, reply, steered):
+def test_the_send_receipt_reports_what_the_crew_did(env, status, reply, expected):
     target = _create(env)
-    env.peer.reply("POST", "api/chat", 200, reply)
-    status, body = _call(env, "send", crew="lab", target=target, message="now", steer=True)
-    assert status == 200 and body["steered"] is steered
+    env.peer.reply("POST", "api/chat", status, reply)
+    code, body = _call(env, "send", crew="lab", target=target, message="now", steer=True)
+    assert code == 200
+    keys = ("steered", "started", "held", "steerRefusal", "heldForPerson")
+    told = {k: body[k] for k in keys if k in body}
+    assert told == expected
     assert env.peer.calls[-1]["body"]["steer"] is True
 
 
