@@ -109,7 +109,7 @@ async def steer(
     replaced chat, and the caller refuses the send.
     """
     # circular import: session_control imports this package's modules at module level.
-    from kiro_crew.dashboard.chat_delivery import steer_refusal_of
+    from kiro_crew.dashboard.chat_delivery import TURN_ACTOR_META_KEY, steer_refusal_of
     from kiro_crew.dashboard.session_control import (
         containment_meta,
         containment_snapshot,
@@ -131,7 +131,10 @@ async def steer(
             slot,
             message,
             session_deliver.peer(steer=True, patient=True, carry=carry),
-            admission=admission,
+            # The teardown copies the steer's admission onto the entry it makes
+            # for an unread steer. With the actor in it that entry drains as the
+            # conductor's turn, as a queued send does, never as the person's.
+            admission={**admission, TURN_ACTOR_META_KEY: "crew"},
         )
     )
     try:

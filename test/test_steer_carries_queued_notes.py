@@ -135,9 +135,11 @@ def test_only_entries_the_sender_queued_with_session_send_move(tmp_path):
 
     result = _send(state, caller, worker, "newest", steer=True)
 
+    # The sender's requeued steer runs as its own turn and nothing of the
+    # sender's passes it: the carry ends there and the new note queues last.
     assert result["carried"] == 1
-    assert [_body(text) for text in _handed(worker)] == ["mine, queued", "newest"]
-    assert _queued(worker) == stay
+    assert [_body(text) for text in _handed(worker)] == ["mine, queued"]
+    assert _queued(worker)[:-1] == stay and len(_queued(worker)) == len(stay) + 1
 
 
 def test_a_refused_older_note_stays_and_the_ones_behind_it_are_not_tried(tmp_path):
@@ -374,6 +376,62 @@ def test_a_carried_note_keeps_the_admission_it_was_queued_under(tmp_path, monkey
     assert carried["relay_meta"] == meta["relay"]
 
 
+def test_a_hard_stop_under_a_carried_note_discards_it_with_the_rest(tmp_path, monkeypatch):
+    """The person pressed "discard everything" while the note was off the queue
+    for its steer: it must not come back onto the emptied queue and run later."""
+    state, caller, worker = _setup(tmp_path)
+    _queue_notes(state, caller, worker, "first", "second")
+    told: list[tuple[str, str]] = []
+
+    async def _killed(st, slot, text, **kwargs):
+        slot._stop_state = "killing"
+        slot._queue.clear()
+        return cd.SteerUnavailable(steer_refusal.TURN_ENDED)
+
+    def _notify(st, *, entry_meta, target_slot, text, cause):
+        told.append((_body(text), cause))
+        return True
+
+    monkeypatch.setattr(cd, "steer_into_running_turn", _killed)
+    monkeypatch.setattr(sc, "notify_send_origin_discarded", _notify)
+    carry = steer_carry.from_session(state, caller.key)
+
+    outcome = asyncio.run(
+        session_deliver.deliver(
+            state, worker, "third", session_deliver.peer(steer=True, carry=carry)
+        )
+    )
+
+    assert cd.steer_refusal_of(outcome) == steer_refusal.TURN_ENDED
+    assert worker._queue == [] and carry.count == 0
+    assert told == [("first", sc.SEND_DISCARD_HARD_STOP)]
+
+
+def test_a_note_queued_during_a_hard_stop_stays_for_the_next_turn(tmp_path, monkeypatch):
+    """The stop discards what was queued when it was pressed. A note that arrived
+    after the press stays queued, and a cut-in during the kill carries nothing."""
+    state, caller, worker = _setup(tmp_path)
+    worker._stop_state = "killing"
+    ids = _queue_notes(state, caller, worker, "first")
+    calls: list[str] = []
+
+    async def _never(st, slot, text, **kwargs):
+        calls.append(text)
+        return cd.SteerUnavailable(steer_refusal.TURN_ENDED)
+
+    monkeypatch.setattr(cd, "steer_into_running_turn", _never)
+    carry = steer_carry.from_session(state, caller.key)
+
+    outcome = asyncio.run(
+        session_deliver.deliver(
+            state, worker, "second", session_deliver.peer(steer=True, carry=carry)
+        )
+    )
+
+    assert cd.steer_refusal_of(outcome) == steer_refusal.TURN_ENDED
+    assert calls == [] and [entry["id"] for entry in worker._queue] == ids
+
+
 # ── a hub conductor's steer on this crew ─────────────────────────────────────
 
 
@@ -406,6 +464,61 @@ def test_a_conductors_steer_on_a_crew_carries_its_queued_sends(tmp_path):
     assert _cancelled(state) == [first, second]
     # Text of the conductor's is in the turn, so the audience record stays.
     assert len(worker._steer_audience_fences) == 1
+
+
+def test_a_carried_crew_note_keeps_its_actor_for_a_requeue(tmp_path):
+    """Unread when the turn ends, a steer is requeued from its own records; with
+    no actor there the conductor's note would run as the person's turn."""
+    state, worker = _crew_worker(tmp_path)
+    cd.queue_for_next_turn(state, worker, "first", turn_actor="crew")
+
+    asyncio.run(agent_steer.steer(state, worker, "second"))
+
+    assert "first" in worker._pending_steers
+    # The record the teardown copies onto the entry it makes for an unread steer.
+    assert worker._steer_admissions["first"][cd.TURN_ACTOR_META_KEY] == "crew"
+
+
+def test_a_requeued_crew_steer_is_not_carried_a_second_time(tmp_path):
+    state, worker = _crew_worker(tmp_path)
+    cd.queue_for_next_turn(state, worker, "first", turn_actor="crew")
+    (entry,) = worker._queue
+    entry["meta"]["steer_delivery_id"] = "d1"  # as the teardown stamps a requeued steer
+
+    reply, refusal, _ = asyncio.run(agent_steer.steer(state, worker, "second"))
+
+    # It runs as its own turn, and the new note may not pass it: it is queued.
+    assert reply is None and refusal == steer_refusal.TURN_ENDED
+    assert _handed(worker) == [] and worker._queue == [entry]
+
+
+def test_a_conductors_steer_records_its_actor_for_a_requeue(tmp_path):
+    state, worker = _crew_worker(tmp_path)
+
+    reply, _, _ = asyncio.run(agent_steer.steer(state, worker, "second"))
+
+    assert reply == {"ok": True, "steered": True}
+    assert worker._steer_admissions["second"][cd.TURN_ACTOR_META_KEY] == "crew"
+
+
+def test_a_requeued_session_steer_holds_the_senders_later_notes_back(tmp_path):
+    """A steer of the sender's that the teardown requeued runs as its own turn.
+    The sender's later queued note and a new cut-in stay behind it, in order."""
+    state, caller, worker = _setup(tmp_path)
+    ids = _queue_notes(state, caller, worker, "first", "second")
+    requeued = worker._queue[0]
+    requeued["meta"].pop(sc.SESSION_SEND_QUEUED_META)  # as a requeued steer's meta is
+    carry = steer_carry.from_session(state, caller.key)
+
+    outcome = asyncio.run(
+        session_deliver.deliver(
+            state, worker, "third", session_deliver.peer(steer=True, carry=carry)
+        )
+    )
+
+    assert cd.steer_refusal_of(outcome) == steer_refusal.TURN_ENDED
+    assert _handed(worker) == [] and carry.count == 0
+    assert [entry["id"] for entry in worker._queue] == ids
 
 
 def test_a_restored_crew_entry_is_nobodys_and_stays(tmp_path):

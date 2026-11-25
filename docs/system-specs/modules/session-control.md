@@ -546,8 +546,22 @@ ends meanwhile cannot also drain it; a refused steer puts the same entry back
 behind the entries that were ahead of it. The `between_steps` wait is spent with
 the entry on the queue, one budget for the whole carry, so a turn that ends during
 it drains the entry in its place. A steer the teardown requeued lives on as that
-requeued entry at the head of the queue. A steer that raises after its text was
-registered (pending, or already read by the turn) does not bring the entry back.
+requeued entry at the head of the queue. A steer that raises while its text is
+still registered does not bring the entry back. (Known edge: a text the turn read
+whose row write then raises leaves no record, and the entry is put back.)
+
+A hard stop pressed while an entry is off the queue for its attempt discards it
+with the rest of the queue: it is not put back, its card leaves, and its sender
+gets the hard-stop discard notice. While a hard stop is already under way nothing
+is carried: what is queued then arrived after the press and stays for the next
+turn. A carried entry that had a turn actor stamp (`meta.turnActor`, the crew
+path) keeps it in the steer's recorded admission, which the teardown copies onto
+the entry it makes for an unread steer, so that entry does not drain as the
+person's turn. The conductor's new note records the same stamp, for the same
+reason. A steer of the sender's that the teardown requeued runs as its own turn
+and is never carried; while one is the oldest of the sender's entries nothing of
+theirs goes in ahead of it, so the carry ends and the new note queues behind
+(`turn_ended`).
 
 An entry whose text equals the new text also ends the carry and stays queued:
 steered first, it would leave the new text refused as `same_pending`.

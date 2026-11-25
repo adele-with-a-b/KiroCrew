@@ -219,7 +219,8 @@ def test_an_agent_steer_goes_in_as_a_peers_under_a_recorded_admission(steer_rig)
     assert origin == session_deliver.peer(
         steer=True, patient=True, carry=steer_carry.from_hub_conductor()
     )
-    assert kwargs == {"admission": steer_rig.admission}
+    # The recorded admission also names the actor, for a requeue by the teardown.
+    assert kwargs == {"admission": {**steer_rig.admission, "turnActor": "crew"}}
     # Recorded before the write, and kept for the turn the text is now inside.
     assert list(steer_rig.fences_at_write.values()) == [steer_rig.admission]
     assert list(steer_rig.slot._steer_audience_fences.values()) == [steer_rig.admission]

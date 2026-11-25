@@ -63,6 +63,10 @@ class Carry:
 
     mine: "Callable[[dict[str, Any]], bool]"
     count: int = 0
+    #: The sender's entries that stay queued and that nothing of the sender's may
+    #: pass: a steer of theirs the teardown requeued. One ahead of the rest ends
+    #: the carry and keeps the new note out of the turn, so it queues behind.
+    waits: "Callable[[dict[str, Any]], bool] | None" = None
 
 
 def from_session(state: "DashboardState", caller_key: str) -> Carry | None:
@@ -72,6 +76,8 @@ def from_session(state: "DashboardState", caller_key: str) -> Carry | None:
     reason ``send_origin_meta`` stamps nothing for one.
     """
     # Deferred: both import the session_control facade, which loads this package.
+    from kiro_crew.dashboard.chat_delivery import queue_entry_is_user_origin
+    from kiro_crew.dashboard.session_control import SESSION_SEND_QUEUED_META, send_origin_slot
     from kiro_crew.dashboard.session_control_parts.delivery_containment import (
         send_origin_meta,
         send_origin_tab,
@@ -81,16 +87,47 @@ def from_session(state: "DashboardState", caller_key: str) -> Carry | None:
     tab = send_origin_tab(send_origin_meta(state, caller_key))
     if not tab:
         return None
-    return Carry(lambda entry: _queue_entry_from(entry, caller_key, tab) == QUEUE_FROM_CALLER)
+
+    def _requeued_steer_of_the_caller(entry: dict[str, Any]) -> bool:
+        # The requeue copies the send's stamp from the steer's admission, which
+        # never holds the queued marker (``_queue_entry_from``).
+        meta = entry.get("meta")
+        return (
+            isinstance(meta, dict)
+            and not queue_entry_is_user_origin(entry)
+            and meta.get(SESSION_SEND_QUEUED_META) is not True
+            and send_origin_slot(meta) == caller_key
+            and send_origin_tab(meta) == tab
+        )
+
+    return Carry(
+        lambda entry: _queue_entry_from(entry, caller_key, tab) == QUEUE_FROM_CALLER,
+        waits=_requeued_steer_of_the_caller,
+    )
 
 
 def from_hub_conductor() -> Carry:
     """The carry for a hub conductor's agent-origin steer on this crew."""
-    return Carry(_queued_by_hub_conductor)
+    return Carry(_queued_by_hub_conductor, waits=_requeued_steer_of_hub_conductor)
+
+
+def _requeued_steer_of_hub_conductor(entry: dict[str, Any]) -> bool:
+    """A conductor's steer the teardown requeued with its steer row still open."""
+    from kiro_crew.dashboard.chat_delivery import TURN_ACTOR_META_KEY, queue_entry_is_user_origin
+    from kiro_crew.dashboard.chat_utils_injected_rows import STEER_POSSIBLY_DELIVERED_META
+
+    meta = entry.get("meta")
+    return (
+        isinstance(meta, dict)
+        and not queue_entry_is_user_origin(entry)
+        and meta.get(TURN_ACTOR_META_KEY) == "crew"
+        and ("steer_delivery_id" in meta or bool(meta.get(STEER_POSSIBLY_DELIVERED_META)))
+    )
 
 
 def _queued_by_hub_conductor(entry: dict[str, Any]) -> bool:
     from kiro_crew.dashboard.chat_delivery import TURN_ACTOR_META_KEY, queue_entry_is_user_origin
+    from kiro_crew.dashboard.chat_utils_injected_rows import STEER_POSSIBLY_DELIVERED_META
     from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY
     from kiro_crew.shared_crew.admission_entry import QUEUED_WORK_META_KEY
 
@@ -100,6 +137,10 @@ def _queued_by_hub_conductor(entry: dict[str, Any]) -> bool:
         return False
     meta = entry.get("meta")
     if not isinstance(meta, dict) or meta.get(TURN_ACTOR_META_KEY) != "crew":
+        return False
+    if "steer_delivery_id" in meta or meta.get(STEER_POSSIBLY_DELIVERED_META):
+        # A steer the teardown requeued: it already has a steer row, and the
+        # drain is what settles that row. It is never steered a second time.
         return False
     # shortcut: an entry fair admission parked work for stays queued, because
     # steering it would leave that work row unsettled; settle the row here once
@@ -156,6 +197,7 @@ def _may_go(state: "DashboardState", slot: Any, entry: dict[str, Any]) -> bool:
 
 def _baseline(meta: Any) -> dict[str, Any]:
     """The admission a carried entry's steer records: the one it was queued under."""
+    from kiro_crew.dashboard.chat_delivery import TURN_ACTOR_META_KEY
     from kiro_crew.dashboard.session_control import (
         QUEUED_CONTAINMENT_META_KEY,
         SEND_ORIGIN_META_KEY,
@@ -163,7 +205,59 @@ def _baseline(meta: Any) -> dict[str, Any]:
 
     if not isinstance(meta, dict):
         return {}
-    return {k: meta[k] for k in (QUEUED_CONTAINMENT_META_KEY, SEND_ORIGIN_META_KEY) if k in meta}
+    # The teardown copies this record onto the entry it makes for an unread
+    # steer, from the moment the steer registers. The actor stamp rides it, or
+    # a requeued conductor's note would drain as the person's turn.
+    keep = (QUEUED_CONTAINMENT_META_KEY, SEND_ORIGIN_META_KEY, TURN_ACTOR_META_KEY)
+    return {k: meta[k] for k in keep if k in meta}
+
+
+def _being_killed(slot: Any) -> bool:
+    """Whether a hard stop of *slot* is under way (from its press to its end)."""
+    return getattr(slot, "_stop_state", "") == "killing"
+
+
+def _hard_stop_mark(slot: Any) -> Any:
+    """The card a hard stop's escalation is scoped to; None when none is."""
+    return getattr(slot, "_stop_escalated_card_id", None)
+
+
+def _hard_stopped(slot: Any, before: Any) -> bool:
+    """Whether a hard stop ("discard everything") was PRESSED on *slot* since
+    *before* was read, on a slot that was not being killed then.
+
+    A press sets the state and scopes a card; the end of a kill and a soft stop
+    only clear the card, so a mark that went back to None is not a press.
+    """
+    mark = _hard_stop_mark(slot)
+    return _being_killed(slot) or (mark is not None and mark != before)
+
+
+def _discarded_by_hard_stop(
+    state: "DashboardState", slot: Any, entry: dict[str, Any], queue_id: str
+) -> None:
+    """A hard stop emptied the queue while *entry* was off it for its steer.
+
+    The stop discards what was queued when it was pressed, and this entry was:
+    it goes with the rest, its card leaves, and its sender is told as the stop
+    tells the senders of the entries it took.
+    """
+    from kiro_crew.dashboard.session_control import (
+        SEND_DISCARD_HARD_STOP,
+        notify_send_origin_discarded,
+    )
+
+    _left_the_queue(state, slot, queue_id)
+    try:
+        notify_send_origin_discarded(
+            state,
+            entry_meta=entry.get("meta"),
+            target_slot=slot,
+            text=entry.get("content") or "",
+            cause=SEND_DISCARD_HARD_STOP,
+        )
+    except Exception:
+        logger.warning("could not tell the sender of a discarded carry", exc_info=True)
 
 
 def _put_back(slot: Any, entry: dict[str, Any], ahead: list[str], stamp: Any) -> None:
@@ -248,9 +342,24 @@ async def take_earlier_in(
         # The steer waits for an in-flight clear before it registers its text.
         # Wait for it here, with every entry still queued.
         await steer_retract.wait_for_clear(slot)
-        if _turn_is_over():
+        if _turn_is_over() or _being_killed(slot):
+            # A hard stop under way discarded what was queued when it was
+            # pressed; what is queued now arrived after it and stays for the
+            # next turn, so nothing is carried into the turn being killed.
             return SteerUnavailable(steer_refusal.TURN_ENDED)
-        entry = next((e for e in slot._queue if isinstance(e, dict) and carry.mine(e)), None)
+        waits = carry.waits
+        entry = next(
+            (
+                e
+                for e in slot._queue
+                if isinstance(e, dict) and (carry.mine(e) or (waits is not None and waits(e)))
+            ),
+            None,
+        )
+        if entry is not None and not carry.mine(entry):
+            # The sender's requeued steer is the oldest of theirs here. It runs
+            # as its own turn, so nothing of the sender's goes in ahead of it.
+            return SteerUnavailable(steer_refusal.TURN_ENDED)
         if entry is None or entry.get("content") == ahead_of or not _may_go(state, slot, entry):
             return None
         queue_id = str(entry.get("id") or "")
@@ -265,6 +374,7 @@ async def take_earlier_in(
         # it has registered the text (the clear was waited for above), and a
         # registered steer is the teardown's to requeue, so a turn that ends
         # under the attempt finds the text in exactly one place.
+        stop_mark = _hard_stop_mark(slot)
         slot.queue_pop(index)
         try:
             outcome = await steer(
@@ -288,6 +398,11 @@ async def take_earlier_in(
             # The turn ended first and its teardown queued the text again, at the
             # head: it lives on as that entry, and the new note queues behind.
             _left_the_queue(state, slot, queue_id)
+            return SteerUnavailable(steer_refusal.TURN_ENDED)
+        if _hard_stopped(slot, stop_mark):
+            # "Discard everything" was pressed under the attempt: the entry was
+            # queued when it was pressed, so it must not come back.
+            _discarded_by_hard_stop(state, slot, entry, queue_id)
             return SteerUnavailable(steer_refusal.TURN_ENDED)
         _put_back(slot, entry, ahead, stamp)
         refusal = steer_refusal_of(outcome) or steer_refusal.REFUSED
