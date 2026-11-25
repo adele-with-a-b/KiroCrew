@@ -367,7 +367,9 @@ _RESTORED_DRAIN_IDS: ContextVar[dict[str, frozenset[str]]] = ContextVar(
 )
 
 
-async def _drain_parked_queues(state: DashboardState, slot_keys: list[str]) -> None:
+async def _drain_parked_queues(
+    state: DashboardState, slot_keys: list[str], *, started_ids: set[str] | None = None
+) -> None:
     """Start the next queued turn on each parked slot that is still idle.
 
     Runs once when memory preparation finishes. Each slot is re-checked under
@@ -375,7 +377,8 @@ async def _drain_parked_queues(state: DashboardState, slot_keys: list[str]) -> N
     Continue that landed in the meantime is never doubled: a running slot
     drains its own queue at its turn end. A slot that started closing after
     the caller scheduled this drain keeps its queue, so teardown never races
-    a turn it would have to cancel.
+    a turn it would have to cancel. *started_ids* is passed on to
+    :func:`_start_next_queued_turn`.
     """
     for key in slot_keys:
         slot = state._slots.get(key)
@@ -393,7 +396,7 @@ async def _drain_parked_queues(state: DashboardState, slot_keys: list[str]) -> N
                     continue
                 if not _memory_preparation_pending(state) and not _parked_queue_drain_admitted():
                     return
-                started = await _start_next_queued_turn(state, slot)
+                started = await _start_next_queued_turn(state, slot, started_ids=started_ids)
             if started:
                 state.push_slots_update()
         except Exception:
@@ -561,6 +564,7 @@ async def _start_next_queued_turn(
     predecessor_actor: str = "",
     predecessor_turn_id: str = "",
     end_batch: bool = False,
+    started_ids: set[str] | None = None,
 ) -> bool:
     """Dequeue and start one ready Kiro turn, preserving queue semantics.
 
@@ -573,7 +577,9 @@ async def _start_next_queued_turn(
     (:func:`_mark_turn_end`). ``end_batch`` says the caller read the synthesis
     fire gate as ``clear`` with the floor held, so a user message drained here
     also zeroes the batch's completion-turn count; the drain itself reads no
-    store.
+    store. ``started_ids``, when given, gains the id of each entry the started
+    turn consumed, and only those: an entry this call dropped or left queued
+    is never added, so a caller can say which of its entries a turn began.
     """
 
     from kiro_crew.dashboard import gateway_notice as gn
@@ -1603,6 +1609,8 @@ async def _start_next_queued_turn(
     lineage = slot._turn_lineage_generation()
     own_retry = _is_own_recovery(consumed, predecessor_actor, predecessor_turn_id)
     slot.task = task
+    if started_ids is not None:
+        started_ids.update(item["id"] for item in consumed if item.get("id"))
     if own_retry:
         slot._turn_lineage = (slot._turn_generation, lineage)
     if _run_kwargs.get("_turn_start_background"):
