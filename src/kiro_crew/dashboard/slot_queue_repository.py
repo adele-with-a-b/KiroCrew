@@ -139,6 +139,113 @@ RESTORED_SEND_CHOSEN_KEY = "_restored_send_chosen"
 RESTORED_BOOT_ACCEPTED_KEY = "_restored_boot_accepted"
 
 
+def is_owner_queue_entry(item: Any) -> bool:
+    """Whether *item* is the owner's own words: the owner typed it on the
+    dashboard, not through a channel, and no app, cron or crew actor sent it.
+
+    Read from the marks only the queue's producers set (a restored entry has
+    none), so no text or code a caller names can make an entry the owner's.
+    """
+    if not isinstance(item, dict):
+        return False
+    return (
+        item.get("_directive_owner_origin") is True
+        and item.get("_directive_user_origin") is True
+        and not item.get("_directive_channel_origin")
+        # "turnActor": `chat_delivery.TURN_ACTOR_META_KEY`, stamped for an app,
+        # a cron or a crew send; a person's own carries none, or `user`.
+        and (item.get("meta") or {}).get("turnActor") in (None, "", "user")
+    )
+
+
+def _front_parts(queue: list[dict[str, Any]]) -> tuple[int, Callable[[Any], bool]]:
+    """The runner's leading retries, and a test for a sub-agent completion.
+
+    A retry finishes a turn that already ran, so nothing goes ahead of it. A
+    child's result and a person's message drain in arrival order (the sub-agent
+    hold, ``queue_drain.hold_users``), so a completion that came before the
+    owner's first entry stays ahead of his entries."""
+    # Local: chat_utils_injected_rows imports this module at load.
+    from kiro_crew.dashboard.chat_utils_injected_rows import (
+        SUBAGENT_COMPLETION_KIND,
+        is_synthetic_recovery_item,
+    )
+
+    lead = 0
+    while lead < len(queue) and is_synthetic_recovery_item(queue[lead]):
+        lead += 1
+    return (
+        lead,
+        lambda item: isinstance(item, dict) and item.get("kind") == SUBAGENT_COMPLETION_KIND,
+    )
+
+
+def after_owner_front(queue: list[dict[str, Any]]) -> int:
+    """The index just past the queue's front: the runner's retries that lead
+    it, then the completions and owner's entries that follow them. Text no
+    person sent and put back at the head goes here, so it never runs ahead of
+    the owner."""
+    index, completion = _front_parts(queue)
+    while index < len(queue) and (completion(queue[index]) or is_owner_queue_entry(queue[index])):
+        index += 1
+    return index
+
+
+def put_owner_entries_first(queue: list[dict[str, Any]]) -> bool:
+    """Move every owner entry to the front, in its order, behind only the
+    runner's leading retries and the sub-agent completions queued before his
+    first entry; every other entry keeps its order behind them. Return whether
+    the order changed, so the caller tells open tabs.
+
+    The one hop over another row: a completion that arrived before him moves up
+    with him, past the rows he passes, so it still runs before him."""
+    lead, completion = _front_parts(queue)
+    rest = queue[lead:]
+    first = next((i for i, item in enumerate(rest) if is_owner_queue_entry(item)), None)
+    if first is None:
+        return False
+    ahead = [item for item in rest[:first] if completion(item)]
+    owners = [item for item in rest if is_owner_queue_entry(item)]
+    others = [
+        item
+        for item in rest
+        if not is_owner_queue_entry(item) and not any(item is a for a in ahead)
+    ]
+    if all(a is b for a, b in zip(rest, ahead + owners + others)):
+        return False
+    queue[lead:] = ahead + owners + others
+    return True
+
+
+def owner_front_order(queue: list[dict[str, Any]], queue_id: str) -> list[str] | None:
+    """When the entry *queue_id* is the owner's, put his entries first
+    (:func:`put_owner_entries_first`). Return the queue's new order when it
+    changed, for :func:`broadcast_queue_order`; else None.
+
+    Called by every path that queues his send: whatever queued it (a refused
+    steer, his Queue pick, a hold on an idle slot), it runs next."""
+    entry = next((item for item in queue if item.get("id") == queue_id), None)
+    if not is_owner_queue_entry(entry) or not put_owner_entries_first(queue):
+        return None
+    return [item["id"] for item in queue]
+
+
+def broadcast_queue_order(state: Any, slot: Any, order: list[str]) -> None:
+    """Re-seat the queued rows in *order* and send open tabs one
+    ``queue_reorder`` frame. A tab draws a pushed card last, so a server-side
+    move it is not told about leaves the tab's order wrong, and a drag from it
+    could put the entry back."""
+    # Local: chat_utils_injected_rows imports this module at load.
+    from kiro_crew.dashboard.chat_utils_injected_rows import _reorder_queued_rows
+
+    _reorder_queued_rows(slot.messages, order)
+    slot.invalidate_source_links()
+    try:
+        state.broadcast_ws("queue_reorder", {"slot": slot.key, "order": order})
+    except Exception:
+        logger.warning("queue_reorder broadcast failed (slot %s)", slot.key, exc_info=True)
+
+
 def is_held_queue_entry(item: dict[str, Any]) -> bool:
     """Whether *item* waits for a person: a restored card nobody chose, and not a
     parked send the startup drain accepted. The slot frame's ``queue_held_depth``

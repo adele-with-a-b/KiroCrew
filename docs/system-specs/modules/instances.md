@@ -4114,13 +4114,33 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   (owner's own dashboard request, not through a channel, running turn without
   `_turn_owner_sent`), with nothing registered and nothing changed on the turn.
   The composer's queue path (`queue_for_next_turn`) then puts that entry at the
-  FRONT of the queue, and the owner's own earlier waiting entries, whatever those
-  wait for, come to the front with it in their order, so the owner's messages
-  never change order: it runs next after them, alone, as the owner's own turn
-  with the mark, and an entry queued before it (a peer's note) runs after it,
-  without the mark. Only entries carrying the owner's own marks move, whatever
-  code a caller names, and a move is sent to open tabs as a `queue_reorder`
-  frame after the `queue_push`. The card,
+  FRONT of the queue, as it does every owner entry it queues, whatever the cause
+  (his own Queue pick, a steer refused for any other reason, a take-back to the
+  queue), and so does the send route's hold on an idle slot (an open card
+  editor, a pending conversation discard, messages parked behind a stalled
+  child): `slot_queue_repository.owner_front_order` on both. One rule: the
+  owner's messages run in the order he sent them, ahead of every entry no
+  person of his sent. His earlier waiting entries, whatever those wait for, come
+  to the front with it in their order; it runs next after them, alone, as the
+  owner's own turn with the mark, and an entry queued before it (a peer's note,
+  a wake, another person's message in a shared crew) runs after it, without the
+  mark. Only entries carrying the owner's own marks move
+  (`slot_queue_repository.is_owner_queue_entry`: owner and user marks, no
+  channel mark, no stamped app, cron or crew actor), whatever code a caller
+  names, and a move is sent to open tabs as a `queue_reorder` frame after the
+  `queue_push` (`broadcast_queue_order`). Two things still run before him: the
+  runner's own retry of the turn that already ran (a `synthetic_recovery` or
+  false-tool-blocker replay at the head stays there), and a sub-agent completion
+  queued before his first entry: a child's result and a person's message drain
+  in arrival order, so that completion moves up with him, the one hop over
+  another row. Every other entry keeps its order. A restored card he chose with
+  "run this next" carries no owner mark (a proven peer note carries the same
+  chosen mark), so it does not count as his here.
+  A cut-in the ending turn did not read (a note, a wake) is put back after all
+  the owner's entries at the front, never ahead of them
+  (`_requeue_unconsumed_steers`, `after_owner_front`); his own unread steer goes
+  back behind his entries already waiting, and one `queue_reorder` frame gives
+  open tabs the order. The card,
   the row and the send's reply carry the code (`meta.steerRefusal`,
   `steerRefusal`). The responsive path takes its own queue arm for a steer that
   did not go in: the message waits as a priority entry, the running turn is asked

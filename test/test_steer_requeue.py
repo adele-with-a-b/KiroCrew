@@ -569,8 +569,15 @@ class TestSteerRequeueOnTurnDeath:
         # each requeued steer broadcast a queue_push card
         events = [c.args[0] for c in state.broadcast_ws.call_args_list]
         assert events.count("queue_push") == 2
-        payloads = [c.args[1] for c in state.broadcast_ws.call_args_list]
+        payloads = [
+            c.args[1] for c in state.broadcast_ws.call_args_list if c.args[0] == "queue_push"
+        ]
         assert all(p["slot"] == "test" and p["queue_id"] for p in payloads)
+        # A card a tab pushed draws last, so one frame tells it the new order.
+        assert events[-1] == "queue_reorder"
+        assert state.broadcast_ws.call_args_list[-1].args[1]["order"] == [
+            q["id"] for q in slot._queue
+        ]
         # Each card says it is a requeued steer, so the client ties the row it
         # drains into to the steer row; the queue entries themselves do not.
         assert all(p["meta"]["requeuedSteer"] is True for p in payloads)

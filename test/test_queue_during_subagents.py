@@ -231,7 +231,9 @@ class TestSteerFallbackSurvivesTheHold:
             resp = await client.post("/api/chat", json={"slot": "s1", "message": "after this turn"})
             assert (await resp.json()).get("queued") is True
 
-        assert slot._queue[-1]["meta"][COMPOSER_SEND_META] is True
+        # The owner's send goes ahead of the peer's waiting message.
+        assert slot._queue[0]["content"] == "after this turn"
+        assert slot._queue[0]["meta"][COMPOSER_SEND_META] is True
         started, _spawn, run_chat = await self._drain(state, slot)
         assert started is True
         assert run_chat.call_args.args[2] == "after this turn"
@@ -473,7 +475,8 @@ class TestApiChatSubagentQueueGate:
         state = _make_state(tmp_path, subagents=subs)
         slot = state.get_or_create_slot("s1")
         for i in range(MAX_DURABLE_QUEUE_ENTRIES):
-            slot.queue_append(f"earlier {i}")
+            # His own: his later send keeps its place behind them, past the cap.
+            slot.queue_append(f"earlier {i}", directive_user_origin=True, directive_owner_origin=True)
         frames: list[tuple[str, dict]] = []
         monkeypatch.setattr(state, "broadcast_ws", lambda kind, data: frames.append((kind, data)))
 
@@ -535,7 +538,8 @@ class TestApiChatSubagentQueueGate:
         assert slot.queue_depth == 0
 
     async def test_send_behind_parked_message_keeps_order(self, tmp_path, monkeypatch):
-        """A message parked while the child was live is answered before a later send."""
+        """His own message parked while the child was live is answered before his
+        later send: the owner's messages run in the order he sent them."""
         from kiro_crew.dashboard import chat_runner
 
         monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
@@ -555,7 +559,11 @@ class TestApiChatSubagentQueueGate:
         subs.running_agents_for = MagicMock(return_value=[{"id": "dead", "stalled": True}])
         state = _make_state(tmp_path, subagents=subs)
         slot = state.get_or_create_slot("s1")
-        slot.queue_append("first, parked while the child was live")
+        slot.queue_append(
+            "first, parked while the child was live",
+            directive_user_origin=True,
+            directive_owner_origin=True,
+        )
 
         async with TestClient(TestServer(_make_app(state))) as client:
             resp = await client.post("/api/chat?ws=1", json={"message": "second", "slot": "s1"})
@@ -591,7 +599,11 @@ class TestApiChatSubagentQueueGate:
         subs.running_agents_for = MagicMock(return_value=[{"id": "dead", "stalled": True}])
         state = _make_state(tmp_path, subagents=subs)
         slot = state.get_or_create_slot("s1")
-        slot.queue_append("first, parked while the child was live")
+        slot.queue_append(
+            "first, parked while the child was live",
+            directive_user_origin=True,
+            directive_owner_origin=True,
+        )
 
         @web.middleware
         async def _mark(request, handler):
