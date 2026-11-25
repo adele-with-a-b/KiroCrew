@@ -104,9 +104,18 @@ def test_create_renders_a_refusal():
 @pytest.mark.parametrize(
     "steer, reply, phrase",
     [
-        (False, {"steered": False}, "delivered (queued if busy)"),
-        (True, {"steered": True}, "steered into its running turn"),
-        (True, {"steered": False}, "could not steer"),
+        (False, {"steered": False, "started": True}, "it was idle and started a turn on it"),
+        (False, {"steered": False, "started": False}, "queued: it runs when its current turn"),
+        (True, {"steered": True, "started": False}, "steered into its running turn"),
+        # An idle session has no turn to steer: the steer that was asked for is
+        # not reported as one that failed.
+        (True, {"steered": False, "started": True}, "it was idle and started a turn on it"),
+        (
+            True,
+            {"steered": False, "started": False, "steerRefusal": "permission_wait"},
+            "queued, not steered",
+        ),
+        (True, {"steered": False, "started": False}, "queued, not steered"),
     ],
 )
 def test_send_renders_what_the_crew_did(steer, reply, phrase):
@@ -118,6 +127,49 @@ def test_send_renders_what_the_crew_did(steer, reply, phrase):
     assert phrase in out
     sent = client.calls[0][2]
     assert sent["message"] == "go" and sent.get("steer", False) is steer
+
+
+def test_a_steer_held_behind_a_tool_call_is_not_reported_as_read():
+    """The crew took the steer, and its agent holds it until the tool call it is in
+    returns. The receipt says so instead of implying the worker has read it."""
+    reply = {"target": "chat-77", "crew": "inst", "steered": True, "held": True}
+    args = {"crew": "lab", "target": "chat-77", "message": "go", "steer": True}
+    out = tools.run_crew_send(args, _ctx(_Client(reply)))
+    assert "steered into its running turn" in out
+    assert "has not read your message yet" in out and "Nothing was cut short" in out
+    plain = tools.run_crew_send(args, _ctx(_Client({**reply, "held": False})))
+    assert "has not read" not in plain
+
+
+def test_a_steer_that_fell_back_names_why():
+    reply = {
+        "target": "chat-77",
+        "crew": "inst",
+        "steered": False,
+        "started": False,
+        "steerRefusal": "peer_steer_off",
+    }
+    args = {"crew": "lab", "target": "chat-77", "message": "go", "steer": True}
+    out = tools.run_crew_send(args, _ctx(_Client(reply)))
+    assert "queued, not steered" in out
+    assert "could not steer its running turn" not in out
+    from kiro_crew import steer_refusal
+
+    assert steer_refusal.describe("peer_steer_off") in out
+
+
+def test_a_steer_kept_out_of_a_persons_turn_says_a_person_is_driving_it():
+    reply = {
+        "target": "chat-77",
+        "crew": "inst",
+        "steered": False,
+        "started": False,
+        "heldForPerson": True,
+    }
+    args = {"crew": "lab", "target": "chat-77", "message": "go", "steer": True}
+    out = tools.run_crew_send(args, _ctx(_Client(reply)))
+    assert "queued, not steered" in out and "A person is driving that turn" in out
+    assert "could not go into the running turn" not in out
 
 
 def test_send_renders_a_refusal():

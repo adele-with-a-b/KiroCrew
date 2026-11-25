@@ -114,8 +114,15 @@ def test_cancelling_a_queued_delivery_tells_its_sender(tmp_path):
     sent = _notices(caller)
     assert len(sent) == 1, "the sending session was told nothing"
     assert "chat-2" in sent[0]
-    assert "cancelled from that session's queue" in sent[0]
-    assert "will not run" in sent[0]
+    # The card's text went back to the person's message box, where it may still
+    # be sent on by hand, so the notice does not say it will never run.
+    # It names no person (an app that owns the chat can cancel too) and
+    # promises no second notice: nothing matches a later send to this message.
+    assert "taken back from that session's queue at that chat" in sent[0]
+    assert "It has not run." in sent[0]
+    assert "you get no further word about it" in sent[0]
+    assert "person" not in sent[0] and "will not run" not in sent[0]
+    assert "not delivered" not in sent[0] and "discarded" not in sent[0]
     assert "please summarize the log" in sent[0]
     # An operator's discard changes no authorization, so the drain's wording
     # would describe something that did not happen.
@@ -126,17 +133,17 @@ def _notice_rows(slot):
     return [m for m in slot.messages if m.get("role") == "notice"]
 
 
-def test_cancel_notice_excerpt_in_meta_is_redacted(tmp_path):
-    """The excerpt that rides in meta.notice_args must carry no credential, so a
-    secret in the dropped message never surfaces in the sender's dashboard.
+def test_cancel_notice_excerpt_is_redacted(tmp_path):
+    """The excerpt must carry no credential, so a secret in the taken-back message
+    never surfaces in the sender's dashboard.
 
     This asserts the OBSERVABLE contract, not a single scrub site. The queued
     prompt is already ``sanitize_outbound``-ed when it is enqueued
     (``session_messaging.send_to_target``), and the notice path scrubs the
-    excerpt again before it rides in ``notice_args`` — defense in depth. Either
-    scrub alone removes the token here, so this test does not prove one of them
-    is load-bearing; it pins the end-to-end guarantee that the token never
-    reaches the sender's row, in meta or in content."""
+    excerpt again, so this pins the end-to-end guarantee that the token never
+    reaches the sender's row. The cancel's sentence does not fit the localized
+    "discarded before it ran" frame, so the row carries no token and no
+    ``notice_args``."""
     state = _make_state(tmp_path)
     caller = state.get_or_create_slot("chat-1")
     target = _busy(state.get_or_create_slot("chat-2"))
@@ -150,14 +157,10 @@ def test_cancel_notice_excerpt_in_meta_is_redacted(tmp_path):
     _cancel(state, target, queue_id)
 
     (row,) = _notice_rows(caller)
-    meta = row.get("meta") or {}
-    excerpt = meta.get("notice_args", {}).get("excerpt", "")
-    # The bare excerpt now rides in notice_args (the frontend owns the
-    # ``Text: "…"`` label); whichever scrub ran, the credential is gone from it.
-    assert planted not in excerpt
-    assert "[REDACTED" in excerpt
-    # The content the dashboard renders carries the same scrubbed excerpt.
-    assert planted not in (row.get("content") or "")
+    assert "notice_args" not in (row.get("meta") or {})
+    content = row.get("content") or ""
+    assert planted not in content
+    assert "[REDACTED" in content
 
 
 def test_cancelling_one_entry_tells_only_its_own_sender(tmp_path):
@@ -383,10 +386,11 @@ def test_an_unknown_discard_cause_writes_nothing_and_does_not_raise(tmp_path):
 @pytest.mark.parametrize(
     ("cause", "token"),
     [
-        (sc.SEND_DISCARD_QUEUE_CANCEL, "send_discarded"),
         (sc.SEND_DISCARD_HARD_STOP, "send_discarded"),
-        # The steer sentence does not fit the "discarded before it ran" frame,
-        # so it carries no token and the card shows its English content.
+        # Neither sentence fits the "discarded before it ran" frame (a taken-back
+        # message may still be sent on by hand, a steer may already have been
+        # read), so each carries no token and the card shows its English content.
+        (sc.SEND_DISCARD_QUEUE_CANCEL, None),
         (sc.SEND_DISCARD_HARD_STOP_STEER, None),
     ],
 )

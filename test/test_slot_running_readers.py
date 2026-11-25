@@ -252,6 +252,8 @@ def test_running_and_turn_running_slot_readers_are_enumerated() -> None:
                 ("session_deliver.py", "deliver"),
                 # A peer's steer needs a running turn to cut into.
                 ("session_deliver.py", "_deliver_peer"),
+                # A steer waits for a starting turn only while that turn still runs.
+                ("session_deliver.py", "_steer_once_the_turn_has_a_prompt"),
                 ("session_control_parts/session_create.py", "create_session"),
                 # The roster verb. Reservation state, like `read_messages` beside
                 # it and for the same reason: it reports whether a session is

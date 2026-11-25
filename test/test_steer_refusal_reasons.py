@@ -44,10 +44,12 @@ def _assert_fell_back(outcome, reason: str) -> None:
     assert cd.steer_refusal_of(outcome) == reason
 
 
-def test_no_steer_capable_client(tmp_path):
+def test_a_turn_that_has_no_agent_yet(tmp_path):
+    """The turn publishes its agent once the session is up: none yet says the turn
+    is starting, not that its agent takes no steer."""
     state, slot = _running(tmp_path)
     slot._acp_client = None
-    _assert_fell_back(_steer(state, slot), steer_refusal.NO_STEER)
+    _assert_fell_back(_steer(state, slot), steer_refusal.BETWEEN_STEPS)
 
 
 def test_a_client_that_does_not_steer(tmp_path):

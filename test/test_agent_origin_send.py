@@ -204,12 +204,12 @@ class TestBusySlot:
             ({}, True),
         ],
     )
-    async def test_a_marked_steer_queues_as_its_own_turn(
+    async def test_a_marked_steer_stays_out_of_a_turn_a_person_is_driving(
         self, tmp_path, monkeypatch, _sel, body, person
     ):
         """A steer would put the agent's text inside the person's running turn,
         whose ``_directive_user_origin`` its directives keep reading; a marked
-        send queues instead, without the act-now intent."""
+        send queues instead, without the act-now intent, and says why."""
         from kiro_crew.dashboard.chat_delivery import COMPOSER_SEND_META
 
         monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
@@ -224,10 +224,135 @@ class TestBusySlot:
         assert slot._acp_client.steer.await_count == (1 if person else 0)
         assert slot._turn_user_sent is True
         if not person:
-            assert resp["queued"] is True
+            assert resp["queued"] is True and resp["heldForPerson"] is True
+            assert "steerRefusal" not in resp
             entry = slot._queue[-1]
             assert entry.get("_directive_user_origin", False) is False
             assert not (entry.get("meta") or {}).get(COMPOSER_SEND_META)
+
+    @pytest.mark.parametrize("standing", ["_turn_user_sent", "_turn_owner_sent"])
+    async def test_either_standing_of_the_person_keeps_a_marked_steer_out(
+        self, tmp_path, monkeypatch, _sel, standing
+    ):
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        state.broadcast_ws = MagicMock()
+        slot = _busy_slot(state)
+        slot._turn_user_sent = slot._turn_owner_sent = False
+        setattr(slot, standing, True)
+
+        _, resp = await _send(state, {"steer": True, "turn_origin": "agent"})
+
+        assert resp.get("queued") is True and resp.get("heldForPerson") is True
+        assert slot._acp_client.steer.await_count == 0
+
+    async def test_a_marked_steer_reaches_a_turn_no_person_is_driving(
+        self, tmp_path, monkeypatch, _sel
+    ):
+        """A worker's turn is started by its conductor's own send. The conductor's
+        steer reaches it, as its steer to a worker on its own crew does, and goes
+        in as a peer's text: the row is not the composer's."""
+        from kiro_crew.dashboard.chat_delivery import COMPOSER_SEND_META
+
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        state.broadcast_ws = MagicMock()
+        slot = _busy_slot(state)
+        slot._turn_user_sent = slot._turn_owner_sent = False
+
+        _, resp = await _send(state, {"steer": True, "turn_origin": "agent"})
+
+        assert resp == {"ok": True, "steered": True}
+        assert slot._acp_client.steer.await_count == 1
+        assert slot._turn_user_sent is False and slot._turn_owner_sent is False
+        assert slot._queue == []
+        rows = [m for m in slot.messages if "hi" in str(m.get("content", ""))]
+        assert rows and not any(
+            (m.get("meta") or {}).get(COMPOSER_SEND_META)
+            or HUMAN_TURN_META_KEY in (m.get("meta") or {})
+            for m in rows
+        )
+
+    async def test_a_marked_steer_the_agent_holds_behind_a_tool_call_says_so(
+        self, tmp_path, monkeypatch, _sel
+    ):
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        state.broadcast_ws = MagicMock()
+        slot = _busy_slot(state)
+        slot._turn_user_sent = slot._turn_owner_sent = False
+        slot._acp_client.steer_held_behind_tool = True
+
+        _, resp = await _send(state, {"steer": True, "turn_origin": "agent"})
+
+        assert resp == {"ok": True, "steered": True, "held": True}
+
+    async def test_a_marked_steer_the_turn_refuses_queues_with_the_reason(
+        self, tmp_path, monkeypatch, _sel
+    ):
+        """A refused steer is not lost and not reported as steered: it queues as a
+        turn of its own, and the reply names why it did not go in."""
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        state.broadcast_ws = MagicMock()
+        slot = _busy_slot(state)
+        slot._turn_user_sent = slot._turn_owner_sent = False
+        slot._acp_client.supports_steer = False
+
+        _, resp = await _send(state, {"steer": True, "turn_origin": "agent"})
+
+        assert resp.get("queued") is True and "steered" not in resp
+        assert resp.get("steerRefusal") == "no_steer"
+        assert slot._acp_client.steer.await_count == 0
+        entry = slot._queue[-1]
+        assert entry.get("_directive_user_origin", False) is False
+        assert (entry.get("meta") or {}).get("steerRefusal") == "no_steer"
+
+    @pytest.mark.parametrize("drain_starts_it", [True, False])
+    async def test_a_refused_steer_whose_turn_ended_meanwhile_is_reported_started(
+        self, tmp_path, monkeypatch, _sel, drain_starts_it
+    ):
+        """The turn a steer waited on can end before the send queues. The route's own
+        drain then starts the entry, and the reply says so beside ``queued``."""
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        state.broadcast_ws = MagicMock()
+        slot = _busy_slot(state)
+        slot._turn_user_sent = slot._turn_owner_sent = False
+        slot._acp_client.supports_steer = False
+
+        async def _drain(st, keys):
+            if drain_starts_it:
+                slot._queue.clear()
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_runner._drain_parked_queues", _drain)
+
+        _, resp = await _send(state, {"steer": True, "turn_origin": "agent"})
+
+        assert resp.get("queued") is True and "steered" not in resp
+        assert (resp.get("started") is True) is drain_starts_it
+
+    async def test_a_steer_queued_on_a_replaced_chat_is_refused(self, tmp_path, monkeypatch, _sel):
+        from kiro_crew.dashboard import agent_steer
+
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        state.broadcast_ws = MagicMock()
+        slot = _busy_slot(state)
+        slot._turn_user_sent = slot._turn_owner_sent = False
+
+        async def _steer(st, sl, message):
+            return None, agent_steer.TARGET_MOVED, False
+
+        monkeypatch.setattr(agent_steer, "steer", _steer)
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post(
+                "/api/chat",
+                json={"slot": "s1", "message": "hi", "steer": True, "turn_origin": "agent"},
+            )
+            assert resp.status == 409
+            assert (await resp.json())["code"] == "target_moved"
+        assert slot._queue == []
 
     @pytest.mark.parametrize(("body", "person"), [({"turn_origin": "agent"}, False), ({}, True)])
     async def test_an_auto_steer_asks_jev_only_for_a_person(

@@ -67,6 +67,22 @@ class TestOutcomeReports:
         assert "Steered" in out and "chat-2" in out
         assert "Queued" not in out
 
+    def test_a_steer_held_behind_a_tool_call_is_not_reported_as_read(self) -> None:
+        """The agent took the steer and keeps it until the tool call it is in
+        returns, which can be minutes: the receipt must not say "next step"."""
+        out, _ = _send(
+            {"target": "chat-2", "message": "stop that", "steer": True},
+            {"ok": True, "target": "chat-2", "started": False, "steered": True, "held": True},
+        )
+        assert "Steered" in out
+        assert "has not read your message yet" in out and "Nothing was cut short" in out
+        assert "at its next step" not in out
+        plain, _ = _send(
+            {"target": "chat-2", "message": "stop that", "steer": True},
+            {"ok": True, "target": "chat-2", "started": False, "steered": True},
+        )
+        assert "at its next step" in plain and "has not read" not in plain
+
     def test_a_started_turn_is_reported_as_delivered(self) -> None:
         out, _ = _send(
             {"target": "chat-2", "message": "pick this up", "steer": True},

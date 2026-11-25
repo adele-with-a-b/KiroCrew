@@ -92,6 +92,21 @@ _WAITS = {
 }
 
 
+#: How long a peer's steer waits out :data:`BETWEEN_STEPS` for a turn that is still
+#: starting to reach its prompt, and how often it looks (``session_deliver``). A
+#: turn's first seconds load the session and build the context; a steer refused
+#: then would wait for the whole turn in the queue. A start slower than the wait
+#: queues, with that reason on the card.
+#:
+#: A broadcast gives each target ``BROADCAST_TARGET_ALLOWANCE_SECS``, so its wait
+#: stays under that and it still reports each target in time. A single send has
+#: no such budget; its wait stays well under the 30 s a tool call's request to the
+#: gateway is given.
+START_WAIT_SECS = 4.0
+START_WAIT_PATIENT_SECS = 15.0
+START_POLL_SECS = 0.25
+
+
 def known(code: object) -> str:
     """*code* when it is one of :data:`CODES`, else ``""``."""
     return code if isinstance(code, str) and code in _WHY else ""
@@ -118,3 +133,15 @@ def describe_short(code: object) -> str:
     if code == AGENT_TURN:
         return f"steer fell back: {_WHY[code]}; it waits for that turn to end, which can be a long while"
     return f"steer fell back: {_WHY[code]}"
+
+
+def held_note() -> str:
+    """What a sender reads when the agent accepted its steer and holds it behind a tool call.
+
+    Not a refusal: the steer is in the turn. Some agents hand a steer to the model
+    only between steps, so one sent during a tool call waits for that call to return.
+    """
+    return (
+        "It is inside a tool call, so it has not read your message yet: it reads it "
+        "when that call returns, which can take minutes. Nothing was cut short."
+    )

@@ -365,6 +365,29 @@ async def holds_peer_slot(board: str, instance_id: str, slot: str) -> bool:
     )
 
 
+async def holds_finished_slot(board: str, instance_id: str, slot: str) -> bool:
+    """Whether a FINISHED item on *board* is still bound to *slot* on *instance_id*.
+
+    A conductor closes a worker after its item is finished, and by then
+    :func:`holds_peer_slot` does not answer for it. Such a slot keeps only the
+    ``session_close(crew=)`` right, so the worker can still be closed when the
+    in-memory dispatch record is gone. An unreadable board admits nothing.
+    """
+    async with _board_lock(board):
+        if await _refuse_if_dirty(board, board, "remote_dispatch.fence"):
+            return False
+        try:
+            items = await asyncio.to_thread(work_ledger.list_work_items, board)
+        except (work_ledger.WorkLedgerError, OSError):
+            return False
+    return any(
+        item.worker_instance_id == instance_id
+        and item.worker_session_key == slot
+        and item.is_terminal
+        for item in items
+    )
+
+
 def open_remote_bindings() -> dict[str, int]:
     """Open remote bindings per crew across every ledger here: wave 5's reservations.
 

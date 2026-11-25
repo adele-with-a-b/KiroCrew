@@ -504,11 +504,14 @@ async def test_a_steer_while_a_tool_runs_is_sent_when_the_tool_finishes():
         turn = await _start_turn(client, spawned)
         wire.inbound.put_nowait(_open_tool())
         await async_wait_until(lambda: client._active_tool_calls.possibly_open)
+        assert client.steer_held_behind_tool is False
 
         assert await client.steer("change course") is True
         # Held, not sent: no sender was started while the call is open.
         assert client._held_steer_task is None
         assert wire.steering_frames() == []
+        # The sender's receipt reads this: accepted, and not with the model yet.
+        assert client.steer_held_behind_tool is True
         # Stamped at the hold, so a `wait` sleep the call is running ends on it.
         assert client.last_steer_monotonic > 0
 
@@ -518,6 +521,7 @@ async def test_a_steer_while_a_tool_runs_is_sent_when_the_tool_finishes():
         await async_wait_until(
             lambda: client._steers_accepted, describe=lambda: client._steers_held
         )
+        assert client.steer_held_behind_tool is False
         wire.end_turn()
         events = await await_until(turn, what="the turn")
         assert [e.kind for e in events if e.kind in (EVENT_STEER_CONSUMED, EVENT_COMPLETE)] == [

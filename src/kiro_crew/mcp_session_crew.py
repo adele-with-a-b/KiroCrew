@@ -14,6 +14,7 @@ import copy
 from typing import Any
 from urllib.parse import quote
 
+from kiro_crew import steer_refusal
 from kiro_crew.mcp_tools.dashboard_client import DashboardError
 from kiro_crew.mcp_tools.table import ToolContext
 from kiro_crew.platform import redact_via_context as redact
@@ -161,13 +162,23 @@ def run_crew_send(args: dict[str, Any], ctx: ToolContext) -> str:
         resp = ctx.client.post("/api/session-control/send", payload, session_key=ctx.caller_key)
     except DashboardError as refused:
         return redact(f"Error: could not send to that crew session: {refused.error}")
+    why = ""
     if resp.get("steered") is True:
         how = "steered into its running turn"
+        if resp.get("held") is True:
+            why = f" {steer_refusal.held_note()}"
+    elif resp.get("started") is True:
+        # It was idle, so there was no turn to steer: it started one on the message.
+        how = "delivered: it was idle and started a turn on it"
+    elif args.get("steer") and resp.get("heldForPerson") is True:
+        how = "queued, not steered"
+        why = " A person is driving that turn, so your message runs when that turn ends."
     elif args.get("steer"):
-        how = "queued (the crew could not steer its running turn)"
+        how = "queued, not steered"
+        why = f" {steer_refusal.describe(resp.get('steerRefusal'))}"
     else:
-        how = "delivered (queued if busy)"
-    return redact(f"\U0001f4e8 Message {how} to `{resp.get('target')}` {_on(resp)}.")
+        how = "queued: it runs when its current turn ends"
+    return redact(f"\U0001f4e8 Message {how} to `{resp.get('target')}` {_on(resp)}.{why}")
 
 
 def run_crew_read(args: dict[str, Any], ctx: ToolContext) -> str:

@@ -357,13 +357,22 @@ authorization decision, and it must not depend on the notice landing.
 **A deliberate discard reports to the sender too.** The drain is not the only
 place a stamped entry leaves the queue unrun: a person cancelling its queue card
 (`api_chat_slot_queue_cancel`) and a hard stop clearing the queue
-(`stop_slot_turn`'s escalated branch) discard it as well, and the sender's last
+(`stop_slot_turn`'s escalated branch) take it off as well, and the sender's last
 word is still the `started: false` receipt. Both sites read the entry's stamp and
 call `notify_send_origin_discarded` with their cause (`SEND_DISCARD_QUEUE_CANCEL`,
 `SEND_DISCARD_HARD_STOP`), which appends a notice to the sender naming the target,
-what discarded the message and an excerpt, and saying it will not run. The wording
-names the discard rather than a constraint, because neither discard changes an
-authorization. The recipient is resolved by the same check as the drop notice
+what took the message off the queue and an excerpt. The wording
+names the discard rather than a constraint, because neither changes an
+authorization. A hard stop's notice says the message will not run. A card cancel's
+does not: the cancel puts the card's text back in that chat's message box, where
+it may be dropped or sent on by hand, so its notice says the message was taken
+back from the queue at that chat, has not run, may still be sent on by hand, and
+that no further word comes. It names no person, because the app that owns a chat
+can cancel through the same route. A later send from that chat is not matched to
+the taken-back message: the route cannot tell a re-send from the person's own
+words, nor a send that ran from one that only queued, so a second notice would
+be a guess.
+The recipient is resolved by the same check as the drop notice
 (`_send_origin_recipient`), so the same four cases write nothing: no stamp, a
 self-send, a closed sender, and a reused key held by a different tab. The hard
 stop reports exactly the entries it takes off the queue, before the settle can
@@ -475,6 +484,27 @@ above, held off the same way for a turn the person drives; it passes
 `reply_default=False`, because a broadcast answers nothing and must not spend the
 cut-in a target's asking turn is owed. The person's own typing and every other
 caller of `send_to_target` keep `steer=False`.
+
+**A turn that is still starting.** A slot reads running from the moment its turn
+task exists, which is before the session is up and the prompt reaches the engine.
+A steer then finds no agent on the slot or no prompt in flight, and both answer
+`between_steps`: `no_steer` is kept for an agent that takes no steer at all, so
+the reason names the turn's timing and not the agent. A peer's steer waits that out:
+`session_deliver` tries again every `steer_refusal.START_POLL_SECS` (0.25 s),
+only while the same turn task is running, and queues with `between_steps` after
+its wait: `START_WAIT_SECS` (4 s) for a broadcast's steer, which keeps it under
+the per-target allowance, and `START_WAIT_PATIENT_SECS` (15 s) for a single
+`session_send` and for a hub conductor's steer on a crew (`Origin.patient`).
+The person's composer steer does not wait.
+
+**A steer held behind a tool call.** claude takes a steer only between steps: one
+sent while a tool call of the turn is open is accepted and held, and goes to the
+model when that call returns (acp-client, `_steer_via_steering_request`). The
+result then carries `held: true` (`steer_hold.held_behind_tool`, read off the
+agent's `steer_held_behind_tool` right after the accept), and the tool reply says
+the target has not read the message yet and reads it when that call returns,
+which can take minutes. Nothing cuts a running tool call short for a steer:
+`session_stop` is the one way to end it, and it loses that call's work.
 
 A harness that can drop a steer it accepted (`steer_needs_loss_recovery`:
 codex, claude, goose, pi and opencode) takes a peer's steer only when
@@ -3073,11 +3103,15 @@ Each call is checked in this order, and each refusal has its own code:
 
    **The patrol-wake setting (`work_ledger.remote_dispatch_patrol_wake`, default `false`).** With it on, and only then, the owner-sent arm also admits ONE other turn for all five verbs and for a placed create: a wake of the shipped work-ledger patrol in the caller's own slot. The proof has two sources, never the transcript and never the loop store alone (it is agent-writable): the loop fire (`slack/gateway_runtime/nudge_dashboard_fire.py`) passes `_run_chat(_directive_patrol_wake=)` only for a loop that still carries exactly the fixed patrol (`conductor_patrol.is_fixed_patrol_payload`: the `default_patrol` tag, a shipped message, the `work-ledger` watch, gated, no banner, judge or wake instructions) AND that the keystone-gated trust record names as one the owner dispatched under (`autonudge_selfarm.is_recorded_owner_patrol`, same loop id and slot). That record is written in one place, `conductor_patrol.ensure_patrol`, after a dispatch left the slot with that active fixed patrol, and only when the dispatching turn holds `_turn_owner_sent` (the owner sent it) or the patrol mark itself (a wake the record already admitted); it is what stands in for the owner's identity, which no earlier arm proves (a channel-minted dashboard login passes arms 1-7). The record is dropped with the loop (`forget_self_arm`), is no self-arm (`is_recorded_self_arm` answers False for it), and a patrol armed before this build holds none until the owner next dispatches from that chat. The turn's outermost entry adopts the declaration into the slot's `_turn_patrol_wake` (never beside a person's or a channel's opener); it is cleared by ANY steer admitted into the turn (`chat_delivery`, the patrol's own next wake steered into a running wake included, so a refusal mid-wake can mean another message joined it and the next wake may retry), by anything prompt assembly puts in front of the wake (`chat_turn/prompt_assembly.py` compares the message after its last prepend with the message it started from, so a cancelled turn's rows, a late sub-agent notice, a sender line, pending context and any prepend added between those two points all end it; a natively resumed interrupted turn's preamble ends it too), and by every turn exit (`queue_cycle`). The fire judges the fixed patrol on the row it snapshots the message from and reads the record before its last pause check, so nothing suspends between that check and the spawn. A crewmate thread's default-patrol entry never gains the record. Every earlier arm still holds first, so the caller is a persistent conductor mode chat and no bound worker. Still refused with the setting on: a cron, a `session_send` turn, a sub-agent completion, a worker, a conductor another session created, a loop the conductor armed with its own text, a patrol row changed after it was armed, and a patrol in a chat the owner never dispatched from. What the setting does not do: text already in the conductor's context (a worker's report, a page it read) and the conductor's own session-ledger snapshot that every wake body carries (`compose_nudge_body`) can still steer what a marked wake does, as they can on an owner turn; turning the setting on accepts that for unattended wakes. The loop's interval and caps are not part of the fixed-patrol check, so a changed row can make an admitted patrol fire more often or for longer, never with other text. Each admission is audited with outcome `allowed` and resources `patrol_wake`. The setting is read on every call. Pinned by `test/test_remote_dispatch_patrol_wake.py`.
 3. **Crew.** An exact id wins over any name; a name resolves only when one crew carries it (`crew_unknown`, `crew_ambiguous`, `crew_invalid`).
-4. **Target fence.** send/read/stop/close reach only a peer slot this caller's slot created with `session_create(crew=)` on that same crew (`crew_target_not_dispatched`). The record lives in gateway memory, at most 64 slots per caller (`crew_dispatch_limit`), and a close forgets the slot. It does not survive a hub restart. An open item on the caller's own ledger bound to that slot on that crew (`worker_session_key` + `worker_instance_id`, wave 4) also admits the slot, and that pair does survive a restart.
+4. **Target fence.** send/read/stop/close reach only a peer slot this caller's slot created with `session_create(crew=)` on that same crew (`crew_target_not_dispatched`). The record lives in gateway memory, at most 64 slots per caller (`crew_dispatch_limit`), and a close forgets the slot. It does not survive a hub restart. An open item on the caller's own ledger bound to that slot on that crew (`worker_session_key` + `worker_instance_id`, wave 4) also admits the slot, and that pair does survive a restart. A finished item still bound to that slot on that crew admits `close` and nothing else (`remote_ingest.holds_finished_slot`), so a worker whose item was closed first can still be closed after a hub restart.
 5. **Version.** The crew's `major.minor` must match this hub's (`crew_version_mismatch`); a disconnected crew answers `proxy_peer_not_connected`.
 6. **Path fence and redaction.** Every peer path is built from the table above, its slot key held to one plain segment, and passes `_proxy_canonical_path` before `SshTunnelManager.proxy_request` sees it (`proxy_path_denied`). A reply cut off mid-body is refused `crew_peer_interrupted`. A peer reply must be JSON within `PROXY_REDACT_BUFFER_MAX_BYTES` and is run through `_redact_peer_payload` before any field is read. A create reply whose `key` is not one plain segment is refused `crew_reply_malformed` and nothing is recorded.
 
-Every send carries `turn_origin: "agent"` (`dashboard/agent_origin.py`), so the crew runs it as an agent's turn that holds no person-only right. Outgoing message and title text passes the exfiltration-URL then the credential redactor; an incognito or temporary caller is refused `ephemeral_caller`.
+Every send carries `turn_origin: "agent"` (`dashboard/agent_origin.py`), so the crew runs it as an agent's turn that holds no person-only right.
+
+**What the send reports.** The result says what the crew did, never what was asked: `steered` (the text is in the running turn), `started` (the session was idle and began a turn on it, or the turn a steer waited on ended and the crew's drain began one; false for a queued send, for a turn held for fair admission, and for one a Stop ended before it began), `held` beside `steered` when the crew's agent keeps the steer behind a tool call, `steerRefusal` (a known `steer_refusal` code) when an asked-for steer fell back to the queue, and `heldForPerson` when no steer was tried because a person is driving that turn. The tool reply words each one; an idle session with `steer=true` reads as started, not as a steer that failed.
+
+**A steer on the crew.** `steer: true` on an agent-origin send reaches the running turn through `dashboard/agent_steer.py`: the peer arm of `session_deliver.deliver`, the same one a local `session_send` takes, with `user_origin=False`. It keeps the three guards the local send has around its steer: the admission is recorded in `slot._steer_audience_fences` before the write, a containment constraint that newly holds after the write stops that same turn once (`source="agent_steer_containment"`, no escalation), and the write is shielded, with a steer that turns out not to have gone in queued when its request went away. It is never tried on a turn a person is driving (`holds_persons_standing`); that send queues. A steer the turn's teardown queued answers `queued`, unless the chat was closed and opened again under the same key during the write: that queue is unreachable, so the send is refused `target_moved` (409), as the local send refuses it. A steer that fell back to the queue because its turn ended during the wait is started by the route's own drain; the reply then carries `started: true` beside `queued`, and the hub reports a started turn, not a queued message. Everything the peer arm refuses applies: on a harness that can drop an accepted steer (claude among them) the crew needs `agent.peer_steer_loss_recovery` on, or the steer answers `peer_steer_off` and queues. That setting is read on the crew that runs the worker, not on the hub. Outgoing message and title text passes the exfiltration-URL then the credential redactor; an incognito or temporary caller is refused `ephemeral_caller`.
 
 A crew create takes only `title`, `agent`, `agent_kind`, `model` and `work_item` (`crew_field_unsupported` for anything else). `agent_kind` takes the local create's one value, `template`, and rides the peer create so a same-named crew member there is not selected; any other value is refused `invalid_agent_kind`, and a kind with no `agent` `agent_kind_requires_agent`, before any peer call. Without it the peer resolves `agent` name-first, a bare `kirocrew-worker` included. `memory_mode` is always this hub's `dashboard.default_memory_mode`. An omitted `agent` sends none, so the crew applies its own default. A crew create without `work_item` arms no patrol.
 

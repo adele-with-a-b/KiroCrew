@@ -263,7 +263,7 @@ async def test_steer_cuts_into_the_running_turn_instead_of_queueing(tmp_path):
 async def test_a_steer_the_client_cannot_take_falls_back_to_the_queue(tmp_path):
     """Steering is best-effort; the message is not.
 
-    With no steer-capable client on the slot the helper answers UNAVAILABLE, and
+    With no agent on the slot yet the helper answers UNAVAILABLE, and
     the message must land on the queue rather than be dropped — the caller is told
     it queued, so it never reads a silent loss as a delivery.
     """
@@ -283,9 +283,9 @@ async def test_a_steer_the_client_cannot_take_falls_back_to_the_queue(tmp_path):
     assert out["started"] is False
     assert any("check the other branch first" in q.get("content", "") for q in target._queue)
     # The sender and the queued row both learn why it could not go in.
-    assert out["steerRefusal"] == "no_steer"
+    assert out["steerRefusal"] == "between_steps"
     (entry,) = [q for q in target._queue if "check the other branch first" in q["content"]]
-    assert entry["meta"]["steerRefusal"] == "no_steer"
+    assert entry["meta"]["steerRefusal"] == "between_steps"
 
 
 @pytest.mark.asyncio

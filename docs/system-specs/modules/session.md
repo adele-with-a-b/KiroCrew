@@ -4961,10 +4961,14 @@ so absence clears it.
   note, Slack auto-link, edition observer or user-session count. Its text gets
   the credential and exfiltration-URL redaction the queue drain gives a
   non-user entry, on the `user` row and the turn input alike. A `steer` on
-  it is refused as an app's is: it queues without the act-now intent and does
-  not skip the sub-agent hold, because a steer would put its text inside the
-  person's running turn, whose own `_directive_user_origin` the turn's
-  directives keep reading. The mark only removes; app-scope checks still read
+  it never takes the composer's steer and does not skip the sub-agent hold. Into
+  a turn a person is driving (`holds_persons_standing`) it is not steered at
+  all: it queues without the act-now intent and the reply carries
+  `heldForPerson`, because a steer would put its text inside the person's
+  running turn, whose own `_directive_user_origin` the turn's directives keep
+  reading. Into any other running turn, a worker's among them, it goes in as a
+  peer's steer (`dashboard/agent_steer.py`, `user_origin=False`; session-control,
+  "A steer on the crew"). The mark only removes; app-scope checks still read
   the app token. Because the mark only removes, it needs no switch and no
   proof of its writer; a body without the key takes exactly the path it always
   did.
