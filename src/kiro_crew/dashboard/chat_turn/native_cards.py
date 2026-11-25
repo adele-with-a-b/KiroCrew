@@ -651,6 +651,22 @@ async def _on_subagent_activity(turn: _ChatTurn, event) -> None:
         _native_card_text(turn, _sid, event.text)
 
 
+def _native_child_step(turn: _ChatTurn, event) -> bool:
+    """Whether a tool call or permission request is a native sub-agent's, not the parent's.
+
+    A child's request names its own session, carries the transport's
+    ``native_child_call`` mark (a KAS child under this session's own id), or
+    names a call an activity event named first (``_on_subagent_activity``).
+    None of them cuts the parent's open text: a background child acts while the
+    parent writes its reply, and a cut there would leave the turn's final
+    segment empty for the empty-response guard.
+    """
+    if getattr(event, "sub_session_id", "") or getattr(event, "native_child_call", False) is True:
+        return True
+    tool_call_id = getattr(event, "tool_call_id", "") or ""
+    return bool(tool_call_id) and tool_call_id in turn._native_child_tc
+
+
 def _native_card_text(turn: _ChatTurn, sid: str, text: str) -> None:
     """Append a sub-agent's *text* to its open card's feed and stream it to the card."""
     _native_card_output = turn._native_card_output

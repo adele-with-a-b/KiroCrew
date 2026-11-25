@@ -944,7 +944,15 @@ failed with `cancelled`, or failed with its error. A
 child's text becomes `EVENT_SUBAGENT_ACTIVITY` on its card and never the parent's
 answer. A child's tool call yields its activity prefix and then renders as an
 ordinary tool row, as a kiro-cli child's does on `AcpClient`, so its approval, hooks
-and SEL record are unchanged. The child's other frames are dropped. A child call the
+and SEL record are unchanged. It is not the parent's step, though
+(`native_cards._native_child_step`: the request names a child's session, carries the
+transport's `native_child_call` mark, or its call is in `_native_child_tc`): the dashboard's `_on_tool_call` (`chat_turn/tool_rows.py`)
+neither cuts the parent's open text for it nor opens a tool group, and
+`_on_permission_request` (`chat_turn/tool_approval.py`) owes no cut for a child's
+request. A background child acts while the parent writes its reply, and a cut would
+leave the turn's final segment empty, so the empty-response guard would read an
+answered turn as one that ended without a closing reply and queue a continuation
+(`test/test_dashboard_child_call_keeps_reply.py`). The child's other frames are dropped. A child call the
 adapter left on the parent session is still attributed through the Agent call it
 serves.
 
