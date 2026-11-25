@@ -27,6 +27,10 @@ Public entry points:
   pinned vendor request/response shapes with no credentials or network.
 - :mod:`kiro_crew.testing.links` — ``make_dir_link``, which stages a directory
   link as a junction on Windows (no privilege needed) and a symlink elsewhere.
+- :mod:`kiro_crew.testing.delete_guard` — ``disposable``, which a test wraps
+  around a path it is about to delete: it refuses, before anything goes, a
+  target whose real path is outside every temp dir or inside a live data home;
+  ``count_as_temp``, through which the rootdir conftest names pytest's basetemp.
 - :mod:`kiro_crew.testing.scripted_replies` — the reply-script format the fake
   ACP backend reads from ``KIROCREW_FAKE_ACP_SCRIPT``, so a test decides what
   the model says (``docs/scripted-test-model.md``).

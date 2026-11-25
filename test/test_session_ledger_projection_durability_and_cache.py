@@ -30,6 +30,7 @@ from kiro_crew.crew_log import CrewLog, eager
 from kiro_crew.crew_log import emit as crew_log_emit
 from kiro_crew.crew_log import projection as crew_log
 from kiro_crew.crew_log import store
+from kiro_crew.testing.delete_guard import disposable
 
 
 def test_a_refusal_during_the_append_is_not_reported_durable():
@@ -321,7 +322,7 @@ def test_a_same_count_unit_swap_invalidates_the_slot_map():
     # cleanup is the test's either way.
     crew_log_emit.reset_caches()
     with eager.paused():
-        shutil.rmtree(store.crew_log_dir(lg.KIND_SESSION, SESSION))
+        shutil.rmtree(disposable(store.crew_log_dir(lg.KIND_SESSION, SESSION)))
     _unit(LATER_SESSION)
     os.utime(root, ns=(before, before))
     assert store.session_units_for_slot(SLOT) == (LATER_SESSION,)

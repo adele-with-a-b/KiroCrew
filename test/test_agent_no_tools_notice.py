@@ -25,6 +25,7 @@ from kiro_crew.dashboard.handlers import agents as agent_handlers
 from kiro_crew.history import ConversationLog
 from kiro_crew.members import DM_SLOT_MODE
 from kiro_crew.template_mcp_additions import add_addition, merge_at_spawn
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.synthetic_credentials import github_classic
 
 
@@ -39,7 +40,7 @@ def home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[dict[str, 
     monkeypatch.setattr(paths_mod, "_mate_agents_dir_override", lambda: mates)
     yield {"agents": agents, "mates": mates}
     for added in set(agents.iterdir()) - before:
-        added.unlink()
+        disposable(added).unlink()
 
 
 def _agent(home: dict[str, Path], name: str, where: str = "agents", **keys: Any) -> None:

@@ -27,6 +27,7 @@ from kiro_crew import atomic_write as aw
 from kiro_crew.config.paths import data_home
 from kiro_crew.dashboard.handlers import agent_panel_snapshot, member_export
 from kiro_crew.dashboard_templates import catalog, instance
+from kiro_crew.testing.delete_guard import disposable
 
 SLUG = "fleet-conductor"
 PAGE = '<div><b data-dashboard-field="credits"></b></div>'
@@ -271,7 +272,7 @@ def test_member_dashboard_a_file_where_a_folder_belongs_is_not_taken_for_a_link(
         _no_pinning(monkeypatch)
     _seed()
     path = _level_path(level)
-    shutil.rmtree(path)
+    shutil.rmtree(disposable(path))
     path.write_text("not a folder", encoding="utf-8")
     with pytest.raises(instance.InstanceError):
         instance.read(SLUG)

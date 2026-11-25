@@ -16,6 +16,7 @@ import pytest
 from kiro_crew import ledger_wake as lw
 from kiro_crew import session_ledger as sl
 from kiro_crew import work_ledger
+from kiro_crew.testing.delete_guard import disposable
 
 CONDUCTOR = "chat-conductor"
 ITEM = "it_abcd1234"
@@ -241,7 +242,7 @@ class TestRateLimit:
         elsewhere.mkdir()
         import shutil
 
-        shutil.rmtree(parent)
+        shutil.rmtree(disposable(parent))
         parent.symlink_to(elsewhere, target_is_directory=True)
 
         assert lw.note_wake(CONDUCTOR, OTHER_ITEM, now=1001.0) is False
@@ -270,7 +271,7 @@ class TestRateLimit:
         elsewhere.mkdir()
         import shutil
 
-        shutil.rmtree(parent)
+        shutil.rmtree(disposable(parent))
         make_dir_link(parent, elsewhere)
 
         assert lw.note_wake(CONDUCTOR, OTHER_ITEM, now=1001.0) is False

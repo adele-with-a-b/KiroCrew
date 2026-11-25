@@ -1449,6 +1449,38 @@ measures, never above.
      never move the anchor.** Redirecting a matcher so a test can pass makes it assert
      against a pattern that no longer matches the thing it protects.
 
+- **A test's own tree delete of a path it got from a resolver MUST go through
+  `kiro_crew.testing.delete_guard.disposable`.** A tree delete is a `shutil.rmtree`, or
+  an unlink or rmdir loop over a directory. Write
+  `shutil.rmtree(disposable(wl.conductor_dir(CONDUCTOR)))`, or
+  `disposable(child).unlink()` in a loop over a resolver's directory. A path the test
+  built from `tmp_path` needs no guard, and a single-file unlink is not covered yet.
+  The floor's `KIROCREW_HOME` pin exists only when pytest loads the rootdir conftest. A
+  `unittest.TestCase` or `__main__` run, `pytest --noconftest`, or a test file copied out
+  of the repo gets no pin, and every resolver then names the operator's real
+  `~/.kiro/crew`. The guard judges two paths: the entry the delete removes (its parent
+  resolved, its own name kept, since `unlink()` removes a link itself) and the real path
+  it resolves to (every link followed). It raises `RefusedDelete` before anything is
+  removed, and also when no home directory can be found, unless both of these hold for
+  each:
+  - The target is strictly inside a temp root. The roots are the existing dirs among
+    `tempfile.gettempdir()`, `TMPDIR`/`TEMP`/`TMP`, `/tmp` and `/var/tmp`
+    (`<home>\AppData\Local\Temp` on Windows) and the test's `tmp_path` if passed. When a
+    root is or sits inside a `kc-pytest-*` dir (the floor's run root), that dir's parent
+    counts too, since basetemp lives there. pytest's basetemp is a root too, wherever
+    `--basetemp` puts it, because the rootdir conftest names it to the guard
+    (`count_as_temp`); a run with no conftest gets no such root. A root equal to or
+    above the account's own home is dropped.
+  - The target is outside `<home>/.kiro` and `<home>/.kirocrew`, for both `Path.home()`
+    and the account's own home. A path strictly inside one scratch tree,
+    `<home>/.kiro/crew/scratch/<tree>/...`, is allowed. The tree folder itself is
+    refused.
+
+  So `disposable` refuses a delete under a faked `HOME`'s `~/.kiro`. Build that path
+  from the test's own fake home (`tmp_path / "home" / ".kiro" / ...`), never from a
+  resolver or a module-level path: a path built from `tmp_path` needs no guard, and a
+  resolver or a path bound at import can still name the real home.
+
 - **Tests MUST NOT derive an expected value from the repo's declared version.**
   `kiro_crew.__version__` is an input the checkout controls, not a constant: a release
   branch declares `X.Y.Z-rc.N` by contract ([release](../../build/release.md)), a

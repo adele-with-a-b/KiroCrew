@@ -63,6 +63,7 @@ from kiro_crew.dashboard.theme_validate import (
     _validate_persona,
     _validate_theme_dir,
 )
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import wait_until
 
 
@@ -270,13 +271,14 @@ class TestValidateThemeDir:
         assert err is None, err
         descriptor = _theme_asset_descriptor(d, manifest, 1)
         assert descriptor["loaderImages"] == [
-            "loader/0.png", "loader/1.png", "loader/2.png", "loader/3.png",
+            "loader/0.png",
+            "loader/1.png",
+            "loader/2.png",
+            "loader/3.png",
         ]
 
     @pytest.mark.parametrize("count", [9, 12])
-    def test_pack_loader_images_out_of_range_rejected(
-        self, tmp_path: Path, count: int
-    ) -> None:
+    def test_pack_loader_images_out_of_range_rejected(self, tmp_path: Path, count: int) -> None:
         d = _make_theme(tmp_path, level=1)
         (d / "loader").mkdir()
         for i in range(count):
@@ -525,9 +527,7 @@ class TestThemeInstallGovernanceAudit:
         assert calls[0]["tool_name"] == "api_themes_install"
         assert calls[1]["reason"] == "disabled by enterprise policy"
 
-    def test_never_raises_when_sel_unavailable(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_never_raises_when_sel_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import kiro_crew.sel as sel_mod
         from kiro_crew.dashboard.handlers import themes as th
 
@@ -727,9 +727,7 @@ class TestCopyInstalledTheme:
         # descriptor instead, so both implementations exercise one race.
         real_path_stat = Path.stat
 
-        def _stat_with_pre_lock_swap(
-            path: Path, *args: object, **kwargs: object
-        ) -> os.stat_result:
+        def _stat_with_pre_lock_swap(path: Path, *args: object, **kwargs: object) -> os.stat_result:
             if (
                 path == src
                 and not relocated.exists()
@@ -974,7 +972,7 @@ class TestInstalledStore:
         assert dest.is_dir()
 
         # Remove de-registers (matches the DELETE handler's rmtree path).
-        shutil.rmtree(dest)
+        shutil.rmtree(disposable(dest))
         assert not dest.exists()
 
     def test_install_rejects_slug_colliding_with_editor_record(
@@ -1032,8 +1030,7 @@ class TestValidateThemeDirL1:
         # Derived from the constant, not a literal: the cap covers both font roles
         # (a sans set plus a mono pair), so a literal drifts the moment it moves.
         assets = {
-            f"styles/fonts/f{i}.woff2": b"wOF2" + b"\x00" * 8
-            for i in range(_THEME_MAX_FONTS + 1)
+            f"styles/fonts/f{i}.woff2": b"wOF2" + b"\x00" * 8 for i in range(_THEME_MAX_FONTS + 1)
         }
         summary, err = _validate_theme_dir(_make_tiered(tmp_path, level=1, extra=assets))
         assert summary is None
@@ -1234,9 +1231,7 @@ class TestResolveThemeAsset:
         target, err = _resolve_theme_asset("../evil", "branding/logo.svg")
         assert target is None and err is not None and "slug" in err
 
-    def test_missing_file_not_found(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_file_not_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self._install(tmp_path, monkeypatch)
         target, err = _resolve_theme_asset("mytheme", "branding/missing.svg")
         assert target is None and err == "not found"
@@ -1274,9 +1269,7 @@ class TestInstalledThemePersona:
         self._setup(tmp_path, monkeypatch, "y" * 5000)
         assert len(_installed_theme_persona("mytheme")) == 2000
 
-    def test_bad_slug_returns_empty(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_bad_slug_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from kiro_crew.dashboard.chat_utils import _installed_theme_persona
 
         self._setup(tmp_path, monkeypatch, _VALID_PERSONA)
@@ -1297,12 +1290,16 @@ class TestCopyOverwrite:
         dst = tmp_path / "dst"
         # First install.
         _copy_installed_theme(_make_tiered(tmp_path / "a", level=1, extra=_L1_ASSETS), dst)
-        assert (dst / "styles" / "overrides.css").read_text(encoding="utf-8") == ".chat-bubble { border-radius: 8px; }"
+        assert (dst / "styles" / "overrides.css").read_text(
+            encoding="utf-8"
+        ) == ".chat-bubble { border-radius: 8px; }"
         # Re-install with changed content overwrites the same-name file.
         updated = dict(_L1_ASSETS)
         updated["styles/overrides.css"] = ".chat-bubble { border-radius: 2px; }"
         _copy_installed_theme(_make_tiered(tmp_path / "b", level=1, extra=updated), dst)
-        assert (dst / "styles" / "overrides.css").read_text(encoding="utf-8") == ".chat-bubble { border-radius: 2px; }"
+        assert (dst / "styles" / "overrides.css").read_text(
+            encoding="utf-8"
+        ) == ".chat-bubble { border-radius: 2px; }"
 
     def test_copies_all_l2_tiers(self, tmp_path: Path) -> None:
         dst = tmp_path / "dst"
@@ -1320,7 +1317,10 @@ class TestContentDenylistBranches:
         assert _validate_overrides_css("a { background: javascript:alert(1); }") is not None
 
     def test_overlay_sessionstorage_rejected(self) -> None:
-        assert _validate_overlay_html("<script>sessionStorage.getItem('k')</script>", "x.html") is not None
+        assert (
+            _validate_overlay_html("<script>sessionStorage.getItem('k')</script>", "x.html")
+            is not None
+        )
 
     def test_overlay_xhr_rejected(self) -> None:
         assert _validate_overlay_html("<script>new XMLHttpRequest()</script>", "x.html") is not None
@@ -1423,9 +1423,7 @@ class TestDeleteLock:
         slug = "locktheme"
         dir_target = tv_mod._installed_theme_dir(slug)
         dir_target.mkdir(parents=True)
-        (dir_target / "theme.json").write_text(
-            '{"name": "Lock", "level": 0}', encoding="utf-8"
-        )
+        (dir_target / "theme.json").write_text('{"name": "Lock", "level": 0}', encoding="utf-8")
 
         req = types.SimpleNamespace(method="DELETE", match_info={"slug": slug})
 
@@ -1436,9 +1434,7 @@ class TestDeleteLock:
             # The handler dispatches rmtree into an executor that must first
             # acquire the held lock, so the await never completes → TimeoutError.
             with pytest.raises(asyncio.TimeoutError):
-                asyncio.run(
-                    asyncio.wait_for(themes_mod.api_theme_detail(req), timeout=1.0)
-                )
+                asyncio.run(asyncio.wait_for(themes_mod.api_theme_detail(req), timeout=1.0))
             # Blocked, not raced: the directory is still intact.
             assert dir_target.is_dir()
         finally:
@@ -1517,7 +1513,9 @@ class TestCssParserCorpus:
             err = _validate_overrides_css(case["css"], enforce_font_pins=True)
             accepted = err is None
             if accepted != case["installAccepts"]:
-                mismatches.append(f"{case['name']}: expected installAccepts={case['installAccepts']}, got {accepted} (err={err})")
+                mismatches.append(
+                    f"{case['name']}: expected installAccepts={case['installAccepts']}, got {accepted} (err={err})"
+                )
         assert not mismatches, "\n".join(mismatches)
 
     def test_corpus_covers_both_verdict_kinds(self) -> None:

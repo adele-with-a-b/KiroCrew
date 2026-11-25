@@ -23,6 +23,7 @@ from redaction_structured_cases import github_classic
 
 from kiro_crew import history as H
 from kiro_crew.history import HistoryConsolidator
+from kiro_crew.testing.delete_guard import disposable
 
 _KEY = github_classic(seed=25)  # a token the credential plan redacts
 
@@ -1498,7 +1499,7 @@ def test_dismiss_with_a_digest_of_a_candidate_gone_under_the_lock(tmp_path, monk
 
     @contextlib.contextmanager
     def _lock_after_removal():
-        shutil.rmtree(loader._pending_root() / slug)
+        shutil.rmtree(disposable(loader._pending_root() / slug))
         with real_lock() as locked:
             yield locked
 

@@ -33,6 +33,7 @@ from conftest import requires_symlinks
 from kiro_crew import session_storage
 from kiro_crew.history import transcript_stem
 from kiro_crew.session_storage import SessionIndex, SessionStorageError
+from kiro_crew.testing.delete_guard import disposable
 
 
 def _multi_index(stem_to_sid: dict[str, str], active: set[str] | None = None) -> SessionIndex:
@@ -856,7 +857,7 @@ class TestCrewLogsAreTheSessions:
         other = session_storage.move_to_trash(
             ["dashboard_chat-2"], reason="manual", index=_index(), now=_NOW
         )
-        shutil.rmtree(session_storage.trash_root() / victim.batch_id)
+        shutil.rmtree(disposable(session_storage.trash_root() / victim.batch_id))
 
         session_storage.empty_trash([other.batch_id])
 

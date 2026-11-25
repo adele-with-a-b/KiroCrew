@@ -29,6 +29,7 @@ from kiro_crew.apps import builtin_adoption_apply, manager
 from kiro_crew.apps.builtins.auto_research import handlers as h
 from kiro_crew.apps.builtins.auto_research.campaign import storage
 from kiro_crew.apps.manager import app_data_dir, app_dir
+from kiro_crew.testing.delete_guard import disposable
 
 
 @pytest.fixture(autouse=True)
@@ -270,7 +271,7 @@ def test_the_rows_survive_removing_everything_but_data():
     conn.close()
     for entry in app_dir("auto-research").iterdir():
         if entry.name != "data":
-            entry.unlink()
+            disposable(entry).unlink()
     assert _count(storage.db_path()) == 3
 
 

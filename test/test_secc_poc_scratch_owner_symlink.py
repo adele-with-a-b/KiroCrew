@@ -39,6 +39,7 @@ import pytest
 from kiro_crew import agent_scratch as sc
 from kiro_crew import platform_compat
 from kiro_crew.mcp_gateway import backend_tmp as bt
+from kiro_crew.testing.delete_guard import disposable
 
 #: Only for a case that links a FILE. A Windows directory JUNCTION needs no
 #: privilege and every DIRECTORY-link case uses one via
@@ -157,7 +158,7 @@ class TestAgentScratchOwnerMarker:
         spawn.
         """
         scratch = sc.allocate_scratch("chat-31")
-        shutil.rmtree(scratch)
+        shutil.rmtree(disposable(scratch))
 
         assert sc.record_owner(scratch, CHILD_PID) == "unwritable"
         assert not scratch.exists()
@@ -257,7 +258,7 @@ class TestBackendTmpOwnerMarker:
     def test_a_vanished_dir_is_not_recreated(self, backend_tmp_root: Path) -> None:
         """The twin declines an absent directory for the same reason."""
         path = bt.allocate_backend_tmp("b" * 64)
-        shutil.rmtree(path)
+        shutil.rmtree(disposable(path))
 
         bt.record_owner(path, CHILD_PID)
 

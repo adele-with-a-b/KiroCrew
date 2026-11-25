@@ -22,6 +22,7 @@ from kiro_crew.crew_log import lease
 from kiro_crew.crew_log import projection as crew_log
 from kiro_crew.crew_log import store
 from kiro_crew.projection import checkpoint as projection_checkpoint
+from kiro_crew.testing.delete_guard import disposable
 
 SESSION = "s-savepoint"
 GATEWAY = "gateway"
@@ -1491,7 +1492,7 @@ def test_a_unit_whose_segments_are_gone_is_not_touched_at_all():
     witness = savepoints.prefix_witness(handle, bundle.last_seq)
     unit_dir = store.crew_log_dir(lg.KIND_SESSION, SESSION)
     for child in sorted(unit_dir.iterdir()):
-        child.unlink()
+        disposable(child).unlink()
 
     returned = savepoints.save(handle, bundle, prefix=witness)
 
@@ -1520,7 +1521,7 @@ def test_a_read_of_a_removed_unit_leaves_no_directory_behind():
     witness = savepoints.prefix_witness(handle, bundle.last_seq)
     unit_dir = store.crew_log_dir(lg.KIND_SESSION, SESSION)
     for child in sorted(unit_dir.iterdir()):
-        child.unlink()
+        disposable(child).unlink()
     unit_dir.rmdir()
 
     returned = savepoints.save(handle, bundle, prefix=witness)
@@ -1576,7 +1577,7 @@ def test_a_recreated_unit_directory_is_torn_down_with_the_savepoints():
     unit_dir = store.crew_log_dir(lg.KIND_SESSION, SESSION)
     for child in sorted(unit_dir.iterdir()):
         if child.is_file():
-            child.unlink()
+            disposable(child).unlink()
 
     assert savepoints._discard_if_unit_gone(handle, _dir()) is True
     assert not unit_dir.exists()

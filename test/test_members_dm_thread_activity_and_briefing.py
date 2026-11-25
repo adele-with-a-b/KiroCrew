@@ -33,6 +33,7 @@ from kiro_crew.members import (
     members_root,
     write_dm_binding,
 )
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.synthetic_credentials import github_classic
 
 #: A synthetic GitHub token with a valid checksum, which the redactor removes. A
@@ -461,7 +462,7 @@ class TestMemberBriefingEndpoint:
         # Adopting syncs the helper scripts; this test is about the READ writing none.
         import shutil
 
-        shutil.rmtree(dashboard_upkeep.scripts_dir("code-reviewer"), ignore_errors=True)
+        shutil.rmtree(disposable(dashboard_upkeep.scripts_dir("code-reviewer")), ignore_errors=True)
         state = _make_state(tmp_path)
         with (
             _patched_config([CREW]),

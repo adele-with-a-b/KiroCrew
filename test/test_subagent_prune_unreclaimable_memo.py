@@ -19,6 +19,7 @@ import pytest
 
 import kiro_crew.subagent_persistence as sp
 from kiro_crew.testing.clock import ManualClock
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import wait_until
 
 NO_ROUTE = "kas"
@@ -189,7 +190,7 @@ def test_a_run_that_left_by_another_route_is_forgotten(cleanup_calls):
     assert _sweep() == 0
     assert "gone" in sp._UNRECLAIMABLE_MEMO
 
-    shutil.rmtree(sp._agent_dir("gone"))
+    shutil.rmtree(disposable(sp._agent_dir("gone")))
     assert _sweep() == 0
 
     assert "gone" not in sp._UNRECLAIMABLE_MEMO

@@ -20,6 +20,7 @@ from work_ledger_helpers import CONDUCTOR, WORKER, _new_item
 
 from kiro_crew import platform_compat
 from kiro_crew import work_ledger as wl
+from kiro_crew.testing.delete_guard import disposable
 
 # The shared fixtures, bound here by name so pytest registers them for this module.
 _isolated_home = work_ledger_helpers._isolated_home
@@ -635,7 +636,7 @@ def test_a_writer_queued_behind_a_purge_refuses_instead_of_publishing():
     with open(lock_path, "r+") as handle:
         # The purge runs to completion "while this writer waits": the store and
         # the lock inode it holds are gone from the path.
-        shutil.rmtree(directory)
+        shutil.rmtree(disposable(directory))
         with pytest.raises(OSError, match="removed while waiting"):
             sl.require_lock_inode(handle.fileno(), lock_path)
         # A fresh store at the path is a DIFFERENT inode: still refused.
@@ -940,7 +941,7 @@ def test_a_purge_racing_a_finished_purge_recreates_nothing(monkeypatch):
 
     @contextlib.contextmanager
     def _first_sweep_wins(slot_key, **kwargs):
-        shutil.rmtree(directory)  # the other sweep finished just before our acquire
+        shutil.rmtree(disposable(directory))  # the other sweep finished just before our acquire
         with real_lock(slot_key, **kwargs):
             yield
 

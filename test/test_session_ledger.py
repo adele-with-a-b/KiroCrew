@@ -30,6 +30,7 @@ from kiro_crew.crew_log import CrewLog
 from kiro_crew.crew_log import emit as crew_log_emit
 from kiro_crew.crew_log import projection as crew_log
 from kiro_crew.platform_compat import IS_POSIX
+from kiro_crew.testing.delete_guard import disposable
 
 SESSION = "acp-1"
 LATER_SESSION = "acp-2"
@@ -848,7 +849,9 @@ def test_a_record_queued_behind_a_purge_refuses_instead_of_publishing():
 
     fd = __import__("os").open(str(lock_path), __import__("os").O_RDWR)
     try:
-        shutil.rmtree(directory)  # the purge completes while this writer holds a stale fd
+        shutil.rmtree(
+            disposable(directory)
+        )  # the purge completes while this writer holds a stale fd
         with pytest.raises(OSError, match="removed while waiting"):
             sl.require_lock_inode(fd, lock_path)
     finally:

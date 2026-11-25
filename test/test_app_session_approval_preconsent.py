@@ -29,6 +29,7 @@ from kiro_crew.apps.manager import (
 )
 from kiro_crew.apps.permissions import app_can_manage_session_approvals
 from kiro_crew.apps.teardown import TeardownResult
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import async_wait_until, await_until
 
 _KEY = "sessionApprovalConsentPending"
@@ -204,7 +205,7 @@ class TestPreFeatureSessionApproval:
                     describe=lambda: "reconcile never queued on the app lifecycle lock",
                 )
                 assert not task.done()
-                shutil.rmtree(app_dir("test-app"))
+                shutil.rmtree(disposable(app_dir("test-app")))
             return await await_until(
                 task, what="reconcile did not finish after the lock was released"
             )
@@ -432,7 +433,7 @@ class TestPreFeatureSessionApproval:
     def test_marking_an_uninstalled_app_recreates_nothing(self, tmp_path, app_home):
         _install(tmp_path, sessionApproval=True)
         _write_pre_feature_record("test-app", enabled=True)
-        shutil.rmtree(app_dir("test-app"))
+        shutil.rmtree(disposable(app_dir("test-app")))
 
         assert mark_session_approval_consent_pending("test-app") is False
         assert not (app_dir("test-app") / INSTALLED_META_FILENAME).exists()

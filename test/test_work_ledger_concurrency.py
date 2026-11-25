@@ -21,6 +21,7 @@ from work_ledger_helpers import CONDUCTOR, WORKER, _bytes_on_disk, _lift_goal_ca
 
 from kiro_crew import atomic_write, platform_compat
 from kiro_crew import work_ledger as wl
+from kiro_crew.testing.delete_guard import disposable
 
 # The shared fixtures, bound here by name so pytest registers them for this module.
 _isolated_home = work_ledger_helpers._isolated_home
@@ -552,8 +553,8 @@ def test_the_undo_of_a_purged_board_recreates_nothing():
     item_id = _new_item()
     snapshot = wl.snapshot_for_write(CONDUCTOR, item_id=item_id)
     directory = wl.conductor_dir(CONDUCTOR)
-    shutil.rmtree(wl.items_dir(CONDUCTOR), ignore_errors=True)
-    shutil.rmtree(directory, ignore_errors=True)
+    shutil.rmtree(disposable(wl.items_dir(CONDUCTOR)), ignore_errors=True)
+    shutil.rmtree(disposable(directory), ignore_errors=True)
 
     wl.restore_snapshot(CONDUCTOR, snapshot, item_id=item_id)
 

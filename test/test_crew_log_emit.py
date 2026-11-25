@@ -37,6 +37,7 @@ from kiro_crew import session_map
 from kiro_crew.crew_log import emit
 from kiro_crew.crew_log import projection as crew_log_projection
 from kiro_crew.crew_log.writer import DEFAULT_LIMITS, WriterLimits
+from kiro_crew.testing.delete_guard import disposable
 
 # creation and header
 
@@ -432,7 +433,7 @@ def test_a_predecessor_collected_during_the_deferral_costs_no_dropped_write():
     _dangling_predecessor()
     emit.reset_caches()
     before = emit.dropped_writes()
-    _remove_as_retention_does(lambda: shutil.rmtree(_log_path(SESSION).parent))
+    _remove_as_retention_does(lambda: shutil.rmtree(disposable(_log_path(SESSION).parent)))
 
     emit._submit(
         lambda: emit._repair_superseded(SESSION, "chat-7"),
@@ -763,7 +764,7 @@ def test_a_walk_that_reaches_a_log_retention_removed_ends_quietly(caplog):
     """
     chain = ["acp-sess-0001", "acp-sess-0002", "acp-sess-0003"]
     _chain_of_open_tails(chain[:2])
-    _remove_as_retention_does(lambda: shutil.rmtree(_log_path(chain[0]).parent))
+    _remove_as_retention_does(lambda: shutil.rmtree(disposable(_log_path(chain[0]).parent)))
 
     with caplog.at_level(logging.WARNING, logger="kiro_crew.crew_log.emit"):
         _open_on_chat_7(chain[2], previous_sid=chain[1])

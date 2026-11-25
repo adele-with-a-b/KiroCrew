@@ -39,6 +39,7 @@ from kiro_crew.crew_log import (
 )
 from kiro_crew.crew_log.projection_registry import _FOLDS
 from kiro_crew.crew_log.store import crew_log_dir
+from kiro_crew.testing.delete_guard import disposable
 
 SLOT = "chat-onewalk"
 FIRST = "acp-ow-first"
@@ -184,7 +185,7 @@ def _files() -> "dict[str, bytes]":
 def _put_files(files: "dict[str, bytes]") -> None:
     for folder in _savepoint_dirs():
         for path in folder.rglob("*.json") if folder.is_dir() else ():
-            path.unlink()
+            disposable(path).unlink()
     for name, raw in files.items():
         Path(name).parent.mkdir(parents=True, exist_ok=True)
         Path(name).write_bytes(raw)

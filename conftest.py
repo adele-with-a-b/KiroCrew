@@ -1543,7 +1543,9 @@ def _isolate_tempfile_base(tmp_path_factory):
     * A test that patches ``tempfile.gettempdir`` or passes its own ``dir=`` still
       wins, as it should.
     """
-    # Resolve pytest's basetemp FIRST, and discard the value: the call is what matters.
+    # Resolve pytest's basetemp FIRST: the call is what matters, and the value goes to the
+    # delete guard, since a `--basetemp` can put every per-test data home outside the
+    # system temp dirs the guard counts by itself.
     # pytest computes basetemp lazily from `tempfile.gettempdir()` on first use, so
     # forcing it now pins it OUTSIDE the redirect below. Skip this and pytest's whole
     # basetemp lands INSIDE the run's temp root, where the teardown here would delete
@@ -1552,7 +1554,13 @@ def _isolate_tempfile_base(tmp_path_factory):
     # to every temp path in the suite, straight into the Windows 260-character cap and
     # the macOS AF_UNIX 104-byte cap. That ordering was previously accidental: an
     # unrelated fixture 300 lines above happened to call `mktemp` first.
-    tmp_path_factory.getbasetemp()
+    basetemp = tmp_path_factory.getbasetemp()
+    try:
+        from kiro_crew.testing.delete_guard import count_as_temp
+    except ImportError:  # pragma: no cover - a partial checkout
+        pass
+    else:
+        count_as_temp(basetemp)
     previous_tempdir = tempfile.tempdir
     previous_env = {name: os.environ.get(name) for name in _TMP_ENV_VARS}
     parent = pathlib.Path(tempfile.gettempdir())

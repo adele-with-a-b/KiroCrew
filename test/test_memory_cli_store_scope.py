@@ -23,6 +23,7 @@ from kiro_crew import cli_commands as cc
 from kiro_crew.config import loader as loader_mod
 from kiro_crew.config.loader import config_dir
 from kiro_crew.memory_stores import DEFAULT_MEMORY_STORE, resolve_store_path
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.vector_memory import VectorMemoryStore, open_member_database
 
 # Each test writes ``config.json`` into its own data home and drops the process-wide
@@ -194,7 +195,7 @@ class TestADeletedStoreIsRefusedRatherThanRecreatedEmpty:
         # blocks rmtree, so deleting with them open passes on POSIX and fails
         # there. The deletion is the SUBJECT of this test, not incidental setup.
         stores.close_all()
-        shutil.rmtree(db_path.parent)
+        shutil.rmtree(disposable(db_path.parent))
 
         assert "is missing" in _refused(capsys, mem_action="export", output=None, store=_ACME)
         # The recreation is the harm, so its absence is asserted directly rather
@@ -212,7 +213,7 @@ class TestADeletedStoreIsRefusedRatherThanRecreatedEmpty:
         dump.write_text(json.dumps({"semantic": [{"key": _BETA_KEY, "value": "x"}]}), "utf-8")
         db_path = resolve_store_path(_BETA)
         stores.close_all()
-        shutil.rmtree(db_path.parent)
+        shutil.rmtree(disposable(db_path.parent))
 
         assert "is missing" in _refused(capsys, mem_action="import", file=str(dump), store=_BETA)
         assert not db_path.parent.exists()
@@ -248,7 +249,7 @@ class TestADeletedStoreIsRefusedRatherThanRecreatedEmpty:
         # handle is open, and the WAL/shm siblings are handles too.
         stores.close_all()
         for stray in db_path.parent.glob("memory.db*"):
-            stray.unlink()
+            disposable(stray).unlink()
         assert db_path.parent.exists() and not db_path.exists()
 
         err = _refused(capsys, mem_action="export", output=None, store=_ACME)
@@ -668,7 +669,7 @@ class TestCarveTakesTheSameAdmission:
 
         db_path = resolve_store_path(_ACME)
         stores.close_all()
-        shutil.rmtree(db_path.parent)
+        shutil.rmtree(disposable(db_path.parent))
 
         assert "is missing" in self._carve_refused(_ACME, capsys)
         # The recreation is the harm, asserted directly rather than inferred.

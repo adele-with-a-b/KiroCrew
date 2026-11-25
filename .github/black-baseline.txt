@@ -232,7 +232,6 @@ test/test_app_backend_stale_reap.py
 test/test_app_bridges.py
 test/test_app_config_self_heal.py
 test/test_app_context.py
-test/test_app_dev_mode.py
 test/test_app_e2e.py
 test/test_app_execution.py
 test/test_app_manager.py
@@ -387,7 +386,6 @@ test/test_deploy_round40_fixes.py
 test/test_deploy_round4_fixes.py
 test/test_deploy_round5_fixes.py
 test/test_deploy_round6_fixes.py
-test/test_deploy_round8_fixes.py
 test/test_deploy_web_engine.py
 test/test_deploy_web_handlers.py
 test/test_deploy_web_iam.py
@@ -660,7 +658,6 @@ test/test_terminal_commands.py
 test/test_terminal_handler.py
 test/test_theme_authoring_skill.py
 test/test_theme_css_security.py
-test/test_theme_install.py
 test/test_thread_parent_context.py
 test/test_toolbox_migration.py
 test/test_trusted_apps_api.py

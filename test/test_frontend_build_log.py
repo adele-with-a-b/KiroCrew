@@ -18,6 +18,7 @@ import pytest
 
 from kiro_crew import frontend, pinned_fs
 from kiro_crew.config.paths import config_dir
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import async_wait_until
 
 #: Without a pinned walk (Windows) no log is opened and the output is discarded,
@@ -298,7 +299,7 @@ def test_a_symlinked_logs_dir_is_refused(website, monkeypatch, tmp_path):
     logs = _expected_log().parent
     if logs.exists():
         for child in logs.iterdir():
-            child.unlink()
+            disposable(child).unlink()
         logs.rmdir()
     logs.symlink_to(elsewhere, target_is_directory=True)
     monkeypatch.setattr(frontend.subprocess, "Popen", _popen_discarding(website))

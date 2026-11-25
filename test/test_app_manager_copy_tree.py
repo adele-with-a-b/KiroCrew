@@ -27,6 +27,7 @@ from kiro_crew.apps.manager import (
     registry_source_repository,
     update_app,
 )
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import await_until, finished, wait_until
 
 #: The update's refusal for an installed `.app_secret` that is a symlink; the
@@ -826,7 +827,7 @@ class TestCopyAppTree:
         (src / "marker-v1.txt").write_text("", encoding="utf-8")
         assert install_app(src).ok
         dest = app_dir("test-app")
-        shutil.rmtree(dest / "data")
+        shutil.rmtree(disposable(dest / "data"))
 
         v2 = _make_app_source(tmp_path / "v2", version="2.0.0")
         (v2 / "data").write_text("a file\n", encoding="utf-8")

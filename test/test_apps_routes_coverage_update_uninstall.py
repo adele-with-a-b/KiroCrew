@@ -35,6 +35,7 @@ from apps_routes_coverage_helpers import (
 import kiro_crew.apps.routes as routes_mod
 from kiro_crew.apps.manager import AppResult, disable_app, enable_app, register_external_app
 from kiro_crew.apps.routes import register_app_routes
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.synthetic_credentials import github_classic
 
 _TOKEN = github_classic(seed=33)
@@ -1031,7 +1032,7 @@ class TestMigrateCleanup:
             make_dir_link(dest / "data", target)
             target_before = sorted(p.name for p in target.iterdir())
         elif refusal == "data-file":
-            shutil.rmtree(dest / "data")
+            shutil.rmtree(disposable(dest / "data"))
             (dest / "data").write_text("not a directory", encoding="utf-8")
         elif refusal == "shipped":
             monkeypatch.setattr(manager, "detect_orphaned_builtins", lambda **k: set())
