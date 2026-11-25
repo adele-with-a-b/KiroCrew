@@ -5,7 +5,9 @@ sent while a prompt runs is answered while the prompt is still running.
 
 * ``session/new`` answers a session ``S1`` in mode ``default`` (with ``models``,
   on model ``m1`` too); ``session/set_mode`` and ``session/set_model`` answer ``{}``
-  and send no update, as claude-agent-acp does.
+  and send no update, as claude-agent-acp does. ``session/set_config_option``
+  answers the written option (or ``answer_value``) as the session's ``configOptions``
+  and sends no update.
 * ``echo`` answers its params; with ``gate`` (a FIFO the test made) it first waits
   until the test writes to it, then writes ``<gate>.done`` after the answer is out.
 * ``session/prompt`` writes ``before`` chunks, then (with ``ask``) asks
@@ -105,6 +107,12 @@ def main():
             _out({"jsonrpc": "2.0", "id": req_id, "result": result})
         elif method in ("session/set_mode", "session/set_model"):
             _out({"jsonrpc": "2.0", "id": req_id, "result": {}})
+        elif method == "session/set_config_option":
+            # ``answer_value`` stands in for an adapter that resolves the written
+            # value to another spelling of the model it runs.
+            value = params.get("answer_value", params.get("value"))
+            option = {"id": params.get("configId"), "currentValue": value}
+            _out({"jsonrpc": "2.0", "id": req_id, "result": {"configOptions": [option]}})
         elif method == "umask":
             mask = os.umask(0)
             os.umask(mask)

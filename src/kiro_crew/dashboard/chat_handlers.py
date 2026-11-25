@@ -359,6 +359,8 @@ from kiro_crew.dashboard.chat_api.slot_model import (  # noqa: F401
     _with_warning,
     api_chat_slot_model,
     api_chat_slots_model,
+    live_session_runs_another_model,
+    live_session_serves,
     switch_slot_model,
 )
 from kiro_crew.dashboard.chat_api.slot_note import (  # noqa: F401

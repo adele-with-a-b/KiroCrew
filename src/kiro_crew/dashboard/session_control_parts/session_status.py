@@ -884,13 +884,14 @@ def read_messages(
         # A turn parked on a tool approval is still ``running``; this says it is
         # waiting on a person rather than working.
         **_pending_approval_fields(state, slot),
-        # The model the target's turns use, and a session_set_model pick still
-        # waiting for its next turn, so a caller can see whether its pick took.
+        # The model the target's turns use, a session_set_model pick still
+        # waiting for its next turn, and the last one its turn start dropped, so
+        # a caller can see whether its pick took.
         # Redacted: the owner's picker stores whatever string it is given.
         # The served model when the backend has reported one (it reflects an
         # inherited default or an active fallback), otherwise the pin.
         "model": redact(slot.served_model or slot.model or ""),
-        **_pending_pick_view(slot._pending_model_pick),
+        **_pending_pick_view(slot._pending_model_pick, slot._model_pick_dropped),
         "reasoning_effort": slot.reasoning_effort or "",
         "total": total,
         # The cursor to poll with next. This is NOT `total`: when more than

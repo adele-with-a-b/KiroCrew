@@ -759,6 +759,7 @@ from kiro_crew.mcp_dashboard_references import (  # noqa: E402, F401
     _walk_chat_folder_segments,
 )
 from kiro_crew.mcp_dashboard_session_runs import (  # noqa: E402, F401
+    _DROP_STAGE_WORDS,
     _PROFILE_COPY_NOTE,
     _WORK_RECORD_ROUTE,
     GENERATE_TITLE_TIMEOUT_SECS,

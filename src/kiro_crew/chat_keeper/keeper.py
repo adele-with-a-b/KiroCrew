@@ -72,10 +72,13 @@ CACHED_UPDATE_KINDS = frozenset({"current_mode_update", "config_option_update", 
 METHOD_SESSION_PROMPT = "session/prompt"
 #: Requests whose success changes the session's state without a ``session/update``
 #: from claude-agent-acp: the keeper writes the change into what it caches, so an
-#: adopting gateway shows the mode and model the old one last set.
+#: adopting gateway shows the mode and model the old one last set. claude moves its
+#: model with a ``model`` config option write, not ``session/set_model``.
 METHOD_SET_MODE = "session/set_mode"
 METHOD_SET_MODEL = "session/set_model"
-_SESSION_STATE_METHODS = frozenset({METHOD_SET_MODE, METHOD_SET_MODEL})
+METHOD_SET_CONFIG_OPTION = "session/set_config_option"
+_MODEL_CONFIG_ID = "model"
+_SESSION_STATE_METHODS = frozenset({METHOD_SET_MODE, METHOD_SET_MODEL, METHOD_SET_CONFIG_OPTION})
 #: The adapter's request for a tool approval. The keeper times how long each open
 #: one has gone unanswered with no gateway attached, for the restart receipt.
 METHOD_REQUEST_PERMISSION = "session/request_permission"
@@ -119,6 +122,15 @@ def parse_args(argv: list[str]) -> KeeperArgs:
     if not instance.isalnum() or adopt_secs <= 0:
         raise SystemExit(2)
     return KeeperArgs(instance=instance, directory=directory, adopt_secs=adopt_secs, argv=[])
+
+
+def _model_option_value(options: object) -> str:
+    """The ``model`` select's ``currentValue`` in a ``configOptions`` list, or ``""``."""
+    for option in options if isinstance(options, list) else ():
+        if isinstance(option, dict) and option.get("id") == _MODEL_CONFIG_ID:
+            value = option.get("currentValue")
+            return value if isinstance(value, str) else ""
+    return ""
 
 
 def _id_key(value: Any) -> str | None:
@@ -408,7 +420,7 @@ class Keeper:
                 return None
             req_method, generation, sid, params = entry
             if params is not None and sid and "result" in msg and msg.get("error") is None:
-                self._note_session_state(req_method, sid, params)
+                self._note_session_state(req_method, sid, params, msg.get("result"))
             if req_method in SESSION_ANSWER_METHODS and isinstance(msg.get("result"), dict):
                 answered = msg["result"].get("sessionId") or sid
                 if isinstance(answered, str) and answered:
@@ -466,8 +478,10 @@ class Keeper:
         found = self.tool_calls.get(call_id) if isinstance(call_id, str) else None
         return found if found is not None and found[0] <= self.last_ack else None
 
-    def _note_session_state(self, method: str, sid: str, params: dict[str, Any]) -> None:
-        """Write a ``set_mode`` / ``set_model`` the adapter accepted into the cache."""
+    def _note_session_state(
+        self, method: str, sid: str, params: dict[str, Any], result: object = None
+    ) -> None:
+        """Write a mode or model change the adapter accepted into the cache."""
         if method == METHOD_SET_MODE and isinstance(params.get("modeId"), str):
             if sid not in self.session_updates and len(self.session_updates) >= (
                 _MAX_CACHED_SESSIONS
@@ -482,13 +496,44 @@ class Keeper:
             line = json.dumps(body).encode("utf-8") + b"\n"
             self.session_updates.setdefault(sid, {})["current_mode_update"] = line
         elif method == METHOD_SET_MODEL and isinstance(params.get("modelId"), str):
-            answer = _parse_line(self.session_answers.get(sid, b""))
-            result = answer.get("result") if answer is not None else None
-            models = result.get("models") if isinstance(result, dict) else None
-            if answer is None or not isinstance(models, dict):
-                return
-            models["currentModelId"] = params["modelId"]
-            self.session_answers[sid] = json.dumps(answer).encode("utf-8") + b"\n"
+            self._note_model(sid, params["modelId"])
+        elif method == METHOD_SET_CONFIG_OPTION:
+            options = result.get("configOptions") if isinstance(result, dict) else None
+            if params.get("configId") == _MODEL_CONFIG_ID and isinstance(params.get("value"), str):
+                # The model the adapter says it now runs, when its answer names
+                # one; else the value it accepted.
+                self._note_model(sid, _model_option_value(options) or params["value"])
+            if isinstance(options, list) and (
+                sid in self.session_updates or len(self.session_updates) < _MAX_CACHED_SESSIONS
+            ):
+                # The answer carries the session's whole option list after the
+                # write, which a ``config_option_update`` would have carried.
+                update = {"sessionUpdate": "config_option_update", "configOptions": options}
+                body = {
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {"sessionId": sid, "update": update},
+                }
+                line = json.dumps(body).encode("utf-8") + b"\n"
+                self.session_updates.setdefault(sid, {})["config_option_update"] = line
+
+    def _note_model(self, sid: str, model_id: str) -> None:
+        """Make the cached session answer name *model_id* as the session's model.
+
+        Both places an adopting gateway reads it: ``models.currentModelId`` and
+        the ``model`` select's ``currentValue``.
+        """
+        answer = _parse_line(self.session_answers.get(sid, b""))
+        result = answer.get("result") if answer is not None else None
+        if answer is None or not isinstance(result, dict):
+            return
+        models = result.get("models")
+        if isinstance(models, dict):
+            models["currentModelId"] = model_id
+        for option in result.get("configOptions") or []:
+            if isinstance(option, dict) and option.get("id") == _MODEL_CONFIG_ID:
+                option["currentValue"] = model_id
+        self.session_answers[sid] = json.dumps(answer).encode("utf-8") + b"\n"
 
     def _track_stdin(self, att: _Attachment, data: bytes) -> None:
         att.stdin_partial.extend(data)

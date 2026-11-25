@@ -575,6 +575,7 @@ _BASE_SLOT_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "_pending_discard_from_wake": ("value", "False"),
     "_pending_memory_mode": ("value", "None"),
     "_pending_model_pick": ("value", "None"),
+    "_model_pick_dropped": ("value", "{}"),
     "_pending_release_deferred": ("value", "False"),
     "_pending_reset_clears_cwd": ("value", "False"),
     "_pending_reset_history_key": ("value", "None"),

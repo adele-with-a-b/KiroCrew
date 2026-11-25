@@ -187,6 +187,58 @@ def _wire_model_id(provider: AcpProvider, model_name: str) -> str:
     return model_registry.to_acp_id(model_name)
 
 
+def live_session_serves(candidate: object, model_name: str) -> bool:
+    """True when the live session's BACKEND-RESOLVED model already equals
+    *model_name*'s wire id — the truth-based success exception.
+
+    Not identity guessing: dispatch captures slot.model at its call site and
+    registers the session only after provider.start(), so neither identity nor
+    registration time proves anything; the served model does. A True here
+    means slot.model is consistent with what actually runs — the
+    partially-applied live switch (set_model landed, then the effort reapply
+    failed) — so rollback would publish the OLD model over a live session
+    running the NEW one, and a teardown would kill it. Shared by the picker's
+    pre-reset busy re-check and its post-decline disambiguation, so the two
+    cannot diverge. Strict on purpose: a miss there fails closed.
+    """
+    if not isinstance(candidate, AcpProvider):
+        return False
+    wire = _wire_model_id(candidate, model_name)
+    if not wire:
+        return False
+    if candidate.served_model == wire:
+        return True
+    if wire == "auto":
+        # AcpProvider.served_model collapses the "auto" sentinel to "" on
+        # purpose (the fallback canary must never probe a model the backend did
+        # not resolve), so a landed switch TO Auto is invisible through it. The
+        # session client keeps the raw id — after set_model("auto") lands the
+        # handle prefers that explicit assignment — so read it unfiltered for
+        # this one value (the same literal _wire_model_id hands out for Auto).
+        # Any other non-match stays False (fail-closed).
+        raw = getattr(candidate.client, "served_model", "")
+        return str(raw or "").strip() == wire
+    return False
+
+
+def live_session_runs_another_model(candidate: object, model_name: str) -> bool:
+    """Whether a live session runs a model other than *model_name* that a reset would fix.
+
+    A pin can equal a pick while the session runs something else (a resume that
+    came back on its own model), and a writer that compares pins alone would then
+    keep the old session for a switch it reported as made. A True here arms a
+    reset, which restarts the session, so it is the session's own judgement
+    (``AcpProvider.serves_another_model``): every spelling a switch can record
+    counts as the pick, and a refused pin or a substituted model, which a new
+    session would get again, does not count as stale. :func:`live_session_serves`
+    stays the strict check the picker's success exception needs.
+    """
+    if not isinstance(candidate, AcpProvider):
+        return False
+    wire = _wire_model_id(candidate, model_name)
+    return bool(wire) and candidate.serves_another_model(wire)
+
+
 async def _reapply_effort_after_live_switch(
     name: str, slot: _ChatSlot, provider: AcpProvider
 ) -> bool:
@@ -722,41 +774,6 @@ async def switch_slot_model(
                 # for a request the caller was told had failed.
                 slot.jev_route = prior_jev_route  # type: ignore[union-attr]
 
-        def _live_serves_target(candidate: object) -> bool:
-            """True when the live session's BACKEND-RESOLVED model already
-            equals the requested wire id — the truth-based success exception.
-
-            Not identity guessing: dispatch captures slot.model at its call
-            site and registers the session only after provider.start(), so
-            neither identity nor registration time proves anything; the
-            served model does. A True here means slot.model is consistent
-            with what actually runs — the partially-applied live switch
-            (set_model landed, then the effort reapply failed) — so rollback
-            would publish the OLD model over a live session running the NEW
-            one, and a teardown would kill it. Defined once and consumed by
-            BOTH the pre-reset busy re-check and the post-decline
-            disambiguation, so the two spellings cannot diverge.
-            """
-            if not isinstance(candidate, AcpProvider):
-                return False
-            wire = _wire_model_id(candidate, model_name)
-            if not wire:
-                return False
-            if candidate.served_model == wire:
-                return True
-            if wire == "auto":
-                # AcpProvider.served_model collapses the "auto" sentinel to ""
-                # on purpose (the fallback canary must never probe a model the
-                # backend did not resolve), so a landed switch TO Auto is
-                # invisible through it. The session client keeps the raw id —
-                # after set_model("auto") lands the handle prefers that
-                # explicit assignment — so read it unfiltered for this one
-                # value (the same literal _wire_model_id hands out for Auto).
-                # Any other non-match stays False (fail-closed).
-                raw = getattr(candidate.client, "served_model", "")
-                return str(raw or "").strip() == wire
-            return False
-
         # Set on the reset path when the old session's teardown RAISED after
         # the pop: the switch is committed, the response carries an advisory
         # warning (agent-handler precedent via _reset_slot_session_or_warn).
@@ -838,7 +855,7 @@ async def switch_slot_model(
             # cold-starting during either await is refused here too.
             recheck = state.sessions.get_provider(session_key)
             if _switch_target_busy(state, slot, session_key, recheck, own_turn=caller.own_turn):
-                if _live_serves_target(recheck):
+                if live_session_serves(recheck, model_name):
                     # The turn that slipped in runs on a session that already
                     # serves the target (set_model landed before the effort
                     # reapply failed): slot.model is truthful, so report
@@ -895,10 +912,10 @@ async def switch_slot_model(
                 # success strands a live session on the old model under the
                 # new slot.model.
                 busy_provider = state.sessions.get_provider(session_key)
-                live_serves_target = _live_serves_target(busy_provider)
+                live_serves_target = live_session_serves(busy_provider, model_name)
                 if live_serves_target:
                     went_live = True
-                    # See _live_serves_target: slot.model is consistent with
+                    # See live_session_serves: slot.model is consistent with
                     # what actually runs, so success without teardown is the
                     # truthful answer; the un-pushed effort override is
                     # already persisted on the slot and applies on the next

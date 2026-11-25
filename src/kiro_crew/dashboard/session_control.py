@@ -259,6 +259,7 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         PendingModelPick,
         _another_alias_is_mid_turn,
         _caller_tab_id,
+        _drop_pick,
         _log_landing_failure,
         _pending_pick_view,
         _pick_audit_fields,

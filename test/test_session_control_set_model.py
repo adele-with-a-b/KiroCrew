@@ -18,6 +18,7 @@ import pytest
 from chat_test_helpers import _make_state
 
 from kiro_crew.dashboard import session_control as sc
+from kiro_crew.dashboard.chat_persistence import restore_open_slots, save_slot_off_loop
 from kiro_crew.dashboard.chat_utils import slot_history_key
 from kiro_crew.dashboard.handlers import session_control as handlers_sc
 from kiro_crew.mcp_dashboard import TABLE
@@ -385,6 +386,185 @@ def test_a_pick_equal_to_the_pin_still_resets_while_a_fallback_serves(tmp_path):
     target._active_fallback_model = "some-fallback"
 
     assert sc.apply_pending_model_pick(state, target) is True
+
+
+def _live_provider(
+    served: str, *, backend: str = "", refused: str = "", substituted: str | None = None
+):
+    """A live ACP session reporting *served*, judged by the provider's real check."""
+    import functools
+    from types import SimpleNamespace
+
+    from kiro_crew.acp.types import ACP_BACKEND_KIRO
+    from kiro_crew.agent_sdk.capabilities import capabilities_for
+    from kiro_crew.providers.acp import AcpProvider
+
+    provider = MagicMock(spec=AcpProvider)
+    provider.capabilities = capabilities_for(backend or ACP_BACKEND_KIRO)
+    provider.available_models.return_value = []
+    provider.has_active_turn.return_value = False
+    provider.served_model = served
+    provider.model_pin_refused = refused
+    provider._client = SimpleNamespace(_last_substitution_model=substituted)
+    for name in ("recorded_model_spellings", "serves_another_model"):
+        setattr(provider, name, functools.partial(getattr(AcpProvider, name), provider))
+    return provider
+
+
+def _claude_spellings(pick: str) -> tuple[str, str, str]:
+    """The three spellings a claude switch to *pick* can record on a cold cache:
+    the registry wire id, prefix-stripped, then prefix- and window-stripped."""
+    from kiro_crew import model_registry
+    from kiro_crew.acp.types import ACP_BACKEND_CLAUDE
+    from kiro_crew.dashboard.chat_handlers import _wire_model_id
+
+    wire = _wire_model_id(_live_provider("", backend=ACP_BACKEND_CLAUDE), pick)
+    stripped = model_registry.strip_provider_id_prefix(wire)
+    return wire, stripped, stripped.replace("[1m]", "")
+
+
+def test_a_pick_equal_to_the_pin_resets_a_session_serving_another_model(tmp_path):
+    """After a restart the pin can already name the pick while the resumed
+    session runs its old model. The pick must still move the session: the
+    caller was told it switches. Mutation guard: comparing pins alone commits
+    the pick, arms no reset, and the turn runs the old model."""
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    out = _set_model(state, caller, "chat-2", "sonnet")
+    target.model = out["model"]
+    state.sessions.get_provider = MagicMock(return_value=_live_provider("old-served-model"))
+
+    assert sc.apply_pending_model_pick(state, target) is True
+    assert target.model == out["model"]
+
+
+def test_a_switch_holds_across_a_restart_and_a_second_switch_lands(tmp_path, monkeypatch):
+    """The reported sequence end to end at the dashboard layer: a pick lands and
+    is saved as the turn saves it; after a restart the pin and the caller's tab
+    identity come back, but the session it resumes reports the old model; the
+    caller picks the same model again. That pick must reset the session.
+    Mutation guard: comparing pins alone answers False and the turn runs old."""
+    monkeypatch.setenv("KIROCREW_HOME", str(tmp_path))
+    sessions = tmp_path / "sessions"
+    state = _make_state(sessions)
+    caller = state.get_or_create_slot("chat-1-1")
+    target = state.get_or_create_slot("chat-2-1")
+    for slot in (caller, target):
+        state.conversation_log.append(_key(slot), "user", "hi")
+    target.model = "old-model"
+    asyncio.run(save_slot_off_loop(state, caller, force=True))
+    picked = _set_model(state, caller, "chat-2-1", "sonnet")["model"]
+    assert sc.apply_pending_model_pick(state, target) is True
+    assert asyncio.run(
+        save_slot_off_loop(state, target, force=True, expected_history_key=_key(target))
+    )
+    (tmp_path / "open_slots.json").write_text(
+        json.dumps({"keys": ["chat-1-1", "chat-2-1"], "ts": 0.0})
+    )
+
+    restarted = _make_state(sessions)
+    assert restore_open_slots(restarted) == 2
+    caller2, target2 = restarted._slots["chat-1-1"], restarted._slots["chat-2-1"]
+    assert target2.model == picked, "the committed pin survives the restart"
+    assert caller2._tab_id == caller._tab_id, "the caller keeps its tab identity"
+    restarted.sessions.get_provider = MagicMock(return_value=_live_provider("old-served-model"))
+
+    _set_model(restarted, caller2, "chat-2-1", "sonnet")
+    assert sc.apply_pending_model_pick(restarted, target2) is True
+    assert target2._model_pick_dropped == {}
+
+
+def test_a_pick_equal_to_the_pin_and_the_served_model_resets_nothing(tmp_path):
+    """The other side of the check: a session already on the pick, or one that
+    reported no model, is not torn down for an equal pin."""
+    from kiro_crew import model_registry
+
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    out = _set_model(state, caller, "chat-2", "sonnet")
+    target.model = out["model"]
+    served = model_registry.to_acp_id(out["model"])
+    state.sessions.get_provider = MagicMock(return_value=_live_provider(served))
+    assert sc.apply_pending_model_pick(state, target) is False
+
+    _set_model(state, caller, "chat-2", "sonnet")
+    state.sessions.get_provider = MagicMock(return_value=_live_provider(""))
+    assert sc.apply_pending_model_pick(state, target) is False
+
+
+@pytest.mark.parametrize("rung", [0, 1, 2], ids=["wire", "bare-1m", "bare"])
+def test_an_equal_pick_keeps_a_claude_session_on_any_spelling_of_it(tmp_path, rung):
+    """A claude switch records the spelling the adapter took: the wire id, or a
+    rung of the config-option ladder. A session on any of them runs the pick,
+    and a reset would only restart it. Mutation guard: a strict compare with
+    the wire id resets the bare spellings."""
+    from kiro_crew.acp.types import ACP_BACKEND_CLAUDE
+
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    out = _set_model(state, caller, "chat-2", "sonnet")
+    target.model = out["model"]
+    served = _claude_spellings(out["model"])[rung]
+    assert served
+    provider = _live_provider(served, backend=ACP_BACKEND_CLAUDE)
+    state.sessions.get_provider = MagicMock(return_value=provider)
+
+    assert sc.apply_pending_model_pick(state, target) is False
+
+
+@pytest.mark.parametrize("listed", ["bare-1m", "alias"])
+def test_an_equal_pick_keeps_a_claude_session_on_its_advertised_fold(tmp_path, listed):
+    """With a warm advertised list a claude switch first folds the id onto the
+    listed spelling (a bare ``[1m]`` id, or the version-less family alias), and
+    that is what the session reports. Mutation guard: a set without the fold
+    resets it."""
+    from kiro_crew import model_registry
+    from kiro_crew.acp.types import ACP_BACKEND_CLAUDE
+    from kiro_crew.agent_sdk.capabilities import capabilities_for
+
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    out = _set_model(state, caller, "chat-2", "sonnet")
+    target.model = out["model"]
+    wire, stripped, _bare = _claude_spellings(out["model"])
+    namespace = capabilities_for(ACP_BACKEND_CLAUDE).model_id_namespace
+    model_registry.refresh_advertised_models(
+        namespace, ["default", stripped if listed == "bare-1m" else "sonnet"]
+    )
+    folded = model_registry.resolve_wire_model_id(wire, namespace)
+    assert folded != wire
+    provider = _live_provider(folded, backend=ACP_BACKEND_CLAUDE)
+    state.sessions.get_provider = MagicMock(return_value=provider)
+
+    assert sc.apply_pending_model_pick(state, target) is False
+
+
+def test_an_equal_pick_does_not_reset_when_a_reset_cannot_help(tmp_path):
+    """A pin the backend refused or withheld leaves the session on its default,
+    and a policy substitution serves another model on purpose: a new session
+    gets the same answer, so neither is reset. A truly different model is."""
+    from kiro_crew.acp.types import ACP_BACKEND_CLAUDE
+
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    other = _claude_spellings(_set_model(state, caller, "chat-2", "opus")["model"])[0]
+    pick = _set_model(state, caller, "chat-2", "sonnet")["model"]
+    wire = _claude_spellings(pick)[0]
+    target.model = pick
+    cases = [
+        (_live_provider(other, backend=ACP_BACKEND_CLAUDE, refused=wire), False),
+        (_live_provider(other, backend=ACP_BACKEND_CLAUDE, substituted=other), False),
+        (_live_provider(other, backend=ACP_BACKEND_CLAUDE), True),
+    ]
+    for provider, resets in cases:
+        _set_model(state, caller, "chat-2", "sonnet")
+        state.sessions.get_provider = MagicMock(return_value=provider)
+        assert sc.apply_pending_model_pick(state, target) is resets, provider.model_pin_refused
 
 
 def test_the_turn_arms_the_reset_for_a_live_or_spawning_session_only():
@@ -792,6 +972,128 @@ def test_a_read_shows_the_model_and_the_pending_pick(tmp_path):
     read = sc.read_messages(state, caller_session_key=_key(caller), target="chat-2")
     assert read["model"] == out["model"]
     assert "pending_model" not in read
+
+
+def test_a_dropped_pick_is_visible_to_the_caller_and_logged(tmp_path, caplog):
+    """The caller was told the target will switch, so a pick its turn start drops
+    must say so where the caller looks. Mutation guard: an audit-only drop leaves
+    the read showing the old model with no pick and no reason."""
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    target.model = "old-model"
+    out = _set_model(state, caller, "chat-2", "sonnet")
+    caller._tab_id = "replacement-tab"
+
+    with caplog.at_level("WARNING", logger="kiro_crew.dashboard.session_control"):
+        assert sc.apply_pending_model_pick(state, target) is False
+
+    read = sc.read_messages(state, caller_session_key=_key(caller), target="chat-2")
+    assert read["model"] == "old-model"
+    assert read["model_pick_dropped"] == {
+        "model": {"value": out["model"], "code": "caller_replaced", "stage": "turn_start"}
+    }
+    assert any("dropped (turn_start): caller_replaced" in r.message for r in caplog.records)
+
+    _set_model(state, caller, "chat-2", "sonnet")
+    read = sc.read_messages(state, caller_session_key=_key(caller), target="chat-2")
+    assert "model_pick_dropped" not in read, "a new pick clears the old drop"
+
+
+def test_the_read_tool_renders_a_dropped_pick():
+    out, _ = _tool(
+        "session_read_message",
+        {"target": "chat-2"},
+        "GET /api/session-control/read",
+        {
+            "target": "chat-2",
+            "title": "w",
+            "messages": [],
+            "total": 0,
+            "next_since": 0,
+            "model": "old-model",
+            "model_pick_dropped": {
+                "model": {"value": "sonnet", "code": "caller_replaced", "stage": "turn_start"},
+                "reasoning_effort": {
+                    "value": "high",
+                    "code": "harness_changed",
+                    "stage": "harness_change",
+                },
+            },
+        },
+    )
+    assert "its last model pick sonnet was dropped at its turn start (caller_replaced)" in out
+    assert "its last effort pick high was dropped when its harness changed (harness_changed)" in out
+
+
+def test_each_half_of_a_dropped_pick_keeps_its_own_record(tmp_path):
+    """Both halves overtaken: two records, the effort one named as an effort.
+    Mutation guard: one record per slot keeps only the last half."""
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    out = asyncio.run(
+        sc.set_model_target(
+            state,
+            caller_session_key=_key(caller),
+            target="chat-2",
+            model="sonnet",
+            reasoning_effort="high",
+        )
+    )
+    target._model_pick_gen += 1
+    target._effort_pick_gen += 1
+
+    assert sc.apply_pending_model_pick(state, target) is False
+    assert target._model_pick_dropped == {
+        "model": {
+            "value": out["model"],
+            "code": "superseded_by_newer_pick",
+            "stage": "turn_start",
+        },
+        "reasoning_effort": {
+            "value": "high",
+            "code": "superseded_by_newer_effort",
+            "stage": "turn_start",
+        },
+    }
+
+
+def test_a_second_call_records_the_half_it_replaced(tmp_path):
+    """A model-only call then an effort-only call: the second replaces the whole
+    pick, so the model half is recorded as dropped, not lost without a word."""
+    state = _make_state(tmp_path)
+    caller = state.get_or_create_slot("chat-1")
+    target = state.get_or_create_slot("chat-2")
+    first = _set_model(state, caller, "chat-2", "sonnet")
+    asyncio.run(
+        sc.set_model_target(
+            state, caller_session_key=_key(caller), target="chat-2", reasoning_effort="high"
+        )
+    )
+
+    read = sc.read_messages(state, caller_session_key=_key(caller), target="chat-2")
+    assert read["pending_reasoning_effort"] == "high"
+    assert "pending_model" not in read
+    assert read["model_pick_dropped"] == {
+        "model": {
+            "value": first["model"],
+            "code": "replaced_by_newer_call",
+            "stage": "set_model",
+        }
+    }
+    # The next model-only call drops the effort-only pick's effort the same way.
+    _set_model(state, caller, "chat-2", "opus")
+    assert target._model_pick_dropped == {
+        "reasoning_effort": {
+            "value": "high",
+            "code": "replaced_by_newer_call",
+            "stage": "set_model",
+        }
+    }
+    # One that carries the same half only replaces it: nothing is lost.
+    _set_model(state, caller, "chat-2", "sonnet")
+    assert target._model_pick_dropped == {}
 
 
 def test_a_read_reports_the_served_model_over_the_pin(tmp_path):
