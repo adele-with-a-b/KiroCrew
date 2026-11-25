@@ -171,6 +171,7 @@ def run_crew_send(args: dict[str, Any], ctx: ToolContext) -> str:
         how = "steered into its running turn"
         if resp.get("held") is True:
             why = f" {steer_refusal.held_note()}"
+        why += steer_refusal.carried_note(resp.get("carried"))
         if not asked:
             why += (
                 " It is your own session, so a message to it cuts in unless you pass steer=false."
@@ -186,6 +187,7 @@ def run_crew_send(args: dict[str, Any], ctx: ToolContext) -> str:
         # idle worker held behind sub-agents, fair admission, a paused crew).
         how = "queued, not steered"
         why = f" {steer_refusal.describe(resp.get('steerRefusal'))}"
+        why += steer_refusal.carried_note(resp.get("carried"))
     else:
         how = "queued: it runs when its current turn ends"
     return redact(f"\U0001f4e8 Message {how} to `{resp.get('target')}` {_on(resp)}.{why}")

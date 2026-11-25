@@ -185,6 +185,18 @@ target, because the message starts a turn either way. A target's
 `session_status` row and its `session_read_message` reply say how many messages
 are queued and how long the oldest has waited.
 
+**A message that cuts in takes your earlier queued ones with it.** If messages
+you sent to that session are still waiting in its queue, they go into the running
+turn first, oldest first, and then the new one, so the session reads everything
+you sent in the order you sent it. They leave the queue, so none of them runs
+later as a stale turn. The reply says how many went in. Only your own queued
+sends move: never the person's, another session's, a cron or app message, or one
+restored after a restart. If an older one cannot go in, it and the ones behind it
+stay queued, and when the reason is the turn itself the new message queues behind
+them. This works the same for a session on another crew. A worker's reply into
+the turn of the session that asked it goes in alone: its earlier queued reports
+wait for their own turn.
+
 A queued message is checked again just before it runs. If the target gained a
 channel link or mirror in the meantime, the message is dropped instead of run,
 and your own transcript gets a notice saying so — unless your session was closed

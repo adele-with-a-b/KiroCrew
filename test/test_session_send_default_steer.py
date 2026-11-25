@@ -200,6 +200,24 @@ def test_a_reply_cuts_into_the_creators_asking_turn(tmp_path):
     assert not _queued(conductor)
 
 
+def test_a_reply_into_the_asking_turn_does_not_bring_queued_reports_in(tmp_path):
+    """The ask admits one cut-in. The worker's earlier reports, queued for the
+    conductor, wait for their own turn as before."""
+    state = _make_state(tmp_path)
+    conductor, worker, _, _ = _team(state)
+    _live(conductor)
+    _live(worker)
+    assert _send(state, worker, conductor, steer=False)["steered"] is False
+    reports = list(conductor._queue)
+    _send(state, conductor, worker)
+
+    out = _send(state, worker, conductor)
+
+    assert out["steered"] is True and "carried" not in out
+    conductor._acp_client.steer.assert_awaited_once()
+    assert conductor._queue == reports and len(reports) == 1
+
+
 def test_a_reply_after_the_asking_turn_ended_queues(tmp_path):
     state = _make_state(tmp_path)
     conductor, worker, _, _ = _team(state)

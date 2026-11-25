@@ -914,6 +914,7 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
         return (
             f"\U0001f4e8 Steered `{target}` — your message went into the turn it "
             + when
+            + steer_refusal.carried_note(resp.get("carried"))
             + own
             + " Watch what it does with it with session_read_message."
             + caps
@@ -928,7 +929,8 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
     # busy" and never learns its steer did not cut anything.
     if steer or resp.get("steerDefault"):
         return (
-            f"\U0001f4e8 Queued for `{target}`. {steer_refusal.describe(resp.get('steerRefusal'))} "
+            f"\U0001f4e8 Queued for `{target}`. {steer_refusal.describe(resp.get('steerRefusal'))}"
+            f"{steer_refusal.carried_note(resp.get('carried'))} "
             "Poll with session_read_message." + caps
         )
     return (

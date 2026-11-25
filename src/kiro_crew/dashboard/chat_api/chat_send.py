@@ -1248,7 +1248,7 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
                 "ok": True,
                 "queued": True,
                 "queue_id": qid,
-                **(agent_steer.started_mark(qid, _began) if _agent_origin else {}),
+                **(agent_steer.queued_marks(_steer_refused, qid, _began) if _agent_origin else {}),
                 **({"steerRefusal": _steer_refused} if _steer_refused else {}),
                 **({"heldForPerson": True} if _held_for_person else {}),
             },

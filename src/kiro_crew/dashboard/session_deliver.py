@@ -73,13 +73,16 @@ class Origin:
     #: into a running patrol wake, it leaves that wake's ``crew=`` mark standing
     #: (``steer_into_running_turn(patrol_news=)``). Only :func:`automation` sets it.
     patrol_news: bool = False
+    #: A peer's steer that takes the sender's earlier queued entries into the turn
+    #: ahead of it (``steer_carry.Carry``); the caller reads its ``count`` after.
+    carry: Any = None
 
 
 def cron(label: str) -> Origin:
     return Origin(ORIGIN_CRON, label=label)
 
 
-def peer(*, steer: bool, sender: str = "", patient: bool = False) -> Origin:
+def peer(*, steer: bool, sender: str = "", patient: bool = False, carry: Any = None) -> Origin:
     """A peer session's text.
 
     ``steer=True`` is the steer arm only: it never queues or starts a turn, so a
@@ -87,9 +90,10 @@ def peer(*, steer: bool, sender: str = "", patient: bool = False) -> Origin:
     makes the one queue-or-run delivery itself (``steer=False``). *sender* is the
     peer's session key, read only to link the turn the text starts to the sender's.
     *patient* is for a single send: a broadcast gives each target a few seconds and
-    leaves it off.
+    leaves it off. *carry* names the sender's own entries still queued on the
+    target: a steer takes them into the turn first, oldest first (``steer_carry``).
     """
-    return Origin(ORIGIN_PEER, steer=steer, sender=sender, patient=patient)
+    return Origin(ORIGIN_PEER, steer=steer, sender=sender, patient=patient, carry=carry)
 
 
 def app(label: str) -> Origin:
@@ -460,12 +464,37 @@ async def _deliver_peer(
             steer_into_running_turn,
         )
 
-        outcome = await steer_into_running_turn(
-            state, slot, text, user_origin=False, admission=admission, relay_meta=relay_meta
-        )
-        outcome = await _steer_once_the_turn_has_a_prompt(
-            state, slot, text, outcome, admission, relay_meta, origin.patient
-        )
+        async def _once(body: str, held: dict | None, relay: dict | None) -> str:
+            return await steer_into_running_turn(
+                state, slot, body, user_origin=False, admission=held, relay_meta=relay
+            )
+
+        outcome = None
+        if origin.carry is not None:
+            # The sender's earlier queued entries go in first, oldest first; a
+            # refusal that is about the turn is this text's answer too.
+            from kiro_crew import steer_refusal
+            from kiro_crew.dashboard import steer_carry
+
+            outcome = await steer_carry.take_earlier_in(
+                state,
+                slot,
+                origin.carry,
+                _once,
+                ahead_of=text,
+                wait_secs=(
+                    steer_refusal.START_WAIT_PATIENT_SECS
+                    if origin.patient
+                    else steer_refusal.START_WAIT_SECS
+                ),
+                step_secs=steer_refusal.START_POLL_SECS,
+                pause=_pause,
+            )
+        if outcome is None:
+            first = await _once(text, admission, relay_meta)
+            outcome = await _steer_once_the_turn_has_a_prompt(
+                state, slot, text, first, admission, relay_meta, origin.patient
+            )
         if outcome == STEER_STEERED:
             return DELIVERED_STEERED
         if outcome == STEER_REQUEUED:

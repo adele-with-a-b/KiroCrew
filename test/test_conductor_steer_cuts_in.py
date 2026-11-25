@@ -35,7 +35,7 @@ from kiro_crew.dashboard import agent_steer
 from kiro_crew.dashboard import chat_delivery as cd
 from kiro_crew.dashboard import chat_handlers as ch
 from kiro_crew.dashboard import session_control as sc
-from kiro_crew.dashboard import session_deliver, steer_hold
+from kiro_crew.dashboard import session_deliver, steer_carry, steer_hold
 from kiro_crew.testing.wait import FALLBACK_TIMEOUT_SECS, async_wait_until
 
 # ── a turn that is still starting ────────────────────────────────────────────
@@ -215,8 +215,12 @@ def test_an_agent_steer_goes_in_as_a_peers_under_a_recorded_admission(steer_rig)
     assert (reply, refusal, held_for_person) == ({"ok": True, "steered": True}, "", False)
     ((text, origin, kwargs),) = steer_rig.delivered
     assert text == "take the other branch"
-    assert origin == session_deliver.peer(steer=True, patient=True)
-    assert kwargs == {"admission": steer_rig.admission}
+    # It carries the conductor's own queued sends in ahead of it (``steer_carry``).
+    assert origin == session_deliver.peer(
+        steer=True, patient=True, carry=steer_carry.from_hub_conductor()
+    )
+    # The recorded admission also names the actor, for a requeue by the teardown.
+    assert kwargs == {"admission": {**steer_rig.admission, "turnActor": "crew"}}
     # Recorded before the write, and kept for the turn the text is now inside.
     assert list(steer_rig.fences_at_write.values()) == [steer_rig.admission]
     assert list(steer_rig.slot._steer_audience_fences.values()) == [steer_rig.admission]
