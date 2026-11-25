@@ -5,7 +5,8 @@ The peer half of placement in ``docs/request-for-change/rfc-conductor-remote-dis
 places a work item here, and ``POST /api/chat/slots`` with a ``work_item`` asks
 :func:`create_admission` first: a short resource refuses the create as
 ``crew_busy`` before anything is minted. A create without ``work_item`` is never
-gated; it only gains the ``headroom`` field on its reply.
+gated; it only gains the ``headroom`` field on its reply, and takes no CPU
+sample, so its ``cpu_busy`` is ``null``.
 
 Everything here is behind the ``work_ledger.remote_dispatch`` preview switch,
 read on every request. Off (the default), the route answers 404 and the create
@@ -25,8 +26,9 @@ import shutil
 import threading
 import time
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeAlias
 
 from aiohttp import web
 
@@ -37,9 +39,14 @@ SHORT_MEMORY = "memory"
 SHORT_CPU = "cpu"
 SHORT_DISK = "disk"
 
-#: ``load_per_cpu`` at or above which the CPU is short. Nothing on main turns CPU
+#: ``cpu_busy`` at or above which the CPU is short. Nothing on main turns CPU
 #: into a posture, so the gate needs its own threshold (RFC §2b).
-CPU_LOAD_THRESHOLD = 1.0
+CPU_BUSY_THRESHOLD = 0.9
+
+#: Seconds over which ``cpu_busy`` is measured. The load average is not used: on
+#: macOS it counts far more than threads on a CPU, so a mostly idle machine read
+#: as full.
+CPU_SAMPLE_SECONDS = 0.5
 
 _GB = 1024**3
 
@@ -100,6 +107,73 @@ def _reading(value: object) -> float | None:
 def _shown(value: float | None) -> float | None:
     """A reading as the snapshot shows it, rounded to 2 places."""
     return None if value is None else round(value, 2)
+
+
+def cpu_busy_fraction(
+    read: Callable[[], tuple[float, float] | None],
+    sleep: Callable[[float], None] = time.sleep,
+    seconds: float = CPU_SAMPLE_SECONDS,
+) -> float | None:
+    """The share of all CPU time spent busy over *seconds*, 0..1, or None.
+
+    Two ``(busy, total)`` readings from *read*, *seconds* apart. None when
+    either reading is missing or the deltas are not a share (a counter that
+    wrapped or went back), so an unknown never refuses.
+    """
+    first = read()
+    if first is None:
+        return None
+    sleep(seconds)
+    second = read()
+    if second is None:
+        return None
+    busy, total = second[0] - first[0], second[1] - first[1]
+    if not total > 0 or not 0 <= busy <= total:
+        return None
+    return busy / total
+
+
+def _cpu_busy() -> float | None:
+    """This machine's :func:`cpu_busy_fraction`. Blocking for the sample."""
+    from kiro_crew import platform_compat
+
+    try:
+        return cpu_busy_fraction(platform_compat.system_cpu_times, seconds=CPU_SAMPLE_SECONDS)
+    except Exception:
+        logger.debug("remote dispatch: cpu time unreadable", exc_info=True)
+        return None
+
+
+class _Unsampled(Enum):
+    """No ``cpu_busy`` taken yet: the reader takes the sample itself."""
+
+    TOKEN = 0
+
+
+#: Passed for ``cpu_busy`` when no sample has been taken for this create.
+UNSAMPLED = _Unsampled.TOKEN
+
+#: A ``cpu_busy`` reading (None when it could not be taken), or not taken yet.
+CpuReading: TypeAlias = float | None | _Unsampled
+
+
+def sample_cpu_busy() -> float | None:
+    """``cpu_busy`` as the snapshot shows it and the gate compares it. BLOCKING
+    for :data:`CPU_SAMPLE_SECONDS`, so never call it under a lock.
+
+    Rounded once, here, so the snapshot a hub ranks on is the very number the
+    gate compared.
+    """
+    busy = _reading(_cpu_busy())
+    return None if busy is None else round(min(busy, 1.0), 3)
+
+
+def carried_cpu_busy(headroom: dict[str, Any] | None) -> CpuReading:
+    """The ``cpu_busy`` an early :func:`create_admission` snapshot took, for the
+    bind to reuse, or :data:`UNSAMPLED` when that create took no snapshot."""
+    if headroom is None or "cpu_busy" not in headroom:
+        return UNSAMPLED
+    return _reading(headroom["cpu_busy"])
 
 
 def _disk_free_gb() -> float | None:
@@ -164,7 +238,10 @@ _admission_lock = threading.Lock()
 
 
 def bind_if_room(
-    settings: RemoteDispatchSettings, request: Any, worker_slot_key: str
+    settings: RemoteDispatchSettings,
+    request: Any,
+    worker_slot_key: str,
+    cpu_busy: CpuReading = UNSAMPLED,
 ) -> tuple[dict[str, Any], str]:
     """Measure, and store *request*'s mailbox item bound to the worker when nothing
     is short, as one step. BLOCKING. ``(headroom, short)``; ``short`` is "" when
@@ -173,13 +250,17 @@ def bind_if_room(
     The early gate in :func:`create_admission` runs before the slot is minted and
     sees no create still in flight. This one runs at the bind, under one lock:
     a create that bound first is in the binding count by the time the next one
-    measures, and a create that never binds reserves nothing. Raises what
-    ``open_mailbox`` raises.
+    measures, and a create that never binds reserves nothing. *cpu_busy* is the
+    early gate's reading, as no create in flight changes it; with none, the
+    sample is taken before the lock, so no create waits on another's sample.
+    Raises what ``open_mailbox`` raises.
     """
     from kiro_crew.remote_dispatch_mailbox import open_mailbox
 
+    if cpu_busy is UNSAMPLED:
+        cpu_busy = sample_cpu_busy()
     with _admission_lock:
-        headroom, short = measure(settings)
+        headroom, short = measure(settings, cpu_busy)
         if not short:
             open_mailbox(request, worker_slot_key)
         return headroom, short
@@ -193,47 +274,55 @@ def crew_busy_response(short: str, headroom: dict[str, Any]) -> web.Response:
     )
 
 
-def measure(settings: RemoteDispatchSettings) -> tuple[dict[str, Any], str]:
+def measure(
+    settings: RemoteDispatchSettings, cpu_busy: CpuReading = UNSAMPLED
+) -> tuple[dict[str, Any], str]:
     """Take the headroom snapshot and name the first short resource ("" for none).
 
     Blocking: call off the loop. Never raises. A reading that cannot be taken is
     ``None`` in the snapshot and is never the reason for a refusal, as
     ``resource_status.admission_check`` fails open on an unknown posture.
+    *cpu_busy* is a :func:`sample_cpu_busy` reading already taken; left
+    :data:`UNSAMPLED`, the sample is taken here.
     """
     from kiro_crew import resource_status
 
     try:
         status = resource_status.probe()
-        mem_free, cpu_count = _reading(status.available_gb), status.cpu_count
-        load, posture = status.load_per_cpu, status.posture
+        mem_free, cpu_count, posture = (
+            _reading(status.available_gb),
+            status.cpu_count,
+            status.posture,
+        )
     except Exception:
         logger.warning("remote dispatch: resource probe failed", exc_info=True)
-        mem_free, cpu_count, load, posture = None, None, None, resource_status.POSTURE_UNKNOWN
+        mem_free, cpu_count, posture = None, None, resource_status.POSTURE_UNKNOWN
     if posture not in (
         resource_status.POSTURE_AMPLE,
         resource_status.POSTURE_TIGHT,
         resource_status.POSTURE_CRITICAL,
     ):
         posture = resource_status.POSTURE_UNKNOWN
-    load_per_cpu = _reading(load)
+    if cpu_busy is UNSAMPLED:
+        cpu_busy = sample_cpu_busy()
     disk_free = _disk_free_gb()
     open_workers = _open_workers()
     headroom: dict[str, Any] = {
         "mem_free_gb": _shown(mem_free),
         "cpu_count": cpu_count if isinstance(cpu_count, int) and cpu_count > 0 else None,
-        "load_per_cpu": _shown(load_per_cpu),
+        "cpu_busy": cpu_busy,
         "posture": posture,
         "disk_free_gb": _shown(disk_free),
         "open_workers": open_workers,
         "measured_at": round(time.time(), 3),
     }
-    return headroom, _short_resource(settings, posture, load_per_cpu, disk_free, open_workers or 0)
+    return headroom, _short_resource(settings, posture, cpu_busy, disk_free, open_workers or 0)
 
 
 def _short_resource(
     settings: RemoteDispatchSettings,
     posture: str,
-    load_per_cpu: float | None,
+    cpu_busy: float | None,
     disk_free: float | None,
     open_workers: int = 0,
 ) -> str:
@@ -256,7 +345,7 @@ def _short_resource(
         memory_ok = True
     if not memory_ok or posture == resource_status.POSTURE_CRITICAL:
         return SHORT_MEMORY
-    if load_per_cpu is not None and load_per_cpu >= CPU_LOAD_THRESHOLD:
+    if cpu_busy is not None and cpu_busy >= CPU_BUSY_THRESHOLD:
         return SHORT_CPU
     try:
         cap = resource_status.adaptive_exec_cap()
@@ -281,6 +370,9 @@ async def create_admission(
     on ``GET /api/chat/headroom``, and only the owner dispatches (RFC §4).
     Otherwise the snapshot to put on the reply, and a ``crew_busy`` refusal when
     the body carries a ``work_item`` and a resource is short.
+
+    Only a ``work_item`` create needs a CPU verdict, so only it pays for the
+    sample; a plain create's snapshot shows ``cpu_busy`` as ``null``.
     """
     from kiro_crew.dashboard.handlers.source_providers import is_owner_dashboard_request
 
@@ -289,8 +381,9 @@ async def create_admission(
     settings = await asyncio.to_thread(remote_dispatch_settings)
     if not settings.enabled:
         return None, None
-    headroom, short = await asyncio.to_thread(measure, settings)
-    if body.get("work_item") is not None and short:
+    gated = body.get("work_item") is not None
+    headroom, short = await asyncio.to_thread(measure, settings, UNSAMPLED if gated else None)
+    if gated and short:
         return crew_busy_response(short, headroom), headroom
     return None, headroom
 

@@ -54,7 +54,7 @@ class Crews:
         self.probe_cancelled = False
 
     def add(self, iid: str, mem: float = 50.0, disk: float = 200.0, **over: Any) -> None:
-        room = {"mem_free_gb": mem, "disk_free_gb": disk, "load_per_cpu": 0.2}
+        room = {"mem_free_gb": mem, "disk_free_gb": disk, "cpu_busy": 0.2}
         self.crews[iid] = {"state": "connected", "version": kiro_crew.__version__, **over}
         self.crews[iid].setdefault("headroom", room)
 
@@ -301,11 +301,11 @@ def test_a_refusal_other_than_busy_stops_the_placement(recorded, crews):
     [
         {"state": "disconnected"},
         {"version": "0.0.1"},
-        {"headroom": {"mem_free_gb": 50, "disk_free_gb": 200, "load_per_cpu": 1.0}},
-        {"headroom": {"mem_free_gb": 1.9, "disk_free_gb": 200, "load_per_cpu": 0}},
-        {"headroom": {"mem_free_gb": 50, "disk_free_gb": 9.9, "load_per_cpu": 0}},
-        {"headroom": {"mem_free_gb": None, "disk_free_gb": 200, "load_per_cpu": 0}},
-        {"headroom": {"mem_free_gb": 10**400, "disk_free_gb": 200, "load_per_cpu": 0}},
+        {"headroom": {"mem_free_gb": 50, "disk_free_gb": 200, "cpu_busy": 0.9}},
+        {"headroom": {"mem_free_gb": 1.9, "disk_free_gb": 200, "cpu_busy": 0}},
+        {"headroom": {"mem_free_gb": 50, "disk_free_gb": 9.9, "cpu_busy": 0}},
+        {"headroom": {"mem_free_gb": None, "disk_free_gb": 200, "cpu_busy": 0}},
+        {"headroom": {"mem_free_gb": 10**400, "disk_free_gb": 200, "cpu_busy": 0}},
         {"headroom_status": 404},
     ],
 )
@@ -318,6 +318,27 @@ def test_an_ineligible_crew_is_skipped(recorded, crews, over):
 
     _run(crews, 1, body)
     assert crews.creates == ["b"]
+
+
+@pytest.mark.parametrize(
+    "room",
+    [
+        # The measured case: load per core 1.56 while 60% of the CPU is idle.
+        {"mem_free_gb": 99, "disk_free_gb": 200, "cpu_busy": 0.4, "load_per_cpu": 1.56},
+        # An older peer sends no cpu_busy; its own gate decides.
+        {"mem_free_gb": 99, "disk_free_gb": 200, "load_per_cpu": 1.56},
+    ],
+    ids=["idle-cpu-high-load", "older-peer"],
+)
+def test_the_load_average_never_skips_a_crew(recorded, crews, room):
+    crews.add("a", headroom=room)
+    crews.add("b", mem=4)
+
+    async def body(state, items):
+        assert await _place(state, items[0]) == "a"
+
+    _run(crews, 1, body)
+    assert crews.creates == ["a"]
 
 
 def test_a_stalling_crew_probe_is_skipped(recorded, crews, monkeypatch):

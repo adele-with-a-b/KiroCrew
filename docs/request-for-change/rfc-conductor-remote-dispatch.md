@@ -283,7 +283,7 @@ peer's own check, because only the peer can measure the peer.
 | Connected | its `TunnelState` is `CONNECTED` (`instances/ssh_tunnel_manager_child.py`) |
 | Compatible | `versions_compatible` holds (`version_match`) |
 | Memory | last snapshot's memory free ≥ one estimate |
-| CPU | last snapshot's `load_per_cpu` is below the CPU threshold (below) |
+| CPU | last snapshot's `cpu_busy` is below the CPU threshold (below); a snapshot without it does not skip the crew |
 | Disk | last snapshot's disk free ≥ one estimate |
 
 There is **no repo or checkout check.** Workers are self-contained (§2c), so any
@@ -296,7 +296,7 @@ subagents where that exists:
 | Resource | Short when | Source |
 |---|---|---|
 | Memory | `check_memory_available((open_workers + 1) × estimate)` fails, or `posture` is critical | `subagent_parts/host_memory.py`, `resource_status.probe()` |
-| CPU | `load_per_cpu` ≥ a new threshold (proposed 1.0), or the agents running already fill `adaptive_exec_cap()` | `resource_status.probe()`, `AdaptiveController` |
+| CPU | `cpu_busy` ≥ 0.9 (`CPU_BUSY_THRESHOLD`), or the agents running already fill `adaptive_exec_cap()` | `platform_compat.system_cpu_times()` over a 0.5 s sample, `AdaptiveController` |
 | Disk | free bytes under `agent_scratch.scratch_root()` < `(open_workers + 1) × estimate` | new: `shutil.disk_usage` |
 
 Each open `hub:` worker on the peer (`open_workers`, below) reserves one
@@ -304,10 +304,20 @@ estimate of memory and disk, so a worker admitted but not yet using either still
 counts. The gate runs twice: once before the slot is minted, and again at the
 bind, where the measure and the binding write take one lock, so a create bound
 meanwhile is counted and two hubs cannot both fill the last room. A count that
-cannot be read reserves nothing.
+cannot be read reserves nothing. The CPU is sampled once per work-item create,
+before the first gate, and the bind reuses that `cpu_busy`: no create in flight
+changes it, and the 0.5 s sample is never taken under the lock, so one create
+never waits on another's sample.
 
 `posture` is the memory posture; nothing on main turns CPU into a posture, which
-is why CPU needs its own threshold. A short resource is refused with a typed
+is why CPU needs its own threshold. `cpu_busy` is the share of all CPU time spent
+busy (not idle, and on Linux not iowait) between two readings of the machine's
+CPU counters 0.5 s apart, 0 to 1, rounded to 3 places before the gate compares
+it. It is not the load average: on macOS the load average counts far more than
+threads running on a CPU, and an 18-core macOS machine was measured at load per
+core 1.56 with about 60% of its CPU idle, which a load threshold of 1.0 refused.
+A reading that cannot be taken (no counters, a counter that wrapped) is `null`
+and never refuses. A short resource is refused with a typed
 `crew_busy` that names it:
 
 ```json
@@ -315,7 +325,8 @@ is why CPU needs its own threshold. A short resource is refused with a typed
 ```
 
 A create without `work_item` (the window view, a person's own chat) is not
-gated. The gate binds only conductor dispatch.
+gated, and takes no CPU sample, so its snapshot's `cpu_busy` is `null`. The gate
+binds only conductor dispatch.
 
 **Headroom on every reply.** Every create reply, `ok` or `crew_busy`, carries the
 peer's current snapshot:
@@ -323,7 +334,8 @@ peer's current snapshot:
 | Field | Source |
 |---|---|
 | `mem_free_gb` | `ResourceStatus.available_gb` |
-| `cpu_count`, `load_per_cpu` | `ResourceStatus` |
+| `cpu_count` | `ResourceStatus` |
+| `cpu_busy` | the number the CPU gate compared (above); `null` on a create without `work_item` |
 | `posture` | `ResourceStatus.posture` |
 | `disk_free_gb` | free space under `scratch_root()` |
 | `open_workers` | peer slots bound to a `hub:` mailbox item and not closed |

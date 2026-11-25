@@ -72,7 +72,10 @@ is defined in an owner module beside it. Import and patch every one as
     `test/test_kill_chokepoint_ratchet.py` exempts that one file;
   - `platform_compat_metrics`: resident and peak memory, heap trimming and the malloc
     arena cap, open descriptors, CPU time, process-subtree samples, and the host's
-    memory, CPU load, memory pressure and power source (`power_source`).
+    memory, CPU load, memory pressure and power source (`power_source`);
+  - `platform_compat_cputimes`: the whole machine's CPU time as `(busy, total)`
+    counters (`system_cpu_times`), which the remote-dispatch `crew_busy` gate turns
+    into a busy share.
 
   No carved module imports the facade. The facade installs `kiro_crew._facade_mirror`,
   so a write through it (`monkeypatch.setattr`, `mock.patch`) lands on every carved

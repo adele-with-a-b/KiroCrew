@@ -142,6 +142,7 @@ jobs:
               - "src/kiro_crew/mcp_gateway/socketsec.py"
               - "src/kiro_crew/peer_resolve.py"
               - "src/kiro_crew/platform_compat.py"
+              - "src/kiro_crew/platform_compat_cputimes.py"
               - "src/kiro_crew/platform_compat_descendants.py"
               - "src/kiro_crew/platform_compat_files.py"
               - "src/kiro_crew/platform_compat_identity.py"

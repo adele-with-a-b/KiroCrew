@@ -194,14 +194,21 @@ async def work_item_for_create(
 
 
 async def bind_work_item(
-    request: web.Request, slot_key: str, parsed: mailbox.MailboxRequest
+    request: web.Request,
+    slot_key: str,
+    parsed: mailbox.MailboxRequest,
+    cpu_busy: remote_dispatch_headroom.CpuReading = remote_dispatch_headroom.UNSAMPLED,
 ) -> web.Response | None:
     """Store *parsed* in the mailbox and bind *slot_key* to it; ``None`` on success.
 
     Called inside the create, after the slot is minted and before it is first
     broadcast, so no client ever sees it unbound. On a refusal the caller retracts
-    the slot, so a create never leaves a worker that is not bound.
+    the slot, so a create never leaves a worker that is not bound. *cpu_busy* is
+    the create's early reading; without one the sample is taken here, before the
+    board lock, so no create on the board waits on it.
     """
+    if cpu_busy is remote_dispatch_headroom.UNSAMPLED:
+        cpu_busy = await asyncio.to_thread(remote_dispatch_headroom.sample_cpu_busy)
     async with _board_lock(parsed.board):
         # A board flagged dirty is rebuild-only, so a create on it is refused
         # rather than adding a worker its own tools would then refuse.
@@ -215,7 +222,9 @@ async def bind_work_item(
             # measured again under the admission lock with the write, so a create
             # bound meanwhile is counted (RFC §2b).
             headroom, short = await _drain_before_cancelling(
-                asyncio.to_thread(remote_dispatch_headroom.bind_if_room, settings, parsed, slot_key)
+                asyncio.to_thread(
+                    remote_dispatch_headroom.bind_if_room, settings, parsed, slot_key, cpu_busy
+                )
             )
         except work_ledger.WorkLedgerError as exc:
             _audit(

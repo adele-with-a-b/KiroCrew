@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from kiro_crew.dashboard.remote_dispatch_headroom import (
-    CPU_LOAD_THRESHOLD,
+    CPU_BUSY_THRESHOLD,
     remote_dispatch_settings,
 )
 
@@ -111,10 +111,11 @@ async def _candidate(
         _number(payload.get("mem_free_gb")),
         _number(payload.get("disk_free_gb")),
     )
-    load = _number(payload.get("load_per_cpu"))
+    # The peer gate's own number; an older peer sends none and its gate decides.
+    cpu_busy = _number(payload.get("cpu_busy"))
     if mem is None or disk is None or mem < mem_gb or disk < disk_gb:
         return None
-    if load is not None and load >= CPU_LOAD_THRESHOLD:
+    if cpu_busy is not None and cpu_busy >= CPU_BUSY_THRESHOLD:
         return None
     return Candidate(instance_id, str(getattr(row, "name", "") or instance_id), mem, disk)
 

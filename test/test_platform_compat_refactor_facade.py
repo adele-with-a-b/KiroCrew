@@ -31,6 +31,7 @@ import test_sandbox_refactor_facade as shared
 
 from kiro_crew import (
     platform_compat,
+    platform_compat_cputimes,
     platform_compat_descendants,
     platform_compat_files,
     platform_compat_identity,
@@ -71,6 +72,7 @@ _CARVED: dict[str, ModuleType] = {
         platform_compat_wintree,
         platform_compat_kill,
         platform_compat_metrics,
+        platform_compat_cputimes,
     )
 }
 
@@ -340,6 +342,10 @@ _MOVED: dict[str, tuple[str, ...]] = {
         _WIN_AC_ONLINE _linux_supply_attr _linux_power_source _SystemPowerStatus
         _windows_ac_line_status _windows_power_source power_source
         """.split()),
+    "kiro_crew.platform_compat_cputimes": tuple("""
+        _HOST_CPU_LOAD_INFO _HostCpuLoadInfo _macos_cpu_times _linux_cpu_times
+        _windows_cpu_times system_cpu_times
+        """.split()),
 }
 
 #: Moved names the facade binds again, by import from their owner: code still in
@@ -437,6 +443,7 @@ _CARVED_IMPORTS: dict[str, frozenset[str]] = {
             "kiro_crew.platform_compat_winproc",
         }
     ),
+    "kiro_crew.platform_compat_cputimes": frozenset({"kiro_crew.platform_compat_native"}),
 }
 
 _LOCK = "kiro_crew.platform_lock_compat"
