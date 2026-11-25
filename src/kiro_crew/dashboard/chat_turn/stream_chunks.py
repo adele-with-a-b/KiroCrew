@@ -40,9 +40,16 @@ async def _on_text_chunk(turn: _ChatTurn, event, *, released: bool = False) -> N
     in_tool_group = turn.in_tool_group
     slot = turn.slot
     state = turn.state
-    reply_end_cut_owed = turn._reply_end_cut_owed
-    _reply_end_cut_owed = False
-    turn._reply_end_cut_owed = _reply_end_cut_owed
+    # The cut a reply end owes (``_on_reply_end``) is paid by the next message's
+    # first chunk with words in it, or dropped by a tool group's own cut. A chunk of
+    # only whitespace joins the ended text, so a next message that writes nothing
+    # else never leaves the turn's final text blank.
+    reply_end_cut_owed = turn._reply_end_cut_owed and (
+        in_tool_group or bool((event.text or "").strip())
+    )
+    if reply_end_cut_owed:
+        _reply_end_cut_owed = False
+        turn._reply_end_cut_owed = _reply_end_cut_owed
     # If we just exited a tool group, finalize the streaming
     # message so post-tool text starts a fresh message. The wire
     # redactor is NOT flushed: what it still holds from before the

@@ -152,3 +152,43 @@ async def test_a_mark_at_the_turns_end_leaves_the_reply_as_its_final_text(tmp_pa
         roles=("assistant", "tool", "notice", "inject"),
     )
     assert [(m["role"], m["content"]) for m in rows] == [("assistant", ANSWER)]
+
+
+@pytest.mark.asyncio
+async def test_a_next_message_of_only_whitespace_leaves_the_reply_as_the_final_text(
+    tmp_path, monkeypatch
+):
+    # Cut on a blank chunk, the answer left the turn's final text and the
+    # empty-turn guard sent its automatic continuation prompt.
+    rows = await _rows(
+        tmp_path,
+        monkeypatch,
+        [
+            LLMEvent(kind=EVENT_TEXT_CHUNK, text=ANSWER),
+            LLMEvent(kind=EVENT_REPLY_END),
+            LLMEvent(kind=EVENT_TEXT_CHUNK, text="\n\n"),
+            LLMEvent(kind=EVENT_COMPLETE),
+        ],
+        roles=("assistant", "tool", "notice", "inject"),
+    )
+    assert [(m["role"], m["content"].strip()) for m in rows] == [("assistant", ANSWER)]
+
+
+@pytest.mark.asyncio
+async def test_whitespace_before_the_next_text_still_cuts_at_that_text(tmp_path, monkeypatch):
+    rows = await _rows(
+        tmp_path,
+        monkeypatch,
+        [
+            LLMEvent(kind=EVENT_TEXT_CHUNK, text=ANSWER),
+            LLMEvent(kind=EVENT_REPLY_END),
+            LLMEvent(kind=EVENT_TEXT_CHUNK, text="\n\n"),
+            LLMEvent(kind=EVENT_TEXT_CHUNK, text=MORE),
+            LLMEvent(kind=EVENT_COMPLETE),
+        ],
+    )
+    assert [(m["role"], m["content"].strip()) for m in rows] == [
+        ("assistant", ANSWER),
+        ("assistant", MORE),
+    ]
+    assert rows[0].get("meta", {}).get("reply_end") is True
