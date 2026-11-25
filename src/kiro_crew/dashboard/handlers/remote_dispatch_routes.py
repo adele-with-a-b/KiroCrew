@@ -452,10 +452,14 @@ async def _granted_turn_admitted(state: "DashboardState", slot: object, slot_key
     is built from, read here because no turn-scoped mark exists for a turn a
     message from another session opened. Rules 1-7 have already held, so the
     slot is the owner's own persistent conductor mode chat and no worker's. A
-    turn a messaging channel opened is never admitted. Total: an unreadable loop
-    or record is no grant.
+    turn a messaging channel opened is never admitted, and neither is a turn a
+    person opened: the owner's own turn never reaches this arm, so a person's
+    turn here is a dashboard login that is not the owner's, which rule 8 exists
+    to refuse. Total: an unreadable loop or record is no grant.
     """
     if getattr(slot, "_turn_channel_origin", False) is True:
+        return False
+    if getattr(slot, "_turn_user_sent", False) is not False:
         return False
     from kiro_crew.dashboard.remote_dispatch_headroom import remote_dispatch_settings
 

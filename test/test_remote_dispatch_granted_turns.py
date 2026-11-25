@@ -46,6 +46,7 @@ def granted(env, record_home, monkeypatch):  # noqa: F811 -- the imported fixtur
     env.caller._turn_owner_sent = False
     env.caller._turn_patrol_wake = False
     env.caller._turn_channel_origin = False
+    env.caller._turn_user_sent = False
     loop = _patrol_loop()
     loop.active = True
     autonudge_selfarm.record_owner_patrol(loop.id, loop.slot_key)
@@ -118,6 +119,13 @@ def test_a_turn_a_messaging_channel_opened_is_never_admitted(granted, monkeypatc
     status, body = _call(granted, "create", crew="lab")
     assert status == 403, body
     assert granted.peer.calls == [] and granted.audits == []
+
+
+def test_a_turn_a_person_who_is_not_the_owner_opened_is_never_admitted(granted, monkeypatch):
+    """A dashboard login that is not the owner's passes rules 1-7; the grant must not."""
+    _settings(monkeypatch, granted_turns=True)
+    granted.caller._turn_user_sent = True
+    _refused(granted)
 
 
 def test_an_unreadable_loop_is_no_grant(granted, monkeypatch):
