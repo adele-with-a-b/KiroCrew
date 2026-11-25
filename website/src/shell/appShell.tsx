@@ -26,6 +26,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useDashboardHealthProbe } from '../hooks/useDashboardHealthProbe'
 import { useGatewayConnecting } from '../hooks/useConnected'
 import { useConfigAutolinkRules } from '../hooks/useConfigAutolinkRules'
+import { useConfigFileLinkTarget } from '../hooks/useConfigFileLinkTarget'
 import { usePreviewFlagServerSync } from '../hooks/usePreviewFlagServerSync'
 import { useTheme } from '../hooks/useTheme'
 import { useViewerIsNotOwner } from '../hooks/sharedCrew/useSharedCrew'
@@ -167,6 +168,8 @@ export function useAppShell() {
   // after a chat page has rendered. Owns the registry; the chat page reuses
   // the same ['dashboardConfig'] query for its source hosts.
   useConfigAutolinkRules()
+  // Where a click on a chat file link opens it (dashboard.file_links_open_default_app).
+  useConfigFileLinkTarget()
   // The slice also carries the slot list and the subagent maps, so selecting all of
   // it would re-render the root on dashboard traffic neither of these fields reads.
   const connected = useAppSelector(s => s.dashboard.connected)

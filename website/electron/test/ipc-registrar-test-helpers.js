@@ -38,6 +38,7 @@ const SHELL_HANDLES = [
   "crash-reports:get",
   "crash-reports:reveal",
   "dashboard:can-pick-folder",
+  "dashboard:open-copy",
   "dashboard:open-file",
   "dashboard:pick-folder",
   "external-terminal:detect",

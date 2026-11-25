@@ -12,7 +12,7 @@ const path = require("path");
 const Module = require("module");
 
 const PRELOAD = path.join(__dirname, "..", "preload.js");
-const LOCAL_ONLY = ["remoteCrewSetupAPI", "crashReportsAPI", "wslAPI", "fileOpenAPI", "folderPickAPI", "externalTerminalAPI", "relayCrewAPI"];
+const LOCAL_ONLY = ["remoteCrewSetupAPI", "crashReportsAPI", "wslAPI", "folderPickAPI", "externalTerminalAPI", "relayCrewAPI"];
 
 function loadPreload(answer) {
   const exposed = {};
@@ -57,6 +57,19 @@ test("a remote-crew window gets no local-only bridge; a local window keeps them"
   // Bridges about the window itself are unaffected.
   for (const bridge of ["kirocrew", "localGatewayAPI", "closeActionAPI", "zoomAPI", "updateAPI"]) {
     assert.equal(typeof remote[bridge], "object", `${bridge} must still be exposed`);
+  }
+});
+
+test("a file opens by path only from a local window; any window can open a copy", () => {
+  const remote = loadPreload(true);
+  const local = loadPreload(false);
+  const unanswered = loadPreload(undefined);
+  assert.equal(typeof local.fileOpenAPI.open, "function");
+  for (const exposed of [remote, unanswered]) {
+    assert.equal("open" in exposed.fileOpenAPI, false, "a path names a file on the gateway's machine, not this one");
+  }
+  for (const exposed of [remote, local, unanswered]) {
+    assert.equal(typeof exposed.fileOpenAPI.openCopy, "function");
   }
 });
 

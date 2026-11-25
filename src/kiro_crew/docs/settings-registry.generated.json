@@ -870,6 +870,14 @@
       "configKey": "dashboard.session_folder_root"
     },
     {
+      "id": "chat.open-file-links-in-default-app",
+      "label": "Open File Links in Default App",
+      "tab": "chat",
+      "route": "/settings/chat/sidepanel?highlight=key%3Adashboard.file_links_open_default_app",
+      "hint": "A click on a file link in a chat opens it full size in your computer's default app: a web page in your browser, a Markdown file in its editor. A web page opens as a copy with its scripts blocked. A file from a Crew on another computer opens as a copy, and edits to a copy do not save back. PDF, CSV and SVG files stay in the side panel. Alt/Option+click does the other one.",
+      "configKey": "dashboard.file_links_open_default_app"
+    },
+    {
       "id": "chat.open-sidebar-sessions-in-a-session-tab",
       "label": "Open Sidebar Sessions in a Session Tab",
       "tab": "chat",

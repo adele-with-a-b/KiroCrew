@@ -305,7 +305,8 @@ function MdAnchor({ node, href, children, [SESSION_REF_TRAILING]: trailing }: Md
   // persisted per slot), and a blocked or failed reveal is gateway-side.
   const reveal = useRevealFailure(localHref ?? undefined)
   const onPathClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    const plainPrimaryClick = e.button === 0 && !e.metaKey && !e.ctrlKey && !e.altKey
+    // Alt/Option is no browser action on a local path; it takes the other opener.
+    const plainPrimaryClick = e.button === 0 && !e.metaKey && !e.ctrlKey
     if (pathResolution.probePending && plainPrimaryClick) {
       e.preventDefault()
       return
@@ -322,6 +323,7 @@ function MdAnchor({ node, href, children, [SESSION_REF_TRAILING]: trailing }: Md
       || (pathResolution.kind !== 'file' && pathResolution.kind !== 'dir')
       || !plainPrimaryClick) return
     e.preventDefault()
+    reveal.clear() // one click, one result: an earlier click's notice goes
     activatePath(
       pathResolution.path,
       pathResolution.kind,
@@ -330,6 +332,7 @@ function MdAnchor({ node, href, children, [SESSION_REF_TRAILING]: trailing }: Md
       reveal.onError,
       pathResolution.line,
       pathResolution.endLine,
+      e.altKey,
     )
   }
   // In a desktop-app pane, CSP `frame-src` refuses an in-place navigation to an
@@ -1322,7 +1325,7 @@ export default memo(function MarkdownRenderer({ content, streaming = false, onFi
 
   /** Stable identity so every chip in a long transcript doesn't re-render when
    *  this component does. */
-  const pathActions = useMemo<PathActions>(() => ({ onFileOpen, onFolderOpen }), [onFileOpen, onFolderOpen])
+  const pathActions = useMemo<PathActions>(() => ({ onFileOpen, onFolderOpen, slot: slotKey }), [onFileOpen, onFolderOpen, slotKey])
   // The message's redaction records, validated once. The sets are what the
   // injection pass gates on; the full records ride down through context.
   // A host allowed from a card still open keeps that card's records here:

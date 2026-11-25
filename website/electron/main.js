@@ -34,6 +34,7 @@ const {
 } = require("./bundle-location");
 const { DEFAULT_REMOTE_BIN } = require("./remote-token");
 const { themeSplashUrl } = require("./theme-splash");
+const { COPY_MAX_AGE_MS, pruneCopies, removeOwnCopies } = require("./open-copy");
 const {
   fallbackLocalPort,
   isSelectablePort,
@@ -738,10 +739,20 @@ process.on("unhandledRejection", (reason) => {
   }
 });
 
+// The copies a chat file link opened in a default app (open-copy.js): at start
+// the ones older than a day go (a second build running beside this one keeps
+// its fresh ones), and at quit every one this launch made. Never throws.
+function pruneOpenCopies(atQuit = false) {
+  const deps = { fs: require("fs"), path: require("path"), os: require("os") };
+  const removed = atQuit ? removeOwnCopies(deps) : pruneCopies(deps, COPY_MAX_AGE_MS);
+  if (removed) glog(`open-copy: removed ${removed} copy folder(s)`);
+}
+
 app.whenReady().then(async () => {
   // The crash reporter and the keep-alive safety net above are armed; from
   // here on an exception is recovered, not fatal.
   releaseEarlyBootGuard();
+  pruneOpenCopies();
 
   // A managed SSH forward does not survive sleep; reopen it on wake. A no-op
   // unless this launch is keeping one.
@@ -1018,6 +1029,7 @@ app.on("before-quit", () => {
 // shortcuts on the before-quit path above.
 app.on("will-quit", () => {
   ipcRegistrar.unregisterGlobalHotkey();
+  pruneOpenCopies(true);
 });
 
 app.on("window-all-closed", () => {

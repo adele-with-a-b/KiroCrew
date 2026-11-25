@@ -19,8 +19,10 @@ import { capWhitespaceRuns } from './markdownDepthBound'
  * detectPreviewUrl).
  *
  * The marker only decides that a chip is SHOWN. Nothing opens until the user
- * clicks it, and the click goes through the same handler a click on a path chip
- * uses, so whether the file may be read stays the read endpoint's decision.
+ * clicks it, and the chip asks the gateway about the path first, through the
+ * probe a path chip is drawn from; only a path confirmed as a file opens the
+ * way a path chip's click does, and anything else opens through the side
+ * panel's read. Whether the file may be read stays the gateway's decision.
  *
  * Only a marker the transcript treats as hidden HTML counts. The reply goes
  * through the transcript's own source preparation -- the block splitter

@@ -820,7 +820,7 @@ const AssistantMessage = memo(function AssistantMessage({ content, isStreaming, 
         End of turn like the file chips above, and handed the SAME `onFileOpen`
         (by identity) the reply's path chips get, so a click opens the file the
         way a path-chip click does. Showing a chip opens nothing. */}
-    {!isStreaming && <OpenFileChips content={steerCleaned} onFileOpen={onFileOpen} />}
+    {!isStreaming && <OpenFileChips content={steerCleaned} onFileOpen={onFileOpen} slot={slotKey} />}
     {!isStreaming && showFooter && turnStats && turnStats.elapsed_ms > 0 && (
       /* No `font-mono`: "1.98 credits · 59s" is a labelled measurement, not
          code, and Tailwind's `font-mono` pins `var(--mono)` — a token the Font

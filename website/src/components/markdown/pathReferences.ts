@@ -1,8 +1,10 @@
 import { useContext } from 'react'
 import { usePathKind, type PathKind } from '../../hooks/usePathKind'
 import { WINDOWS_ABS_PATH_RE } from '../../utils/urlTransform'
+import { i18nT } from '../../i18n/t'
 import { revealOrOpen } from '../FilePathMenu'
 import { ChatProjectDirCtx, type PathActions } from './contexts'
+import { fileLinksOpenOutside, openOutside, outsideRoute } from './fileLinkOutside'
 
 /**
  * Local filesystem references in rendered text: which strings are worth a stat
@@ -404,10 +406,39 @@ export function usePathResolution(raw: string, probeEnabled: boolean): PathResol
 }
 
 /**
+ * Open a file in the host's side panel (its `onFileOpen`), at `line` when the
+ * link names one; with no side panel, reveal it in the OS file manager.
+ *
+ * Called with ONE argument when there is no line, not with an explicit
+ * `undefined`: the handler is also the app's general-purpose file opener, and
+ * an omitted argument keeps a chip click indistinguishable from every other
+ * caller of it.
+ */
+export function openInPanel(
+  path: string,
+  actions: PathActions,
+  onRevealError: (message: string) => void,
+  line?: number,
+  endLine?: number,
+): void {
+  if (!actions.onFileOpen) { void revealOrOpen(path, 'reveal', { onError: onRevealError }); return }
+  if (line != null) actions.onFileOpen(path, endLine != null ? { line, endLine } : { line })
+  else actions.onFileOpen(path)
+}
+
+/**
  * Act on a confirmed path chip.
  *
  * `reveal` is the shift-modifier / no-handler escape hatch: hand the path to the
  * OS file manager, which understands both files and directories.
+ *
+ * A file opens in the default app for its type or in the side panel, as
+ * `dashboard.file_links_open_default_app` says (see `fileLinkOutside`); `other`
+ * (Alt/Option+click) takes the one the setting does not. A type with no route
+ * outside, and a link that names a line, keep the side panel. When the default
+ * app cannot open it, the side panel does, and the reason is reported. A host
+ * with no side panel (no `onFileOpen`) keeps what a click did there before:
+ * the OS file manager.
  *
  * `line` (from a `file:447` chip) is passed to the file handler so it can scroll
  * to and flash that line. It is dropped on the two fallback routes on purpose:
@@ -422,6 +453,7 @@ export function activatePath(
   onRevealError: (message: string) => void,
   line?: number,
   endLine?: number,
+  other = false,
 ): void {
   // Route through the shared helper, not bare `api.revealPath`: the helper owns
   // the clipboard write and the failure message. `api.revealPath` is side-effect-
@@ -438,11 +470,13 @@ export function activatePath(
     else void revealOrOpen(path, 'reveal', opts)
     return
   }
-  if (!actions.onFileOpen) { void revealOrOpen(path, 'reveal', opts); return }
-  // Called with ONE argument when there is no line, not with an explicit
-  // `undefined`: the handler is also the app's general-purpose file opener, and
-  // an omitted argument keeps a chip click indistinguishable from every other
-  // caller of it.
-  if (line != null) actions.onFileOpen(path, endLine != null ? { line, endLine } : { line })
-  else actions.onFileOpen(path)
+  const route = line == null && actions.onFileOpen ? outsideRoute(path, actions.slot) : null
+  if (route && fileLinksOpenOutside() !== other) {
+    void openOutside(path, route, () => {
+      onRevealError(i18nT('components.markdownRenderer.open_outside_failed'))
+      openInPanel(path, actions, onRevealError)
+    }, actions.slot)
+    return
+  }
+  openInPanel(path, actions, onRevealError, line, endLine)
 }

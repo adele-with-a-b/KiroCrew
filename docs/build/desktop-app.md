@@ -962,7 +962,7 @@ gateway off, or a non-loopback URL) does not ask in the first place. On every
 load the preload asks the shell `dashboard:is-remote-gateway`, answered by the
 same `isGatewayLocalForWindow` the gate reads, and then withholds every bridge
 whose channels that gate refuses: `remoteCrewSetupAPI`,
-`gatewayRestartAPI`, `crashReportsAPI`, `wslAPI`, `fileOpenAPI`, `folderPickAPI`,
+`gatewayRestartAPI`, `crashReportsAPI`, `wslAPI`, `fileOpenAPI.open`, `folderPickAPI`,
 `externalTerminalAPI`, `electronAPI.clearPaneHttpCache` and
 `updateAPI.notifyPolicyGoverned`. The SPA treats a missing bridge as it does in
 a browser tab, so the crash notice, the Host runtime card, **Open in editor**,
@@ -982,7 +982,26 @@ launch port's dashboard origin. That page names the ports: the shell checks only
 that each is a whole port in 1..65535 other than the launch port, takes at most
 32 per window, and forwards each from this machine's `127.0.0.1` to the same
 port on the crew host's loopback, the forward the pane's own `ssh -L` hint asks
-the user to run by hand.
+the user to run by hand. `fileOpenAPI.openCopy` goes the same way: a chat file
+link on a Crew on another machine names a path this machine does not have, so
+the dashboard reads the file through its gateway's own file routes and hands
+the shell a NAME and the bytes. `dashboard:open-copy` admits only a top frame on
+the launch port's dashboard origin, refuses any type outside the open-file
+allow-list plus `.html` / `.htm`, strips separators, control and format
+characters (direction marks) from the name, writes the bytes read-only into a
+fresh `mkdtemp` folder made directly in the OS temp directory and opens that
+copy through `openPathHardened` (`open-copy.js`). A web page is written as a
+small page of the shell's own whose only content is one full-window
+`<iframe sandbox="">` holding the page as its `srcdoc`, so its scripts, a meta
+refresh, window navigation, forms and popups are refused by the frame, and the
+shell's own policy, which the frame inherits, refuses every load but `data:`,
+`https:` and `http:` images, media, fonts and styles (no `file:`). It opens no
+existing file of this machine. A web page from a Crew on this machine takes the
+same copy, never `dashboard:open-file`, whose allow-list keeps refusing `.html`.
+At quit `main.js` removes the copy folders this launch made
+(`removeOwnCopies`); at start, and with each new copy, those older than a day
+go (`pruneCopies`, which touches only real folders of that name owned by this
+user), so a second build running beside this one keeps its own.
 The Windows titlebar menu rides the same ownership boundary, per action rather
 than per channel. `app-menu:items` and `app-menu:execute` in
 [`ipc-registrar.js`](../../website/electron/ipc-registrar.js) resolve whether the
