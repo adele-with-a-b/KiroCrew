@@ -594,6 +594,11 @@ async def _close_slot(
     # close observed the already-terminal record, leaving an active orphan.
     slot.begin_close()
     closed_at = note_slot_closed(state, name)
+    # A closed session's queued peer notes are no longer provable: a restart that
+    # finds the session open again (its line says so) holds them for a person.
+    from kiro_crew.dashboard import peer_note_receipts
+
+    peer_note_receipts.forget_entries(list(slot._queue))
 
     def refuse_if_replaced() -> None:
         # Each wait below can outlast this slot's hold on the name: another close pops
@@ -772,6 +777,9 @@ async def _close_slot(
     _teardown_basis = SlotRegistry.open_takeover_basis(state, name)
     try:
         state._slots.pop(name, None)
+        # Again, for a peer note queued while the waits above ran: the slot was
+        # still reachable then, and nothing can queue on it from here.
+        peer_note_receipts.forget_entries(list(slot._queue))
         # Release any blocking wait before cancelling the task: a question pending on
         # the blocking POST /api/ask-question path holds an MCP worker on an open
         # HTTP request, and the slot is going away, so nobody will answer its card.
@@ -1429,6 +1437,11 @@ async def api_chat_slots_cleanup(request: web.Request) -> web.Response:
             # instant is persisted as closed_at for the same teardown-window
             # reason as the single-tab path.
             closed_at = note_slot_closed(state, name)
+            # A closed session's queued peer notes are no longer provable: a restart that
+            # finds the session open again (its line says so) holds them for a person.
+            from kiro_crew.dashboard import peer_note_receipts
+
+            peer_note_receipts.forget_entries(list(removed._queue))
             # Cancel BEFORE the flush, mirroring the single-tab close at :3271-3276.
             # The flush promotes a held note's context half into ``_pending_context``,
             # and the save below is an await a still-running turn resumes across: it
