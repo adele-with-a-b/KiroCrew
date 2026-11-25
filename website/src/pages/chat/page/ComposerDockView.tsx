@@ -43,6 +43,7 @@ import type { useActiveSlotState } from './activeSlotState'
 import type { useModelPickerModels } from './sessionPicks'
 import { REFUSED_PRESS_TITLE_KEYS, type useRefusedPress } from './turnActions'
 import type { useComposerSend } from './composerSend'
+import { settleSteer, type FollowUpSendSettle } from './followUpChips'
 import type { useSessionControlChips } from './sessionControls'
 import { enclosingRepoRootOf, type useComposerChips } from './composerChips'
 import type { useSessionAutomation } from './sessionAutomation'
@@ -211,6 +212,9 @@ interface ComposerDockViewProps {
   followUpPickedRef: MutableRefObject<Set<string>>
   followUpSourceKey: string | null
   toggleFollowUpOption: (o: string) => void
+  /** Every composer send reports here first, so a sent app chip turns its list off
+   *  (`useFollowUpChips`), then settles it: a send that never went out takes it back. */
+  noteFollowUpSend: (text?: string) => FollowUpSendSettle
   dashCfg: ReturnType<typeof usePageFlags>['dashCfg']
   jevAutoConsented: boolean
   refusedPress: ReturnType<typeof useRefusedPress>['refusedPress']
@@ -288,7 +292,8 @@ interface ComposerDockViewProps {
   keepQuestionAnswer: (text: string, questions?: { question: string; }[]) => void
   queuedMessages: ChatMessage[]
   queuePendingIds: ReadonlySet<string>
-  steer: (opts?: { auto?: boolean; text?: string; }) => void
+  /** A send's result when it hands off to send() (no turn running), else nothing. */
+  steer: (opts?: { auto?: boolean; text?: string; }) => Promise<boolean> | void
   stopTurn: () => void
   systemDeliveryCount: number
   handleEditLastRequest: () => void
@@ -348,7 +353,7 @@ export default function ComposerDockView({
   automationSnapshotFailed, setAutomationOpen, prefillHint, setPrefillHint, pasteSlice, pendingFiles, pendingSessions, resizedInfo, unstageSessionRef, uploading, agentBtnRect, anchorAgentBtn,
   projectPickerOpen, setProjectPickerOpen, anchorProjectBtn, projectBtnRect, pendingDirs, composerRef, composerVoiceOptions, isMac, cancelUpload, composerUploadFiles, dropTargetProps, handleCapture,
   handleFileOpen, handleOptimizeResult, search, tabsCtl, uploadCount, sendHeld, composerBandRef, scrollBottom, backSpot, onBack, handleResumeSession, composerRootChange, composerUserEdit, followUpMulti,
-  followUpOptions, followUpPicked, followUpPickedRef, followUpSourceKey, toggleFollowUpOption, dashCfg, jevAutoConsented, refusedPress, setRefusedPress, send, pickModel, setProject, projectSwitching, switchAgent,
+  followUpOptions, followUpPicked, followUpPickedRef, followUpSourceKey, toggleFollowUpOption, noteFollowUpSend, dashCfg, jevAutoConsented, refusedPress, setRefusedPress, send, pickModel, setProject, projectSwitching, switchAgent,
   currentSlot, activeFolderName, anchorSessionControl, openSessionControl, refreshSessionControlStatuses, sessionControlKey, sessionControlRect, sessionControls, setOpenSessionControl,
   activeAgentName, attachmentAnnouncement, clampOutOfTokens, handleAddToContext, mentionKeyEdit, optimizerMentionGuard, mentionEditRange, removeDirChip, removeFileChip, selectPickedFile, followupAddToSession,
   followupStartInNewChat, followupStartInWorktree, displayMode, _modelPinActive, _modelPinAgent, _modelPinPinned, _pinShownModel, _slotProject, defaultEffort, effectiveEffort, effortLevelsOverride,
@@ -636,19 +641,20 @@ export default function ComposerDockView({
               // (typing, paste, undo, picker inserts), never for a parent-driven
               // seed -- so it is the signal that arms the prefill hint's expiry.
               onChange={composerUserEdit}
-              onSend={() => { if (!steerRootClosed && steerFits()) send() }}
+              onSend={() => { if (!steerRootClosed && steerFits()) { const settle = noteFollowUpSend(); void Promise.resolve(send()).then(settle, () => settle(false)) } }}
               terminalCommands={activeSlot && !currentSlot ? 'pending'
                 : currentSlot?.executor === 'remote' || runsHere === false ? 'remote'
                   : currentSlot && runsHere === undefined ? 'pending' : 'local'}
               canSteer={composerBusy}
-              onSteer={opts => { if (!steerRootClosed && steerFits(opts?.text)) steer(opts) }}
+              // A steer handed to send() reports its result; a real steer sends nothing only offline.
+              onSteer={opts => { if (!steerRootClosed && steerFits(opts?.text)) { const settle = noteFollowUpSend(opts?.text); settleSteer(steer(opts), settle, connected) } }}
               // AND a turn actually running. `composerBusy` is also true when only
               // background sub-agents are working, and there is no turn to decide
               // ABOUT in that state: the send starts a fresh turn and the point
               // never runs, so offering the mode there would promise a decision
               // nothing makes.
               jevAutoAvailable={jevAutoConsented && !!slotRunning}
-              onFollowUpSend={(text?: string) => { if (!steerRootClosed) send(text) }}
+              onFollowUpSend={(text?: string) => { if (!steerRootClosed) { const settle = noteFollowUpSend(text); void Promise.resolve(send(text)).then(settle, () => settle(false)) } }}
               // Streaming, compaction and stopping keep the input interactive (api_chat queues on slot.running and stop preserves the
               typingLock={typingLock}
               presence={composerPresence}

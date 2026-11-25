@@ -826,9 +826,50 @@ before any request rather than sanitized -- so a control with an invalid
 `statusPath` is simply never polled. Polling fails closed: an app that is down is
 not retried, and an unrecognized payload is treated as `none`.
 
-**When the status is re-asked.** Once when the chat opens, again when the user
-closes the control's popover, and again each time a turn in that chat finishes.
-There is no polling interval. A change the app makes between turns (the person
+**`replyChips` — the strings of Crew's reply chips.** The same answer may carry the
+strings Crew shows as its reply chips above the message box for that chat, in
+place of the newest reply's `[OPTIONS:]` line. Crew draws them in its own bar, with
+its own look and click: a click fills the message box, a double-click sends.
+
+```json
+{ "state": "warn", "tooltip": "One question waits", "detail": "Q4a",
+  "replyChips": { "options": ["Q4a agreed", "Q4a no, keep it"], "multi": false } }
+```
+
+- `options`: 1 to 8 strings, each 1 to 80 characters (code points) after control,
+  format, bidi, zero-width and line-separator characters are removed and the ends
+  trimmed. Plain text; a repeat keeps the first. Put the question's label in each
+  string (`Q4a agreed`): the string is exactly what a click puts in the box.
+- `multi`: `true` lets several picks compose, as `[OPTIONS:]` does; absent or
+  `false`, a pick replaces the last, as `[OPTION:]` does.
+- Anything else (`options` not an array, empty, over 8, an entry that is not a
+  string, blank or over 80, `multi` not a boolean) drops the whole list: Crew
+  shows the reply's own chips as if you had sent none. A list is never cut down.
+- While you supply a list it replaces the reply's `[OPTIONS:]` line and stays up
+  through later rows in the chat (a wake, a note, a queued message) and through a
+  running turn (streaming text, tool steps). It hides only while an
+  `ask_question` card waits. To take it away, answer without `replyChips` and call
+  `status-changed` (below) for that chat.
+- Once a chip from your list is sent (a double-click, a quick send, or the box
+  sent with one of your strings in it), Crew hides that list in that chat until
+  you answer a status call made after the send, so one answer is not sent twice. A click
+  that only fills the box hides nothing, and neither does a send that never went
+  out (offline, say). Your next answer shows whatever it says: if the question
+  still waits when the turn ends, answer with the list again.
+- Crew offers a list only from an answer given since the user came into the chat:
+  on a switch back the bar stays empty until you answer again, and a failed
+  status call drops the list. Right after the page loads, before your first
+  answer, the reply's own chips may show.
+- The picks reset when the strings change, so put the question's label in each
+  string and a new question gets fresh picks.
+- When two apps supply a list, only the earliest-installed app's shows; lists are
+  never merged.
+
+Needs `APP_SDK_LEVEL >= 15`; an older host ignores the field.
+
+**When the status is re-asked.** Each time the user switches into the chat, again
+when the user closes the control's popover, and again each time a turn in that
+chat finishes. There is no polling interval. A change the app makes between turns (the person
 answers in the app's own tab, a cron job, another session) shows at once only
 when the app says so: its page calls `useAppStatusRefresh()` from
 `@kirocrew/app-sdk`, or its backend calls

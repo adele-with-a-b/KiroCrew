@@ -2230,7 +2230,9 @@ resolves with) and `contributes.sessionControls[].width`, and level 12 adds the
 manifest's `permissions.openFiles` with the dashboard's
 [`useOpenFile`](#opening-a-local-file), and level 13 adds the
 [session control jump](#session-control-jump) (`useSessionControlJump`), and level 14
-adds `contributes.sessionControls[].keys` with a request's `via: 'key'`; each level
+adds `contributes.sessionControls[].keys` with a request's `via: 'key'`, and level 15
+adds a session control status answer's `replyChips` (the strings of the reply chips
+above the message box, [manifest reference](manifest-reference.md)); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

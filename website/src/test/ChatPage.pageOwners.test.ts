@@ -122,6 +122,10 @@ describe('pages/chat/page owners', () => {
       'useRunInTerminalConfig',
       'useForkSession',
       'useAppLaunchIntake',
+      // Before the chips: an app's status answer may supply their strings. Its
+      // effects touch only its own state, and none of the hooks it moved past
+      // add a document listener or a link-preview handler it could race.
+      'useComposerSessionControls',
       'useFollowUpChips',
       'usePageFlags',
       'useRefusedPress',
@@ -129,7 +133,6 @@ describe('pages/chat/page owners', () => {
       'useAutoSendIntake',
       'useSessionChoices',
       'useCrewModeSwitch',
-      'useComposerSessionControls',
       'useAppPanelReveal',
       'useFileMentionActions',
       'useFollowupCardActions',

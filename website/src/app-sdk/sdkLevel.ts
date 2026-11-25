@@ -13,5 +13,7 @@
  * one of its messages, with the Back pill.
  * Level 14 adds a session control's `keys`: a key, changeable in Settings →
  * Shortcuts → Apps, opens its box in the chat on screen with `via: 'key'`.
+ * Level 15 adds a session control status answer's `replyChips`: an app supplies
+ * the strings of Crew's reply chips for one chat.
  */
-export const APP_SDK_LEVEL = 14
+export const APP_SDK_LEVEL = 15

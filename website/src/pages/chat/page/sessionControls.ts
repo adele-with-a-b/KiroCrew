@@ -4,7 +4,7 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import { useAnchoredTriggerRect } from '../../../hooks/useAnchoredTriggerRect'
 import { useFolderSortMode } from '../../../hooks/useFolderSortMode'
-import { dashboardSessionKey, SESSION_CONTROL_STATUS_KEY, useSessionControls, useSessionControlStatuses, type ResolvedSessionControl } from '../../../hooks/useSessionControls'
+import { dashboardSessionKey, pickAppReplyChips, SESSION_CONTROL_STATUS_KEY, useSessionControls, useSessionControlStatuses, type ResolvedSessionControl } from '../../../hooks/useSessionControls'
 import { useAppSessionKeys } from '../../../hooks/useAppSessionKeys'
 import { isTerminalTarget, shortcutPlatform, SHORTCUTS_ENABLED_KEY } from '../../../hooks/useKeyboardShortcuts'
 import { ariaKeys, matchAppKeyEvent, shownKeys, type ResolvedAppKey } from '../../../lib/appSessionKeys'
@@ -166,15 +166,20 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
   // key its per-session state on a string nothing else uses, which is precisely
   // the mis-binding this feature exists to remove.
   const sessionControlKey = dashboardSessionKey(activeSlot)
-  const { statuses: sessionControlStatuses, error: sessionControlStatusError } =
+  const { statuses: sessionControlStatuses, replyChips, replyChipsAt, error: sessionControlStatusError } =
     useSessionControlStatuses(
       sessionControls,
       sessionControlKey,
       currentSlot?.folder_id || '',
       activeFolderName,
     )
+  // The one app list of reply-chip strings for this chat (see `pickAppReplyChips`).
+  const appReplyChips = useMemo(
+    () => pickAppReplyChips(sessionControls, replyChips, replyChipsAt),
+    [sessionControls, replyChips, replyChipsAt],
+  )
   return {
-    sessionControls, sessionControlsError, appKeys,
+    sessionControls, sessionControlsError, appKeys, appReplyChips,
     openSessionControl, setOpenSessionControl, sessionControlRect, anchorSessionControl,
     refreshSessionControlStatuses,
     chatFolders, chatFoldersError, chatFoldersLoaded, folderSortMode, folderSortError, activeFolderName,
