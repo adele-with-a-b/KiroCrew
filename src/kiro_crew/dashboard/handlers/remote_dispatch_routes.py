@@ -921,6 +921,11 @@ async def _send(mgr: Any, instance_id: str, slot: str, body: dict[str, Any]) -> 
     }
     if steered and reply.get("held") is True:
         result["held"] = True
+    carried = reply.get("carried")
+    if isinstance(carried, int) and not isinstance(carried, bool) and carried > 0:
+        # Earlier queued sends of this conductor went into the running turn, whether
+        # or not this one followed them in.
+        result["carried"] = carried
     from kiro_crew import steer_refusal
 
     refusal = "" if steered or began else steer_refusal.known(reply.get("steerRefusal"))

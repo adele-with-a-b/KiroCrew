@@ -16,7 +16,13 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.context_assembly.markers import _apply_marker_spans, _marker_spans
-from kiro_crew.dashboard import broadcast_supersede, queue_age, session_managers, steer_hold
+from kiro_crew.dashboard import (
+    broadcast_supersede,
+    queue_age,
+    session_managers,
+    steer_carry,
+    steer_hold,
+)
 from kiro_crew.dashboard.chat_delivery import sanitize_outbound, steer_refusal_of
 from kiro_crew.dashboard.relay_archive import (
     RELAY_ARCHIVE_CODE,
@@ -563,6 +569,9 @@ async def send_to_target(
 
     steered = False
     requeued = False
+    # How many of the caller's earlier queued notes a steer took into the turn
+    # ahead of this one (``steer_carry``).
+    carried = 0
     # Why a steer could not go in (``kiro_crew.steer_refusal``), "" otherwise. The
     # queue arm stamps it on the entry, so the queued card says why it waits, and
     # the result carries it, so the sender is told at send time.
@@ -617,6 +626,11 @@ async def send_to_target(
         audience_fence = uuid.uuid4().hex
         slot._steer_audience_fences[audience_fence] = admission
 
+        # The caller's own notes still queued here go into the turn first. Never
+        # with a reply into the creator's asking turn: that ask admits one cut-in,
+        # and the worker's queued reports wait for their own turn as before.
+        carry = None if reply_to_creator else steer_carry.from_session(state, caller_key)
+
         # `user_origin=False`: this text was not typed into the target's own
         # surface. The requeue reads it to decide `directive_user_origin`, and a
         # peer must not inherit the composer's exemption from the LINKED drop.
@@ -625,7 +639,7 @@ async def send_to_target(
                 state,
                 slot,
                 prompt,
-                session_deliver.peer(steer=True, patient=via != BROADCAST_VIA),
+                session_deliver.peer(steer=True, patient=via != BROADCAST_VIA, carry=carry),
                 admission=admission,
                 relay_meta=relay_meta,
             )
@@ -721,6 +735,7 @@ async def send_to_target(
             )
             raise
         steered = outcome == session_deliver.DELIVERED_STEERED
+        carried = carry.count if carry is not None else 0
         # The turn ended while the steer RPC was suspended and its teardown moved
         # the text onto the queue: it WILL run, and taking the queue arm below
         # would deliver it a second time. Reported as a queued delivery, which is
@@ -746,8 +761,9 @@ async def send_to_target(
                 code="target_moved",
                 status=409,
             )
-        if steered:
-            # The text is IN the running turn: `STEER_STEERED` means kiro-cli
+        if steered or carried:
+            # The text (or an earlier note of the caller's carried in ahead of it)
+            # is IN the running turn: `STEER_STEERED` means kiro-cli
             # acknowledged consumption, so unlike the requeue arm there is nothing
             # left to remove and unlike the fallback arm there is nothing left to
             # refuse. What can still be prevented is the turn's remaining output
@@ -979,6 +995,7 @@ async def send_to_target(
             # tell it from a caller that asked.
             **({"steer_default": True} if steer_default else {}),
             **({"replaced": replaced} if replaced else {}),
+            **({"carried": carried} if carried else {}),
             # Only when a steer's turn was actually stopped, so the common shape is
             # unchanged. Names the constraints that newly held, which is what a
             # reader needs to tell this apart from an ordinary delivery: the message
@@ -1003,6 +1020,10 @@ async def send_to_target(
         result["heldForPerson"] = True
     if replaced:
         result["replaced"] = replaced
+    if carried:
+        # Earlier notes of the caller's that were queued here went into the turn
+        # ahead of this one, oldest first, and left the queue.
+        result["carried"] = carried
     if steered and steer_hold.held_behind_tool(slot):
         # Accepted, and waiting for the tool call the turn is in: not read yet.
         result["held"] = True
@@ -1471,7 +1492,11 @@ async def broadcast_to_targets(
                 "started": bool(sent.get("started")),
                 "steered": bool(sent.get("steered")),
                 **({"steerRefusal": sent["steerRefusal"]} if sent.get("steerRefusal") else {}),
-                **{k: sent[k] for k in ("steerDefault", "heldForPerson", "replaced") if k in sent},
+                **{
+                    k: sent[k]
+                    for k in ("steerDefault", "heldForPerson", "replaced", "carried")
+                    if k in sent
+                },
             }
         )
 

@@ -37,7 +37,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
-from kiro_crew.dashboard import session_deliver, steer_hold
+from kiro_crew.dashboard import session_deliver, steer_carry, steer_hold
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from kiro_crew.dashboard.state import DashboardState, _ChatSlot
@@ -62,6 +62,35 @@ def started_mark(queue_id: str, started_ids: set[str]) -> dict[str, bool]:
     ``queued`` as a running turn, so its receipt says the message started one.
     """
     return {"started": True} if queue_id in started_ids else {}
+
+
+class RefusalAfterCarry(str):
+    """A steer refusal code that also says how many earlier queued sends went in.
+
+    :func:`steer` returns it as its refusal when the conductor's earlier sends
+    went into the turn and the new one did not follow. It is the plain code to
+    everything that compares or stores it; :func:`queued_marks` reads the count
+    for the reply of that same send, so no count outlives its request.
+    """
+
+    carried: int = 0
+
+    def __new__(cls, code: str, carried: int) -> "RefusalAfterCarry":
+        refusal = super().__new__(cls, code)
+        refusal.carried = carried
+        return refusal
+
+
+def queued_marks(refusal: str, queue_id: str, started_ids: set[str]) -> dict[str, Any]:
+    """What an agent-origin send's ``queued`` reply adds: :func:`started_mark`, and
+    ``carried`` when earlier queued sends of the conductor went into the running
+    turn although this one was refused (*refusal*, as :func:`steer` gave it) and
+    queued."""
+    marks: dict[str, Any] = dict(started_mark(queue_id, started_ids))
+    carried = getattr(refusal, "carried", 0)
+    if carried:
+        marks["carried"] = carried
+    return marks
 
 
 async def steer(
@@ -94,40 +123,58 @@ async def steer(
     turn_generation = slot._turn_generation
     fence = uuid.uuid4().hex
     slot._steer_audience_fences[fence] = admission
+    # The conductor's own sends still queued here go into the turn first.
+    carry = steer_carry.from_hub_conductor()
     delivery = asyncio.ensure_future(
         session_deliver.deliver(
             state,
             slot,
             message,
-            session_deliver.peer(steer=True, patient=True),
+            session_deliver.peer(steer=True, patient=True, carry=carry),
             admission=admission,
         )
     )
     try:
         outcome = await asyncio.shield(delivery)
     except asyncio.CancelledError:
-        _keep_orphan(state, slot, message, fence, delivery)
+        _keep_orphan(state, slot, message, fence, delivery, carry)
         raise
-    if outcome == session_deliver.DELIVERED_STEERED:
+    went_in = outcome == session_deliver.DELIVERED_STEERED
+    if went_in or carry.count:
+        # This send, or an earlier one of the conductor's carried in ahead of it,
+        # is inside the running turn.
         changed = newly_held_constraints(
             containment_snapshot(state, slot, on_probe_failure=True), admission
         )
         if changed and slot._turn_generation == turn_generation:
             await _stop_for_new_audience(state, slot, changed)
+    else:
+        # No text of this send is inside the running turn, so the record protects nothing.
+        slot._steer_audience_fences.pop(fence, None)
+    if went_in:
         reply: dict[str, Any] = {"ok": True, "steered": True}
         if steer_hold.held_behind_tool(slot):
             reply["held"] = True
+        if carry.count:
+            # How many earlier queued sends went into the turn ahead of this one.
+            reply["carried"] = carry.count
         return reply, "", False
-    # No text of this send is inside the running turn, so the record protects nothing.
-    slot._steer_audience_fences.pop(fence, None)
     if outcome == session_deliver.DELIVERED_REQUEUED:
         if state._slots.get(slot.key) is not slot:
             # The teardown queued the text on this slot object, and the chat was
             # closed and opened again under the same key during the write: no drain
             # reaches that queue. The local send refuses the same way.
             return None, TARGET_MOVED, False
-        return {"ok": True, "queued": True}, "", False
-    return None, steer_refusal_of(outcome) or steer_refusal.REFUSED, False
+        return (
+            {"ok": True, "queued": True, **({"carried": carry.count} if carry.count else {})},
+            "",
+            False,
+        )
+    refusal = steer_refusal_of(outcome) or steer_refusal.REFUSED
+    if carry.count:
+        # The route queues this send and answers; its reply says what went in.
+        refusal = RefusalAfterCarry(refusal, carry.count)
+    return None, refusal, False
 
 
 async def _stop_for_new_audience(
@@ -158,6 +205,7 @@ def _keep_orphan(
     message: str,
     fence: str,
     delivery: "asyncio.Future[Any]",
+    carry: steer_carry.Carry,
 ) -> None:
     """Let a shielded steer finish after its request went away, and queue what it lost.
 
@@ -176,7 +224,8 @@ def _keep_orphan(
         outcome = finished.result()
         if outcome == session_deliver.DELIVERED_STEERED:
             return
-        slot._steer_audience_fences.pop(fence, None)
+        if not carry.count:
+            slot._steer_audience_fences.pop(fence, None)
         if outcome == session_deliver.DELIVERED_REQUEUED or state._slots.get(slot.key) is not slot:
             return
         queued = asyncio.ensure_future(

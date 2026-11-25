@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.config import live
-from kiro_crew.dashboard import queue_age
+from kiro_crew.dashboard import queue_age, steer_carry
 from kiro_crew.dashboard.chat_utils import (
     COMPOSER_SEND_META,
     STEER_POSSIBLY_DELIVERED_META,
@@ -707,20 +707,7 @@ async def steer_into_running_turn(
         logger.info("identical steer already pending for slot %s; queueing instead", slot.key)
         return SteerUnavailable(steer_refusal.SAME_PENDING)
 
-    retained_steer_count = len(
-        set(slot._pending_steers).union(
-            slot._steer_delivery_ids,
-            slot._steer_send_ids,
-            slot._steer_user_origin,
-            slot._steer_channel_origin,
-            slot._steer_owner_origin,
-            slot._steer_admissions,
-            slot._steer_attachment_meta,
-            slot._steer_act_now,
-            slot._steer_decision_strips,
-            slot._steer_automation,
-        )
-    )
+    retained_steer_count = steer_carry.retained_steers(slot)
     if retained_steer_count >= MAX_PENDING_STEERS:
         logger.warning(
             "pending steer limit reached for slot %s (%d); queueing instead",

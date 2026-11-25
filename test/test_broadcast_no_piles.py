@@ -167,10 +167,13 @@ class TestANewerNoteReplacesTheOlderUnreadOne:
 
         state, caller, child = _setup(tmp_path)
         _broadcast(state, caller, "main moved to a1")
-        with patch(_STEER, new=AsyncMock(return_value=STEER_STEERED)):
+        with patch(_STEER, new=AsyncMock(return_value=STEER_STEERED)) as steer:
             row = _row(_broadcast(state, caller, "stop, it is fixed", mode="steer"))
-        assert row["steered"] is True and "replaced" not in row
-        assert len(child._queue) == 1
+        assert row["steered"] is True and "replaced" not in row and row["carried"] == 1
+        # The older note is not replaced: it goes into the turn ahead of the new one.
+        first, second = (call.args[2] for call in steer.await_args_list)
+        assert "main moved to a1" in first and "stop, it is fixed" in second
+        assert child._queue == []
 
     def test_the_replaced_count_sits_beside_the_queue_not_in_the_entry(self, tmp_path):
         """The drain unions entry meta onto the row it writes, so a count kept in

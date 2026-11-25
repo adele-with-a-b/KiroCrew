@@ -506,6 +506,66 @@ the target has not read the message yet and reads it when that call returns,
 which can take minutes. Nothing cuts a running tool call short for a steer:
 `session_stop` is the one way to end it, and it loses that call's work.
 
+**A steer carries the sender's earlier queued notes in with it.** Before a
+peer's steer is written, the sender's own entries still queued on the target are
+steered into the same turn, oldest first, then the new text
+(`dashboard/steer_carry.py`, called from the peer arm `session_deliver._deliver_peer`
+when the `Origin` holds a `carry`). The target reads everything the sender sent in
+the order it was sent, and nothing of it runs later as a stale turn. Each entry
+that went in leaves the queue, its card leaves open dashboards (`queue_cancel`,
+no content) and its wait stamp goes. The result carries `carried: <n>` and the tool
+reply says how many went in.
+
+Whose entries move is read off the entry's stamp. For a local `session_send` or
+`session_broadcast` it is the queue's `yours` test (`_queue_entry_from` ==
+`QUEUE_FROM_CALLER`: sender slot AND tab, plus `session_send_queued`). On a crew a
+hub conductor reaches, it is an entry the agent-origin route queued
+(`meta.turnActor == "crew"`): only the conductor that opened that session can
+send to it. Never moved: a person's entry, a cron card, an app message, another
+session's entry, an entry with a kind or callbacks, a steer a turn requeued, a
+restored entry (the restore drops both stamps), and on a crew an entry that
+carries parked fair-admission work.
+
+Each carried entry is steered by the peer arm's own steer, so every guard holds:
+`user_origin=False`, the `between_steps` wait, the one-per-text guard, the
+pending-steer cap. Its admission is the one it was queued under, so a requeue
+faces the drain with that baseline. The caller's audience fence, recorded before
+the delivery, stays for the turn when any entry went in, and the comparison that
+stops a turn whose audience widened runs then too, even if the new text itself
+was refused. A turn a person is driving is never entered: no steer is tried there.
+
+The first entry that cannot go ends the carry; it and the ones behind it stay
+queued as they were. An entry does not go when a person has it open in the editor,
+its row is already written, a containment constraint holds now that its own
+admission never saw (the drain would drop it and tell the sender), or the cap has
+no room for it and the new text (`retained_steers(slot) + 2 > MAX_PENDING_STEERS`),
+so the oldest that fit go in and the new text still does. An entry is off the queue
+only for one steer attempt, which registers the text before it can suspend (the
+wait for an in-flight clear is spent first, with the entry queued), so a turn that
+ends meanwhile cannot also drain it; a refused steer puts the same entry back
+behind the entries that were ahead of it. The `between_steps` wait is spent with
+the entry on the queue, one budget for the whole carry, so a turn that ends during
+it drains the entry in its place. A steer the teardown requeued lives on as that
+requeued entry at the head of the queue. A steer that raises after its text was
+registered (pending, or already read by the turn) does not bring the entry back.
+
+An entry whose text equals the new text also ends the carry and stays queued:
+steered first, it would leave the new text refused as `same_pending`.
+
+A reply into the creator's asking turn (`reply_to_creator`) carries nothing: that
+ask admits one cut-in, and the worker's queued reports wait for their own turn.
+
+`carried` is reported whenever entries went in, also when the new text itself was
+refused and queued: on the local result, on a broadcast's per-target row, and on
+the crew route's `queued` reply (`agent_steer.queued_marks`, read off that send's
+own refusal, `RefusalAfterCarry`), which the hub passes on.
+
+A refusal of a carried entry that is about the turn (`turn_ended`,
+`between_steps`, `no_steer`, `peer_steer_off` and the rest) is the new text's
+answer too: it is not tried and falls back to the queue behind its elders, so it
+cannot slip past them into the turn or its successor. Only `same_pending`, which
+is about that one text, lets the new text still be steered.
+
 A harness that can drop a steer it accepted (`steer_needs_loss_recovery`:
 codex, claude, goose, pi and opencode) takes a peer's steer only when
 `agent.peer_steer_loss_recovery` is on; otherwise the steer arm answers
@@ -3112,7 +3172,7 @@ Every send carries `turn_origin: "agent"` (`dashboard/agent_origin.py`), so the 
 
 **What the send reports.** The result says what the crew did, never what was asked: `steered` (the text is in the running turn), `started` (the session was idle and began a turn on it, or the crew queued it and the route's own drain began it before answering, because the turn a steer waited on ended or the sub-agent hold it waited behind lifted, read from the entries that drain's turn consumed; false for a queued send, for one that drain dropped (a stale-admission sweep) or that was taken back before a turn began, for a turn held for fair admission, and for one a Stop ended before it began), `held` beside `steered` when the crew's agent keeps the steer behind a tool call, `steerRefusal` (a known `steer_refusal` code) when an asked-for steer fell back to the queue, and `heldForPerson` when no steer was tried because a person is driving that turn. The tool reply words each one; an idle session with `steer=true` reads as started, not as a steer that failed.
 
-**A steer on the crew.** The `session_send` tool sends `steer: true` for a crew send unless the caller passed `steer: false` (`mcp_session_crew.run_crew_send`): a crew send reaches only a session the caller opened there, so it is the caller's own worker, the same case in which a local send's omitted `steer` cuts in. `steer: true` on an agent-origin send reaches the running turn through `dashboard/agent_steer.py`: the peer arm of `session_deliver.deliver`, the same one a local `session_send` takes, with `user_origin=False`. It keeps the three guards the local send has around its steer: the admission is recorded in `slot._steer_audience_fences` before the write, a containment constraint that newly holds after the write stops that same turn once (`source="agent_steer_containment"`, no escalation), and the write is shielded, with a steer that turns out not to have gone in queued when its request went away. It is never tried on a turn a person is driving (`holds_persons_standing`); that send queues. A steer the turn's teardown queued answers `queued`, unless the chat was closed and opened again under the same key during the write: that queue is unreachable, so the send is refused `target_moved` (409), as the local send refuses it. A steer that fell back to the queue because its turn ended during the wait is started by the route's own drain; the reply then carries `started: true` beside `queued`, and the hub reports a started turn, not a queued message. Everything the peer arm refuses applies: on a harness that can drop an accepted steer (claude among them) the crew needs `agent.peer_steer_loss_recovery` on, or the steer answers `peer_steer_off` and queues. That setting is read on the crew that runs the worker, not on the hub. Outgoing message and title text passes the exfiltration-URL then the credential redactor; an incognito or temporary caller is refused `ephemeral_caller`.
+**A steer on the crew.** The `session_send` tool sends `steer: true` for a crew send unless the caller passed `steer: false` (`mcp_session_crew.run_crew_send`): a crew send reaches only a session the caller opened there, so it is the caller's own worker, the same case in which a local send's omitted `steer` cuts in. `steer: true` on an agent-origin send reaches the running turn through `dashboard/agent_steer.py`: the peer arm of `session_deliver.deliver`, the same one a local `session_send` takes, with `user_origin=False`. It keeps the three guards the local send has around its steer: the admission is recorded in `slot._steer_audience_fences` before the write, a containment constraint that newly holds after the write stops that same turn once (`source="agent_steer_containment"`, no escalation), and the write is shielded, with a steer that turns out not to have gone in queued when its request went away. It is never tried on a turn a person is driving (`holds_persons_standing`); that send queues. A steer the turn's teardown queued answers `queued`, unless the chat was closed and opened again under the same key during the write: that queue is unreachable, so the send is refused `target_moved` (409), as the local send refuses it. A steer that fell back to the queue because its turn ended during the wait is started by the route's own drain; the reply then carries `started: true` beside `queued`, and the hub reports a started turn, not a queued message. Everything the peer arm refuses applies: on a harness that can drop an accepted steer (claude among them) the crew needs `agent.peer_steer_loss_recovery` on, or the steer answers `peer_steer_off` and queues. That setting is read on the crew that runs the worker, not on the hub. The conductor's own sends still queued on that session go into the turn first, oldest first (`steer_carry`, above); the crew's reply carries `carried: <n>` beside `steered`, and the hub passes it to the sender. Outgoing message and title text passes the exfiltration-URL then the credential redactor; an incognito or temporary caller is refused `ephemeral_caller`.
 
 A crew create takes only `title`, `agent`, `agent_kind`, `model` and `work_item` (`crew_field_unsupported` for anything else). `agent_kind` takes the local create's one value, `template`, and rides the peer create so a same-named crew member there is not selected; any other value is refused `invalid_agent_kind`, and a kind with no `agent` `agent_kind_requires_agent`, before any peer call. Without it the peer resolves `agent` name-first, a bare `kirocrew-worker` included. `memory_mode` is always this hub's `dashboard.default_memory_mode`. An omitted `agent` sends none, so the crew applies its own default. A crew create without `work_item` arms no patrol.
 

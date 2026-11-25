@@ -156,3 +156,17 @@ def held_note() -> str:
         "It is inside a tool call, so it has not read your message yet: it reads it "
         "when that call returns, which can take minutes. Nothing was cut short."
     )
+
+
+def carried_note(count: object) -> str:
+    """What a sender reads when its steer took earlier queued notes in with it, else "".
+
+    Not a refusal: those notes are in the turn, ahead of the new one, in the order
+    they were sent, and no longer queued.
+    """
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        return ""
+    noun = "note of yours" if count == 1 else "notes of yours"
+    return (
+        f" {count} earlier queued {noun} went in ahead of it, oldest first, " "and left the queue."
+    )
