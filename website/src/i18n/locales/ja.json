@@ -13220,6 +13220,7 @@
         "earlier_step_other": "以前の {{count}} ステップ",
         "hide_earlier_steps": "以前のステップを非表示",
         "hide_tool_calls": "ツール呼び出しを非表示",
+        "reply_continued": "返信は終わった後も続きました",
         "worked_through_step_other": "{{count}} ステップを処理"
       },
       "userMessage": {

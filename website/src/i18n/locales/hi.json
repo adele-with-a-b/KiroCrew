@@ -13543,6 +13543,7 @@
         "earlier_step_other": "{{count}} पिछले चरण",
         "hide_earlier_steps": "पिछले चरण छिपाएँ",
         "hide_tool_calls": "टूल कॉल छिपाएँ",
+        "reply_continued": "जवाब ख़त्म होने के बाद भी जारी रहा",
         "worked_through_step_one": "{{count}} चरण पूरा किया",
         "worked_through_step_other": "{{count}} चरण पूरे किए"
       },

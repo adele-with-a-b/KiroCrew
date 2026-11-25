@@ -13866,6 +13866,7 @@
         "earlier_step_other": "{{count}} étapes précédentes",
         "hide_earlier_steps": "Masquer les étapes précédentes",
         "hide_tool_calls": "Masquer les appels d’outils",
+        "reply_continued": "La réponse a continué après sa fin",
         "worked_through_step_many": "A parcouru {{count}} étapes",
         "worked_through_step_one": "A parcouru {{count}} étape",
         "worked_through_step_other": "A parcouru {{count}} étapes"

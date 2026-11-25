@@ -24,7 +24,7 @@ import { createTranscriptVersioner } from '../chat-core/transcript/transcriptVer
 import { useLanguageGeneration } from '../i18n/useLanguageGeneration'
 import CollapsibleToolGroup from '../pages/chat/CollapsibleToolGroup'
 import TurnBlock from '../pages/chat/TurnBlock'
-import { createDisplayItemReconciler, hasToolStep, isSynthesisInjection, REASONING_ROLES } from '../pages/chat/groupDisplayItems'
+import { createDisplayItemReconciler, findContinuedReplies, hasToolStep, isSynthesisInjection, REASONING_ROLES } from '../pages/chat/groupDisplayItems'
 import { isSubagentCompletionMessage } from '../pages/chat/subagentCompletion'
 import { injectOpensTurn } from '../pages/chat/RecoveryCard'
 import { isHiddenSupersededSteer } from '../pages/chat/groupDisplayItems'
@@ -281,8 +281,10 @@ const ChatMessageList = memo(forwardRef<VirtualTranscriptHandle, ChatMessageList
 
     const flushTurn = (complete: boolean) => {
       if (!turnItems.length) return
-      // A tool call wraps at any length, so a one-tool turn folds (#23017).
-      if (hasToolStep(turnItems) || (hasWorkingSteps(turnItems) && turnItems.length > 2)) {
+      // A tool call wraps at any length, so a one-tool turn folds (#23017); a
+      // reply the turn went on from wraps too, for TurnBlock's line after it.
+      if (hasToolStep(turnItems) || (hasWorkingSteps(turnItems) && turnItems.length > 2) ||
+        findContinuedReplies(turnItems).size > 0) {
         turns.push({ kind: 'turn', items: turnItems, complete })
       } else {
         turns.push(...turnItems)

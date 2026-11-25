@@ -472,6 +472,8 @@ async def _turn_open(turn: _ChatTurn) -> _Flow | None:
     # prefix, which retires the marker without each reset site clearing it.
     _deferred_cut_text = ""
     turn._deferred_cut_text = _deferred_cut_text
+    _reply_end_cut_owed = False
+    turn._reply_end_cut_owed = _reply_end_cut_owed
     # Initialized HERE (not with the other turn-state flags below) because
     # _steer_segment_cut writes it from the steer handler's task, and the turn
     # object must hold it before the cut is published on the slot. Nothing touches it

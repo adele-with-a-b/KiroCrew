@@ -1,5 +1,5 @@
 import { memo, useContext, useState, useRef, useEffect, useMemo, useCallback, type CSSProperties, type ReactNode } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, CornerDownRight } from 'lucide-react'
 import { RowActivityContext, type RowActivityReporter } from './rowActivity'
 import type { DisplayItem, TurnItem } from './types'
 import { uniqueRowKeys } from '../../chat-core/transcript/rowKeys'
@@ -11,7 +11,7 @@ import { isWorkflowRunTool } from './WorkflowRunCard'
 import { isSpawnRunTool } from './SubagentRunCard'
 import { isWorkflowCompletionMessage } from './WorkflowCompletionCard'
 import { isSubagentCompletionMessage } from './subagentCompletion'
-import { isReasoningBurst } from './groupDisplayItems'
+import { findContinuedReplies, isReasoningBurst, isReplyEndRow } from './groupDisplayItems'
 import { isTurnEnd, isRecoveryInjection, isTurnStatusRow, isEnvelopeRow, isSynthesisInjection } from './groupDisplayItems'
 import { isSystemNoticeRow } from './CompactionCard'
 import { parseRecoveryMessage } from './RecoveryCard'
@@ -189,9 +189,7 @@ const isKeepVisible = (it: TurnItem) =>
  * message, so it never carries the flag and keeps folding. Same rule as
  * isKeepVisible: an explicit signal, never size.
  */
-const isReplyEnd = (it: TurnItem) =>
-  it.kind === 'single' && isConclusion(it) && it.msg.meta?.reply_end === true &&
-  !isSystemNoticeRow(it.msg)
+const isReplyEnd = isReplyEndRow
 
 /**
  * READ-ONLY COMPAT for transcripts written by the retired Crew Mode: a
@@ -555,6 +553,7 @@ function TurnBlock({ turn, renderItem, collapseAll = false, appToolCallIds = EMP
   // turn shows one collapsed "Thought process" instead of a per-burst wall.
   const items = useMemo(() => mergeTurnThinking(turn.items), [turn.items])
   const pinnedRows = useMemo(() => findPinnedRows(items), [items])
+  const continuedReplies = useMemo(() => findContinuedReplies(items), [items])
   const browserLive = useMemo(() => (browserLiveSessionKey ? browserLivePlacement(items) : null), [items, browserLiveSessionKey])
   // One React key per row of `items`, by message identity (see the block
   // comment above); `rowKey(i)` indexes THIS list.
@@ -721,6 +720,9 @@ function TurnBlock({ turn, renderItem, collapseAll = false, appToolCallIds = EMP
         </div>
       </div>,
     )
+    // Where a reply ended and the turn went on: its own keyed row, outside the
+    // fold (the reply it follows never folds, see isReplyEnd).
+    if (continuedReplies.has(i)) out.push(<ReplyContinuedNote key={`reply-continued-${k}`} />)
     // The live-browser card: its own row, outside the fold (a fold hides working
     // steps; the picture is the turn's result while it runs and its record after).
     if (browserLive && browserLiveSessionKey && i === browserLive.after) {
@@ -732,6 +734,18 @@ function TurnBlock({ turn, renderItem, collapseAll = false, appToolCallIds = EMP
     }
   })
   return <>{out}</>
+}
+
+/** A step line under a reply the model ended on when the turn then went on. */
+function ReplyContinuedNote() {
+  return (
+    <div className="px-4 py-0 mx-auto w-full" style={{ maxWidth: 'var(--mc-content-width, 900px)' }} data-reply-continued="">
+      <div className="flex items-center gap-2 text-[12px] leading-5 text-muted py-1">
+        <CornerDownRight size={12} aria-hidden="true" />
+        {i18nT('pages.chat.turnBlock.reply_continued')}
+      </div>
+    </div>
+  )
 }
 
 function CollapseToggle({ expanded, onToggle, label }: { expanded: boolean; onToggle: () => void; label: string }) {

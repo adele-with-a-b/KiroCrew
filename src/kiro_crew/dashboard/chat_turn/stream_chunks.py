@@ -40,6 +40,9 @@ async def _on_text_chunk(turn: _ChatTurn, event, *, released: bool = False) -> N
     in_tool_group = turn.in_tool_group
     slot = turn.slot
     state = turn.state
+    reply_end_cut_owed = turn._reply_end_cut_owed
+    _reply_end_cut_owed = False
+    turn._reply_end_cut_owed = _reply_end_cut_owed
     # If we just exited a tool group, finalize the streaming
     # message so post-tool text starts a fresh message. The wire
     # redactor is NOT flushed: what it still holds from before the
@@ -108,6 +111,20 @@ async def _on_text_chunk(turn: _ChatTurn, event, *, released: bool = False) -> N
         turn._crew_log_step = _crew_log_step
         _crew_log_step_t0 = time.monotonic()
         turn._crew_log_step_t0 = _crew_log_step_t0
+    elif (
+        reply_end_cut_owed
+        and turn.assistant_text
+        and not open_construct_at_end(turn.assistant_text)
+    ):
+        # The open text is a model message that ended (``_on_reply_end``) and
+        # this text is the next message's first: it starts a row of its own, so
+        # the transcript shows where the first reply ended (TurnBlock's
+        # ReplyContinuedNote). Decided on this chunk alone: text that ended
+        # inside an open construct stays whole, and a later chunk closing it
+        # must not cut the next message's text in two.
+        _cut_segment(turn)
+        _turn_flushed_visible_text = True
+        turn._turn_flushed_visible_text = _turn_flushed_visible_text
     in_tool_group = False
     turn.in_tool_group = in_tool_group
     if turn._terminal_directive_applied and not _person_steered_turn and not released:
@@ -287,6 +304,13 @@ def _on_reply_end(turn: _ChatTurn) -> None:
     The segment's row then carries ``meta.reply_end`` when it flushes
     (``segment_flush._segment_row_meta``). No open text, no mark: the segment it
     belonged to has already flushed, and the next one is not that message's.
+
+    The segment is not cut here: the mark also comes with the turn's closing usage
+    reading, when nothing follows, and a cut then would leave the turn's last
+    reply out of its final text. The next text chunk cuts it instead
+    (``_on_text_chunk``), once.
     """
     if turn.has_assistant_text:
         turn.slot.segment_reply_end = True
+        _reply_end_cut_owed = True
+        turn._reply_end_cut_owed = _reply_end_cut_owed
