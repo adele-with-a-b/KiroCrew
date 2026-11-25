@@ -55,6 +55,8 @@ class RemoteDispatchSettings:
     retire_minutes: float = 30.0
     #: Whether a wake of the shipped work-ledger patrol may use ``crew=``.
     patrol_wake: bool = False
+    #: Whether any turn of a conductor holding the owner's patrol grant may use ``crew=``.
+    granted_turns: bool = False
 
 
 _DISABLED = RemoteDispatchSettings(enabled=False, memory_gb=0.0, disk_gb=0.0)
@@ -81,6 +83,7 @@ def remote_dispatch_settings() -> RemoteDispatchSettings:
         disk_gb=float(section.remote_dispatch_disk_gb),
         retire_minutes=float(section.remote_dispatch_retire_minutes),
         patrol_wake=section.remote_dispatch_patrol_wake is True,
+        granted_turns=section.remote_dispatch_granted_turns is True,
     )
 
 

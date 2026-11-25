@@ -7163,7 +7163,8 @@
         "remote_dispatch_memory_gb": 5.0,
         "remote_dispatch_disk_gb": 5.0,
         "remote_dispatch_retire_minutes": 30.0,
-        "remote_dispatch_patrol_wake": false
+        "remote_dispatch_patrol_wake": false,
+        "remote_dispatch_granted_turns": false
       }
     },
     {
@@ -7246,6 +7247,20 @@
       "tags": [],
       "label": "Remote dispatch from the conductor's patrol",
       "help": "Lets a conductor use crew= in a wake of its own shipped work-ledger patrol, so it can open, message, read, stop and close a worker on another crew while nobody is typing. Off (the default): only a turn the owner sent may. Every other automated turn (a cron, a message from another session, a worker, a loop with any other text) is refused either way. Used only with remote_dispatch on; read on every call.",
+      "hasChildren": false,
+      "enumValues": null,
+      "defaultValue": false
+    },
+    {
+      "path": "work_ledger.remote_dispatch_granted_turns",
+      "kind": "core",
+      "type": "boolean",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "label": "Remote dispatch from any turn of a granted conductor",
+      "help": "Lets a conductor use crew= in any turn of its own chat (a message from another session, a notice, a check-in) once the owner has dispatched from that chat under its shipped work-ledger patrol, which is what the trust record names. Off (the default): only a turn the owner sent may, plus a patrol wake when remote_dispatch_patrol_wake is on. A worker, a chat that is not a conductor mode chat and a conductor whose patrol was changed, stopped or never dispatched under are refused either way. Used only with remote_dispatch on; read on every call.",
       "hasChildren": false,
       "enumValues": null,
       "defaultValue": false

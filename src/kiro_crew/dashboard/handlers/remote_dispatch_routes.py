@@ -252,7 +252,10 @@ async def authorize_remote_dispatch(request: web.Request, verb: str) -> str:
     8. The running turn is one the owner sent (:func:`owner_unverifiable_reason`,
        ``crew_owner_unverifiable``), or, with
        ``work_ledger.remote_dispatch_patrol_wake`` on, a wake of the shipped
-       work-ledger patrol (:func:`_patrol_wake_admitted`).
+       work-ledger patrol (:func:`_patrol_wake_admitted`), or, with
+       ``work_ledger.remote_dispatch_granted_turns`` on, any turn of a conductor
+       whose active patrol the owner dispatched under
+       (:func:`_granted_turn_admitted`).
 
     Arms 1-7 refuse first, with their own codes, so a refusal still says which
     rule a caller fails.
@@ -333,6 +336,9 @@ async def authorize_remote_dispatch(request: web.Request, verb: str) -> str:
     reason = owner_unverifiable_reason(slot)
     if reason and await _patrol_wake_admitted(slot):
         _audit_patrol_wake(caller_key, verb)
+        reason = ""
+    if reason and await _granted_turn_admitted(state, slot, slot_key):
+        _audit_granted_turn(caller_key, verb)
         reason = ""
     if reason:
         _audit(caller_key, verb, "denied", error=OWNER_UNVERIFIABLE)
@@ -420,6 +426,58 @@ async def _patrol_wake_admitted(slot: object) -> bool:
 
     settings = await asyncio.to_thread(remote_dispatch_settings)
     return settings.enabled and settings.patrol_wake
+
+
+def _audit_granted_turn(caller: str, verb: str) -> None:
+    """Record that rule 8 admitted *verb* on the conductor's standing grant."""
+    try:
+        sel().log_tool_invocation(
+            session_key=caller or "unknown",
+            tool_name=f"session_control_crew_{verb}",
+            outcome="allowed",
+            source="dashboard",
+            resources="granted_turn",
+        )
+    except Exception:  # audit must never break the request path
+        logger.debug("SEL audit failed for the granted turn admission", exc_info=True)
+
+
+async def _granted_turn_admitted(state: "DashboardState", slot: object, slot_key: str) -> bool:
+    """Whether *slot* is a conductor the owner let use ``crew=`` in any of its turns.
+
+    Only with ``work_ledger.remote_dispatch_granted_turns`` on (default off), and
+    only while the slot holds an ACTIVE loop that still carries exactly the
+    shipped work-ledger patrol and the keystone-gated trust record says the owner
+    dispatched from this chat under it: the same two facts a patrol wake's mark
+    is built from, read here because no turn-scoped mark exists for a turn a
+    message from another session opened. Rules 1-7 have already held, so the
+    slot is the owner's own persistent conductor mode chat and no worker's. A
+    turn a messaging channel opened is never admitted. Total: an unreadable loop
+    or record is no grant.
+    """
+    if getattr(slot, "_turn_channel_origin", False) is True:
+        return False
+    from kiro_crew.dashboard.remote_dispatch_headroom import remote_dispatch_settings
+
+    settings = await asyncio.to_thread(remote_dispatch_settings)
+    if not (settings.enabled and settings.granted_turns):
+        return False
+    from kiro_crew import autonudge_selfarm, conductor_patrol
+
+    try:
+        _svc, loop, _nudge_slot = conductor_patrol._loop_on(state, slot_key)
+        if loop is None or getattr(loop, "active", False) is not True:
+            return False
+        if not conductor_patrol.is_fixed_patrol_payload(loop):
+            return False
+        return bool(
+            await asyncio.to_thread(
+                autonudge_selfarm.is_recorded_owner_patrol, loop.id, loop.slot_key
+            )
+        )
+    except Exception:  # noqa: BLE001 - an unreadable grant is no grant
+        logger.debug("granted turn check failed for %s", slot_key, exc_info=True)
+        return False
 
 
 def _instances(state: "DashboardState") -> list[Any]:

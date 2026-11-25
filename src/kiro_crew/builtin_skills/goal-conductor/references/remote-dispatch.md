@@ -31,7 +31,14 @@ reads it only at its next `work_brief`; nothing wakes it. When a remote worker
 needs a message, record the `decide`, tell the user, and send it in the next
 owner turn. Skip a remote item in the patrol drift check for the same reason.
 
-**Unless the owner turned on `work_ledger.remote_dispatch_patrol_wake`.** Then a
+**Unless the owner turned on `work_ledger.remote_dispatch_granted_turns`.** Then
+any turn of your chat may use `crew=` (a note from another session included),
+as long as your active loop is the default patrol the gateway armed and the
+owner has dispatched from this chat under it. Do not replace that loop with
+`monitor_start`: a loop you armed carries no grant. Act in the turn the note
+opens; do not defer to the next wake.
+
+**Or unless the owner turned on `work_ledger.remote_dispatch_patrol_wake`.** Then a
 wake of the default patrol (the one the gateway armed when you dispatched) may
 use `crew=` like an owner turn: create, send, read, stop and close. Try the
 call; a refusal `crew_owner_unverifiable` means one of: the setting is off;

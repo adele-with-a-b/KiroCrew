@@ -485,6 +485,20 @@ class WorkLedgerConfig:
             "either way. Used only with remote_dispatch on; read on every call.",
         ),
     )
+    remote_dispatch_granted_turns: bool = field(
+        default=False,
+        metadata=_meta(
+            "Remote dispatch from any turn of a granted conductor",
+            "Lets a conductor use crew= in any turn of its own chat (a message "
+            "from another session, a notice, a check-in) once the owner has "
+            "dispatched from that chat under its shipped work-ledger patrol, which "
+            "is what the trust record names. Off (the default): only a turn the "
+            "owner sent may, plus a patrol wake when remote_dispatch_patrol_wake is "
+            "on. A worker, a chat that is not a conductor mode chat and a conductor "
+            "whose patrol was changed, stopped or never dispatched under are "
+            "refused either way. Used only with remote_dispatch on; read on every call.",
+        ),
+    )
 
 
 #: ``power.on_battery`` values. ``normal`` ignores the power source.

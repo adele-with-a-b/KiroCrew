@@ -249,6 +249,9 @@ def _build_work_ledger_config(work_ledger_data: dict) -> WorkLedgerConfig:
         remote_dispatch_patrol_wake=_safe_bool(
             work_ledger_data.get("remote_dispatch_patrol_wake"), False
         ),
+        remote_dispatch_granted_turns=_safe_bool(
+            work_ledger_data.get("remote_dispatch_granted_turns"), False
+        ),
     )
 
 
