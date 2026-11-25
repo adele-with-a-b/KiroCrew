@@ -120,13 +120,29 @@ def test_create_renders_a_refusal():
 )
 def test_send_renders_what_the_crew_did(steer, reply, phrase):
     client = _Client({"target": "chat-77", "crew": "inst", **reply})
-    args = {"crew": "lab", "target": "chat-77", "message": "go"}
-    if steer:
-        args["steer"] = True
+    args = {"crew": "lab", "target": "chat-77", "message": "go", "steer": steer}
     out = tools.run_crew_send(args, _ctx(client))
     assert phrase in out
     sent = client.calls[0][2]
     assert sent["message"] == "go" and sent.get("steer", False) is steer
+
+
+@pytest.mark.parametrize("asked", [{}, {"steer": None}])
+def test_an_omitted_steer_cuts_into_the_callers_own_crew_worker(asked):
+    """A crew send reaches only a session the caller opened there, so leaving
+    ``steer`` out cuts in, as it does for a local session the caller created."""
+    client = _Client({"target": "chat-77", "crew": "inst", "steered": True, "started": False})
+    args = {"crew": "lab", "target": "chat-77", "message": "go", **asked}
+    out = tools.run_crew_send(args, _ctx(client))
+    assert client.calls[0][2].get("steer") is True
+    assert "steered into its running turn" in out
+
+
+def test_an_omitted_steer_that_fell_back_names_why():
+    reply = {"target": "chat-77", "crew": "inst", "steered": False, "steerRefusal": "agent_turn"}
+    args = {"crew": "lab", "target": "chat-77", "message": "go"}
+    out = tools.run_crew_send(args, _ctx(_Client(reply)))
+    assert "queued, not steered" in out
 
 
 def test_a_steer_held_behind_a_tool_call_is_not_reported_as_read():
