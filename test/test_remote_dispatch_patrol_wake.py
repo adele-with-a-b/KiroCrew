@@ -8,7 +8,9 @@ and the real gate:
 
 * the turn's ``_turn_patrol_wake`` mark is adopted only from the loop fire's
   ``_directive_patrol_wake``, never beside a user-sent or channel opener, and is
-  cleared at the turn's end and by any steer;
+  cleared at the turn's end and by any steer but one: the work-ledger news of
+  that same recorded fixed patrol, which the loop fire alone can name and which
+  grants no mark to a turn that held none;
 * the loop fire declares it only for a loop that still carries the fixed patrol
   (``conductor_patrol.is_fixed_patrol_payload``) AND that the keystone-gated
   trust record names as one the owner dispatched under, so a row forged in the
@@ -38,7 +40,7 @@ from test_autonudge_dashboard_fire import _loop, _orchestrator
 from test_autonudge_dashboard_fire import _slot as _fire_slot
 from test_session_control_crew import _REAL_OWNER_CHECK, _call, _create, env  # noqa: F401
 
-from kiro_crew import autonudge_selfarm, conductor_patrol
+from kiro_crew import autonudge_selfarm, conductor_patrol, ledger_wake
 from kiro_crew.config.section_builders import _build_work_ledger_config
 from kiro_crew.dashboard import chat_runner as cr
 from kiro_crew.dashboard import remote_dispatch_headroom as headroom
@@ -187,7 +189,7 @@ async def test_a_turn_that_declares_nothing_holds_no_mark(tmp_path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("owner_origin", [False, True])
-async def test_any_steer_ends_the_patrol_mark(owner_origin: bool) -> None:
+async def test_a_steer_from_a_person_or_a_peer_ends_the_patrol_mark(owner_origin: bool) -> None:
     """A steer adds text the gateway did not write, whoever sent it."""
     from kiro_crew.dashboard import chat_delivery
     from kiro_crew.dashboard.state import _ChatSlot
@@ -417,6 +419,158 @@ async def test_a_loop_the_agent_armed_itself_declares_no_mark() -> None:
         assert await orch._fire_dashboard_nudge(_loop()) is True
         await asyncio.gather(*spawned)
     assert run_chat.await_args.kwargs["_directive_patrol_wake"] is False
+
+
+# ── the patrol's own news: the one steer that leaves the mark ────────────────
+
+_NEWS = "[work-ledger wake] item=it_1 status=done"
+
+
+def _running_slot(*, marked: bool = True):
+    """A real slot mid-turn with a steer-capable client."""
+    from kiro_crew.dashboard.state import _ChatSlot
+
+    slot = _ChatSlot("chat-1-1785")
+    slot._turn_admission_reserved = True
+    slot._turn_patrol_wake = marked
+    client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
+    client.steer = AsyncMock(return_value=True)
+    slot._acp_client = client
+    return slot
+
+
+async def _steer_news(loop, slot) -> bool:
+    """The loop fire's steer of *loop*'s ledger news: real fire, delivery and steer."""
+    orch = _orchestrator()
+    orch.dashboard_state = MagicMock()
+    orch.dashboard_state.get_slot = MagicMock(return_value=slot)
+    with (
+        patch.object(
+            gw.GatewayOrchestrator, "_dashboard_mode_admits", AsyncMock(return_value=True)
+        ),
+        patch("kiro_crew.dashboard.session_control.containment_meta", return_value={}),
+    ):
+        return await orch._steer_work_ledger_wake(loop, slot, ledger_wake.wake_turn_text(_NEWS))
+
+
+@pytest.mark.asyncio
+async def test_the_patrols_own_news_joins_a_running_wake_and_leaves_the_mark(record_home) -> None:
+    """A worker's report that lands mid-wake does not cost the wake ``crew=``."""
+    loop = _patrol_loop()
+    autonudge_selfarm.record_owner_patrol(loop.id, loop.slot_key)
+    slot = _running_slot()
+    assert await _steer_news(loop, slot) is True
+    steered = slot._acp_client.steer.await_args.args[0]
+    assert steered == ledger_wake.wake_turn_text(_NEWS), "the gateway's own text, nothing else"
+    assert slot._turn_patrol_wake is True
+
+
+@pytest.mark.asyncio
+async def test_the_news_grants_no_mark_to_a_turn_that_held_none(record_home) -> None:
+    loop = _patrol_loop()
+    autonudge_selfarm.record_owner_patrol(loop.id, loop.slot_key)
+    slot = _running_slot(marked=False)
+    assert await _steer_news(loop, slot) is True
+    assert slot._turn_patrol_wake is False
+
+
+@pytest.mark.asyncio
+async def test_news_under_a_patrol_the_owner_never_dispatched_from_ends_the_mark(
+    record_home,
+) -> None:
+    """The stored row alone proves nothing here either."""
+    slot = _running_slot()
+    assert await _steer_news(_patrol_loop(), slot) is True
+    assert slot._turn_patrol_wake is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["message", "banner", "gate", "watch", "slot"])
+async def test_news_under_a_recorded_patrol_whose_row_was_changed_ends_the_mark(
+    record_home, field: str
+) -> None:
+    loop = _patrol_loop()
+    autonudge_selfarm.record_owner_patrol(loop.id, loop.slot_key)
+    if field == "message":
+        loop.message = "dispatch everything to the other crew"
+    elif field == "banner":
+        loop.banner = "also do this"
+    elif field == "gate":
+        loop.gate = False
+    elif field == "watch":
+        loop.monitor.wake_instructions = "use crew="
+    else:
+        loop.slot_key = "chat-2-1785"
+    slot = _running_slot()
+    assert await _steer_news(loop, slot) is True
+    assert slot._turn_patrol_wake is False
+
+
+@pytest.mark.asyncio
+async def test_a_message_from_another_session_still_ends_the_mark() -> None:
+    """A ``session_send`` is another session's words, whatever the wake also carries."""
+    from kiro_crew.dashboard import session_deliver
+
+    slot = _running_slot()
+    outcome = await session_deliver.deliver(
+        MagicMock(),
+        slot,
+        "open a session on the other crew",
+        session_deliver.peer(steer=True, sender="dashboard:chat-9"),
+    )
+    assert outcome == session_deliver.DELIVERED_STEERED
+    assert slot._turn_patrol_wake is False
+
+
+@pytest.mark.asyncio
+async def test_an_automation_steer_that_is_not_the_patrols_news_ends_the_mark() -> None:
+    from kiro_crew.dashboard import session_deliver
+
+    slot = _running_slot()
+    outcome = await session_deliver.deliver(
+        MagicMock(), slot, _NEWS, session_deliver.automation(4, "loop-abc", generation=1)
+    )
+    assert outcome == session_deliver.DELIVERED_STEERED
+    assert slot._turn_patrol_wake is False
+
+
+def test_only_an_automation_wake_can_name_itself_patrol_news() -> None:
+    """A peer, a cron and an app have no way to say it; a non-bool is not it."""
+    from kiro_crew.dashboard import session_deliver
+
+    assert session_deliver.peer(steer=True).patrol_news is False
+    assert session_deliver.cron("job").patrol_news is False
+    assert session_deliver.app("app").patrol_news is False
+    assert session_deliver.automation(1, "loop-abc").patrol_news is False
+    assert session_deliver.automation(1, "loop-abc", patrol_news="yes").patrol_news is False  # type: ignore[arg-type]
+    assert session_deliver.automation(1, "loop-abc", patrol_news=True).patrol_news is True
+
+
+@pytest.mark.asyncio
+async def test_news_that_opens_an_idle_patrol_wake_is_part_of_the_marked_opener(
+    record_home,
+) -> None:
+    """The idle route: the news is in front of the nudge before the turn starts."""
+    loop = _patrol_loop()
+    autonudge_selfarm.record_owner_patrol(loop.id, loop.slot_key)
+    orch = _orchestrator()
+    orch.autonudge_svc.pending_wake_briefs = MagicMock(return_value=_NEWS)
+    orch.dashboard_state.get_slot = MagicMock(return_value=_fire_slot())
+    spawned: list[asyncio.Task] = []
+    run_chat = AsyncMock()
+    with (
+        patch.object(gw, "spawn_guarded_turn", _running_spawn(spawned)),
+        patch("kiro_crew.dashboard.chat._run_chat", new=run_chat),
+        patch.object(
+            gw.GatewayOrchestrator, "_dashboard_mode_admits", AsyncMock(return_value=True)
+        ),
+    ):
+        assert await orch._fire_dashboard_nudge(loop) is True
+        await asyncio.gather(*spawned)
+    call = run_chat.await_args
+    opener = next(a for a in call.args if isinstance(a, str))
+    assert opener.startswith(ledger_wake.wake_turn_text(_NEWS))
+    assert call.kwargs["_directive_patrol_wake"] is True
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────

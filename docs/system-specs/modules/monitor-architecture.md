@@ -277,6 +277,13 @@ before taking is requeued with `AUTOMATION_STEER_META` on its entry: the drain
 writes it as a `nudge` row too, and the entry drains alone, never merged into the
 person's own queued text (#22747).
 
+The steered wake of the fixed work-ledger patrol also names itself
+(`session_deliver.automation(patrol_news=)`), and only while the stored row still
+carries that patrol and the trust record names an owner dispatch. That one steer
+leaves a running patrol wake's `crew=` mark as it is and gives none to a turn that
+held none; every other steer ends the mark. The rule and its proof are owned by
+[session-control](session-control.md), under the patrol-wake setting.
+
 The wake reaches the steer through `session_deliver.deliver`, the session-side entry
 point a non-human sender calls with its origin (`automation`, `cron`, `app`). The
 sender never picks idle vs running or a row role: `origin_row` maps the origin to

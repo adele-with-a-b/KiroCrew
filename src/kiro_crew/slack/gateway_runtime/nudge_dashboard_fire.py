@@ -825,6 +825,16 @@ async def _steer_work_ledger_wake(
             exc_info=True,
         )
         return False
+    # Whether this news may join a running patrol wake without ending that
+    # wake's `crew=` mark: the proof the fire needs to declare the mark at all,
+    # the fixed patrol on the stored row and the keystone-gated owner-dispatch
+    # record. The text is this slot's own ledger's briefs and a read pointer,
+    # none of it a worker's words or the row's. Read here because it awaits.
+    from kiro_crew import conductor_patrol
+
+    patrol_news = conductor_patrol.is_fixed_patrol_payload(loop) and bool(
+        await asyncio.to_thread(autonudge_selfarm.is_recorded_owner_patrol, loop.id, loop.slot_key)
+    )
     # NO AUDIENCE FENCE HERE, and its absence is the point rather than an
     # omission: this delivery carries structural briefs and a read pointer only,
     # so there is nothing a fence would withhold. A fence recorded on the running
@@ -840,7 +850,10 @@ async def _steer_work_ledger_wake(
             slot,
             text,
             session_deliver.automation(
-                loop.cycle_count + 1, loop.id, generation=loop.config_generation
+                loop.cycle_count + 1,
+                loop.id,
+                generation=loop.config_generation,
+                patrol_news=patrol_news,
             ),
             admission=admission,
         )

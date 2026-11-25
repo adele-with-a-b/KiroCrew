@@ -456,6 +456,7 @@ async def steer_into_running_turn(
     delivery_id: str | None = None,
     responsive: bool = False,
     nudge_meta: dict | None = None,
+    patrol_news: bool = False,
     banner: str = "",
     relay_meta: dict | None = None,
 ) -> str:
@@ -553,6 +554,13 @@ async def steer_into_running_turn(
     (``AUTOMATION_STEER_META``), so the drained row is a ``nudge`` row too and
     never merges into a person's queued text. Absent for every other caller,
     which keeps their rows unchanged.
+
+    ``patrol_news`` says the text is the work-ledger news of the gateway's own
+    fixed patrol on this slot, which the loop fire alone can say
+    (``nudge_dashboard_fire._steer_work_ledger_wake``). It leaves the running
+    turn's ``_turn_patrol_wake`` as it is and grants nothing: a turn without
+    the mark stays without it. Defaults to FALSE, so every other steer ends
+    the mark.
 
     ``app_label`` stamps ``meta.appLabel`` on the persisted row (and on a requeued
     steer's drained row), the attribution pill an app inject row uses. The
@@ -753,8 +761,10 @@ async def steer_into_running_turn(
         # owner's own turn may make. Same timing, same reset.
         slot._turn_owner_sent = False
     # A patrol wake is admitted to `crew=` because its opener is the gateway's
-    # own text. Any steer adds text that is not, whoever sent it.
-    slot._turn_patrol_wake = False
+    # own text. A steer adds text that is not, whoever sent it; the one that
+    # does not is that patrol's own work-ledger news, which the gateway wrote.
+    if patrol_news is not True:
+        slot._turn_patrol_wake = False
     if admission is not None:
         slot._steer_admissions[message] = admission
     if attachments or quote or knowledge or app_label or app_actor or banner or relay_meta:
