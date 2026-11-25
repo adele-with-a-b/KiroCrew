@@ -20,9 +20,12 @@ from typing import Any
 import pytest
 
 from kiro_crew import chat_keeper, platform_compat
+from kiro_crew.acp import client_keeper
+from kiro_crew.agent_sdk.backends import ACP_BACKEND_CLAUDE
 from kiro_crew.chat_keeper import records
 from kiro_crew.chat_keeper.spawn import KeeperSpawn
 from kiro_crew.chat_keeper.transport import KeeperAttachError, KeeperProcess, attach
+from kiro_crew.providers.acp import AcpProvider
 from kiro_crew.testing.wait import async_wait_until, await_until
 
 pytestmark = [
@@ -506,6 +509,58 @@ async def test_a_model_config_option_the_old_gateway_set_reaches_the_next_one(ho
         "sessionUpdate": "config_option_update",
         "configOptions": [{"id": "model", "currentValue": "m2-full"}],
     }
+
+
+def _wire(client: Any, process: KeeperProcess) -> None:
+    """Send *client*'s requests through *process*; each waits for the next frame."""
+
+    async def send(method: str, params: dict[str, Any]) -> int:
+        rid = client._next_id
+        client._next_id += 1
+        await _send(process, {"id": rid, "method": method, "params": params})
+        return rid
+
+    async def wait(rid: int, **_: Any) -> dict[str, Any]:
+        msg = await _read(process)
+        assert msg.get("id") == rid and "result" in msg, msg
+        return msg["result"]
+
+    client._send_request = send
+    client._wait_for_response = wait
+
+
+@pytest.mark.asyncio
+async def test_a_pinned_chat_kept_across_a_restart_reads_back_its_pin(
+    home: Path, tmp_path: Path
+) -> None:
+    """claude's ``session/new`` answer names its own default model, and the start
+    pushes the pin after it as a ``model`` config option write. An adopting gateway
+    takes the session's model from the keeper's copy of that answer, which is what
+    the read header, the model chip and the same-model check show. So the copy
+    must carry the pin, or a kept chat reads back the default it never runs."""
+    pin = "pinned-model"
+    first = await _start(home)
+    before = AcpProvider(acp_backend=ACP_BACKEND_CLAUDE, work_dir=tmp_path, model=pin)
+    _wire(before._client, first)
+    rid = await before._client._send_request("session/new", {"models": True})
+    answer = await before._client._wait_for_response(rid)
+    assert answer["models"]["currentModelId"] != pin
+    before._client._session_id = answer["sessionId"]
+    before._client._capture_available_models(answer)
+    await before._client._apply_startup_model()
+    assert before.served_model == pin
+    await first.detach(first.stdout.consumed_seq)
+
+    second = await _reattach(home, hold=True)
+    after = AcpProvider(acp_backend=ACP_BACKEND_CLAUDE, work_dir=tmp_path, model=pin)
+    _wire(after._client, second)
+    # What the spawn sets when it finds this chat's keeper (``acp.client_start``).
+    after._client._process = after._client._keeper_adopting = second
+    after._client._resume_session_id = answer["sessionId"]
+    await after._client._initialize_session()
+    assert client_keeper.adopted(after._client)
+    assert after.served_model == pin
+    assert not after.serves_another_model(pin)
 
 
 @pytest.mark.asyncio

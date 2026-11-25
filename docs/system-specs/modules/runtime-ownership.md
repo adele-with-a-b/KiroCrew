@@ -1285,7 +1285,7 @@ records, the keeper's request and journal bookkeeping, consumed-line accounting)
 `test/fixtures/chat_keeper/fake_adapter.py`. That file covers exactly-once replay to a
 held attach, a re-delivered open request, an old attachment's answer withheld, an exit
 while detached, the welcome's gap and approval-wait report, the orphan timer, a terminate, a group SIGTERM, the three
-attach refusals, and a gateway on another data home whose orphan-MCP sweep, holding
+attach refusals, a pinned chat read back on its pin through the start's push and a real adopt, and a gateway on another data home whose orphan-MCP sweep, holding
 no record of a reparented keeper, passes it over while it takes a marked control. `test/test_chat_keeper_adopt.py` covers the client side: which chats
 are eligible, the adopt handshake and its refusal, an unlanded first turn, the detach
 ack, the idle safe-point ack, the restore's interruption row, and two starts of one kept chat: the second neither attaches nor ends the keeper, and the pass waits on the start holding it. `test/test_restart_receipt.py` covers the receipt: the row and its ordering before the watch, no wait line without a wait, no running line for a row only a wait raised, an older keeper's running turn read from the restore's marker, the keeper's gap report on a frozen clock, and the record's kept, left, cut (a stopped turn excluded), queued (a boot-accepted card excluded) and ended entries and its single append. `test/test_slot_list_rebuild.py` pins that a restore that raises still writes its receipt, marked incomplete. `test/test_chat_keeper_sweeps.py`

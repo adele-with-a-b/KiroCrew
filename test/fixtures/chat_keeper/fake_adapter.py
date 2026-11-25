@@ -8,6 +8,8 @@ sent while a prompt runs is answered while the prompt is still running.
   and send no update, as claude-agent-acp does. ``session/set_config_option``
   answers the written option (or ``answer_value``) as the session's ``configOptions``
   and sends no update.
+* ``initialize`` answers protocol 1, and ``session/status`` answers ``open``, as for
+  a session the adapter holds.
 * ``echo`` answers its params; with ``gate`` (a FIFO the test made) it first waits
   until the test writes to it, then writes ``<gate>.done`` after the answer is out.
 * ``session/prompt`` writes ``before`` chunks, then (with ``ask``) asks
@@ -105,6 +107,10 @@ def main():
             if params.get("models"):
                 result["models"] = {"currentModelId": "m1", "availableModels": []}
             _out({"jsonrpc": "2.0", "id": req_id, "result": result})
+        elif method == "initialize":
+            _out({"jsonrpc": "2.0", "id": req_id, "result": {"protocolVersion": 1}})
+        elif method == "session/status":
+            _out({"jsonrpc": "2.0", "id": req_id, "result": {"status": "open"}})
         elif method in ("session/set_mode", "session/set_model"):
             _out({"jsonrpc": "2.0", "id": req_id, "result": {}})
         elif method == "session/set_config_option":
