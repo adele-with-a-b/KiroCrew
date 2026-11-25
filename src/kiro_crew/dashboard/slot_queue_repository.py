@@ -578,6 +578,27 @@ def sanitize_restored_queue(raw: object) -> list[dict[str, Any]]:
 
 
 async def drain_restored_parked_sends(state: Any) -> None:
+    """After slot restore: resume accepted parked sends, then proven peer notes.
+
+    The peer notes go second, after admission has reconciled and owed notes have
+    landed, so a note never takes the boot turn of an accepted parked card on the
+    same slot; a proven note behind a turn that card started runs at its end. It
+    runs whether or not admission is on, and whatever the first pass did.
+    """
+    failure: Exception | None = None
+    try:
+        await _drain_restored_parked_work(state)
+    except Exception as exc:  # a cancellation is not caught: nothing runs after it
+        failure = exc
+    try:
+        await peer_note_receipts.deliver_restored(state)
+    except Exception:
+        logger.warning("restored peer notes could not be delivered", exc_info=True)
+    if failure is not None:
+        raise failure
+
+
+async def _drain_restored_parked_work(state: Any) -> None:
     """Resume accepted parked sends after slot restore, through the ordinary drain.
 
     Ordinary restored cards still wait for a person. A durable parked work row
@@ -590,8 +611,6 @@ async def drain_restored_parked_sends(state: Any) -> None:
     from kiro_crew.shared_crew.admission import OperationState, ReasonCode
     from kiro_crew.shared_crew.admission_entry import queued_work_ids
 
-    # A peer's note proven by its receipt is sent whether or not admission is on.
-    await peer_note_receipts.deliver_restored(state)
     service = admission_gate.installed_service()
     if service is None or not service.enabled:
         return

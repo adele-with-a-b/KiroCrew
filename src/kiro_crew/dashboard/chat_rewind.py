@@ -783,6 +783,12 @@ async def api_chat_slot_rewind(request: web.Request) -> web.Response:
                 # Remove only the entries captured in the pre-await snapshot:
                 # an entry queued while the boundaries were pending belongs to
                 # the NEW timeline and must survive for the teardown drain.
+                # A discarded peer note must not be provable after a restart.
+                from kiro_crew.dashboard import peer_note_receipts
+
+                peer_note_receipts.forget_entries(
+                    [entry for entry in slot._queue if entry["id"] in discarded_queue_ids]
+                )
                 slot._queue[:] = [
                     entry for entry in slot._queue if entry["id"] not in discarded_queue_ids
                 ]

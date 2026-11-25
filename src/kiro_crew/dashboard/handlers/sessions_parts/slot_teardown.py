@@ -67,6 +67,11 @@ async def _remove_slot_for_history_key(
             popped = state._slots.pop(claim.registry_key, None)
             if popped is claim.slot:
                 slot = claim.slot
+                # A deleted conversation's queued peer notes are no longer provable:
+                # a line written back under its key must not bring one that runs.
+                from kiro_crew.dashboard import peer_note_receipts
+
+                peer_note_receipts.forget_entries(list(getattr(slot, "_queue", None) or ()))
         else:
             logger.info(
                 "History delete: slot %s was replaced, rerouted, or reclaimed; preserving it",

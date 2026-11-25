@@ -5027,22 +5027,37 @@ so absence clears it.
   note in `queued_peer_notes.json` under the data home's `crew-log` root, which
   is hidden from every sandboxed process and fenced from the file tools: the
   entry id, the target's key and `_tab_id`, a digest of the text, the sender's
-  key and tab, and the sender label. The queue's own append writes it
-  (`queue_append`, for an entry carrying `session_send_queued` and a whole
-  sender stamp), and the queue's pop, remove and edit and the drain's dequeue
-  drop it synchronously, before the entry's turn exists. After a restore
-  (`deliver_restored`, called by `drain_restored_parked_sends`) a restored
-  entry that a receipt from the previous process names by id, target, tab and
-  digest gets the "run this next" mark (`RESTORED_SEND_CHOSEN_KEY`), its `meta`
+  key and tab, the sender label, and the admission snapshot the entry carried.
+  Of these the digest and the receipt's existence are what the gateway vouches
+  for; the id, the key and the tab are read from the line and only have to
+  agree with it. The queue's own append writes it (`queue_append`, for an entry
+  carrying `session_send_queued` and a whole sender stamp; a steer put back at
+  the head of the queue carries no such mark and gets none, and a queued note a
+  later steer tried to carry and put back has lost its receipt), and the queue's
+  pop, remove and edit, the drain's dequeue, a hard stop, a rewind, a close
+  of the session (single or by cleanup) and a permanent delete of it drop it
+  synchronously, with the file and its directory entry synced, before the
+  entry's turn exists; a removal that cannot be written deletes the file. After a restore (`deliver_restored`, run
+  by `drain_restored_parked_sends` after the parked-work pass) a restored entry
+  that a receipt from the previous process names by id, target, tab and digest,
+  whose id no other entry in that queue shares (the drain finds a chosen card
+  by id), that carries no source-channel restriction (a peer's note never has
+  one), and that the target's containment at that moment would not refuse,
+  gets the "run this next" mark (`RESTORED_SEND_CHOSEN_KEY`), its `meta`
   rebuilt from the receipt, and the ordinary drain: it stays restored, so it
-  carries no actor, no directive authority and no containment snapshot, and is
-  judged against the slot's current constraints before it runs.
-  `sanitize_restored_queue` is unchanged. The no-resend rule above holds: a
-  note whose turn may have started has no receipt, so after a crash between the
-  drain and the save it comes back as a waiting card. A receipt whose target is
-  open and whose entry is gone or changed puts one fixed notice in the sender's
-  chat, quoting none of the note. A writer of the line can still drop or change
-  a note, as before; it cannot make one run, move one, or run one twice.
+  carries no actor and no directive authority, and the drain judges it again
+  against the slot's constraints with the receipt's snapshot, as it judges a
+  note that never left memory. The rebuilt `meta` carries the sender's address
+  from the receipt, so a proven note discarded before it runs (a hard stop, a
+  rewind, a containment change before the drain) tells its sender through the
+  notices a live note gets. `sanitize_restored_queue` is unchanged. The
+  no-resend rule above holds: a note whose turn may have started has no
+  receipt, so after a crash between the drain and the save it comes back as a
+  waiting card. A receipt whose target and sender are both open and whose entry
+  is gone, changed, doubled or refused by the target's containment puts one
+  fixed notice in the sender's chat, quoting none of the note; the entry, if
+  there is one, stays a card. A writer of the line can still drop or change a note, as before; it
+  cannot make one run, move one, or run one twice.
 - **Durability does not depend on the mutation site.** `_queue_persisted_sig`
   records what the last committed save wrote and `slot.queue_persist_pending`
   compares it against the live queue, so an in-place rewrite — a reorder, a
