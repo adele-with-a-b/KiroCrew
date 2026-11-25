@@ -12,7 +12,9 @@ frames here, one session at a time, through the same readers:
 * a native compaction's summary (``acp.compaction_summary``): its streamed chunks are
   kept and are no frame of the turn, and the ``completed`` card's title carries it;
 * a claude Agent-tool child's frame (``session_handle_claude_children``), read before
-  any of these.
+  any of these;
+* the mark of a reply that ended on text (``acp.reply_end``), which a frame of the
+  session's own releases ahead of its events.
 
 Each reader checks its own ``ACP_BACKENDS_*`` set and that the frame names this
 session, so a frame of another session, or of a backend outside the sets, passes
@@ -32,7 +34,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew.acp import compaction_summary, harness_notices, plan_checklist
+from kiro_crew.acp import compaction_summary, harness_notices, plan_checklist, reply_end
 from kiro_crew.acp.compaction_summary import UPDATE_COMPACTION
 from kiro_crew.acp.read_path_arg import read_path_arg
 from kiro_crew.acp.types import (
@@ -54,13 +56,26 @@ def _handle_update(self: AcpSessionHandle, msg: JsonRpcMessage) -> list[AcpEvent
 
     A claude child's frame is read first (``session_handle_claude_children``): one it
     consumes makes only its card's events, and any other goes on with what that
-    reading put ahead of it.
+    reading put ahead of it. A frame of this session's own may release the mark of
+    a reply that ended on text (``acp.reply_end``), which goes first.
     """
     child = self._claude_child_events(msg)
     if child is None:
-        return _own_update(self, msg)
+        return _with_reply_end(self, msg, _own_update(self, msg))
     events, consumed = child
-    return events if consumed else [*events, *_own_update(self, msg)]
+    return events if consumed else [*events, *_with_reply_end(self, msg, _own_update(self, msg))]
+
+
+def _with_reply_end(
+    handle: AcpSessionHandle, msg: JsonRpcMessage, events: list[AcpEvent]
+) -> list[AcpEvent]:
+    """*events*, after the reply-end mark *msg* releases when it is this session's own."""
+    params = msg.params if isinstance(msg.params, dict) else {}
+    frame_sid = str(params.get("sessionId") or "")
+    if frame_sid and frame_sid != handle._session_id:
+        return events
+    ended = reply_end.on_frame(handle, msg, getattr(handle._runtime, "acp_backend", ""))
+    return events if ended is None else [ended, *events]
 
 
 def _own_update(handle: AcpSessionHandle, msg: JsonRpcMessage) -> list[AcpEvent]:

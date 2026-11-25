@@ -179,6 +179,21 @@ const isKeepVisible = (it: TurnItem) =>
   it.kind === 'single' && isConclusion(it) && hasKeepVisibleMarker(it.msg.content)
 
 /**
+ * A message the model ENDED on: the backend marks a segment `meta.reply_end`
+ * when the model message its text came from closed on that text with no tool
+ * call after it (`kiro_crew.acp.reply_end`). Such a message is the agent's
+ * answer at the end of a turn. When the turn is then sent back (a Stop hook
+ * blocked it) the agent keeps going and writes a correction, so the answer is
+ * no longer the LAST message and findConclusionIdx alone would fold it. A
+ * mid-turn progress note is always followed by a tool call in its own model
+ * message, so it never carries the flag and keeps folding. Same rule as
+ * isKeepVisible: an explicit signal, never size.
+ */
+const isReplyEnd = (it: TurnItem) =>
+  it.kind === 'single' && isConclusion(it) && it.msg.meta?.reply_end === true &&
+  !isSystemNoticeRow(it.msg)
+
+/**
  * READ-ONLY COMPAT for transcripts written by the retired Crew Mode: a
  * forwarded topic result, a meta render, or a question back to the user. That
  * mode broke this component's central assumption — that the LAST assistant
@@ -197,7 +212,8 @@ const isCrewReply = (it: TurnItem) =>
   (it.msg.meta?.crew_reply === true || /(^|\s)crew-reply(\s|$)/.test(it.msg.cls || ''))
 
 /** A renderable assistant message (widget/image), a mid-turn hand-back
- *  ([OPTIONS:] marker), a keep-visible-marked deliverable (#7948), a legacy
+ *  ([OPTIONS:] marker), a keep-visible-marked deliverable (#7948), a message
+ *  the model ended on (`meta.reply_end`), a legacy
  *  crew-mode answer, a role that must surface inline (mcp_oauth, error), a
  *  workflow_run / spawn_run / workflow-completion / sub-agent-completion card,
  *  an MCP App-bearing tool call (interactive iframe anchored to the row), a
@@ -207,7 +223,7 @@ const isCrewReply = (it: TurnItem) =>
 const NO_PINNED_ROWS: ReadonlySet<TurnItem> = new Set()
 const isVisibleInline = (it: TurnItem, appToolCallIds: ReadonlySet<string>, pinnedRows = NO_PINNED_ROWS) =>
   pinnedRows.has(it) ||
-  isRenderable(it) || isHandBack(it) || isKeepVisible(it) || isAlwaysVisible(it) || isCrewReply(it) ||
+  isRenderable(it) || isHandBack(it) || isKeepVisible(it) || isReplyEnd(it) || isAlwaysVisible(it) || isCrewReply(it) ||
   isWorkflowRunItem(it) || isSpawnRunItem(it) ||
   isSubagentCompletionItem(it) ||
   isWorkflowCompletionItem(it) || isMcpAppItem(it, appToolCallIds) ||

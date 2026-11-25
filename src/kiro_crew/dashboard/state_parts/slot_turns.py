@@ -258,6 +258,10 @@ def init_turns_fields(self: _ChatSlot) -> None:
     # from (the last one seen). Written onto the segment's row as
     # ``meta["native_message_id"]`` at the flush, which drops it.
     self.segment_message_id = ""
+    # The model message the current segment's text came from ended on that
+    # text (``acp.reply_end``). Written onto the segment's row as
+    # ``meta["reply_end"]`` at the flush, which drops it.
+    self.segment_reply_end = False
     self._task = None
     # A send reserved the next turn and is between admission and dispatch.
     self._turn_admission_reserved = False

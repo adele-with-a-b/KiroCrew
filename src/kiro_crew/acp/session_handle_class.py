@@ -576,6 +576,9 @@ class AcpSessionHandle:
         # (see ``_steer_via_steering_request``).
         self._prompt_starts = 0
         self._stale_eligible = False
+        # Text came since the last tool call, and a message ended on it (``acp.reply_end``).
+        self._reply_text_open = False
+        self._reply_end_pending = False
         # Latched on this session's FIRST text chunk or tool_call and never
         # cleared: the registration-throttle death classification is refused
         # once work has been observed, so the transient verdict it hands the

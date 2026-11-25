@@ -186,6 +186,10 @@ def _log_glued_footer_text(slot: Any, glued: list[str]) -> None:
 #: it the way it skips every other system notice, also after a reload.
 REGENERATE_NOTICE_ONLY = "regenerate_notice_only"
 
+#: ``meta`` key on a segment row whose model message ended on its text. Read by
+#: ``isReplyEnd`` in ``website/src/pages/chat/TurnBlock.tsx``.
+REPLY_END_META_KEY = "reply_end"
+
 
 def _segment_row_meta(
     slot: _ChatSlot,
@@ -209,18 +213,27 @@ def _segment_row_meta(
 
     A row of a turn the agent started on its own carries ``meta.origin``
     (``agent_started.agent_origin_meta``).
+
+    A segment whose model message ended on its text carries
+    ``meta.reply_end`` (``acp.reply_end``), which this consumes too: the agent
+    meant to stop there, so the transcript keeps the row open when the turn
+    went on past it.
     """
     meta = _decisions_strip_meta(slot)
     message_id = getattr(slot, "segment_message_id", "")
     if message_id:
         slot.segment_message_id = ""
+    ended = getattr(slot, "segment_reply_end", False) is True
+    slot.segment_reply_end = False
     notice_only = text is not None and not is_regenerate_answer(slot, text)
     agent_started = getattr(slot, "_turn_agent_started", False) is True
-    if not (redactions or message_id or notice_only or agent_started):
+    if not (redactions or message_id or notice_only or agent_started or ended):
         return meta
     out = dict(meta) if meta else {}
     if agent_started:
         out[AGENT_ORIGIN_META_KEY] = agent_origin_meta()
+    if ended:
+        out[REPLY_END_META_KEY] = True
     if notice_only:
         out["kind"] = "compaction"
         out["notice"] = REGENERATE_NOTICE_ONLY
@@ -307,6 +320,7 @@ def _cleared_segment_text(slot: _ChatSlot) -> str:
     be saved in place of text the reader never saw.
     """
     _reset_segment_copy(slot)
+    slot.segment_reply_end = False
     return ""
 
 

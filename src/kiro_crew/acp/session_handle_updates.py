@@ -25,7 +25,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew.acp import batch_guard
+from kiro_crew.acp import batch_guard, reply_end
 from kiro_crew.acp._dispatch import (
     MAX_ACTIVE_TOOL_CALLS,
     liveness_key,
@@ -532,6 +532,7 @@ def _handle_update_frame(self: AcpSessionHandle, msg: JsonRpcMessage) -> list[Ac
             ):
                 continue
         filtered_events.append(ev)
+        reply_end.note_event(self, ev)
         if ev.kind == EVENT_TEXT_CHUNK:
             batch_guard.note_text(getattr(self, "_batch_window", None), ev.text)
             self.last_prompt_stats.text_chunks += 1

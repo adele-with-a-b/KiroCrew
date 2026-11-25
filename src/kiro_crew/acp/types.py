@@ -157,6 +157,8 @@ EVENT_MCP_OAUTH_REQUEST = "mcp_oauth_request"
 # Agent's own task/TODO list snapshot, recovered from the `todo_list` tool's
 # rawOutput. Not an ACP-native update kind — see KIRO_TOOL_TODO_LIST.
 EVENT_TODO_UPDATE = "todo_update"
+# A claude model message ended on its text and the turn went on (``acp.reply_end``).
+EVENT_REPLY_END = "reply_end"
 EVENT_MCP_SERVER_INITIALIZED = "mcp_server_initialized"
 EVENT_MCP_SERVER_INIT_FAILURE = "mcp_server_init_failure"
 EVENT_SUBAGENT_LIST = "subagent_list"

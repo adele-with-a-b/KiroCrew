@@ -757,6 +757,7 @@ _BASE_SLOT_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "replays": ("type", "kiro_crew.dashboard.recovery_replays.RecoveryReplays"),
     "segment_message_id": ("value", "''"),
     "segment_raw_text": ("value", "''"),
+    "segment_reply_end": ("value", "False"),
     "segment_removed": ("value", "{}"),
     "segment_shown_sha": ("type", "_hashlib.HASH"),
     "served_model": ("value", "''"),

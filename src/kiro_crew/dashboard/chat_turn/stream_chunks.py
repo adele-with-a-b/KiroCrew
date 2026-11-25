@@ -1,6 +1,7 @@
 """The dashboard turn's stream of text and thinking chunks: each chunk's live redaction (the
 live-stream and thinking-stream sinks' redactors) and the segment a text chunk extends
-(``_on_text_chunk``, ``_on_thinking_chunk``, ``_release_held_text``)."""
+(``_on_text_chunk``, ``_on_thinking_chunk``, ``_release_held_text``), and the mark a
+segment gets when its model message ended on its text (``_on_reply_end``)."""
 
 from __future__ import annotations
 
@@ -278,3 +279,14 @@ async def _on_thinking_chunk(turn: _ChatTurn, event) -> None:
     # rejection signature).
     _turn_thought = True
     turn._turn_thought = _turn_thought
+
+
+def _on_reply_end(turn: _ChatTurn) -> None:
+    """The model message the open segment's text came from ended on it (``acp.reply_end``).
+
+    The segment's row then carries ``meta.reply_end`` when it flushes
+    (``segment_flush._segment_row_meta``). No open text, no mark: the segment it
+    belonged to has already flushed, and the next one is not that message's.
+    """
+    if turn.has_assistant_text:
+        turn.slot.segment_reply_end = True

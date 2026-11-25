@@ -779,6 +779,7 @@ async def _turn_open(turn: _ChatTurn) -> _Flow | None:
     slot.credential_evidence.clear()
     _reset_segment_copy(slot)
     slot.segment_message_id = ""
+    slot.segment_reply_end = False
     # session_id -> {started, done, agent, task} for native kiro-cli subagents,
     # reconciled from `_kiro.dev/subagent/list_update` (one card per sub-agent).
     # The slot holds the same live dict so reconnect snapshots can restore cards.

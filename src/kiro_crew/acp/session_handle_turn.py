@@ -42,7 +42,7 @@ import time
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew.acp import batch_guard, kas_profile
+from kiro_crew.acp import batch_guard, kas_profile, reply_end
 from kiro_crew.acp._dispatch import (
     is_unattributed_error_candidate,
     prompt_is_adapter_command,
@@ -457,6 +457,8 @@ async def _run_turn(
     self._kas_compact_turn = False
     self._compaction_terminal_seen = False
     self._stale_eligible = False
+    # The last prompt's reply-end state is not this one's (``acp.reply_end``).
+    reply_end.reset(self)
     # Set when a genuine stale turn is probed via session/cancel; read by the
     # unresponsive-cancel branch to distinguish a confirmed wedge (signal
     # auto-recovery) from an ordinary unacked cancel (unblock caller).
