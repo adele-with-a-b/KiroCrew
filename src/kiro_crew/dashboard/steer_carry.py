@@ -52,6 +52,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
+#: In the admission a steer records: the text went out as a steer. The teardown
+#: copies that record onto the entry it makes for an unread steer, so this is
+#: what tells a requeued steer from a note that was queued, whichever way the
+#: turn ended: the delivery id and the possibly-delivered mark are only on a
+#: steer whose call was still in flight then.
+WAS_STEERED_META = "wasSteered"
+
 
 @dataclass
 class Carry:
@@ -121,13 +128,16 @@ def _requeued_steer_of_hub_conductor(entry: dict[str, Any]) -> bool:
         isinstance(meta, dict)
         and not queue_entry_is_user_origin(entry)
         and meta.get(TURN_ACTOR_META_KEY) == "crew"
-        and ("steer_delivery_id" in meta or bool(meta.get(STEER_POSSIBLY_DELIVERED_META)))
+        and (
+            bool(meta.get(WAS_STEERED_META))
+            or "steer_delivery_id" in meta
+            or bool(meta.get(STEER_POSSIBLY_DELIVERED_META))
+        )
     )
 
 
 def _queued_by_hub_conductor(entry: dict[str, Any]) -> bool:
     from kiro_crew.dashboard.chat_delivery import TURN_ACTOR_META_KEY, queue_entry_is_user_origin
-    from kiro_crew.dashboard.chat_utils_injected_rows import STEER_POSSIBLY_DELIVERED_META
     from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY
     from kiro_crew.shared_crew.admission_entry import QUEUED_WORK_META_KEY
 
@@ -138,7 +148,7 @@ def _queued_by_hub_conductor(entry: dict[str, Any]) -> bool:
     meta = entry.get("meta")
     if not isinstance(meta, dict) or meta.get(TURN_ACTOR_META_KEY) != "crew":
         return False
-    if "steer_delivery_id" in meta or meta.get(STEER_POSSIBLY_DELIVERED_META):
+    if _requeued_steer_of_hub_conductor(entry):
         # A steer the teardown requeued: it already has a steer row, and the
         # drain is what settles that row. It is never steered a second time.
         return False
@@ -204,12 +214,12 @@ def _baseline(meta: Any) -> dict[str, Any]:
     )
 
     if not isinstance(meta, dict):
-        return {}
+        return {WAS_STEERED_META: True}
     # The teardown copies this record onto the entry it makes for an unread
     # steer, from the moment the steer registers. The actor stamp rides it, or
     # a requeued conductor's note would drain as the person's turn.
     keep = (QUEUED_CONTAINMENT_META_KEY, SEND_ORIGIN_META_KEY, TURN_ACTOR_META_KEY)
-    return {k: meta[k] for k in keep if k in meta}
+    return {**{k: meta[k] for k in keep if k in meta}, WAS_STEERED_META: True}
 
 
 def _being_killed(slot: Any) -> bool:

@@ -220,7 +220,7 @@ def test_an_agent_steer_goes_in_as_a_peers_under_a_recorded_admission(steer_rig)
         steer=True, patient=True, carry=steer_carry.from_hub_conductor()
     )
     # The recorded admission also names the actor, for a requeue by the teardown.
-    assert kwargs == {"admission": {**steer_rig.admission, "turnActor": "crew"}}
+    assert kwargs == {"admission": {**steer_rig.admission, "turnActor": "crew", "wasSteered": True}}
     # Recorded before the write, and kept for the turn the text is now inside.
     assert list(steer_rig.fences_at_write.values()) == [steer_rig.admission]
     assert list(steer_rig.slot._steer_audience_fences.values()) == [steer_rig.admission]
@@ -347,12 +347,15 @@ async def test_a_request_that_goes_away_mid_write_loses_no_message(
     release = asyncio.Event()
     delivered: list = []
 
+    queued_with: list = []
+
     async def _deliver(st, sl, text, origin, **kwargs):
         delivered.append(origin)
         if origin.steer:
             in_write.set()
             await asyncio.wait_for(release.wait(), FALLBACK_TIMEOUT_SECS)
             return outcome
+        queued_with.append(kwargs)
         return session_deliver.DELIVERED_QUEUED
 
     monkeypatch.setattr(sc, "containment_meta", lambda st, sl: {})
@@ -371,6 +374,8 @@ async def test_a_request_that_goes_away_mid_write_loses_no_message(
     )
 
     assert [origin.steer for origin in delivered] == ([True, False] if queued_after else [True])
+    # Queued as the conductor's, never the person's: the entry names its actor.
+    assert queued_with == ([{"queue_meta": {"turnActor": "crew"}}] if queued_after else [])
     assert agent_steer._ORPHANED == set()
     assert bool(slot._steer_audience_fences) is (outcome == session_deliver.DELIVERED_STEERED)
 

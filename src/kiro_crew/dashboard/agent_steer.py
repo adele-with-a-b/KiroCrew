@@ -134,7 +134,13 @@ async def steer(
             # The teardown copies the steer's admission onto the entry it makes
             # for an unread steer. With the actor in it that entry drains as the
             # conductor's turn, as a queued send does, never as the person's.
-            admission={**admission, TURN_ACTOR_META_KEY: "crew"},
+            # The steered mark is how a later steer knows that entry from a
+            # queued send: it is never steered again and nothing passes it.
+            admission={
+                **admission,
+                TURN_ACTOR_META_KEY: "crew",
+                steer_carry.WAS_STEERED_META: True,
+            },
         )
     )
     try:
@@ -231,8 +237,22 @@ def _keep_orphan(
             slot._steer_audience_fences.pop(fence, None)
         if outcome == session_deliver.DELIVERED_REQUEUED or state._slots.get(slot.key) is not slot:
             return
+        # circular import: chat_delivery imports this package's modules at module level.
+        from kiro_crew.dashboard.chat_delivery import TURN_ACTOR_META_KEY
+
+        # The actor rides the entry, as on the route's own queue arm
+        # (``chat_send``): unstamped it would drain as the person's turn, and the
+        # conductor's next steer would not know it as its own and would pass it.
+        # shortcut: a slot that went idle meanwhile starts the turn at once with
+        # no actor named; pass one to the run arm when it takes one.
         queued = asyncio.ensure_future(
-            session_deliver.deliver(state, slot, message, session_deliver.peer(steer=False))
+            session_deliver.deliver(
+                state,
+                slot,
+                message,
+                session_deliver.peer(steer=False),
+                queue_meta={TURN_ACTOR_META_KEY: "crew"},
+            )
         )
         _ORPHANED.add(queued)
         queued.add_done_callback(_ORPHANED.discard)

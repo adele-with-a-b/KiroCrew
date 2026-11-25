@@ -372,6 +372,7 @@ def test_a_carried_note_keeps_the_admission_it_was_queued_under(tmp_path, monkey
     assert carried["admission"] == {
         sc.QUEUED_CONTAINMENT_META_KEY: meta[sc.QUEUED_CONTAINMENT_META_KEY],
         sc.SEND_ORIGIN_META_KEY: meta[sc.SEND_ORIGIN_META_KEY],
+        steer_carry.WAS_STEERED_META: True,
     }
     assert carried["relay_meta"] == meta["relay"]
 
@@ -490,6 +491,24 @@ def test_a_requeued_crew_steer_is_not_carried_a_second_time(tmp_path):
     # It runs as its own turn, and the new note may not pass it: it is queued.
     assert reply is None and refusal == steer_refusal.TURN_ENDED
     assert _handed(worker) == [] and worker._queue == [entry]
+
+
+def test_a_conductors_steer_requeued_after_it_was_taken_holds_the_next_one_back(tmp_path):
+    """The usual requeue: the agent took the steer, the turn ended before reading
+    it. That entry has no delivery id, only what the steer's admission recorded."""
+    state, worker = _crew_worker(tmp_path)
+    from kiro_crew.dashboard import chat_runner as cr
+
+    asyncio.run(agent_steer.steer(state, worker, "first"))
+    cr._requeue_unconsumed_steers(state, worker)  # the teardown, for the unread steer
+    (entry,) = worker._queue
+    assert "steer_delivery_id" not in entry["meta"]
+    assert entry["meta"][cd.TURN_ACTOR_META_KEY] == "crew"
+
+    reply, refusal, _ = asyncio.run(agent_steer.steer(state, worker, "second"))
+
+    assert reply is None and refusal == steer_refusal.TURN_ENDED
+    assert _handed(worker) == ["first"] and worker._queue == [entry]
 
 
 def test_a_conductors_steer_records_its_actor_for_a_requeue(tmp_path):
