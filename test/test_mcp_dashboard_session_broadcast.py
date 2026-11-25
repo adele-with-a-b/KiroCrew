@@ -63,6 +63,11 @@ class TestBroadcastForwarding:
         assert sent.body == {"message": "rebase first", "mode": "queue", "all": True}
         assert sent.session_key == "dashboard:chat-1-100"
 
+    def test_a_left_out_mode_is_not_sent(self) -> None:
+        resp = {"ok": True, "mode": "default", "requested": 0, "delivered": 0, "results": []}
+        _, sent = _bc({"message": "rebase", "all": True}, resp)
+        assert sent.body == {"message": "rebase", "all": True}
+
     def test_targets_are_forwarded_when_named(self) -> None:
         _, sent = _bc(
             {"message": "stop", "mode": "steer", "targets": ["chat-2", "chat-3"]},
@@ -167,6 +172,31 @@ class TestBroadcastForwarding:
 
 
 class TestBroadcastReports:
+    def test_the_default_report_says_why_each_target_queued(self) -> None:
+        resp = {
+            "ok": True,
+            "mode": "default",
+            "requested": 5,
+            "delivered": 5,
+            "results": [
+                _row("chat-2", steered=True, steerDefault="manager"),
+                _row("chat-3", heldForPerson=True),
+                _row("chat-4", replaced=2),
+                _row("chat-5", steerDefault="manager", steerRefusal="agent_turn"),
+                _row("chat-6", steerDefault="manager"),
+            ],
+        }
+        out, _ = _bc({"message": "rebase", "all": True}, resp)
+        assert "Sent to 5/5" in out
+        assert "`chat-2` — cut into its running turn" in out
+        assert "`chat-3` — queued until its turn ends (a person is driving that turn)" in out
+        assert "(not a session you manage); it replaced 2 older unread note(s)" in out
+        assert "`chat-5` — queued until its turn ends (steer fell back" in out
+        # The default chose the steer and no cause came back (a pause, or a turn that
+        # ended under it and requeued it): the row claims no cause it cannot know.
+        assert "`chat-6` — queued until its turn ends (steer fell back to the queue)" in out
+        assert "paused" not in out
+
     def test_a_queue_broadcast_reports_each_target_and_the_tally(self) -> None:
         out, _ = _bc(
             {"message": "rebase", "mode": "queue", "all": True},
@@ -486,12 +516,17 @@ class TestStatusReports:
 
 
 class TestBroadcastSchema:
-    def test_mode_is_required(self) -> None:
-        """No default either way: defaulting to the queue swallows a caller's
-        request to interrupt, and defaulting to the steer interrupts sessions it
-        only meant to leave a note for."""
-        with pytest.raises(ValidationError):
-            validate_tool_args({"message": "hi"}, SESSION_BROADCAST_SCHEMA)
+    def test_mode_may_be_left_out(self) -> None:
+        """Omitted, the gateway picks per target (session_send's default), so the
+        validator keeps it absent rather than inventing a value."""
+        cleaned = validate_tool_args({"message": "hi", "all": True}, SESSION_BROADCAST_SCHEMA)
+        assert cleaned.get("mode") is None
+
+    def test_mode_is_not_advertised_as_required(self) -> None:
+        from kiro_crew.mcp_dashboard import _tool_definitions
+
+        tool = next(t for t in _tool_definitions() if t["name"] == "session_broadcast")
+        assert tool["inputSchema"]["required"] == ["message"]
 
     def test_an_unknown_mode_is_refused(self) -> None:
         with pytest.raises(ValidationError):

@@ -498,6 +498,7 @@ if TYPE_CHECKING:  # names this module re-exported from other modules
     from kiro_crew.context_assembly.markers import _marker_spans  # noqa: F401
     from kiro_crew.crew_log import emit as crew_log_emit  # noqa: F401
     from kiro_crew.crew_log.session_tree_projection import projection  # noqa: F401
+    from kiro_crew.dashboard import broadcast_supersede  # noqa: F401
     from kiro_crew.dashboard import queue_age  # noqa: F401
     from kiro_crew.dashboard import session_managers  # noqa: F401
     from kiro_crew.dashboard.approval_inheritance import inherit_posture  # noqa: F401

@@ -639,15 +639,14 @@ SESSION_BROADCAST_SCHEMA = ToolSchema(
     tool_name="session_broadcast",
     fields=[
         FieldSpec("message", str, required=True, max_len=MAX_LONG_STRING),
-        # REQUIRED and enumerated, with no default. The two modes are different
-        # instructions, not a setting with a safe side: a caller that meant "tell
-        # them when they next come up for air" must not interrupt eight turns
-        # because it omitted a field, and one that meant "stop, now" must not have
-        # its urgency silently downgraded to the queue. So the caller states which.
+        # Optional and enumerated. Omitted, each target takes session_send's
+        # default (``broadcast_to_targets``): the caller's own workers are cut into
+        # unless a person drives that turn, everyone else queues. A named mode
+        # applies to every target, so "stop, now" is still never downgraded.
         FieldSpec(
             "mode",
             str,
-            required=True,
+            required=False,
             allowed=frozenset({"queue", "steer"}),
             max_len=MAX_SHORT_STRING,
         ),

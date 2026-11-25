@@ -820,8 +820,11 @@ length. A steer does not withdraw what is already queued: if `session_read_messa
 reports a non-zero `queue_depth`, those messages still run after the turn, so
 say in the steered message which earlier instruction it supersedes.
 
-The same rule holds for a fleet: send a correction to several workers with
-`session_broadcast` with `mode: steer`.
+The same rule holds for a fleet: `session_broadcast` with no `mode` cuts into
+each busy worker of yours the same way and queues for the rest; `mode: steer`
+cuts into every target. A broadcast that queues replaces your older unread
+broadcast on that worker and says how many it replaced, so send the current
+state ("main is at <sha>") rather than a delta that needs the earlier note.
 
 ## When a conductor dispatched you
 

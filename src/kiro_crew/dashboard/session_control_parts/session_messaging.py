@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.context_assembly.markers import _apply_marker_spans, _marker_spans
-from kiro_crew.dashboard import queue_age, session_managers
+from kiro_crew.dashboard import broadcast_supersede, queue_age, session_managers
 from kiro_crew.dashboard.chat_delivery import sanitize_outbound, steer_refusal_of
 from kiro_crew.dashboard.relay_archive import (
     RELAY_ARCHIVE_CODE,
@@ -328,6 +328,8 @@ async def send_to_target(
     via: str = "session_send",
     creator_message: bool = False,
     records_ask: bool = True,
+    reply_default: bool = True,
+    supersede: bool = False,
     _delivery_progress: "_DeliveryProgress | None" = None,
 ) -> dict[str, Any]:
     """Deliver *message* to *target* as its next agent turn.
@@ -361,6 +363,16 @@ async def send_to_target(
     worker told something every sibling was also told must be able to see that:
     the same sentence means one thing addressed to one session and another
     addressed to eight. It never affects authorization or delivery.
+
+    Two switches only :func:`broadcast_to_targets` turns. *reply_default* false
+    keeps a defaulted send to the manager rule: a broadcast answers nothing, so it
+    must not take the cut-in a target's asking turn is owed, which the caller's
+    real reply would then lose. *supersede* makes a delivery that QUEUES replace
+    the caller's older unread broadcast entries on the target
+    (:mod:`broadcast_supersede`): the new entry takes the oldest one's place and
+    wait, the others leave the queue, and the queued text says how many it
+    replaced, which the result reports as ``replaced``. A steer that cuts in
+    replaces nothing.
 
     The delivery path is the same queue-vs-run decision the dashboard composer
     uses (``enqueue_or_run_prompt``): an idle target starts a turn immediately,
@@ -466,7 +478,7 @@ async def send_to_target(
     # that messaged it, takes the message at its next step. Decided here, after the
     # gate, from the slot the gate resolved.
     own_key = caller_slot_key(state, caller_session_key)
-    awaited = steer is None and awaits_reply(own_key, slot)
+    awaited = steer is None and reply_default and awaits_reply(own_key, slot)
     # The asking turn this reply answers; only that turn's ask is spent below.
     awaited_generation = getattr(slot, "_turn_generation", None) if awaited else None
     bound = bool(caller_bound_worker) and caller_bound_worker == slot.key
@@ -859,6 +871,8 @@ async def send_to_target(
                     status=409,
                 )
 
+    # How many older broadcast notes this delivery replaced; only the queue arm can.
+    replaced = 0
     if steered or requeued:
         # Neither arm starts a turn: a steer runs inside one that is already going,
         # and a requeued steer waits for the next like any queued message.
@@ -879,26 +893,41 @@ async def send_to_target(
         from kiro_crew import crew_pause
         from kiro_crew.dashboard.slot_queue_repository import MAX_LIVE_QUEUE_ENTRIES
 
+        will_wait = slot.running or crew_pause.holds_slot(slot)
+        # A broadcast that will wait replaces the caller's older unread broadcast
+        # entries here instead of stacking behind them (``broadcast_supersede``).
+        superseded = (
+            broadcast_supersede.superseded_entries(state, slot, caller_key, via=via)
+            if supersede and will_wait
+            else []
+        )
+        replaced = broadcast_supersede.replaced_count(slot, superseded)
+        # After the body, so the envelope span is unchanged and a drop notice that
+        # quotes the entry's start still quotes what the caller wrote.
+        queued_prompt = prompt + broadcast_supersede.replaced_line(replaced) if replaced else prompt
+        queued_before = (
+            {str(entry.get("id") or "") for entry in slot._queue} if superseded else set()
+        )
         # A new send that would WAIT (the same test `enqueue_or_run_prompt` makes)
         # obeys the bound app messages and channel hand-offs obey. Without it a
         # session that keeps sending to a busy one grows that queue past the cap,
         # and from then on those deliveries are refused queue-full. An idle target
-        # runs it, which is what drains the queue, so it is never refused.
-        if (slot.running or crew_pause.holds_slot(slot)) and len(
-            slot._queue
-        ) >= MAX_LIVE_QUEUE_ENTRIES:
+        # runs it, which is what drains the queue, so it is never refused. The
+        # entries this one replaces leave before it lands, so they make room.
+        if will_wait and len(slot._queue) - len(superseded) >= MAX_LIVE_QUEUE_ENTRIES:
             raise SessionControlError(
                 "that session's queue is full; send again after it drains",
                 code="queue_full",
                 status=429,
             )
         # No suspension inside: the non-steer peer arm is the synchronous
-        # queue-or-run call, so no cancellation can enter this await.
+        # queue-or-run call, so no cancellation can enter this await, and the
+        # replaced entries are dropped in the same step only once it returned.
         started = (
             await session_deliver.deliver(
                 state,
                 slot,
-                prompt,
+                queued_prompt,
                 session_deliver.peer(steer=False, sender=caller_session_key),
                 # Only the QUEUE arm keeps it (the run arm has no entry): a
                 # delivery that waits is the one a later drain can drop, and this
@@ -917,6 +946,8 @@ async def send_to_target(
             )
             == session_deliver.DELIVERED_TURN
         )
+        if superseded:
+            broadcast_supersede.replace_superseded(state, slot, superseded, queued_before)
         if started:
             _start_auto_tag(state, slot)
     if awaited and steered:
@@ -947,6 +978,7 @@ async def send_to_target(
             # Present only when the default chose the steer, so the trail can
             # tell it from a caller that asked.
             **({"steer_default": True} if steer_default else {}),
+            **({"replaced": replaced} if replaced else {}),
             # Only when a steer's turn was actually stopped, so the common shape is
             # unchanged. Names the constraints that newly held, which is what a
             # reader needs to tell this apart from an ordinary delivery: the message
@@ -966,6 +998,11 @@ async def send_to_target(
         # The sender asked for nothing, so its reply names why the steer was chosen
         # for it: a reply into the turn that asked, or the caller's own session.
         result["steerDefault"] = "reply" if awaited else "manager"
+    if held_for_person and not started:
+        # The default would have cut in, and a person driving that turn kept it out.
+        result["heldForPerson"] = True
+    if replaced:
+        result["replaced"] = replaced
     if refusal and not started:
         # Only for a steer that fell back and now waits on the queue: one that found
         # the turn over and started its own has nothing left to wait for.
@@ -980,9 +1017,15 @@ async def send_to_target(
 #: The two broadcast modes, named rather than a boolean. ``queue`` waits for each
 #: target's current turn; ``steer`` cuts into it. They are separate names because
 #: the choice is not a refinement of one delivery — "tell everyone when they next
-#: come up for air" and "interrupt everyone now" are different instructions, and a
-#: caller that means the first must not reach the second by defaulting.
+#: come up for air" and "interrupt everyone now" are different instructions. A
+#: caller that names neither gets :data:`BROADCAST_DEFAULT_MODE`: each target takes
+#: the default a plain ``session_send`` takes (:func:`manages_target`), so only the
+#: caller's own workers are cut into, and never a turn a person is driving.
 BROADCAST_MODES = ("queue", "steer")
+
+
+#: The ``mode`` a broadcast reports when the caller named none.
+BROADCAST_DEFAULT_MODE = "default"
 
 
 #: The per-delivery bound this module ENFORCES, and the MCP client's one request
@@ -1073,19 +1116,29 @@ async def broadcast_to_targets(
     *,
     caller_session_key: str,
     message: str,
-    mode: str,
+    mode: str | None = None,
     targets: "list[str] | None" = None,
     all_created: bool = False,
     caller_fenced: bool | None = None,
+    bound_worker: "Callable[[str], Awaitable[str]] | None" = None,
 ) -> dict[str, Any]:
     """Deliver *message* to several sessions at once, one at a time.
 
-    Two modes, and they are the whole point of the verb being separate from a loop
-    of :func:`send_to_target` calls the model writes itself: ``queue`` lets every
-    target finish what it is doing, ``steer`` cuts into every running turn. A
-    conductor telling eight workers "the base moved, rebase before you push" wants
-    the first; one telling them "stop, the issue was already fixed" wants the
-    second, and the difference is worth eight turns of latency.
+    *bound_worker* is the route's resolver for a target whose work-ledger binding
+    names the caller (``session_send`` uses the same one), so the default counts a
+    conductor's bound worker as its own even when another session created it.
+
+    Two named modes: ``queue`` lets every target finish what it is doing, ``steer``
+    cuts into every running turn. ``None`` takes, per target, the default a plain
+    ``session_send`` takes: it cuts into the caller's own worker unless a person
+    is driving that turn, and queues everywhere else. The row's ``steerDefault`` or
+    ``heldForPerson`` says which.
+
+    A delivery that queues replaces the caller's older unread broadcast entries on
+    that target (``supersede``), so a worker deep in one long turn holds at most
+    one queued broadcast note from each sender, and the row's ``replaced`` says how
+    many went. A steer the turn accepted and then requeued is not one of them: it
+    was already handed to a turn.
 
     A call selects its audience in exactly one of two ways. ``targets`` names the
     sessions, or ``all_created=True`` means :func:`broadcast_audience` — every
@@ -1130,7 +1183,7 @@ async def broadcast_to_targets(
     or was replaced also gets an unknown row. None of the rows claims delivery or
     certain execution.
     """
-    if mode not in BROADCAST_MODES:
+    if mode is not None and mode not in BROADCAST_MODES:
         raise SessionControlError(
             f"mode must be one of {', '.join(BROADCAST_MODES)}",
             code="invalid_broadcast_mode",
@@ -1255,6 +1308,25 @@ async def broadcast_to_targets(
         # failure that must not be the fallback.
         raise _too_many_targets(len(audience))
 
+    async def _deliver_one(name: str, delivery_progress: _DeliveryProgress) -> dict[str, Any]:
+        # The ledger binding is read only when the default can use it, and inside
+        # the per-target bound like the rest of the delivery: it is a read before
+        # authorization, so a timeout here still reads as not handed over.
+        bound = await bound_worker(name) if mode is None and bound_worker is not None else ""
+        return await send_to_target(
+            state,
+            caller_session_key=caller_session_key,
+            target=name,
+            message=body,
+            steer=None if mode is None else mode == "steer",
+            caller_bound_worker=bound,
+            caller_fenced=caller_fenced,
+            via=BROADCAST_VIA,
+            reply_default=False,
+            supersede=True,
+            _delivery_progress=delivery_progress,
+        )
+
     results: list[dict[str, Any]] = []
     timeout_prompt = _SEND_PROVENANCE.format(
         caller=caller_key or "unknown", via=BROADCAST_VIA
@@ -1303,16 +1375,7 @@ async def broadcast_to_targets(
             # no target-level permission row, while cancellation in an authorized
             # delivery keeps that row unchanged.
             sent = await asyncio.wait_for(
-                send_to_target(
-                    state,
-                    caller_session_key=caller_session_key,
-                    target=name,
-                    message=body,
-                    steer=(mode == "steer"),
-                    caller_fenced=caller_fenced,
-                    via=BROADCAST_VIA,
-                    _delivery_progress=delivery_progress,
-                ),
+                _deliver_one(name, delivery_progress),
                 timeout=BROADCAST_TARGET_ALLOWANCE_SECS,
             )
         except asyncio.TimeoutError:
@@ -1405,17 +1468,19 @@ async def broadcast_to_targets(
                 "started": bool(sent.get("started")),
                 "steered": bool(sent.get("steered")),
                 **({"steerRefusal": sent["steerRefusal"]} if sent.get("steerRefusal") else {}),
+                **{k: sent[k] for k in ("steerDefault", "heldForPerson", "replaced") if k in sent},
             }
         )
 
     delivered = sum(1 for row in results if row.get("ok"))
+    reported_mode = mode or BROADCAST_DEFAULT_MODE
     _audit(
         caller_session_key=caller_session_key,
         operation="broadcast",
         slot_key=caller_key,
         outcome="allowed",
         detail={
-            "mode": mode,
+            "mode": reported_mode,
             # WHERE the audience came from, because the two are different acts: an
             # explicit list is a caller naming sessions, the default is the fence's
             # own set. A trail that cannot tell them apart cannot answer "who chose
@@ -1451,7 +1516,7 @@ async def broadcast_to_targets(
         )
     return {
         "ok": True,
-        "mode": mode,
+        "mode": reported_mode,
         "requested": len(audience),
         "delivered": delivered,
         # True only for the DEFAULT audience: the caller has created nothing that

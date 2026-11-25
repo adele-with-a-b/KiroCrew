@@ -38,7 +38,9 @@ class QueueWait:
     #: Seconds the oldest stamped entry has waited, or ``None`` when none carries a
     #: stamp (every one was restored after a restart).
     oldest_secs: float | None
-    #: The id of that oldest stamped entry, or ``""``.
+    #: The identity of that oldest stamped wait, or ``""``: the entry's id, or, for
+    #: an entry that took over older entries' wait (:func:`carry_wait`), the id of
+    #: the first entry that wait began on.
     oldest_id: str
 
 
@@ -113,6 +115,45 @@ def carry_steered(slot: Any, message: str, queue_id: str) -> None:
         queued[queue_id] = at
 
 
+def carry_wait(slot: Any, queue_id: str, from_ids: list[str]) -> None:
+    """Give *queue_id* the wait of the oldest of *from_ids*, the entries it replaces.
+
+    Its stamp becomes that entry's instant, and the wait keeps that entry's
+    identity in ``slot._queued_as``, which :func:`waits` reports as ``oldest_id``.
+    The unread wake is keyed on that id, so a wait that changed hands stays one
+    wait and wakes its sender once, not once per replacement. Best-effort like
+    :func:`note_queued`.
+    """
+    stamps = getattr(slot, "_queued_at", None)
+    if not isinstance(stamps, dict) or not isinstance(stamps.get(queue_id), (int, float)):
+        return
+    olds = [(float(stamps[i]), i) for i in from_ids if isinstance(stamps.get(i), (int, float))]
+    if not olds:
+        return
+    at, oldest = min(olds)
+    if at >= stamps[queue_id]:
+        return
+    stamps[queue_id] = at
+    live = {str(entry.get("id") or "") for entry in _entries(slot)}
+    origins = getattr(slot, "_queued_as", None)
+    origins = origins if isinstance(origins, dict) else {}
+    kept = {k: v for k, v in origins.items() if k in live}
+    kept[queue_id] = origins.get(oldest, oldest)
+    try:
+        slot._queued_as = kept
+    except AttributeError:
+        return
+
+
+def forget(slot: Any, queue_ids: list[str]) -> None:
+    """Drop the stamps and wait identities of entries taken off *slot*'s queue."""
+    for attr in ("_queued_at", "_queued_as"):
+        records = getattr(slot, attr, None)
+        if isinstance(records, dict):
+            for queue_id in queue_ids:
+                records.pop(queue_id, None)
+
+
 def _sent_at(stamp: Any, *, counted_only: bool = False) -> float | None:
     """The send instant in a :func:`note_steered` stamp, or ``None``.
 
@@ -148,6 +189,8 @@ def waits(
     want = ledger_key(sender) if sender else ""
     stamps = getattr(slot, "_queued_at", None)
     stamps = stamps if isinstance(stamps, dict) else {}
+    origins = getattr(slot, "_queued_as", None)
+    origins = origins if isinstance(origins, dict) else {}
     now = _clock()
     count = 0
     oldest_at: float | None = None
@@ -162,7 +205,7 @@ def waits(
         entry_id = str(entry.get("id") or "")
         at = stamps.get(entry_id)
         if isinstance(at, (int, float)) and (oldest_at is None or at < oldest_at):
-            oldest_at, oldest_id = float(at), entry_id
+            oldest_at, oldest_id = float(at), str(origins.get(entry_id) or entry_id)
     if steers:
         admissions = getattr(slot, "_steer_admissions", None)
         admissions = admissions if isinstance(admissions, dict) else {}

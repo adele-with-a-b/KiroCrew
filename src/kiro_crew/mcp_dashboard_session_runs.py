@@ -931,7 +931,10 @@ def _run_session_send(args: dict[str, Any], ctx: ToolContext) -> str:
 
 
 def _run_session_broadcast(args: dict[str, Any], ctx: ToolContext) -> str:
-    payload = {"message": args["message"], "mode": args["mode"]}
+    payload = {"message": args["message"]}
+    # Omitted, the gateway picks per target (session_send's default).
+    if args.get("mode") is not None:
+        payload["mode"] = args["mode"]
     # A call that names no audience is refused HERE, before any request. Kiro CLI
     # drops an empty `targets: []` from the call, so "no audience" reaches this
     # function as a missing key, and a bare body is the one thing that must never be
@@ -981,7 +984,7 @@ def _run_session_broadcast(args: dict[str, Any], ctx: ToolContext) -> str:
     rows = resp.get("results") or []
     requested = int(resp.get("requested", len(rows)) or 0)
     delivered = int(resp.get("delivered", 0) or 0)
-    mode = str(resp.get("mode", args["mode"]))
+    mode = str(resp.get("mode") or args.get("mode") or "default")
     if resp.get("audience_empty"):
         # Not an error, and said plainly: a conductor before its first dispatch
         # is in this state, and "delivered to 0 of 0" reads like a failure.
@@ -990,7 +993,7 @@ def _run_session_broadcast(args: dict[str, Any], ctx: ToolContext) -> str:
             "session that is still open. Name `targets` to reach a session you "
             "did not create, or open one with session_create."
         )
-    verb = "Steered" if mode == "steer" else "Queued for"
+    verb = {"steer": "Steered", "queue": "Queued for"}.get(mode, "Sent to")
     lines = [f"\U0001f4e3 {verb} {delivered}/{requested} session(s):"]
     for row in rows:
         target = str(row.get("target", ""))
@@ -1007,12 +1010,21 @@ def _run_session_broadcast(args: dict[str, Any], ctx: ToolContext) -> str:
             # A steer that could not be injected lands here, for the reason
             # session_send spells out: reporting a plain queue would leave the
             # caller believing that target was interrupted. The cause says how
-            # long it may wait.
-            fell_back = (
-                f" ({steer_refusal.describe_short(row.get('steerRefusal'))})"
-                if mode == "steer"
-                else ""
-            )
+            # long it may wait. Under the default, the row says why it queued; a
+            # steer the default chose that names no cause (the turn ended under it
+            # and it was requeued, or no turn could take it) says only that it fell
+            # back, as session_send's reply does.
+            if mode == "steer" or row.get("steerRefusal") or row.get("steerDefault"):
+                fell_back = f" ({steer_refusal.describe_short(row.get('steerRefusal'))})"
+            elif row.get("heldForPerson"):
+                fell_back = " (a person is driving that turn)"
+            elif mode != "queue":
+                fell_back = " (not a session you manage)"
+            else:
+                fell_back = ""
+            replaced = int(row.get("replaced") or 0)
+            if replaced:
+                fell_back += f"; it replaced {replaced} older unread note(s) of yours there"
             lines.append(f"  \u2705 `{target}` — queued until its turn ends{fell_back}")
     if delivered < requested:
         lines.append(
