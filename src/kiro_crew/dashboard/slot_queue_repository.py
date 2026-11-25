@@ -1050,6 +1050,9 @@ class SlotQueueRepository:
             item["_directive_owner_origin"] = True
         owner._queue.insert(index, item)
         owner._note_enqueue()
+        # A peer's note put back unread gets the receipt an append gives, so a
+        # restart can prove it; one marked possibly delivered gets none.
+        peer_note_receipts.note_requeued(owner, item)
         queue_age.note_queued(owner, queue_id)
         return queue_id
 

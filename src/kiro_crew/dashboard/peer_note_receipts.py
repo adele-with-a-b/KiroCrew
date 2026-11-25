@@ -28,9 +28,19 @@ what proves it. ``session_managers`` keeps its record there on the same terms.
 
 WRITTEN when the queue takes a ``session_send`` entry (:func:`note_appended`,
 called by the queue's own append, which is where ``session_send`` queues). A
-steer the running turn never took is put back at the head of the queue by
-another door and carries no ``session_send`` mark: it gets no receipt and
-waits for a person after a restart, as before.
+peer's steer the running turn never took is put back by the queue's insert
+and carries no ``session_send`` mark; it gets the same receipt there
+(:func:`note_requeued`), marked ``requeued`` so a restart restores it as that
+requeued steer, unless the entry is marked possibly delivered: the turn may
+have read it, so it waits for a person after a restart, as before. A steer
+whose RPC was still out when the turn ended is marked so at the insert
+(``_steer_rpc_in_flight``), so its later stalled answer finds no receipt to
+take back. Nor does a steer the harness took where a read is reported only
+at a clean turn end (``steer_needs_loss_recovery``) and the turn did not end
+cleanly (``queue_age.steer_read_unreported``): the model may have read it. A
+steer such a harness held for a running tool and never wrote gets none either,
+and waits for a person. A carried note a refused steer puts back
+(``steer_carry``) gets its receipt again by :func:`note_appended`.
 
 REMOVED, before anything else happens, when the entry leaves the queue through
 the queue's own pop, remove or edit, when a drain consumes it, and when a hard
@@ -41,7 +51,9 @@ both synced). A removal that cannot be written deletes the whole
 file instead: every note then waits for a person, and none can run twice. After a crash in that
 window the entry can still be on the metadata line; it comes back with no
 receipt and waits for a person, as every restored card did before this module.
-A note is never sent twice on this proof.
+A note is never sent twice on this proof, with one limit: a carried note's
+refused steer can be a frame written with no answer read before its turn ended,
+which the model may have read, and the put-back keeps its receipt.
 
 READ after a restart (:func:`deliver_restored`). A restored entry is proven only
 when a receipt this process did not write names the same entry id, the same
@@ -137,6 +149,14 @@ def _valid(record: Any) -> bool:
         and not isinstance(record.get("at"), bool)
         and (record.get("relay") is None or isinstance(record.get("relay"), dict))
         and (record.get("containment") is None or isinstance(record.get("containment"), dict))
+        and record.get("requeued") in (None, True)
+        and (
+            record.get("row_mid") is None
+            or (
+                isinstance(record["row_mid"], str)
+                and 0 < len(record["row_mid"]) <= _MAX_FIELD_CHARS
+            )
+        )
     )
 
 
@@ -290,35 +310,97 @@ def note_appended(owner: Any, item: Any) -> None:
         if not isinstance(meta, dict) or item.get("kind"):
             return
         # Local import: session_control reaches the queue repository through state.
-        from kiro_crew.dashboard.session_control import (
-            QUEUED_CONTAINMENT_META_KEY,
-            SESSION_SEND_QUEUED_META,
-            send_origin_slot,
-            send_origin_tab,
-        )
+        from kiro_crew.dashboard.session_control import SESSION_SEND_QUEUED_META
 
         if meta.get(SESSION_SEND_QUEUED_META) is not True:
             return
-        entry_id = item.get("id")
-        record: dict[str, Any] = {
-            "target": str(getattr(owner, "key", "") or ""),
-            "target_tab": str(getattr(owner, "_tab_id", "") or ""),
-            "sha256": _digest(item.get("content")),
-            "sender": send_origin_slot(meta),
-            "sender_tab": send_origin_tab(meta),
-            "at": time.time(),
-        }
-        if not (isinstance(entry_id, str) and entry_id and all(record[f] for f in _FIELDS)):
-            return
-        relay = _small_dict(meta.get("relay"), _MAX_RELAY_BYTES)
-        if relay is not None:
-            record["relay"] = relay
-        containment = _small_dict(meta.get(QUEUED_CONTAINMENT_META_KEY), _MAX_CONTAINMENT_BYTES)
-        if containment is not None:
-            record["containment"] = containment
-        _apply({entry_id: record})
+        _keep(owner, item, meta, requeued=False)
     except Exception:
         logger.warning("peer note receipts: no receipt kept for a queued note", exc_info=True)
+
+
+def note_requeued(owner: Any, item: Any) -> None:
+    """Keep a receipt for *item* when it is a peer's note put back in the queue
+    by its insert: a steer the running turn ended without taking.
+
+    The same receipt :func:`note_appended` keeps, for an entry that carries a
+    whole sender stamp and nothing that says a person, a channel, a loop or the
+    runner sent it, with ``requeued`` set, so a restart restores it as the
+    requeued steer it was (never as a ``session_send`` queued entry, which its
+    sender could then move). An entry marked possibly delivered gets none, nor
+    one a harness took that reports a read only at a clean end: its turn may
+    have read it, and a note is never sent twice on this proof. Never
+    raises: a note that gets no receipt waits for a person after a restart.
+    """
+    try:
+        meta = item.get("meta") if isinstance(item, dict) else None
+        if (
+            not isinstance(meta, dict)
+            or item.get("kind")
+            or item.get("payload")
+            or item.get("_directive_user_origin")
+            or item.get("_directive_channel_origin")
+        ):
+            return
+        from kiro_crew.dashboard.chat_utils_injected_rows import (
+            AUTOMATION_STEER_META,
+            STEER_POSSIBLY_DELIVERED_META,
+        )
+        from kiro_crew.dashboard.session_control import SESSION_SEND_QUEUED_META
+
+        if (
+            meta.get(STEER_POSSIBLY_DELIVERED_META)
+            or meta.get(AUTOMATION_STEER_META)
+            # A ``session_send`` entry has its own door (``note_appended``).
+            or meta.get(SESSION_SEND_QUEUED_META) is not None
+        ):
+            return
+        from kiro_crew.dashboard import queue_age
+
+        if queue_age.steer_read_unreported(owner, item.get("content")):
+            # Taken into a turn on a harness that reports a read only at a clean
+            # end, and the turn did not end cleanly: the model may have read it.
+            return
+        _keep(owner, item, meta, requeued=True)
+    except Exception:
+        logger.warning("peer note receipts: no receipt kept for a requeued note", exc_info=True)
+
+
+def _keep(owner: Any, item: dict[str, Any], meta: dict[str, Any], *, requeued: bool) -> None:
+    """Write the receipt for *item*, when its slot and sender stamp are whole."""
+    from kiro_crew.dashboard.session_control import (
+        QUEUED_CONTAINMENT_META_KEY,
+        send_origin_slot,
+        send_origin_tab,
+    )
+
+    entry_id = item.get("id")
+    record: dict[str, Any] = {
+        "target": str(getattr(owner, "key", "") or ""),
+        "target_tab": str(getattr(owner, "_tab_id", "") or ""),
+        "sha256": _digest(item.get("content")),
+        "sender": send_origin_slot(meta),
+        "sender_tab": send_origin_tab(meta),
+        "at": time.time(),
+    }
+    if not (isinstance(entry_id, str) and entry_id and all(record[f] for f in _FIELDS)):
+        return
+    relay = _small_dict(meta.get("relay"), _MAX_RELAY_BYTES)
+    if relay is not None:
+        record["relay"] = relay
+    containment = _small_dict(meta.get(QUEUED_CONTAINMENT_META_KEY), _MAX_CONTAINMENT_BYTES)
+    if containment is not None:
+        record["containment"] = containment
+    if requeued:
+        from kiro_crew.dashboard.chat_utils_injected_rows import REQUEUED_STEER_ROW_MID_META
+
+        record["requeued"] = True
+        # The steer's own row, which the drained turn retires in its place, so
+        # the note is not drawn twice after a restart. Gateway-written, like the rest.
+        row_mid = meta.get(REQUEUED_STEER_ROW_MID_META)
+        if isinstance(row_mid, str) and 0 < len(row_mid) <= _MAX_FIELD_CHARS:
+            record["row_mid"] = row_mid
+    _apply({entry_id: record})
 
 
 def forget_entries(items: Any) -> None:
@@ -395,6 +477,7 @@ async def deliver_restored(state: Any) -> None:
     records = _prior_records()
     if not records:
         return
+    from kiro_crew.dashboard.chat_utils_injected_rows import REQUEUED_STEER_ROW_MID_META
     from kiro_crew.dashboard.session_control import (
         QUEUED_CONTAINMENT_META_KEY,
         SEND_ORIGIN_META_KEY,
@@ -443,8 +526,17 @@ async def deliver_restored(state: Any) -> None:
             # gateway's own record. The address is what lets a later discard of
             # this note (a hard stop, a rewind, a containment change before the
             # drain) tell its sender, as it does for a note that never left memory.
+            # A requeued steer comes back as one: no ``session_send`` mark, so its
+            # sender cannot move it (``session_queue``), and its steer row's id,
+            # so the drained turn retires that row.
+            requeued = record.get("requeued") is True
             meta = {
-                SESSION_SEND_QUEUED_META: True,
+                **({} if requeued else {SESSION_SEND_QUEUED_META: True}),
+                **(
+                    {REQUEUED_STEER_ROW_MID_META: record["row_mid"]}
+                    if requeued and record.get("row_mid")
+                    else {}
+                ),
                 SEND_ORIGIN_META_KEY: {"slot": record["sender"], "tab": record["sender_tab"]},
                 **({"relay": dict(record["relay"])} if record.get("relay") else {}),
                 **(
