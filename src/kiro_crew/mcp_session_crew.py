@@ -159,6 +159,7 @@ def run_crew_send(args: dict[str, Any], ctx: ToolContext) -> str:
     # A crew send reaches only a session the caller opened there, so it is the
     # caller's own worker: it cuts in unless the caller asks for the queue.
     steer = args.get("steer") is not False
+    asked = args.get("steer") is True
     if steer:
         payload["steer"] = True
     try:
@@ -170,13 +171,19 @@ def run_crew_send(args: dict[str, Any], ctx: ToolContext) -> str:
         how = "steered into its running turn"
         if resp.get("held") is True:
             why = f" {steer_refusal.held_note()}"
+        if not asked:
+            why += (
+                " It is your own session, so a message to it cuts in unless you pass steer=false."
+            )
     elif resp.get("started") is True:
         # It was idle, so there was no turn to steer: it started one on the message.
         how = "delivered: it was idle and started a turn on it"
     elif steer and resp.get("heldForPerson") is True:
         how = "queued, not steered"
         why = " A person is driving that turn, so your message runs when that turn ends."
-    elif steer:
+    elif asked or resp.get("steerRefusal"):
+        # An omitted steer the crew queued with no refusal was never tried (an
+        # idle worker held behind sub-agents, fair admission, a paused crew).
         how = "queued, not steered"
         why = f" {steer_refusal.describe(resp.get('steerRefusal'))}"
     else:

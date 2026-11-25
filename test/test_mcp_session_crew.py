@@ -139,10 +139,37 @@ def test_an_omitted_steer_cuts_into_the_callers_own_crew_worker(asked):
 
 
 def test_an_omitted_steer_that_fell_back_names_why():
+    from kiro_crew import steer_refusal
+
     reply = {"target": "chat-77", "crew": "inst", "steered": False, "steerRefusal": "agent_turn"}
     args = {"crew": "lab", "target": "chat-77", "message": "go"}
     out = tools.run_crew_send(args, _ctx(_Client(reply)))
     assert "queued, not steered" in out
+    assert steer_refusal.describe("agent_turn") in out
+
+
+def test_an_omitted_steer_the_crew_merely_queued_is_not_a_failed_steer():
+    reply = {"target": "chat-77", "crew": "inst", "steered": False, "started": False}
+    args = {"crew": "lab", "target": "chat-77", "message": "go"}
+    out = tools.run_crew_send(args, _ctx(_Client(reply)))
+    assert "queued: it runs when its current turn ends" in out
+    assert "not steered" not in out
+
+
+def test_an_omitted_steer_into_a_person_driven_turn_says_so():
+    reply = {"target": "chat-77", "crew": "inst", "steered": False, "heldForPerson": True}
+    args = {"crew": "lab", "target": "chat-77", "message": "go"}
+    out = tools.run_crew_send(args, _ctx(_Client(reply)))
+    assert "A person is driving that turn" in out
+
+
+def test_a_defaulted_cut_in_says_how_to_queue_instead():
+    reply = {"target": "chat-77", "crew": "inst", "steered": True, "started": False}
+    args = {"crew": "lab", "target": "chat-77", "message": "go"}
+    out = tools.run_crew_send(args, _ctx(_Client(reply)))
+    assert "cuts in unless you pass steer=false" in out
+    asked = tools.run_crew_send({**args, "steer": True}, _ctx(_Client(reply)))
+    assert "cuts in unless" not in asked
 
 
 def test_a_steer_held_behind_a_tool_call_is_not_reported_as_read():
