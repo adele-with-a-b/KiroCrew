@@ -403,7 +403,8 @@ entry's own text to a session the editor does not own, with nothing that retract
 it. A delivery that outlives a restart and is then dropped reports to nobody while
 the delivery itself still survives, which is the price of the stamp living in
 `meta`. What the restart does not cost is the delivery: a queued `session_send`
-note also has a receipt outside that line (`peer_note_receipts`, under the hidden
+note, and a peer's steer the turn ended without taking (unless marked possibly
+delivered, or taken by a harness that reports a read only at a clean end), also has a receipt outside that line (`peer_note_receipts`, under the hidden
 `crew-log` root), and a restored note its receipt proves is sent without a person,
 while one whose receipt finds no matching entry is reported to its sender from the
 receipt's own record of who sent it (see [session](session.md), "A peer's note is

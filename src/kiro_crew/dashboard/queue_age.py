@@ -102,6 +102,19 @@ def requeued_steer_meta(admission: Any) -> dict[str, bool]:
     return {STEER_WANTED_META: True} if send_origin_slot(admission) else {}
 
 
+def steer_read_unreported(slot: Any, message: Any) -> bool:
+    """Whether *message* is a steer *slot*'s turn accepted on a harness that
+    reports a steer read only when its turn ends cleanly.
+
+    Such a harness drops a steer from the pending list only on that clean end,
+    so one still pending when its turn ended may already have been read. True
+    until :func:`carry_steered` takes the stamp.
+    """
+    stamps = getattr(slot, "_steered_at", None)
+    stamp = stamps.get(message) if isinstance(stamps, dict) and isinstance(message, str) else None
+    return isinstance(stamp, tuple) and len(stamp) == 2 and stamp[1] is False
+
+
 def carry_steered(slot: Any, message: str, queue_id: str) -> None:
     """Give the queue entry a steer was requeued as the instant it was sent.
 

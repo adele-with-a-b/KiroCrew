@@ -5031,9 +5031,26 @@ so absence clears it.
   Of these the digest and the receipt's existence are what the gateway vouches
   for; the id, the key and the tab are read from the line and only have to
   agree with it. The queue's own append writes it (`queue_append`, for an entry
-  carrying `session_send_queued` and a whole sender stamp; a steer put back at
-  the head of the queue carries no such mark and gets none, and a queued note a
-  later steer tried to carry and put back has lost its receipt), and the queue's
+  carrying `session_send_queued` and a whole sender stamp), and so does its
+  insert for a peer's steer the turn ended without taking (`queue_insert`,
+  `note_requeued`: a whole sender stamp, no `session_send_queued` mark, no kind
+  or payload, no person, channel or loop mark), with `requeued` and the steer
+  row's id on the receipt. That entry is restored as the requeued steer it was:
+  no `session_send_queued` mark, so its sender still cannot move it, and its row
+  id, so the drained turn retires the old steer row. A requeued steer marked
+  possibly delivered gets no receipt; that includes one whose steer RPC was
+  still out when the turn ended (`_steer_rpc_in_flight`), so its later stalled
+  answer finds no receipt to take back. Nor does a steer the harness took on a
+  backend that reports a steer read only when its turn ends cleanly
+  (`steer_needs_loss_recovery`, the Claude backend), whose turn did not end
+  cleanly (an error, a stop, the gateway going away): the model may have read
+  it (`queue_age.steer_read_unreported`). The cost is that a steer that backend
+  held for a running tool and never wrote gets none either, and waits for a
+  person. A queued note a later steer tried to carry and put back
+  (`steer_carry._put_back`) gets its receipt again, since that steer was
+  refused; a refusal can hide a frame written with no answer read before the
+  turn ended (`_send_steering_request` returns None), which the model may have
+  read. The queue's
   pop, remove and edit, the drain's dequeue, a hard stop, a rewind, a close
   of the session (single or by cleanup) and a permanent delete of it drop it
   synchronously, with the file and its directory entry synced, before the
@@ -5051,9 +5068,9 @@ so absence clears it.
   from the receipt, so a proven note discarded before it runs (a hard stop, a
   rewind, a containment change before the drain) tells its sender through the
   notices a live note gets. `sanitize_restored_queue` is unchanged. The
-  no-resend rule above holds: a note whose turn may have started has no
-  receipt, so after a crash between the drain and the save it comes back as a
-  waiting card. A receipt whose target and sender are both open and whose entry
+  no-resend rule above holds with one limit, the carried note behind such a
+  refused frame: a note whose turn may have started has no receipt, so after a
+  crash between the drain and the save it comes back as a waiting card. A receipt whose target and sender are both open and whose entry
   is gone, changed, doubled or refused by the target's containment puts one
   fixed notice in the sender's chat, quoting none of the note; the entry, if
   there is one, stays a card. A writer of the line can still drop or change a note, as before; it

@@ -279,6 +279,13 @@ def _put_back(slot: Any, entry: dict[str, Any], ahead: list[str], stamp: Any) ->
         if isinstance(other, dict) and other.get("id") in ahead:
             at = index + 1
     queue.insert(at, entry)
+    from kiro_crew.dashboard import peer_note_receipts
+
+    # Its receipt left with it (``queue_pop``); the steer was refused, so the note
+    # is proven again after a restart. A refusal can hide one written steer: a
+    # frame the turn ended before answering (``_send_steering_request`` returns
+    # None) may have been read, and a restart can then send that note again.
+    peer_note_receipts.note_appended(slot, entry)
     stamps = getattr(slot, "_queued_at", None)
     if stamp is not None and isinstance(stamps, dict):
         stamps[str(entry.get("id") or "")] = stamp
