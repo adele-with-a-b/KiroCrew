@@ -105,7 +105,32 @@ export interface SessionControlStatus {
   tooltip: string
   /** Short per-session text shown after the manifest label, or ''. */
   detail: string
+  /** The strings this app offers as Crew's reply chips for this chat, or null. */
+  replyChips: AppReplyChips | null
 }
+
+/** An app's reply-chip strings (`replyChips` in its status answer), already bounded. */
+export interface AppReplyChips {
+  options: readonly string[]
+  /** `true`: several picks compose; `false` (the default): a pick replaces the last. */
+  multi: boolean
+}
+
+/** The list the bar offers: whose control it came from, and when the app was asked for it. */
+export type AppReplyChipsOffer = AppReplyChips & {
+  /** The control key (`<app>:<id>`). */
+  key: string
+  /** When the request that brought the list started (ms epoch). An answer asked
+   *  for after a send is one the app gave knowing of it; one already in flight
+   *  at the send is not. */
+  askedAt: number
+}
+
+/** The most reply-chip strings one answer may carry, and the longest one, in code points. */
+export const APP_REPLY_CHIPS_MAX = 8
+export const APP_REPLY_CHIP_MAX_CHARS = 80
+/** Holds the bar empty while an app re-asks a list it had (see `useSessionControlStatuses`). */
+const REPLY_CHIPS_PENDING: AppReplyChips = { options: [], multi: false }
 
 /**
  * Normalize and validate a declared `statusPath`, failing closed to ''.
@@ -315,7 +340,7 @@ export function normalizeStatus(raw: unknown): SessionControlStatus {
   // `unknown` rather than `any`: this is a third party's payload, so the
   // narrowing below is the contract and the compiler should enforce that every
   // field is checked before use.
-  const r = (raw ?? {}) as { state?: unknown; tooltip?: unknown; detail?: unknown }
+  const r = (raw ?? {}) as { state?: unknown; tooltip?: unknown; detail?: unknown; replyChips?: unknown }
   const state =
     typeof r.state === 'string' && KNOWN_STATES.has(r.state) ? (r.state as SessionControlState) : 'none'
   const tooltip = typeof r.tooltip === 'string' ? r.tooltip.slice(0, 200) : ''
@@ -326,15 +351,78 @@ export function normalizeStatus(raw: unknown): SessionControlStatus {
   // a surrogate pair.
   const detail =
     typeof r.detail === 'string'
-      ? Array.from(r.detail.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '').trim()).slice(0, 40).join('')
+      ? Array.from(cleanChipText(r.detail)).slice(0, 40).join('')
       : ''
-  return { state, tooltip, detail }
+  return { state, tooltip, detail, replyChips: normalizeReplyChips(r.replyChips) }
+}
+
+/** Remove what could reorder or hide drawn text (see `detail` above), then trim. */
+const cleanChipText = (s: string): string => s.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '').trim()
+
+/**
+ * Normalize an answer's `replyChips`, failing closed to null.
+ *
+ * A malformed list is dropped WHOLE, never cut down: a chip's text is what a
+ * click puts in the message box, so half a list or a cut label could say
+ * something the app never offered. Exported for tests: the refusals are the
+ * behaviour.
+ */
+export function normalizeReplyChips(raw: unknown): AppReplyChips | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const { options, multi } = raw as { options?: unknown; multi?: unknown }
+  if (!Array.isArray(options) || options.length === 0 || options.length > APP_REPLY_CHIPS_MAX) return null
+  if (multi !== undefined && typeof multi !== 'boolean') return null
+  const out: string[] = []
+  for (const o of options) {
+    if (typeof o !== 'string') return null
+    const text = cleanChipText(o)
+    const len = Array.from(text).length
+    if (len === 0 || len > APP_REPLY_CHIP_MAX_CHARS) return null
+    // The bar keys each chip on its text, so a repeat keeps the first.
+    if (!out.includes(text)) out.push(text)
+  }
+  return { options: out, multi: multi === true }
+}
+
+/**
+ * The one app whose reply-chip strings the bar shows for this chat, or null.
+ *
+ * Never a merge: the strings answer one waiting question, and two apps' lists
+ * would mix two questions and two pick modes in one bar. The earliest-installed
+ * app wins (an unknown install time sorts last), then the control key.
+ */
+export function pickAppReplyChips(
+  controls: readonly ResolvedSessionControl[],
+  replyChips: Record<string, AppReplyChips>,
+  askedAt: Record<string, number>,
+): AppReplyChipsOffer | null {
+  let best: ResolvedSessionControl | null = null
+  for (const c of controls) {
+    if (!replyChips[c.key]) continue
+    if (!best || installedBefore(c, best)) best = c
+  }
+  return best ? { ...replyChips[best.key], key: best.key, askedAt: askedAt[best.key] ?? 0 } : null
+}
+
+function installedBefore(a: ResolvedSessionControl, b: ResolvedSessionControl): boolean {
+  if (a.installedAt !== b.installedAt) {
+    if (!a.installedAt) return false
+    if (!b.installedAt) return true
+    return a.installedAt < b.installedAt
+  }
+  return a.key < b.key
 }
 
 /** What {@link useSessionControlStatuses} returns. */
 export interface SessionControlStatusesResult {
   /** Control key → status, absent for controls with no state. */
   statuses: Record<string, SessionControlStatus>
+  /** Control key → its app's reply-chip strings, only from an answer given since
+   *  the person came into this chat and only while its probe is not failing. An
+   *  empty list while the re-ask of a list the last visit had is in flight. */
+  replyChips: Record<string, AppReplyChips>
+  /** Control key → when the ask behind its `replyChips` entry started (ms epoch). */
+  replyChipsAt: Record<string, number>
   /**
    * The first failing probe's error, or `null`.
    *
@@ -407,24 +495,59 @@ export function useSessionControlStatuses(
         // record of its own to fall back on.
         if (folderId) params.folder_id = folderId
         if (folderId && folderName) params.folder_name = folderName
+        // When this ask started, for the reply chips: see `AppReplyChipsOffer.askedAt`.
+        const askedAt = Date.now()
         const raw = await api.appSessionStatus(c.appName, c.statusPath, params, c.processBacked)
-        return { key: c.key, status: normalizeStatus(raw) }
+        return { key: c.key, status: normalizeStatus(raw), askedAt }
       },
       // No session means nothing to ask about yet.
       enabled: !!sessionKey,
       // Fails closed: a third-party app that is down must not be retried at
       // the composer's expense, and a missing status is a normal state.
       retry: false,
+      // Re-asked on every switch into the chat (a new key, or a remount): the
+      // app-wide `staleTime: Infinity` would never ask again. A focus is not a
+      // reason to ask, so no polling comes with it.
+      staleTime: 0,
+      refetchOnWindowFocus: false,
+      // Kept for the page's life (a few small answers per chat): a switch back
+      // after any time away still knows the last visit had a reply-chip list,
+      // and holds the bar empty while it is re-asked (below).
+      gcTime: Infinity,
     })),
   })
 
+  // When the person came into this chat. A reply chip is only offered from an
+  // answer that arrived since then: the cached answer from the last visit is
+  // drawn while the re-ask runs, and it may name a question closed meanwhile.
+  const sinceRef = useRef({ sessionKey, at: Date.now() })
+  if (sinceRef.current.sessionKey !== sessionKey) sinceRef.current = { sessionKey, at: Date.now() }
+
   const statuses: Record<string, SessionControlStatus> = {}
+  const replyChips: Record<string, AppReplyChips> = {}
+  const replyChipsAt: Record<string, number> = {}
   for (const r of results) {
     const d = r.data
+    if (!d) continue
     // A status with neither a state nor a detail is dropped rather than
     // stored, so the map reads as "has something to show" and a caller never
     // has to check the values as well as the key.
-    if (d && (d.status.state !== 'none' || d.status.detail)) statuses[d.key] = d.status
+    if (d.status.state !== 'none' || d.status.detail) statuses[d.key] = d.status
+    // A failed re-ask keeps the last data; a clickable answer must not outlive
+    // the app being reachable, so an error drops it.
+    if (d.status.replyChips && !r.error) {
+      // Arrival, not `askedAt`: a request already in flight when the person
+      // came back is shared, not repeated, and its answer is the fresh one.
+      if (r.dataUpdatedAt >= sinceRef.current.at) {
+        replyChips[d.key] = d.status.replyChips
+        replyChipsAt[d.key] = d.askedAt
+      } else if (r.isFetching) {
+        // The last visit's list while the re-ask runs: an empty one, so the bar
+        // shows nothing rather than flash the reply's own line before the app answers.
+        replyChips[d.key] = REPLY_CHIPS_PENDING
+        replyChipsAt[d.key] = 0
+      }
+    }
   }
   // One error stands for all of them: the chips are a group, and a per-chip
   // banner would be noise on a surface that competes with the message input for
@@ -437,5 +560,12 @@ export function useSessionControlStatuses(
   // its identity until the probe's answer changes.
   const stableRef = useRef(statuses)
   if (!shallowEqual(stableRef.current, statuses)) stableRef.current = statuses
-  return { statuses: stableRef.current, error: (failed?.error as Error | undefined) ?? null }
+  const stableChipsRef = useRef(replyChips)
+  if (!shallowEqual(stableChipsRef.current, replyChips)) stableChipsRef.current = replyChips
+  const stableChipsAtRef = useRef(replyChipsAt)
+  if (!shallowEqual(stableChipsAtRef.current, replyChipsAt)) stableChipsAtRef.current = replyChipsAt
+  return {
+    statuses: stableRef.current, replyChips: stableChipsRef.current, replyChipsAt: stableChipsAtRef.current,
+    error: (failed?.error as Error | undefined) ?? null,
+  }
 }

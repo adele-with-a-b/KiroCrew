@@ -6504,6 +6504,88 @@ Writers: `src/kiro_crew/apps/manifest_session_controls.py`,
 `website/src/utils/blockingOverlay.ts` (shared with `usePushToTalk`),
 `website/src/app-sdk/sessionControlRequest.ts`.
 
+## 18q. An app supplies the strings of Crew's reply chips (seam level 15)
+
+The reply chips above the message box came from one source: the `[OPTIONS:]` /
+`[OPTION:]` line of the newest reply. An app that tracks what waits on the person
+in a chat (an open question, say) could not put its answer strings there. Now a
+session control's status answer may carry them; the bar, its look and its click
+stay Crew's. Nothing in the host names an app.
+
+- **Answer.** The control's `statusPath` answer (§ `contributes.sessionControls`)
+  takes an optional `replyChips: {options, multi?}`. `normalizeReplyChips` in
+  `hooks/useSessionControls.ts` reads it, the only reader: the answer goes from the
+  app's route to the browser, and no backend code parses it. `options` is 1 to
+  `APP_REPLY_CHIPS_MAX` (8) strings; each has `[\p{C}\p{Zl}\p{Zp}]` removed, is
+  trimmed, and is 1 to `APP_REPLY_CHIP_MAX_CHARS` (80) code points; a repeat
+  keeps the first. `multi` is a boolean, absent meaning one pick. Any other shape
+  (not an object, `options` not an array or empty or too long, an entry not a
+  string, blank or too long, `multi` not a boolean) drops the WHOLE list, never a
+  part: a cut list or label could say what the app never offered. The strings are
+  drawn as React text. The lists travel in their own `replyChips` map beside the
+  statuses, with `replyChipsAt` (when each was asked for), so a status with only
+  `replyChips` draws no chip state.
+- **One app.** `pickAppReplyChips` takes the list of the earliest-installed
+  control (`installedAt`, an unknown time last, then the control key). Lists are
+  never merged: they answer one question, and two would mix questions and pick
+  modes. At most 2 controls are drawn (`MAX_INLINE_SESSION_CONTROLS`), so at most
+  2 answers are read.
+- **Against the reply.** `deriveChips` in `pages/chat/page/followUpChips.ts`: an
+  app list, when present, replaces the reply's `[OPTIONS:]` line; else
+  `deriveFollowUpOptions` exactly as before. An app list does not read the
+  transcript. It is steady: a wake row, a note, a queued or a user row after the
+  question, streaming text and tool steps all leave it up, since the chats it
+  serves run turns most of the time and a bar that came and went would drop the
+  picks. It hides only under an `ask_question` card and while suppressed (below),
+  and goes when the app's next answer drops it. This is not a walk back over old
+  turns ([options are read from the newest reply only](../../decisions/2026-09-13-options-are-read-from-the-newest-reply-only.md)
+  still binds marker chips): it is the app's answer about the chat now. The source
+  key is `app:<controlKey>`; the picks reset when the list's strings or pick mode
+  change, or the chat does, and are kept while a card hides the list.
+- **Click.** Unchanged. A click fills or toggles the box, a double-click sends, quick
+  send as set; while the slot is busy a send steers or queues per its busy-send
+  mode, as any chip does (a queued row after the question changes neither).
+- **Sent once.** Every composer send (`onSend`, `onSteer`, `onFollowUpSend` in
+  `ComposerDockView.tsx`, and voice auto-submit in `ChatPage.tsx`) calls
+  `noteFollowUpSend` first. A send whose text is one of the app's strings, or a
+  box send whose text holds one of them whole, however it got there (a pick, Tab
+  on the hint, a draft kept across a switch; not inside a longer word, not a
+  slash command), records the chat, the
+  control key and the send time; that list then stays off in that chat until its
+  app answers a request started after the send (`askedAt`, stamped in the probe's
+  `queryFn`: turn end, `app_status_changed`, a switch back in), and the picks
+  clear. An answer already in flight at the send keeps it off. The record is made
+  at once, so a second click during the send repeats nothing, and the send
+  settles it: `send()` resolving false (offline, held, empty) takes it back with
+  the picks. A steer settles with the send it hands off to when no turn runs
+  (`steer()` returns that promise, `settleSteer`), and a real steer with the
+  connection. A click that only fills the box records
+  nothing. So the turn a chip started cannot be sent the same answer twice.
+- **Re-read and no leak.** At turn end and on `app_status_changed` (§ 18m), and on
+  every switch into the chat: the status probes set `staleTime: 0` (the app-wide
+  default is `Infinity`) with `refetchOnWindowFocus: false`, so a key change
+  re-asks and focus adds no polling. The session key is in the query key, so a
+  chat only ever reads its own answers. A list is offered only from an answer
+  that arrived since the person came into the chat (`dataUpdatedAt` against the
+  switch time; arrival, since a request in flight at the switch is shared, not
+  repeated): the last visit's cached answer may name a question closed since, so while
+  its re-ask runs the chat gets an empty list, which hides the bar instead of
+  flashing the reply's own line. The probes keep their answers for the page's
+  life (`gcTime: Infinity`), so this holds after any time away; only before a
+  freshly loaded page's first answer can the reply's line show. A failing probe
+  drops its list. A folder change re-keys the probe, which drops the list until
+  the app answers for the new folder, as it does a chip's state.
+
+Not covered: split-view panes (`ChatPane`) and app embeds (`ChatEmbed`) draw no
+session controls and keep marker chips only.
+
+Writers: `website/src/hooks/useSessionControls.ts`,
+`website/src/pages/chat/page/followUpChips.ts`,
+`website/src/pages/chat/page/sessionControls.ts`,
+`website/src/pages/chat/page/ComposerDockView.tsx`,
+`website/src/pages/chat/page/busyTurnControls.ts` (`steer()`'s result), `website/src/pages/ChatPage.tsx`,
+`apps/app_sdk_level.py`, `website/src/app-sdk/sdkLevel.ts`.
+
 ## 19. Spec Builder's backend is composed by lifecycle owner
 
 Spec Builder's backend carries more orchestration than a typical app: agent turns

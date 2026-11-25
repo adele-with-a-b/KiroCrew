@@ -146,7 +146,9 @@ export function useBusyTurnControls({
   // the text inline via the 'steer_push' WS event. Composer, pending files,
   // paste blocks, and the per-slot drafts are all cleared HERE (not in
   // ChatInput) so text and attachments clear atomically.
-  const steer = useCallback((opts?: { auto?: boolean; text?: string }) => {
+  // Returns the send's result when it hands off to send() (no turn to steer
+  // into), so a caller can tell a send that never went out; else nothing.
+  const steer = useCallback((opts?: { auto?: boolean; text?: string }): Promise<boolean> | void => {
     if (!activeSlot) return
     // A follow-up chip's own text, steered as-is: like an option send, it
     // leaves the composer draft, attachments and staged quote alone.
@@ -159,7 +161,7 @@ export function useBusyTurnControls({
     // server-side hold that keeps a user message behind running sub-agents.
     // Delegating here, BEFORE the composer is read and cleared below, leaves
     // send() owning the draft, attachment and optimistic-bubble bookkeeping.
-    if (!slotRunning) { void send(optionText, undefined, true); return }
+    if (!slotRunning) return send(optionText, undefined, true)
     if (optionText) {
       // Offline, a chip send is a no-op, as send() makes it: the chip stays.
       if (!connected) return

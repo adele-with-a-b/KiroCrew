@@ -45,7 +45,7 @@ import { useSessionsDrawer } from './chat/page/sessionsDrawer'
 import { useWelcomeState } from './chat/page/welcomeState'
 import { useSessionRosters } from './chat/page/sessionRosters'
 import { useAppLaunchIntake, useAutoSendIntake, useErrorHandoffIntake, usePendingInputIntake } from './chat/page/launchIntake'
-import { useFollowUpChips } from './chat/page/followUpChips'
+import { settleSteer, useFollowUpChips } from './chat/page/followUpChips'
 import { useComposerSessionControls, useSessionControlChips } from './chat/page/sessionControls'
 import { useComposerChips } from './chat/page/composerChips'
 import { useTurnRecovery } from './chat/page/turnRecovery'
@@ -640,13 +640,17 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
   // Auto-scroll during streaming — only when pinned to bottom
   const lastMsg = messages[messages.length - 1]
   const isStreaming = lastMsg?.role === 'streaming'
+  const currentSlot = slots.find(s => s.key === activeSlot)
+  // App-contributed session controls and the folder context they are handed.
+  // Read before the chips: an app's status may supply the reply-chip strings.
+  const sessionControlState = useComposerSessionControls({ activeSlot, currentSlot, queryClient })
   // Follow-up option chips and the ownership of the text they append.
   const {
     followUpOptions, followUpSourceKey, followUpMulti,
-    followUpPicked, followUpPickedRef, toggleFollowUpOption,
+    followUpPicked, followUpPickedRef, toggleFollowUpOption, noteFollowUpSend,
     composerRootChange, composerUserEdit: followUpUserEdit,
   } = useFollowUpChips({
-    messages, isStreaming, turnRunning: !!slotRunning, pendingQuestion, activeSlot, inputRef, setInput, prefillEdited, setPrefillEdited,
+    messages, isStreaming, appReplyChips: sessionControlState.appReplyChips, turnRunning: !!slotRunning, pendingQuestion, activeSlot, inputRef, setInput, prefillEdited, setPrefillEdited,
   })
   // Shared Crew typing presence: the user's own edit happened, never what it was.
   const composerUserEdit = useComposerEditWithTyping(followUpUserEdit)
@@ -708,7 +712,6 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     dispatch, queryClient, activeSlot, codexPairModels, setModelDropdown, modelPickerReturnsFocusRef, setPendingAgent, setPendingModel, setPendingProject,
   })
 
-  const currentSlot = slots.find(s => s.key === activeSlot)
   const transcriptProjectDir = useChatProjectDir(currentSlot)
   // The thread header carries the same session colour as the sidebar row, read
   // from the same display roster so a scope switch does not blank it.
@@ -743,8 +746,6 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
   // on a brand-new chat the conductor mode chip is a toggle until the first
   // message: on, it stays in place pressed. A chat with messages never shows it.
   const crewChipPressed = crewModeEligible && crewModeChosen && !hasUserMessage && transcriptWelcome
-  // App-contributed session controls and the folder context they are handed.
-  const sessionControlState = useComposerSessionControls({ activeSlot, currentSlot, queryClient })
   const {
     sessionControls, openSessionControl, setOpenSessionControl, sessionControlRect, anchorSessionControl,
     refreshSessionControlStatuses, activeFolderName, sessionControlKey, sessionControlStatuses, chatFolders,
@@ -986,13 +987,16 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     // stays in the box, exactly as an upload hold does in send().
     if (crewModeSwitching || crewRootClosed) { composerRef.current?.voice()?.disarmForSend(); return }
     const slot = activeSlotRef.current
+    // A box sent with an app chip picked turns that list off, as a typed Send does.
+    const settle = noteFollowUpSend()
+    const sendBox = () => { void Promise.resolve(send()).then(settle, () => settle(false)) }
     // send() owns the disconnected guard and upload hold, so route either state there before steer() can consume the composer.
-    if (!connected || isComposerSendHeld(slot) || isComposerSendHeld(composerSlotRef.current)) { void send(); return }
+    if (!connected || isComposerSendHeld(slot) || isComposerSendHeld(composerSlotRef.current)) { sendBox(); return }
     const flag = slot
       ? slotBusySteer(store.getState(), slot, jevAutoConsented, currentCrewRoot && currentSlot ? 'steer-only' : undefined)
       : undefined
-    if (flag) steer(flag === 'auto' ? { auto: true } : undefined)
-    else void send()
+    if (flag) settleSteer(steer(flag === 'auto' ? { auto: true } : undefined), settle, true)
+    else sendBox()
   }
   const {
     messageToDisplayIdx, navigateToTurn, chatNav, turnStepAnnouncement, chatPins, chatPinsLoading, isPinned, setPendingPinnedJump, handleEditLastRequest, handleJumpToPinnedMessage, handleJumpToQuote,
@@ -1251,7 +1255,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
               dropTargetProps={dropTargetProps} handleCapture={handleCapture} handleFileOpen={handleFileOpen} handleOptimizeResult={handleOptimizeResult} search={search} tabsCtl={tabsCtl}
               uploadCount={uploadCount} sendHeld={sendHeld} composerBandRef={composerBandRef} scrollBottom={scrollBottom} backSpot={backSpot} onBack={goBack} handleResumeSession={handleResumeSession}
               composerRootChange={composerRootChange} composerUserEdit={composerUserEdit} followUpMulti={followUpMulti} followUpOptions={followUpOptions} followUpPicked={followUpPicked}
-              followUpPickedRef={followUpPickedRef} followUpSourceKey={followUpSourceKey} toggleFollowUpOption={toggleFollowUpOption} dashCfg={dashCfg} jevAutoConsented={jevAutoConsented}
+              followUpPickedRef={followUpPickedRef} followUpSourceKey={followUpSourceKey} toggleFollowUpOption={toggleFollowUpOption} noteFollowUpSend={noteFollowUpSend} dashCfg={dashCfg} jevAutoConsented={jevAutoConsented}
               refusedPress={refusedPress} setRefusedPress={setRefusedPress} send={send} pickModel={pickModel} setProject={setProject} projectSwitching={projectSwitching} switchAgent={switchAgent} currentSlot={currentSlot}
               activeFolderName={activeFolderName} anchorSessionControl={anchorSessionControl} openSessionControl={openSessionControl} refreshSessionControlStatuses={refreshSessionControlStatuses}
               sessionControlKey={sessionControlKey} sessionControlRect={sessionControlRect} sessionControls={sessionControls} setOpenSessionControl={setOpenSessionControl}

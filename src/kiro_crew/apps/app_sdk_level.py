@@ -11,7 +11,9 @@ local file in the default app on a click. Level 13 adds the SDK's
 ``useSessionControlJump``: a session control scrolls its own chat to one of its
 messages, with the Back pill. Level 14 adds a session control's ``keys``: a key,
 changeable in Settings → Shortcuts → Apps, opens its box in the chat on screen, and
-the box reads the key's ``arg`` with ``via: 'key'``.
+the box reads the key's ``arg`` with ``via: 'key'``. Level 15 adds a session control
+status answer's ``replyChips``: an app supplies the strings of Crew's reply chips for
+one chat.
 """
 
-APP_SDK_LEVEL = 14
+APP_SDK_LEVEL = 15
