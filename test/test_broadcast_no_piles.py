@@ -21,11 +21,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from chat_test_helpers import _make_state
 
-from kiro_crew.dashboard import queue_age
+from kiro_crew.dashboard import broadcast_supersede, queue_age
 from kiro_crew.dashboard import session_control as sc
 from kiro_crew.dashboard.chat_utils import slot_history_key
 from kiro_crew.dashboard.queue_edit_hold import EDIT_HOLD_KEY
-from kiro_crew.dashboard.session_control_parts import broadcast_supersede
 from kiro_crew.dashboard.slot_queue_repository import MAX_LIVE_QUEUE_ENTRIES
 
 _STEER = "kiro_crew.dashboard.chat_delivery.steer_into_running_turn"
@@ -173,12 +172,102 @@ class TestANewerNoteReplacesTheOlderUnreadOne:
         assert row["steered"] is True and "replaced" not in row
         assert len(child._queue) == 1
 
-    def test_the_replaced_count_rides_the_entry(self, tmp_path):
+    def test_the_replaced_count_sits_beside_the_queue_not_in_the_entry(self, tmp_path):
+        """The drain unions entry meta onto the row it writes, so a count kept in
+        the meta would ride into the transcript."""
         state, caller, child = _setup(tmp_path)
         _broadcast(state, caller, "one")
         _broadcast(state, caller, "two")
         (entry,) = child._queue
-        assert entry["meta"][broadcast_supersede.REPLACED_META] == 1
+        assert getattr(child, broadcast_supersede.REPLACED_ATTR) == {entry["id"]: 1}
+        assert not any("replace" in key for key in entry["meta"])
+
+    def test_the_count_line_follows_the_body(self, tmp_path):
+        """A drop notice quotes the entry's start, which must stay the sender's words."""
+        state, caller, child = _setup(tmp_path)
+        _broadcast(state, caller, "main moved to a1")
+        _broadcast(state, caller, "main moved to b2")
+        (only,) = _contents(child)
+        assert only.index("main moved to b2") < only.index("This replaces 1 earlier")
+        assert only.rstrip().endswith("only this one is current.)")
+
+
+class TestTheNewerNoteTakesTheOlderOnesPlace:
+    def test_it_keeps_the_oldest_ones_position(self, tmp_path):
+        state, caller, child = _setup(tmp_path)
+        _broadcast(state, caller, "main moved to a1")
+        child.queue_append("a person's note", directive_user_origin=True)
+        state.broadcast_ws = MagicMock()
+        _broadcast(state, caller, "main moved to b2")
+        first, second = _contents(child)
+        assert "main moved to b2" in first and second == "a person's note"
+        frames = [c.args for c in state.broadcast_ws.call_args_list if c.args[0] == "queue_reorder"]
+        assert frames == [
+            ("queue_reorder", {"slot": child.key, "order": [e["id"] for e in child._queue]})
+        ]
+
+    def test_it_keeps_the_oldest_ones_wait(self, tmp_path, monkeypatch):
+        """The unread wake and ``messages_unread`` count from the first unread
+        note: a fresh stamp on every replacement would push the wake back forever."""
+        now = [1000.0]
+        monkeypatch.setattr(queue_age, "_clock", lambda: now[0])
+        state, caller, child = _setup(tmp_path)
+        _broadcast(state, caller, "main moved to a1")
+        now[0] = 5000.0
+        _broadcast(state, caller, "main moved to b2")
+        (entry,) = child._queue
+        assert child._queued_at == {entry["id"]: 1000.0}
+
+    def test_a_stuck_wait_keeps_one_identity_so_it_wakes_its_sender_once(
+        self, tmp_path, monkeypatch
+    ):
+        """The work-ledger unread wake is keyed on ``oldest_id``: a new id per
+        replacing note would be a new wake per broadcast about the same stuck wait."""
+        now = [1000.0]
+        monkeypatch.setattr(queue_age, "_clock", lambda: now[0])
+        state, caller, child = _setup(tmp_path)
+        # A person drives the turn, so each note wants it and the wake covers it.
+        child._turn_user_sent = True
+        _broadcast(state, caller, "main moved to a1", mode=None)
+        first_id = child._queue[0]["id"]
+        sender = slot_history_key(caller)
+        before = queue_age.sender_unread(state, child.key, sender)
+        assert before == (1, 0.0, first_id)
+        for at, sha in ((3000.0, "b2"), (5000.0, "c3")):
+            now[0] = at
+            _broadcast(state, caller, f"main moved to {sha}", mode=None)
+            (entry,) = child._queue
+            assert entry["id"] != first_id
+            assert queue_age.sender_unread(state, child.key, sender) == (1, at - 1000.0, first_id)
+        # Only the live entry keeps a record.
+        assert child._queued_as == {entry["id"]: first_id}
+        assert child._queued_at == {entry["id"]: 1000.0}
+
+    def test_it_keeps_a_replaced_notes_wish_for_the_turn(self, tmp_path):
+        state, caller, child = _setup(tmp_path)
+        child._turn_user_sent = True
+        _broadcast(state, caller, "main moved to a1", mode=None)
+        child._turn_user_sent = False
+        _broadcast(state, caller, "main moved to b2", mode="queue")
+        (entry,) = child._queue
+        assert entry["meta"][queue_age.STEER_WANTED_META] is True
+
+    def test_a_failing_push_still_reports_the_note_that_landed(self, tmp_path):
+        state, caller, child = _setup(tmp_path)
+        _broadcast(state, caller, "main moved to a1")
+
+        def _cancel_fails(kind, *args, **kwargs):
+            if kind == "queue_cancel":
+                raise RuntimeError("socket gone")
+
+        state.broadcast_ws = MagicMock(side_effect=_cancel_fails)
+        state.push_slots_update = MagicMock()
+        row = _row(_broadcast(state, caller, "main moved to b2"))
+        assert row["ok"] is True and row["replaced"] == 1
+        (only,) = _contents(child)
+        assert "main moved to b2" in only
+        # The failing frame does not keep the session list from being pushed.
+        assert state.push_slots_update.call_count >= 1
 
 
 class TestALeftOutModeTakesTheSendDefault:

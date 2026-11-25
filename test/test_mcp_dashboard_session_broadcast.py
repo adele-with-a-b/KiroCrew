@@ -176,21 +176,26 @@ class TestBroadcastReports:
         resp = {
             "ok": True,
             "mode": "default",
-            "requested": 4,
-            "delivered": 4,
+            "requested": 5,
+            "delivered": 5,
             "results": [
                 _row("chat-2", steered=True, steerDefault="manager"),
                 _row("chat-3", heldForPerson=True),
                 _row("chat-4", replaced=2),
                 _row("chat-5", steerDefault="manager", steerRefusal="agent_turn"),
+                _row("chat-6", steerDefault="manager"),
             ],
         }
         out, _ = _bc({"message": "rebase", "all": True}, resp)
-        assert "Sent to 4/4" in out
+        assert "Sent to 5/5" in out
         assert "`chat-2` — cut into its running turn" in out
         assert "`chat-3` — queued until its turn ends (a person is driving that turn)" in out
         assert "(not a session you manage); it replaced 2 older unread note(s)" in out
         assert "`chat-5` — queued until its turn ends (steer fell back" in out
+        # The default chose the steer and no cause came back (a pause, or a turn that
+        # ended under it and requeued it): the row claims no cause it cannot know.
+        assert "`chat-6` — queued until its turn ends (steer fell back to the queue)" in out
+        assert "paused" not in out
 
     def test_a_queue_broadcast_reports_each_target_and_the_tally(self) -> None:
         out, _ = _bc(

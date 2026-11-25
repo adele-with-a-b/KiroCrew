@@ -1010,8 +1010,11 @@ def _run_session_broadcast(args: dict[str, Any], ctx: ToolContext) -> str:
             # A steer that could not be injected lands here, for the reason
             # session_send spells out: reporting a plain queue would leave the
             # caller believing that target was interrupted. The cause says how
-            # long it may wait. Under the default, the row says why it queued.
-            if mode == "steer" or row.get("steerDefault"):
+            # long it may wait. Under the default, the row says why it queued; a
+            # steer the default chose that names no cause (the turn ended under it
+            # and it was requeued, or no turn could take it) says only that it fell
+            # back, as session_send's reply does.
+            if mode == "steer" or row.get("steerRefusal") or row.get("steerDefault"):
                 fell_back = f" ({steer_refusal.describe_short(row.get('steerRefusal'))})"
             elif row.get("heldForPerson"):
                 fell_back = " (a person is driving that turn)"

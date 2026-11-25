@@ -16,14 +16,13 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.context_assembly.markers import _apply_marker_spans, _marker_spans
-from kiro_crew.dashboard import queue_age, session_managers
+from kiro_crew.dashboard import broadcast_supersede, queue_age, session_managers
 from kiro_crew.dashboard.chat_delivery import sanitize_outbound, steer_refusal_of
 from kiro_crew.dashboard.relay_archive import (
     RELAY_ARCHIVE_CODE,
     RELAY_ARCHIVE_ERROR,
     is_relay_archive,
 )
-from kiro_crew.dashboard.session_control_parts import broadcast_supersede
 from kiro_crew.dashboard.session_control_parts.app_reach import prewarm_app_reach
 from kiro_crew.dashboard.session_control_parts.caller_access import (
     SessionControlError,
@@ -370,9 +369,10 @@ async def send_to_target(
     must not take the cut-in a target's asking turn is owed, which the caller's
     real reply would then lose. *supersede* makes a delivery that QUEUES replace
     the caller's older unread broadcast entries on the target
-    (:mod:`broadcast_supersede`): they leave the queue and the queued text says
-    how many it replaced, which the result reports as ``replaced``. A steer that
-    cuts in replaces nothing.
+    (:mod:`broadcast_supersede`): the new entry takes the oldest one's place and
+    wait, the others leave the queue, and the queued text says how many it
+    replaced, which the result reports as ``replaced``. A steer that cuts in
+    replaces nothing.
 
     The delivery path is the same queue-vs-run decision the dashboard composer
     uses (``enqueue_or_run_prompt``): an idle target starts a turn immediately,
@@ -901,14 +901,13 @@ async def send_to_target(
             if supersede and will_wait
             else []
         )
-        replaced = broadcast_supersede.replaced_count(superseded)
-        queued_prompt = prompt
-        if replaced:
-            # Under the envelope, so the bubble that drops the envelope by
-            # position still shows it and the body stays as the caller wrote it.
-            queued_prompt = (
-                envelope + broadcast_supersede.replaced_line(replaced) + prompt[len(envelope) :]
-            )
+        replaced = broadcast_supersede.replaced_count(slot, superseded)
+        # After the body, so the envelope span is unchanged and a drop notice that
+        # quotes the entry's start still quotes what the caller wrote.
+        queued_prompt = prompt + broadcast_supersede.replaced_line(replaced) if replaced else prompt
+        queued_before = (
+            {str(entry.get("id") or "") for entry in slot._queue} if superseded else set()
+        )
         # A new send that would WAIT (the same test `enqueue_or_run_prompt` makes)
         # obeys the bound app messages and channel hand-offs obey. Without it a
         # session that keeps sending to a busy one grows that queue past the cap,
@@ -942,14 +941,13 @@ async def send_to_target(
                     # The sender wanted the running turn and got the queue, so it
                     # is woken if this sits unread (``queue_age``).
                     **({queue_age.STEER_WANTED_META: True} if steer or held_for_person else {}),
-                    **({broadcast_supersede.REPLACED_META: replaced} if replaced else {}),
                 },
                 relay_meta=relay_meta,
             )
             == session_deliver.DELIVERED_TURN
         )
         if superseded:
-            broadcast_supersede.drop_superseded(state, slot, superseded)
+            broadcast_supersede.replace_superseded(state, slot, superseded, queued_before)
         if started:
             _start_auto_tag(state, slot)
     if awaited and steered:
@@ -1138,7 +1136,9 @@ async def broadcast_to_targets(
 
     A delivery that queues replaces the caller's older unread broadcast entries on
     that target (``supersede``), so a worker deep in one long turn holds at most
-    one note from each sender, and the row's ``replaced`` says how many went.
+    one queued broadcast note from each sender, and the row's ``replaced`` says how
+    many went. A steer the turn accepted and then requeued is not one of them: it
+    was already handed to a turn.
 
     A call selects its audience in exactly one of two ways. ``targets`` names the
     sessions, or ``all_created=True`` means :func:`broadcast_audience` — every

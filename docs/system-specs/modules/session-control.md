@@ -170,26 +170,39 @@ reports it (`steered`, `steerDefault`, `heldForPerson`); the call's `mode` reads
 `default`.
 
 **A newer broadcast note replaces the sender's older unread one.** When a
-broadcast QUEUES on a target (asked to, defaulted to, or a steer that fell back),
-every entry already waiting there that the same sender queued by
-`session_broadcast` is replaced by the new one
-(`session_control_parts/broadcast_supersede.py`). "Same sender" is the
+broadcast QUEUES on a target (asked to, defaulted to, or a steer the RPC refused
+that fell back to the queue arm), every entry already waiting there that the same
+sender queued by `session_broadcast` is replaced by the new one
+(`dashboard/broadcast_supersede.py`). "Same sender" is the
 queue's own `yours` test (`_queue_entry_from` == `QUEUE_FROM_CALLER`: the sender
 slot AND tab stamped on the entry match the caller's), and "by broadcast" is the
 entry's `relay.via` being `session_broadcast`. Never replaced: another sender's
 entry, the person's own entry, a `session_send` by name, an entry with a kind or
 callbacks, a restored entry (it lost its sender stamp), an entry a person holds
-open in the editor (`edit_held`), and one whose row is already written
-(`row_already_written`) or that a turn already took. The new entry is queued
-first and the old ones dropped after, so a failure loses neither; each dropped
+open in the editor (`edit_held`), one whose row is already written
+(`row_already_written`), and a steer a turn accepted and then requeued (it was
+handed to a turn and carries no `session_send_queued` mark).
+
+The new entry TAKES THE PLACE of the oldest one it replaces: it moves to that
+entry's position (a card a person promoted with Run now keeps the front), it
+keeps that entry's wait through `queue_age.carry_wait` -- the stamp, so the
+unread wake and `messages_unread.oldest_secs` count from the first unread note
+rather than the latest, and the wait's identity (`slot._queued_as`), which
+`queue_age.waits` reports as `oldest_id`, so the work-ledger unread wake, keyed
+on that id, wakes the sender once per stuck wait and not once per replacing note
+-- and it keeps `steer_wanted` if any replaced entry had it. It is queued
+first and the old ones dropped after, so a failure loses neither. Each dropped
 entry sends a `queue_cancel` frame with no content, so open dashboards drop its
-card and no composer takes the text back. The new entry's text carries one line
-under the envelope saying how many earlier unread notes from this session it
-replaces (counted through, via the `broadcast_replaced` meta, across a chain of
-replacements), and the row's `replaced` says the same to the sender. The
-replaced entries count as free room for `queue_full`. A note that cuts in
-replaces nothing, because the queued ones were not superseded by an
-instruction that has already been read.
+card and no composer takes the text back; a `queue_reorder` frame follows when the
+new card moved. Each push is guarded on its own and a failing one is logged,
+never raised, because the note has landed. The new entry's text ends with one line saying how many earlier unread
+notes from this session it replaces, after the body so a drop notice that quotes
+the entry's start still quotes the sender's words. The count runs through a chain
+of replacements by a record kept beside the queue (`slot._broadcast_replaced`,
+never entry meta, which the drain unions onto the row), and the row's `replaced`
+says the same to the sender. The replaced entries count as free room for
+`queue_full`. A note that cuts into the running turn replaces nothing: the request
+covers notes that queue, and an earlier queued note still runs after that turn.
 
 Sequential delivery is what makes a per-delivery bound part of the contract
 rather than a refinement of it: one target that never answers is one target that

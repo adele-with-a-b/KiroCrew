@@ -273,8 +273,11 @@ target queues. Each row says which happened and why.
 **A newer note replaces your older unread one.** When a broadcast queues on a
 target that still holds an unread broadcast note from you, the new note takes
 its place instead of stacking behind it, so a worker never wakes to five "main
-moved" notes. The note it delivers opens with one line saying how many earlier
-notes from you it replaced, and the row says the same (`replaced 2 older unread
+moved" notes. It keeps the older note's place in the queue and how long it has
+waited, so the unread age you are shown still counts from the first note, and a
+worker that has not read it wakes you about it once, not once per note. The note it
+delivers ends with one line saying how many earlier notes from you it replaced,
+and the row says the same (`replaced 2 older unread
 note(s) of yours there`). Write each broadcast so it stands alone: the current
 state, not a change relative to the last note. Only your own unread broadcast
 notes are replaced: never another session's, never the person's, never a
@@ -1224,7 +1227,7 @@ gateway-issued key counts. Refusals you should expect, by code:
 | `target_busy` | Model change and reload: the target has a turn, queued messages (reload) or sub-agents in flight, so nothing was changed |
 | `target_changed_during_reload` | Reload: the target left your reach while its process was being reset. The process was reset; no reload notice was written |
 | `reload_failed` | Reload: the teardown failed before the target's process was removed. Nothing was torn down |
-| `invalid_broadcast_mode` | `session_broadcast` needs `mode` to be `queue` or `steer`; there is no default |
+| `invalid_broadcast_mode` | A `mode` given to `session_broadcast` must be `queue` or `steer`. Leave it out for the per-target default |
 | `caller_changed_mid_broadcast` | The calling session moved workspace while a broadcast was in flight, so its per-target report is withheld. The deliveries already happened — do not re-send |
 | `too_many_targets` | A broadcast reaches at most 50 sessions. Refused, never truncated — name a subset |
 | `target_required` | The broadcast selected no session. Name the sessions, or pass `all: true`. Leaving the target list out, or sending an empty one, reaches nobody |
