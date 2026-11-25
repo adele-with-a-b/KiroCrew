@@ -807,6 +807,8 @@ async def _end_turn_tail(
     # authority left lying on the slot. Clearing at a nested exit that was not
     # the turn's end costs only a refusal, the direction that cannot be wrong.
     slot._turn_owner_sent = False
+    # The patrol mark is authority too, so it ends on every exit as well.
+    slot._turn_patrol_wake = False
     # A healthy `wait` clears its own state with a final keepalive ping, but
     # that ping is best-effort and cannot run at all if the MCP subprocess died
     # mid-sleep (hard stop, crash, gateway abort). Clearing at turn end is the

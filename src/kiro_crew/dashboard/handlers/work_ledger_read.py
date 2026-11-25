@@ -128,6 +128,8 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     )
     remote_live = await asyncio.to_thread(work_ledger.remote_liveness_map, key, shown)
     rows: list[dict[str, Any]] = []
+    crew_names: dict[str, str] | None = None
+    name_machine = _remote_dispatch_on()
     for item in shown:
         row = _row_with_flags(
             state,
@@ -141,11 +143,17 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
         show_step(row, record.releases)
         if item.worker_instance_id or item.retired_bindings:
             row.update(await asyncio.to_thread(_remote_row_fields, key, item))
+        if name_machine and item.worker_session_key:
+            if item.worker_instance_id and crew_names is None:
+                crew_names = await asyncio.to_thread(_crew_names, state)
+            row["runs_on"] = _runs_on(item, crew_names or {})
         if compact:
             compact_row = {name: row[name] for name in _COMPACT_ROW_FIELDS}
             if item.plan:
                 # The board's plan is how a patrol picks what to pull next.
                 compact_row["plan"] = row["plan"]
+            if "runs_on" in row:
+                compact_row["runs_on"] = row["runs_on"]
             if item.worker_instance_id or item.retired_bindings:
                 from kiro_crew.dashboard.handlers.remote_ingest import (
                     REMOTE_ROW_FIELDS,
@@ -560,6 +568,32 @@ def _remote_dispatch_on() -> bool:
     from kiro_crew.remote_dispatch import remote_dispatch_enabled
 
     return remote_dispatch_enabled()
+
+
+#: ``runs_on`` for a worker on this machine.
+RUNS_ON_LOCAL = "local"
+
+
+def _crew_names(state: DashboardState) -> dict[str, str]:
+    """Each registered crew's display name by instance id. BLOCKING; never raises."""
+    try:
+        from kiro_crew.dashboard.handlers_instances_gate import _registry
+
+        return {
+            str(getattr(row, "id", "")): str(getattr(row, "name", "") or "")
+            for row in _registry(state).list()
+        }
+    except Exception:  # noqa: BLE001 - a name is a label; the read must not fail on it
+        logger.debug("crew registry unreadable for runs_on", exc_info=True)
+        return {}
+
+
+def _runs_on(item: work_ledger.WorkItem, crew_names: dict[str, str]) -> str:
+    """Which machine a bound item's worker runs on: a crew's name, else this one."""
+    crew = str(item.worker_instance_id or "")
+    if not crew:
+        return RUNS_ON_LOCAL
+    return crew_names.get(crew) or crew
 
 
 def _remote_row_fields(key: str, item: work_ledger.WorkItem) -> dict[str, Any]:

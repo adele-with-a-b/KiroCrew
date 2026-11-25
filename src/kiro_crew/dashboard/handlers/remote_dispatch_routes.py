@@ -224,7 +224,9 @@ async def authorize_remote_dispatch(request: web.Request, verb: str) -> str:
        (:func:`caller_is_bound_worker`, ``crew_caller_is_worker``); an unreadable
        binding refuses too.
     8. The running turn is one the owner sent (:func:`owner_unverifiable_reason`,
-       ``crew_owner_unverifiable``).
+       ``crew_owner_unverifiable``), or, with
+       ``work_ledger.remote_dispatch_patrol_wake`` on, a wake of the shipped
+       work-ledger patrol (:func:`_patrol_wake_admitted`).
 
     Arms 1-7 refuse first, with their own codes, so a refusal still says which
     rule a caller fails.
@@ -303,6 +305,9 @@ async def authorize_remote_dispatch(request: web.Request, verb: str) -> str:
             "to a crew; only the conductor that owns the ledger can",
         )
     reason = owner_unverifiable_reason(slot)
+    if reason and await _patrol_wake_admitted(slot):
+        _audit_patrol_wake(caller_key, verb)
+        reason = ""
     if reason:
         _audit(caller_key, verb, "denied", error=OWNER_UNVERIFIABLE)
         raise CrewCallError(
@@ -356,6 +361,39 @@ def owner_unverifiable_reason(slot: object) -> str:
 
     refusal = _slot_refusal(slot)
     return refusal[1] if refusal is not None else ""
+
+
+def _audit_patrol_wake(caller: str, verb: str) -> None:
+    """Record that rule 8 admitted *verb* on a patrol wake, not an owner turn."""
+    try:
+        sel().log_tool_invocation(
+            session_key=caller or "unknown",
+            tool_name=f"session_control_crew_{verb}",
+            outcome="allowed",
+            source="dashboard",
+            resources="patrol_wake",
+        )
+    except Exception:  # audit must never break the request path
+        logger.debug("SEL audit failed for the patrol wake admission", exc_info=True)
+
+
+async def _patrol_wake_admitted(slot: object) -> bool:
+    """Whether *slot*'s running turn is a patrol wake the operator let use ``crew=``.
+
+    The one turn rule 8 admits besides the owner's own, and only with
+    ``work_ledger.remote_dispatch_patrol_wake`` on (default off): the gateway's
+    record that the running turn is a wake of the shipped work-ledger patrol
+    (``_turn_patrol_wake``; ``slot_ladder`` documents who sets and clears it).
+    Rules 1-7 have already held, so the slot is the owner's own persistent
+    conductor mode chat and no worker's. A cron, a ``session_send`` turn, a
+    sub-agent completion and a loop carrying any other text never hold the mark.
+    """
+    if getattr(slot, "_turn_patrol_wake", False) is not True:
+        return False
+    from kiro_crew.dashboard.remote_dispatch_headroom import remote_dispatch_settings
+
+    settings = await asyncio.to_thread(remote_dispatch_settings)
+    return settings.enabled and settings.patrol_wake
 
 
 def _instances(state: "DashboardState") -> list[Any]:

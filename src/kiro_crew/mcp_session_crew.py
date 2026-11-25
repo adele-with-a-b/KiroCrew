@@ -55,8 +55,8 @@ _WORK_ITEM_PROPERTY: dict[str, Any] = {
         "Preview. One of YOUR open, unbound work items (it_<8 hex>): the crew "
         "session is created already bound to it, so skip work_ledger_record bind. "
         "Omit crew and the hub picks the connected crew with the most headroom; when "
-        "none has room the item stays unbound, and only a turn the owner sends can "
-        "retry. Its reports reach your next work_ledger_read, and a decide reaches "
+        "none has room or none answers, the item stays unbound and you run it on "
+        "this machine. Its reports reach your next work_ledger_read, and a decide reaches "
         "the worker. " + _READ_FIRST
     ),
 }
@@ -78,6 +78,24 @@ def with_crew_schema(tools: list[dict[str, Any]], enabled: bool) -> list[dict[st
     return out
 
 
+#: Refusals of a work-item create that mean the crew is full or did not answer.
+#: The item is still open and unbound, so it can run here.
+_RUN_HERE_CODES = frozenset(
+    {"crew_busy", "crew_none_available", "proxy_peer_not_connected", "crew_version_unknown"}
+)
+
+
+def _run_it_here(refused: DashboardError, args: dict[str, Any]) -> str:
+    """The next step after a work-item create no crew took, else ``""``."""
+    if not args.get("work_item") or refused.code not in _RUN_HERE_CODES:
+        return ""
+    return (
+        f". {args['work_item']} is still open and unbound. "
+        "Run it on this machine now: session_create without crew or work_item, "
+        "work_ledger_record action=bind, then session_send the seed."
+    )
+
+
 def _on(resp: dict[str, Any]) -> str:
     name = resp.get("crew_name") or resp.get("crew") or ""
     return f"on crew `{name}`"
@@ -95,7 +113,10 @@ def run_crew_create(args: dict[str, Any], ctx: ToolContext) -> str:
     try:
         resp = ctx.client.post("/api/session-control/create", payload, session_key=ctx.caller_key)
     except DashboardError as refused:
-        return redact(f"Error: could not create a session on that crew: {refused.error}")
+        return redact(
+            f"Error: could not create a session on that crew: {refused.error}"
+            f"{_run_it_here(refused, args)}"
+        )
     title = f" ({resp['title']})" if resp.get("title") else ""
     agent = f" bound to `{resp['agent']}`" if resp.get("agent") else ""
     note = f" The title was not set: {resp['title_error']}." if resp.get("title_error") else ""

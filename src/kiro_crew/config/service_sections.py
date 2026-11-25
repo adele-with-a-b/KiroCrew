@@ -473,6 +473,18 @@ class WorkLedgerConfig:
             "on; a value that is not a positive number uses the default.",
         ),
     )
+    remote_dispatch_patrol_wake: bool = field(
+        default=False,
+        metadata=_meta(
+            "Remote dispatch from the conductor's patrol",
+            "Lets a conductor use crew= in a wake of its own shipped work-ledger "
+            "patrol, so it can open, message, read, stop and close a worker on "
+            "another crew while nobody is typing. Off (the default): only a turn the "
+            "owner sent may. Every other automated turn (a cron, a message from "
+            "another session, a worker, a loop with any other text) is refused "
+            "either way. Used only with remote_dispatch on; read on every call.",
+        ),
+    )
 
 
 #: ``power.on_battery`` values. ``normal`` ignores the power source.

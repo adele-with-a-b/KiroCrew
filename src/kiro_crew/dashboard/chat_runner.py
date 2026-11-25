@@ -951,6 +951,12 @@ async def _run_chat(
     # starts takes it with it, and one that does not declare starts from False.
     # Adopted into `_turn_owner_sent` only for a turn the person sent.
     _directive_owner_origin: bool = False,
+    # Whether this turn is a wake of the gateway's own fixed work-ledger patrol
+    # (`conductor_patrol.is_fixed_patrol_payload`), declared by the loop fire
+    # alone. It rides this call for the reason the owner mark does. Adopted into
+    # `_turn_patrol_wake`, which admits `crew=` only with
+    # `work_ledger.remote_dispatch_patrol_wake` on.
+    _directive_patrol_wake: bool = False,
     # The message is turn CONTENT and its first word is never read as a dashboard
     # command: set by the drain for an entry the channel hand-off stamped
     # (``COMMANDS_OFF_META_KEY``). A channel's own queue already replays every
@@ -1016,6 +1022,7 @@ async def _run_chat(
         _directive_channel_origin=_directive_channel_origin,
         _directive_source_channels=_directive_source_channels,
         _directive_owner_origin=_directive_owner_origin,
+        _directive_patrol_wake=_directive_patrol_wake,
         _commands_off=_commands_off,
         _recovery_echo_owed=_recovery_echo_owed,
         _card_origin=_card_origin,

@@ -596,9 +596,16 @@ async def _ingest_item(
     except routes.CrewCallError as exc:
         if exc.code == "proxy_peer_not_connected":
             await _mark_down(board, item.item_id, "disconnected", exc.code)
+        elif exc.code == "crew_version_unknown":
+            # The tunnel is up and the crew behind it did not answer: a stopped
+            # crew on a machine that is still reachable. Down for the retire
+            # clock, or a binding to it would never be retired.
+            _UNANSWERED[crew] = _monotonic()
+            await _mark_down(board, item.item_id, "error", exc.code)
         else:
             await _mark_error(board, item.item_id, exc.code)
         return
+    _UNANSWERED.pop(crew, None)
     if crew not in slot_lists:
         slot_lists[crew] = await _slot_list(state, crew)
     listed = slot_lists[crew]
@@ -755,6 +762,27 @@ _monotonic = platform_compat.awake_now
 _DOWN_SEEN: dict[tuple[str, str, str], float] = {}
 
 
+#: ``crew -> awake time`` of the last version read that got no answer through a
+#: connected tunnel. In memory only, and trusted only while fresh: a pull that
+#: stops reaching the version read says nothing about the crew.
+_UNANSWERED: dict[str, float] = {}
+
+#: How long one unanswered version read stands in for the crew's state.
+_UNANSWERED_FRESH_SECS = 3 * work_ledger.REMOTE_PULL_INTERVAL_SECS
+
+
+def _crew_up(mgr: Any, crew: str) -> bool:
+    """Whether *crew* counts as up for the retire clock and the retired-slot close.
+
+    A connected or reconnecting tunnel, unless the crew behind it just failed to
+    answer its version read (a crew stopped on a machine that is still reachable).
+    """
+    if _crew_state(mgr, crew) not in ("connected", "connecting"):
+        return False
+    seen = _UNANSWERED.get(crew)
+    return seen is None or _monotonic() - seen > _UNANSWERED_FRESH_SECS
+
+
 def _record_down(record: work_ledger.RemoteState) -> bool:
     return record.crew_state not in ("connected", "connecting") and bool(record.crew_down_since)
 
@@ -769,7 +797,8 @@ async def _retire_overdue(
 
     Never raises. The clock (:data:`_DOWN_SEEN`) starts at the first read in this
     process that sees the crew down, both live and in the record, and stops at any
-    read that sees it ``connected`` or ``connecting``. The item is left open and
+    read that sees it up (:func:`_crew_up`: ``connected`` or ``connecting``, and
+    answering its version read). The item is left open and
     unbound, its pair moved to ``retired_bindings``, so ingest reads nothing more
     from that slot: a late report from it is never applied. The redispatch itself
     is the conductor's ``session_create(work_item=)`` on a turn the owner sent;
@@ -791,8 +820,7 @@ async def _retire_overdue(
     up = {
         str(item.worker_instance_id)
         for item in open_remote
-        if item.worker_instance_id
-        and _crew_state(mgr, str(item.worker_instance_id)) in ("connected", "connecting")
+        if item.worker_instance_id and _crew_up(mgr, str(item.worker_instance_id))
     }
     for key in [k for k in _DOWN_SEEN if k[2].split("/", 1)[0] in up]:
         _DOWN_SEEN.pop(key, None)
@@ -802,7 +830,7 @@ async def _retire_overdue(
             continue
         key = (board, item.item_id, pair)
         try:
-            if _crew_state(mgr, str(item.worker_instance_id)) in ("connected", "connecting"):
+            if _crew_up(mgr, str(item.worker_instance_id)):
                 _DOWN_SEEN.pop(key, None)
                 continue
             record = await asyncio.to_thread(_stored, board, item.item_id)
@@ -927,7 +955,11 @@ def _schedule_closes(
             if entry["state"] != "retired":
                 continue
             crew, slot = entry["worker_instance_id"], entry["worker_session_key"]
-            if (crew, slot) in _CLOSE_TRIED or _crew_state(mgr, crew) != "connected":
+            if (
+                (crew, slot) in _CLOSE_TRIED
+                or _crew_state(mgr, crew) != "connected"
+                or not _crew_up(mgr, crew)
+            ):
                 continue
             _CLOSE_TRIED.add((crew, slot))
             task = asyncio.ensure_future(_close_retired_slot(state, mgr, board, crew, slot))

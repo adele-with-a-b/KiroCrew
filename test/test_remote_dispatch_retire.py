@@ -59,6 +59,7 @@ def clock(monkeypatch) -> _Clock:
     fake = _Clock()
     monkeypatch.setattr(remote_ingest, "_monotonic", fake)
     monkeypatch.setattr(remote_ingest, "_DOWN_SEEN", {})
+    monkeypatch.setattr(remote_ingest, "_UNANSWERED", {})
     monkeypatch.setattr(remote_ingest, "_CLOSE_TRIED", set())
     monkeypatch.setattr(remote_ingest, "_retire_minutes", lambda: 30.0)
     return fake

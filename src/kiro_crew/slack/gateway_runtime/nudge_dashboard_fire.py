@@ -567,6 +567,11 @@ async def _start_dashboard_wake_turn(
     # every self-wake fire passes its true generation here.
     run_kwargs["_directive_loop_gen"] = fired_generation
     run_kwargs["_skill_trigger_text"] = trigger_text
+    # Declared for the shipped work-ledger patrol alone: the loop store is
+    # agent-writable, so a row whose text or watch was changed is not it.
+    from kiro_crew import conductor_patrol
+
+    run_kwargs["_directive_patrol_wake"] = conductor_patrol.is_fixed_patrol_payload(loop)
     if owed_terminal:
         # The runner marks this accepted only past its last refusing gate, right
         # before provider entry, so a turn refused while it is being prepared (a

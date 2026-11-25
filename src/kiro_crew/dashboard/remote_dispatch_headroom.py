@@ -53,6 +53,8 @@ class RemoteDispatchSettings:
     disk_gb: float
     #: Minutes a bound crew may stay unreachable before the hub retires its binding.
     retire_minutes: float = 30.0
+    #: Whether a wake of the shipped work-ledger patrol may use ``crew=``.
+    patrol_wake: bool = False
 
 
 _DISABLED = RemoteDispatchSettings(enabled=False, memory_gb=0.0, disk_gb=0.0)
@@ -78,6 +80,7 @@ def remote_dispatch_settings() -> RemoteDispatchSettings:
         memory_gb=float(section.remote_dispatch_memory_gb),
         disk_gb=float(section.remote_dispatch_disk_gb),
         retire_minutes=float(section.remote_dispatch_retire_minutes),
+        patrol_wake=section.remote_dispatch_patrol_wake is True,
     )
 
 
