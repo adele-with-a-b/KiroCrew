@@ -34,6 +34,16 @@ describe('Waits on its conductor', () => {
     expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, state: 'accepted', terminal: true }), now)).toBeNull()
     expect(conductorWaitMinutes(item({ status: 'question', outstanding: true, awaits_person: true, last_report_at: at }), now)).toBeNull()
   })
+  it('ends at a verdict after the report (pending or fail), and while the worker\'s turn runs again', () => {
+    const report = { id: 'e1', ts: at, item_id: 'it_1', kind: 'report' as const, status: 'done' as const, text: '' }
+    const verdict = { id: 'e2', ts: '2026-11-25T11:12:00Z', item_id: 'it_1', kind: 'verdict' as const, status: null, text: '' }
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, verdict: 'pending', events: [report, verdict] }), now)).toBeNull()
+    // A verdict from before the newest report answers nothing.
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, verdict: 'fail', events: [{ ...verdict, ts: '2026-11-25T11:00:00Z' }, report] }), now)).toBe(50)
+    // An event tail cut before the report still dates the verdict.
+    expect(conductorWaitMinutes(item({ status: 'done', last_report_at: at, events: [verdict] }), now)).toBeNull()
+    expect(conductorWaitMinutes(item({ status: 'blocked', last_report_at: at, alive: 'running' }), now)).toBeNull()
+  })
 })
 
 describe('Goal line', () => {

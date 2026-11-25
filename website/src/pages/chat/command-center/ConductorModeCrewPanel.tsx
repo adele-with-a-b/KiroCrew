@@ -8,7 +8,7 @@
  *  click opens the member in the main pane. Every number comes from reads the
  *  dashboard already makes: the crew list route, the work-ledger board, the live
  *  slot rows and the pending question cards. No model call. */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowDown, Check, ChevronDown, ChevronLeft, ChevronRight, Loader, Loader2, MessageCircleQuestionMark, MessageSquare, Pause, CircleStop, X } from 'lucide-react'
 import { safeGetItem, safeSetItem } from '../../../utils/safeStorage'
@@ -300,14 +300,27 @@ function onConductor(item: WorkBoardItem): boolean {
 /** A wait on the conductor this long is drawn loud: a patrol looks far more often. */
 export const CONDUCTOR_WAIT_LOUD_MINUTES = 10
 
+/** A verdict on the event tail after the newest report: the conductor judged it
+ *  (pending while CI, a merge or the person is awaited; fail hands it back). */
+function judgedSinceReport(item: WorkBoardItem): boolean {
+  const events = item.events || []
+  let last = -1
+  events.forEach((e, n) => { if (e.kind === 'report') last = n })
+  if (last >= 0) return events.slice(last + 1).some(e => e.kind === 'verdict')
+  const reported = item.last_report_at ? Date.parse(item.last_report_at) : NaN
+  return Number.isFinite(reported) && events.some(e => e.kind === 'verdict' && Date.parse(e.ts) >= reported)
+}
+
 /** How long an open item has waited on its conductor, in minutes, or null: its
- *  worker's last report is done, blocked or question and no decision (or the
- *  person's steer) came after it. An ask that waits on the person is theirs, not
- *  the conductor's. The age is the ledger's own report time. */
+ *  worker's last report is done, blocked or question and no decision, verdict
+ *  (or the person's steer) came after it, and its worker's turn is not running
+ *  again (a conductor answering by message writes no ledger answer). An ask that
+ *  waits on the person is theirs, not the conductor's. The age is the ledger's
+ *  own report time. */
 export function conductorWaitMinutes(item: WorkBoardItem, now: number): number | null {
-  if (item.state !== 'open' || item.terminal || item.awaits_person) return null
+  if (item.state !== 'open' || item.terminal || item.awaits_person || item.alive === 'running') return null
   if (item.status !== 'done' && item.status !== 'blocked' && item.status !== 'question') return null
-  if (reportAnswered(item)) return null
+  if (reportAnswered(item) || judgedSinceReport(item)) return null
   const mins = minutesBetween(item.last_report_at, now)
   return Number.isFinite(mins) ? mins : null
 }
@@ -585,6 +598,18 @@ function PersonAskRow({ root, item, options, onAct, back }: { root: string; item
   )
 }
 
+/** The time, moved on every half minute: an unchanged board poll keeps its data's
+ *  reference and re-renders nothing, so a row's age (and the Waits on its
+ *  Conductor line's turn to loud) would otherwise freeze. */
+function useMinuteClock(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
+  return now
+}
+
 export default function ConductorModeCrewPanel({ root, viewing, active, onAct }: {
   root: string
   viewing: string | null
@@ -681,7 +706,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   const scope = goalScope(goalText)
   // The raw goal: its Changed entries may be one per line, which collapsing would lose.
   const changed = latestChange(board.data?.conductor?.goal || '')
-  const now = Date.now()
+  const now = useMinuteClock()
   // Which ledger item each pending approval belongs to: the crew list's own join.
   const approvalByItem = new Map<string, string>()
   for (const a of approvals) {
