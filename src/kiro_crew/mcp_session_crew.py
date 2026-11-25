@@ -156,7 +156,10 @@ def run_crew_send(args: dict[str, Any], ctx: ToolContext) -> str:
         "target": args["target"],
         "message": args["message"],
     }
-    if args.get("steer"):
+    # A crew send reaches only a session the caller opened there, so it is the
+    # caller's own worker: it cuts in unless the caller asks for the queue.
+    steer = args.get("steer") is not False
+    if steer:
         payload["steer"] = True
     try:
         resp = ctx.client.post("/api/session-control/send", payload, session_key=ctx.caller_key)
@@ -170,10 +173,10 @@ def run_crew_send(args: dict[str, Any], ctx: ToolContext) -> str:
     elif resp.get("started") is True:
         # It was idle, so there was no turn to steer: it started one on the message.
         how = "delivered: it was idle and started a turn on it"
-    elif args.get("steer") and resp.get("heldForPerson") is True:
+    elif steer and resp.get("heldForPerson") is True:
         how = "queued, not steered"
         why = " A person is driving that turn, so your message runs when that turn ends."
-    elif args.get("steer"):
+    elif steer:
         how = "queued, not steered"
         why = f" {steer_refusal.describe(resp.get('steerRefusal'))}"
     else:

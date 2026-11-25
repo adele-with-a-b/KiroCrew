@@ -171,13 +171,12 @@ Three outcomes, and the reply tells you which one happened:
 | busy | `true` | Injected into the running turn, so the target reads it mid-work |
 
 **Leaving `steer` out cuts in where a queue would strand the message.** It
-steers when the target is your own session (one you created, or the worker bound
-to your work-ledger item), and when you are replying to a session whose running
+steers when the target is your own session (one you created, on this machine or
+on another crew, or the worker bound to your work-ledger item), and when you are replying to a session whose running
 turn messaged you and is still going: a conductor waiting on its worker's answer
 reads the reply now instead of after its turn ends. Each message it sent you buys
 one such reply. Neither cuts into a turn the person is driving: there the message
-queues until that turn ends. To any other session,
-and to a session on another crew, it queues. Pass `steer=false` to queue a note
+queues until that turn ends. To any other session it queues. Pass `steer=false` to queue a note
 for the turn boundary on purpose.
 
 A steer that cannot be injected **falls back to the queue** rather than being
