@@ -91,14 +91,22 @@ def self_arm_record_path() -> Path:
     return data_home() / "trust" / SELF_ARM_RECORD_NAME
 
 
-def _read_record(*, set_aside_damaged: bool = False) -> dict[str, dict[str, Any]]:
+def _read_record(
+    *, set_aside_damaged: bool = False, strict: bool = False
+) -> dict[str, dict[str, Any]]:
     """Return the record's entries, or ``{}`` for absent/unreadable/malformed.
+
+    With *strict*, the read a rewrite starts from: a record that exists and
+    cannot be opened raises its ``OSError`` instead of reading as empty, so the
+    rewrite is abandoned and does not publish an empty record over the entries
+    on disk. A missing record still reads as empty, and a damaged one is still
+    set aside.
 
     With *set_aside_damaged*, as :func:`record_self_arm` reads before its rewrite,
     a record that opens but is cut off or has the wrong shape is first moved to a
     ``.corrupt-<utc>`` file, so its bytes are kept and one damaged file does not
     stop every later self-arm. A record that cannot be opened (a transient EACCES
-    or EIO) still reads as empty, and a set-aside that fails is logged, so neither
+    or EIO) still reads as empty unless *strict*, and a set-aside that fails is logged, so neither
     refuses an arm.
     """
     path = self_arm_record_path()
@@ -109,6 +117,8 @@ def _read_record(*, set_aside_damaged: bool = False) -> dict[str, dict[str, Any]
     except (OSError, ValueError) as exc:
         logger.warning("autonudge self-arm record unreadable; treating as empty", exc_info=True)
         if isinstance(exc, OSError):
+            if strict:
+                raise
             # There are no bytes to keep from a record that could not be opened.
             return {}
         raw = None
@@ -229,11 +239,12 @@ def record_owner_patrol(loop_id: str, slot_key: str) -> None:
     only. It is what lets that patrol's wake use ``crew=`` when
     ``work_ledger.remote_dispatch_patrol_wake`` is on. An upsert that keeps a
     self-arm entry's other fields; a crewmate thread's default-patrol grant is
-    left as it is and gains nothing. Raises ``OSError`` on a failed write; the caller treats that as no
-    grant.
+    left as it is and gains nothing. Raises ``OSError`` on a failed write, and on
+    a record that exists and cannot be opened (the entries on disk are then left
+    as they are); the caller treats either as no grant.
     """
     with _record_lock():
-        entries = _read_record(set_aside_damaged=True)
+        entries = _read_record(set_aside_damaged=True, strict=True)
         entry = entries.get(str(loop_id))
         if entry is not None and entry.get("default_patrol") is True:
             # A crewmate thread's patrol: never the owner's own conductor chat.

@@ -284,6 +284,30 @@ async def test_a_recorded_patrol_whose_row_was_changed_holds_no_mark(
     assert await _fired_mark(loop) is False
 
 
+def test_a_record_that_cannot_be_opened_stops_the_owner_grant_and_is_left_as_it_is(
+    record_home, monkeypatch
+) -> None:
+    """The grant is a rewrite of the whole record, so it starts from a strict read:
+    a record that exists and cannot be opened must not be rewritten as one entry."""
+    autonudge_selfarm.record_self_arm("loop-kept", "chat-9")
+    path = autonudge_selfarm.self_arm_record_path()
+    before = path.read_bytes()
+    real_read_text = type(path).read_text
+
+    def _denied(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(type(path), "read_text", _denied)
+        with pytest.raises(OSError):
+            autonudge_selfarm.record_owner_patrol("loop-new", "chat-1")
+    assert path.read_bytes() == before
+    assert autonudge_selfarm.is_recorded_self_arm("loop-kept", "chat-9") is True
+    assert autonudge_selfarm.is_recorded_owner_patrol("loop-new", "chat-1") is False
+
+
 def test_the_owner_dispatch_record_is_no_self_arm_and_keeps_other_grants(record_home) -> None:
     autonudge_selfarm.record_owner_patrol("loop-new", "chat-1")
     assert autonudge_selfarm.is_recorded_owner_patrol("loop-new", "chat-1") is True
