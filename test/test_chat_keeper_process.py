@@ -485,6 +485,30 @@ async def test_a_teardown_that_killed_its_keeper_removes_the_files(home: Path) -
 
 
 @pytest.mark.asyncio
+async def test_a_model_config_option_the_old_gateway_set_reaches_the_next_one(home: Path) -> None:
+    """claude moves its model with a ``model`` config option write. The adopting
+    gateway reads ``models.currentModelId`` from the cached answer, so a keeper
+    that cached only ``session/set_model`` made a switched chat come back on the
+    model it was created on."""
+    first = await _start(home)
+    await _send(first, {"id": 1, "method": "session/new", "params": {"models": True}})
+    await _read(first)
+    # The adapter answers with the spelling it runs, which the keeper keeps
+    # over the value the gateway wrote.
+    write = {"sessionId": "S1", "configId": "model", "value": "m2", "answer_value": "m2-full"}
+    await _send(first, {"id": 2, "method": "session/set_config_option", "params": write})
+    await _read(first)
+    await first.detach(first.stdout.consumed_seq)
+    second = await _reattach(home, hold=True)
+    assert second.state.session_answer("S1")["models"]["currentModelId"] == "m2-full"
+    (options,) = second.state.cached_updates("S1")
+    assert options["params"]["update"] == {
+        "sessionUpdate": "config_option_update",
+        "configOptions": [{"id": "model", "currentValue": "m2-full"}],
+    }
+
+
+@pytest.mark.asyncio
 async def test_a_mode_and_model_the_old_gateway_set_reach_the_next_one(home: Path) -> None:
     first = await _start(home)
     await _send(first, {"id": 1, "method": "session/new", "params": {"models": True}})
