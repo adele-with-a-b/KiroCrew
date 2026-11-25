@@ -276,6 +276,11 @@ SEND_DISCARD_HARD_STOP = "hard_stop"
 SEND_DISCARD_HARD_STOP_STEER = "hard_stop_steer"
 
 
+# A peer's steer the harness took into the running turn, which then failed before
+# confirming it: it is not queued to run a second time.
+SEND_DISCARD_UNCONFIRMED_STEER = "unconfirmed_steer"
+
+
 # Sender-notice phrasing per discard cause, after "Message you sent to <target> ".
 # No discard changes a constraint, so the drain's containment wording would
 # describe nothing here.
@@ -289,10 +294,13 @@ _SEND_DISCARD_REASONS = {
     "sent on by hand from that chat; you get no further word about it.",
     SEND_DISCARD_HARD_STOP: "was discarded before it ran: a hard stop of that session "
     "discarded its queue. It was not delivered and will not run.",
-    # The turn may already have read a steer, so this one does not say it never ran.
+    # The turn may already have read a steer, so these two do not say it never ran.
     SEND_DISCARD_HARD_STOP_STEER: "as a steer may not have run: a hard stop of that "
     "session ended the turn it was steered into before that turn finished, and it will "
     "not be queued to run later.",
+    SEND_DISCARD_UNCONFIRMED_STEER: "as a steer went into that session's running turn, "
+    "which then ended with an error before its harness confirmed it, so it may not have "
+    "run. It will not be queued to run later.",
 }
 
 # The bare cause for the rows the frontend words through the localized
@@ -795,9 +803,10 @@ def notify_send_origin_discarded(
     would run later. Every other sign of the discard lands on the target, which
     the sender does not read.
 
-    *cause* is :data:`SEND_DISCARD_QUEUE_CANCEL`, :data:`SEND_DISCARD_HARD_STOP` or,
-    for a pending steer the hard stop drops with its turn,
-    :data:`SEND_DISCARD_HARD_STOP_STEER`, and selects the wording: a deliberate
+    *cause* is :data:`SEND_DISCARD_QUEUE_CANCEL`, :data:`SEND_DISCARD_HARD_STOP`,
+    for a pending steer the hard stop drops with its turn
+    :data:`SEND_DISCARD_HARD_STOP_STEER`, or for a steer a failed turn took in
+    without confirming it :data:`SEND_DISCARD_UNCONFIRMED_STEER`, and selects the wording: a deliberate
     discard changes no authorization, so the notice names what discarded the entry
     rather than a constraint. For a steer, *entry_meta* is the admission it was
     registered with.

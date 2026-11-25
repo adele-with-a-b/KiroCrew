@@ -75,6 +75,7 @@ from kiro_crew.acp.types import (
     STEERING_INJECTED,
     STOP_REASON_COMPACTION_FAILED,
     STOP_REASON_END_TURN,
+    STOP_REASON_REFUSAL,
     AcpEvent,
     JsonRpcMessage,
     goose_announced_run,
@@ -703,7 +704,10 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
       first -- False, and the caller queues the text as the next turn.
 
     At-least-once: a steer the adapter injected just as the turn ended is
-    queued as well and runs a second time, visibly, as its own turn.
+    queued as well and runs a second time, visibly, as its own turn. One
+    injected into the running turn is not, when that turn then fails: it is
+    kept in :attr:`steers_taken_unconfirmed`, and the caller settles a peer's
+    such steer as taken but unconfirmed instead of queueing it.
 
     Nothing is sent while a tool call of the turn is open: claude moves a
     running tool to the background on a steer and ends the turn early, and the
@@ -1006,6 +1010,13 @@ async def _send_steering_request(self: AcpClient, aimed_at: int, text: str) -> b
         # consumed, so the caller queues the text.
         return None
     self._steers_accepted.append((aimed_at, wrap_user_message(text)))
+    # The adapter put the text on the running turn's input, so the model's next
+    # request carries it: a turn that then fails still took it
+    # (:attr:`steers_taken_unconfirmed`).
+    taken = getattr(self, "_steers_taken", None)
+    if taken is None:
+        taken = self._steers_taken = set()
+    taken.add(text)
     self._last_steer_monotonic = time.monotonic()
     trace_steps.steered(trace_steps.STEER_INTERRUPT, source=self)
     return True
@@ -1045,7 +1056,10 @@ def _release_accepted_steers(self: AcpClient, req_id: int, reason: str, refusal:
     claude-agent-acp settles a steered turn only once a result answers the
     steer, so a turn that ends with ``end_turn``, uncancelled and unrefused,
     has run every steer it accepted. On any other ending nothing is reported
-    and the caller's pending entry for each is queued instead. The turn
+    and the caller's pending entry for each is queued instead, save one: a
+    steer answered ``injected`` into a turn that then failed, uncancelled and
+    unrefused (no ``refusal`` stop either), was on the turn's input, so it stays in
+    :attr:`steers_taken_unconfirmed` until the next turn starts. The turn
     stops taking steers here, before its terminal is yielded, so a steer
     answered after this point is not accepted into a turn that has ended. A
     steer still held here was never sent, so it is dropped and queued the same
@@ -1058,6 +1072,9 @@ def _release_accepted_steers(self: AcpClient, req_id: int, reason: str, refusal:
         self._steering_turn_req = None
     # The turn is over, whatever closed it to steers: a steer now finds it ended.
     self._steering_closed_by = steer_refusal.TURN_ENDED
+    if self._cancelled or refusal or reason in (STOP_REASON_END_TURN, STOP_REASON_REFUSAL):
+        # Reported consumed, or a stop or refusal the caller queues them for.
+        self._steers_taken = set()
     if self._cancelled or refusal or reason != STOP_REASON_END_TURN:
         return []
     return [wrapped for aimed_at, wrapped in accepted if aimed_at == req_id]

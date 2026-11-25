@@ -3666,7 +3666,10 @@ stdout while no request waits. Design record:
   False (`turn_ended`), so the caller queues the text, at least once, as for
   a steering answer that lands late. The steer is reported consumed only when
   the turn ends with `end_turn`, as any steer
-  (`_release_accepted_steers`). Below the floor, with no version, and on every
+  (`_release_accepted_steers`). A steer answered `injected` stays in
+  `steers_taken_unconfirmed` when the turn ends any other way, uncancelled and
+  with no refusal, until the next turn starts, so the dashboard's teardown can
+  tell a steer the turn took from one it never wrote. Below the floor, with no version, and on every
   other backend, `_steering_turn_req` stays unset, `steer()` returns False
   with `steer_refusal` `agent_turn`, and the caller queues the text as the
   next prompt, its reason named to the sender and on the queued row

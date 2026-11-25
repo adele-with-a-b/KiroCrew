@@ -1549,6 +1549,27 @@ class AcpClient:
         """
         return frozenset(getattr(self, "_held_steers_unanswered", ()))
 
+    # The text of each steer the adapter answered ``injected`` into the running
+    # or last turn, until that turn reports them consumed, is stopped or
+    # refused, or the next turn starts.
+    _steers_taken: set[str]
+
+    @property
+    def steers_taken_unconfirmed(self) -> frozenset[str]:
+        """Steer texts the last turn took in and then ended without confirming.
+
+        ``injected`` means the adapter pushed the text onto the running Agent
+        SDK turn's input, so the model's next request carries it. A turn that
+        then fails (an error end, or a compaction failure's synthetic end) never
+        reports it consumed, yet the text went in. The dashboard's teardown
+        reads this, once the turn has ended, so a peer's such steer is not
+        queued to run a second time. Empty after a clean end, a stop or a
+        refusal; reset when the next turn starts.
+        """
+        if getattr(self, "_cancelled", False):
+            return frozenset()
+        return frozenset(getattr(self, "_steers_taken", ()))
+
     # Monotonic stamp of the last steer handed to the backend, 0.0 when never
     # steered. Mirrors AcpSessionHandle.last_steer_monotonic — the dashboard's
     # keepalive route reads whichever of the two backs the live session.

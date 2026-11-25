@@ -568,10 +568,13 @@ person's turn. The conductor's new note records the same stamp, for the same
 reason, and both record `wasSteered`, which is how a requeued steer is known
 from a queued send whichever way the turn ended (the delivery id is only on one
 whose call was still in flight). The fallback that queues a conductor's
-steer whose request went away mid-write names the same actor on its entry. A steer of the sender's that the teardown requeued runs as its own turn
-and is never carried; while one is the oldest of the sender's entries nothing of
-theirs goes in ahead of it, so the carry ends and the new note queues behind
-(`turn_ended`).
+steer whose request went away mid-write names the same actor on its entry. A steer of the sender's that the teardown requeued
+(`Carry.waits`) is carried like the sender's queued entries, in its place, and its
+old steer row is marked `superseded` by the row the steer writes, so it never waits
+a whole turn and never reads "runs as its own message" once it went in. One the
+ending turn may already have read (`meta.steerPossiblyDelivered`) stays for the
+drain, which tells the model so; it ends the carry, and the new note still goes
+in. The carry never answers `turn_ended` for a turn that is running.
 
 An entry whose text equals the new text also ends the carry and stays queued:
 steered first, it would leave the new text refused as `same_pending`.
@@ -596,7 +599,15 @@ codex, claude, goose, pi and opencode) takes a peer's steer only when
 unavailable and the message queues. With the key on, the peer's steer is held
 as the composer's is: it counts as delivered only when its turn ends cleanly,
 and the turn's teardown otherwise requeues it as a queue card that runs as the
-next turn, so it can run twice. The default steer does not change that trade:
+next turn, so it can run twice. One exception makes a peer's claude steer
+exactly-once: one claude answered `injected` was on the running turn's input, so
+when that turn then ends without `end_turn` (an error such as a failed
+compaction, not a stop or a refusal) the teardown does not requeue it
+(`steers_taken_unconfirmed`, `_settle_taken_peer_steer`). Its row reads
+`steerState: unconfirmed` ("went into the turn, which then ended with an error --
+may not have run"), context replay keeps it, and its sender is told it may not
+have run (`unconfirmed_steer`). A person's steer and an automation's keep the
+requeue. The default steer does not change that trade:
 with the key off (the default) a defaulted steer to those harnesses queues marked
 as wanting the turn, so the unread wake covers it; with it on, the operator has
 already accepted "may run twice" for every peer steer, asked for or defaulted.

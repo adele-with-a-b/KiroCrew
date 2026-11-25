@@ -378,6 +378,7 @@ class _ChatSlot:
         "_steer_admissions",
         "_steer_decision_strips",
         "_steer_possibly_delivered",
+        "_steer_taken_unconfirmed",
         "_steer_rpc_in_flight",
         "_native_steer_in_flight",
         "_steer_retract",
@@ -763,6 +764,9 @@ class _ChatSlot:
     _steer_admissions: dict[str, dict]
     _steer_decision_strips: dict[str, dict]
     _steer_possibly_delivered: set[str]
+    #: Pending steers the ending turn's agent took in without confirming them
+    #: (``steers_taken_unconfirmed``); read and emptied by the teardown requeue.
+    _steer_taken_unconfirmed: set[str]
     _steer_rpc_in_flight: set[str]
     #: Native-card ids with a /question/steer delivery in flight (handlers/slot_question).
     #: A SEPARATE set, never on the card's pending record, so a steer claim is never

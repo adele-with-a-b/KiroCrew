@@ -1058,6 +1058,7 @@ async def _dispatch_events(
     self._steers_accepted = []
     self._steers_held = []
     self._held_steers_unanswered = set()
+    self._steers_taken = set()
     agent_started = req_id == _AGENT_STARTED_REQUEST_ID
     if agent_started:
         self._agent_turn_serial += 1

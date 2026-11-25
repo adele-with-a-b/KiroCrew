@@ -135,11 +135,14 @@ def test_only_entries_the_sender_queued_with_session_send_move(tmp_path):
 
     result = _send(state, caller, worker, "newest", steer=True)
 
-    # The sender's requeued steer runs as its own turn and nothing of the
-    # sender's passes it: the carry ends there and the new note queues last.
-    assert result["carried"] == 1
-    assert [_body(text) for text in _handed(worker)] == ["mine, queued"]
-    assert _queued(worker)[:-1] == stay and len(_queued(worker)) == len(stay) + 1
+    # The sender's own requeued steer goes in too, in its place; nothing else moves.
+    assert result["steered"] is True and result["carried"] == 2
+    assert [_body(text) for text in _handed(worker)] == [
+        "mine, queued",
+        "a steer the teardown requeued",
+        "newest",
+    ]
+    assert _queued(worker) == [text for text in stay if text != "a steer the teardown requeued"]
 
 
 def test_a_refused_older_note_stays_and_the_ones_behind_it_are_not_tried(tmp_path):
@@ -480,7 +483,8 @@ def test_a_carried_crew_note_keeps_its_actor_for_a_requeue(tmp_path):
     assert worker._steer_admissions["first"][cd.TURN_ACTOR_META_KEY] == "crew"
 
 
-def test_a_requeued_crew_steer_is_not_carried_a_second_time(tmp_path):
+def test_a_requeued_crew_steer_goes_in_ahead_of_the_new_one(tmp_path):
+    """The running turn takes it, then the new note: never refused ``turn_ended``."""
     state, worker = _crew_worker(tmp_path)
     cd.queue_for_next_turn(state, worker, "first", turn_actor="crew")
     (entry,) = worker._queue
@@ -488,14 +492,28 @@ def test_a_requeued_crew_steer_is_not_carried_a_second_time(tmp_path):
 
     reply, refusal, _ = asyncio.run(agent_steer.steer(state, worker, "second"))
 
-    # It runs as its own turn, and the new note may not pass it: it is queued.
-    assert reply is None and refusal == steer_refusal.TURN_ENDED
-    assert _handed(worker) == [] and worker._queue == [entry]
+    assert (reply, refusal) == ({"ok": True, "steered": True, "carried": 1}, "")
+    assert _handed(worker) == ["first", "second"] and worker._queue == []
 
 
-def test_a_conductors_steer_requeued_after_it_was_taken_holds_the_next_one_back(tmp_path):
-    """The usual requeue: the agent took the steer, the turn ended before reading
-    it. That entry has no delivery id, only what the steer's admission recorded."""
+def test_a_requeued_steer_the_turn_may_have_read_stays_and_the_new_one_goes_in(tmp_path):
+    from kiro_crew.dashboard.chat_utils_injected_rows import STEER_POSSIBLY_DELIVERED_META
+
+    state, worker = _crew_worker(tmp_path)
+    cd.queue_for_next_turn(state, worker, "first", turn_actor="crew")
+    (entry,) = worker._queue
+    entry["meta"]["steer_delivery_id"] = "d1"
+    entry["meta"][STEER_POSSIBLY_DELIVERED_META] = True
+
+    reply, refusal, _ = asyncio.run(agent_steer.steer(state, worker, "second"))
+
+    assert (reply, refusal) == ({"ok": True, "steered": True}, "")
+    assert _handed(worker) == ["second"] and worker._queue == [entry]
+
+
+def test_a_conductors_steer_requeued_unwritten_goes_in_ahead_of_the_next_one(tmp_path):
+    """The usual requeue: the turn ended before the agent took the steer. That
+    entry has no delivery id, only what the steer's admission recorded."""
     state, worker = _crew_worker(tmp_path)
     from kiro_crew.dashboard import chat_runner as cr
 
@@ -507,8 +525,23 @@ def test_a_conductors_steer_requeued_after_it_was_taken_holds_the_next_one_back(
 
     reply, refusal, _ = asyncio.run(agent_steer.steer(state, worker, "second"))
 
-    assert reply is None and refusal == steer_refusal.TURN_ENDED
-    assert _handed(worker) == ["first"] and worker._queue == [entry]
+    assert (reply, refusal) == ({"ok": True, "steered": True, "carried": 1}, "")
+    assert _handed(worker) == ["first", "first", "second"] and worker._queue == []
+
+
+def test_a_conductors_steer_the_turn_took_is_not_requeued_by_an_error_end(tmp_path):
+    """The harness took it (claude answered ``injected``) and the turn ended
+    without ``end_turn``: it went in, so it never runs a second time."""
+    from kiro_crew.dashboard import chat_runner as cr
+    from kiro_crew.dashboard.chat_turn.steer_queue import _mark_held_steers_possibly_delivered
+
+    state, worker = _crew_worker(tmp_path)
+    asyncio.run(agent_steer.steer(state, worker, "first"))
+    worker._acp_client.steers_taken_unconfirmed = frozenset({"first"})
+    _mark_held_steers_possibly_delivered(worker, worker._acp_client)
+    cr._requeue_unconsumed_steers(state, worker)
+
+    assert worker._queue == [] and worker._pending_steers == []
 
 
 def test_a_conductors_steer_records_its_actor_for_a_requeue(tmp_path):
@@ -520,9 +553,9 @@ def test_a_conductors_steer_records_its_actor_for_a_requeue(tmp_path):
     assert worker._steer_admissions["second"][cd.TURN_ACTOR_META_KEY] == "crew"
 
 
-def test_a_requeued_session_steer_holds_the_senders_later_notes_back(tmp_path):
-    """A steer of the sender's that the teardown requeued runs as its own turn.
-    The sender's later queued note and a new cut-in stay behind it, in order."""
+def test_a_requeued_session_steer_goes_in_first_with_the_senders_later_notes(tmp_path):
+    """A steer of the sender's that the teardown requeued goes into the running
+    turn first, then the sender's later queued note, then the new cut-in."""
     state, caller, worker = _setup(tmp_path)
     ids = _queue_notes(state, caller, worker, "first", "second")
     requeued = worker._queue[0]
@@ -535,9 +568,10 @@ def test_a_requeued_session_steer_holds_the_senders_later_notes_back(tmp_path):
         )
     )
 
-    assert cd.steer_refusal_of(outcome) == steer_refusal.TURN_ENDED
-    assert _handed(worker) == [] and carry.count == 0
-    assert [entry["id"] for entry in worker._queue] == ids
+    assert outcome == session_deliver.DELIVERED_STEERED
+    assert [_body(text) for text in _handed(worker)] == ["first", "second", "third"]
+    assert carry.count == 2 and worker._queue == []
+    assert _cancelled(state) == ids
 
 
 def test_a_restored_crew_entry_is_nobodys_and_stays(tmp_path):

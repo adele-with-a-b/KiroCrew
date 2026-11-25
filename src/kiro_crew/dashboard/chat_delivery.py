@@ -118,6 +118,11 @@ STEER_RETRACTABLE_META = "steerRetract"
 # A requeued row whose own turn has since written a fresh row with the same text:
 # the transcript keeps it, the client does not draw it again.
 STEER_STATE_SUPERSEDED = "superseded"
+# Reached only from `written`, for a peer's steer: the harness took the text into
+# the running turn (claude's `injected`: it was on the turn's input), and the turn
+# then failed before it confirmed the steer. The text is not queued to run again,
+# and its sender is told it may not have run (`steer_queue._requeue_unconsumed_steers`).
+STEER_STATE_UNCONFIRMED = "unconfirmed"
 
 # Upper bound on a client-minted ``meta.sendId`` accepted into the steer path.
 # Client mints are ~17 chars; the bound exists because the value is raw client

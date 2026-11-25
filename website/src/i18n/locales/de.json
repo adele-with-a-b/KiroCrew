@@ -13592,6 +13592,7 @@
         "delivery_pending": "Zustellung ausstehend…",
         "redirecting_the_running_turn_not_yet_confirmed": "Der laufende Durchlauf wird umgeleitet — noch nicht bestätigt.",
         "turn_ended_before_this_applied_runs_as_its_own_message": "Der Durchlauf endete, bevor dies angewendet wurde — wird als eigene Nachricht ausgeführt.",
+        "went_in_turn_failed_may_not_have_run": "Ging in den Durchlauf, der dann mit einem Fehler endete — wurde möglicherweise nicht ausgeführt.",
         "quote_message": "Nachricht zitieren",
         "more_actions": "Weitere Aktionen",
         "edit_replaces_below": "Senden ersetzt die Antworten darunter",
