@@ -269,6 +269,16 @@ gated read path. `AutoNudgeService.notify_turn_complete` brings the busy-retry
 forward to `delay=0` on turn end instead of waiting for the loop deadline, and the
 per-loop wake text is held in `_pending_monitor_wake`, a `dict` keyed by loop id.
 
+One running turn takes no wake: a turn that holds the owner's mark
+(`_turn_owner_sent`, the owner's own request). A steer that is not the owner's ends
+that mark for the rest of the turn, so a wake steered in would have the owner's
+turn refused a crew-scoped call it makes afterwards (a `crew=` create followed by
+its first send). `session_deliver._deliver_running` answers `NOT_DELIVERED` for an
+automation origin on such a turn, before the steer seam is reached; the fire
+declines as for any steer that did not go in, the wake stays owed, and the turn-end
+retry above delivers it as its own turn. Every other running turn (a wake's, a
+note's, another person's) takes the steer.
+
 The steered wake keeps the ROW the fire writes. `steer_into_running_turn` takes the
 loop's `nudge_meta` (`{"cycle", "loop_id"}`) and persists the steer as a `nudge` row
 with `meta.steer`, so it draws as the nudge chip and never as a bubble the person

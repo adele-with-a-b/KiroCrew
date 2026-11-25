@@ -53,6 +53,8 @@ def _busy_state(tmp_path, monkeypatch):
     state.broadcast_ws = MagicMock()
     slot = state.get_or_create_slot("busy-chat")
     slot._turn_admission_reserved = True  # force the busy queue path
+    # The owner's own turn: the composer steers into no other (``NOT_OWNERS_TURN``).
+    slot._turn_user_sent = slot._turn_owner_sent = True
     monkeypatch.setattr("kiro_crew.dashboard.chat_handlers._run_chat", MagicMock())
     return state, slot
 

@@ -669,6 +669,13 @@ def _dequeue_next_message(slot, merge_enabled: bool) -> tuple:
     mark changes (``channel_prompt``), so a typed message keeps its echo; an
     entry that starts no run
     pops alone.
+
+    A run that holds entries a person sent (``_directive_user_origin``) beside
+    entries no person sent (a peer's ``session_send`` note) is not one turn: the
+    person's entries drain first, in their order, and the rest stays queued, in
+    its order, for the next drain. The drain reduces the origin marks over every
+    entry a turn consumes, so a note folded in with the person's words would run
+    them as a turn the person did not send.
     """
     if merge_enabled and len(slot._queue) > 1:
         # Local: a module-level import would serve the name through the chat_utils facade.
@@ -699,10 +706,19 @@ def _dequeue_next_message(slot, merge_enabled: bool) -> tuple:
             if to_merge and entry_prompt_on_channel(item) != entry_prompt_on_channel(to_merge[0]):
                 break
             to_merge.append(item)
+        # A person's words never share a turn with text no person sent: taken
+        # first, without it, they keep the marks only their sender earned.
+        sent = [item for item in to_merge if item.get("_directive_user_origin") is True]
+        if sent and len(sent) < len(to_merge):
+            to_merge = sent
         if len(to_merge) > 1:
-            del slot._queue[: len(to_merge)]
+            taken = {id(item) for item in to_merge}
+            slot._queue[:] = [item for item in slot._queue if id(item) not in taken]
             merged = "\n\n".join(item["content"] for item in to_merge)
             return f"[{len(to_merge)} queued messages merged]\n\n{merged}", to_merge
+        if to_merge:
+            item = slot.queue_pop(next(i for i, q in enumerate(slot._queue) if q is to_merge[0]))
+            return item["content"], [item]
     item = slot.queue_pop(0)
     return item["content"], [item]
 

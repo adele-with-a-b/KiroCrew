@@ -5624,7 +5624,8 @@
         "command_turn": "couldn't go in mid-turn: a command is running",
         "permission_wait": "couldn't go in mid-turn: the turn is waiting on an approval",
         "too_long": "couldn't go in mid-turn: the message is too long",
-        "refused": "couldn't go in mid-turn: the agent didn't take it"
+        "refused": "couldn't go in mid-turn: the agent didn't take it",
+        "not_owners_turn": "runs next as your own turn: you didn't start the one running"
       },
       "sub_agent_results_ready_one": "{{count}} sub-agent result ready — processing after the current turn",
       "sub_agent_results_ready_other": "{{count}} sub-agent results ready — processing after the current turn",

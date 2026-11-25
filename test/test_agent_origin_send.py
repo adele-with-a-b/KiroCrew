@@ -255,7 +255,8 @@ class TestBusySlot:
         state = _make_state(tmp_path)
         state.broadcast_ws = MagicMock()
         slot = _busy_slot(state)
-        slot._turn_user_sent = True  # the running turn is one the person sent
+        # The running turn is one the person, the owner, sent.
+        slot._turn_user_sent = slot._turn_owner_sent = True
 
         _, resp = await _send(state, {"steer": True, **body})
 
@@ -426,7 +427,7 @@ class TestBusySlot:
         state = _make_state(tmp_path)
         state.broadcast_ws = MagicMock()
         slot = _busy_slot(state)
-        slot._turn_user_sent = True
+        slot._turn_user_sent = slot._turn_owner_sent = True
         decide = AsyncMock(return_value=(False, None))
         monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.decided_message_handling", decide)
 

@@ -4071,7 +4071,15 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   reason: the transcript line is agent-writable). The drain reduces it with **`all`**
   over every entry a successor turn consumes, so a merged batch that folds another
   dashboard user's words in with the owner's runs without the mark, and passes the
-  result on the successor's own `_run_chat` call;
+  result on the successor's own `_run_chat` call. The merge itself
+  (`_dequeue_next_message`, with `dashboard.merge_queued_messages` on) never folds
+  an entry a person sent (`_directive_user_origin`) in with an entry no person
+  sent: a peer's `session_send` note would take the mark off the person's own
+  message by that same `all`. The person's entries drain first, in their own
+  order, as one turn that keeps their marks; the rest stays queued in its order
+  and drains next as its own turn, without the mark. Nothing outside the run
+  moves, so a typed message never passes a system injection. The split only ever
+  separates: a note gains nothing by waiting beside the person's message;
 - **adopted at every turn's outermost entry** (`turn_entry`): the call's value is
   read into `_turn_owner_sent` only when the opener is also user-sent, so a dispatch
   that declares nothing (`openai_compat`, the spec-builder runtime, a loop wake, a
@@ -4088,6 +4096,38 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   channel steer, a nudge) says nothing and narrows. A steer the turn ended before
   consuming requeues with the mark its own sender earned, from a `_steer_owner_origin`
   map kept in lockstep with the user and channel maps;
+- **left alone by an automation wake**: a work-ledger wake is steered into a
+  running turn, and as text that is not the owner's it would clear the mark of the
+  owner's own turn mid-request. `session_deliver._deliver_running` therefore
+  delivers no automation wake into a turn that holds the mark: the wake stays owed
+  and its sender's turn-end retry runs it as its own turn
+  ([monitor-architecture](monitor-architecture.md)). Nothing is granted: the turn
+  keeps only the mark it already held, and a peer's or a channel's steer still
+  clears it;
+- **never granted by a steer, so the owner's typed message is not steered into a
+  turn that lacks it**: a note from another session (`session_send`), a loop wake,
+  a cron or an app opened the running turn, or text of theirs joined the owner's
+  turn and narrowed it. Steered in, the owner's words would run without the mark
+  and a crew-scoped read or a `crew=` dispatch they ask for would be refused as
+  `not_owner_turn`. `steer_into_running_turn` answers such a steer
+  `steer_refusal.NOT_OWNERS_TURN` once every other availability check has passed
+  (owner's own dashboard request, not through a channel, running turn without
+  `_turn_owner_sent`), with nothing registered and nothing changed on the turn.
+  The composer's queue path (`queue_for_next_turn`) then puts that entry at the
+  FRONT of the queue, behind only the owner's earlier entries waiting for the same
+  reason: it runs next, alone, as the owner's own turn with the mark, and an entry
+  queued before it (a peer's note) runs after it, without the mark. Only an entry
+  carrying the owner's own marks moves, whatever code a caller names. The card,
+  the row and the send's reply carry the code (`meta.steerRefusal`,
+  `steerRefusal`). The responsive path takes its own queue arm for a steer that
+  did not go in: the message waits as a priority entry, the running turn is asked
+  to stop, and the drain takes that entry first and alone. Two cases keep the
+  steer: a turn that holds the mark (the owner's own),
+  and a slot opened on another caller's behalf (`_lineage_minted`, `_created_by`:
+  a worker's chat), where the crew gate refuses the slot whoever sent the turn,
+  so the steer loses no crew right and the owner can still redirect a running
+  worker. The cost is latency: the message waits for the running turn to end
+  (the owner's own Stop ends it sooner);
 - **carried by a recovery requeue as the dying turn held it**: `_queue_recovery`
   (`turn_ledgers`), the one requeue every runtime-loss arm uses (the dead process,
   the retryable ACP error, a Stop's recovery), stamps `_directive_owner_origin` from

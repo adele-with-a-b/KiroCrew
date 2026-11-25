@@ -26,3 +26,15 @@ def _running_slot(state, key="test"):
     task.done.return_value = False
     slot.task = task
     return slot
+
+
+def _owners_running_slot(state, key="test"):
+    """:func:`_running_slot` whose running turn the owner sent.
+
+    The composer steers the owner's message only into a turn that holds the
+    owner's mark (``steer_refusal.NOT_OWNERS_TURN``), and such a turn takes no
+    automation wake.
+    """
+    slot = _running_slot(state, key)
+    slot._turn_user_sent = slot._turn_owner_sent = True
+    return slot

@@ -64,6 +64,8 @@ class _OwnerRequest(dict):
 
 def _busy(slot):
     slot.task = asyncio.get_running_loop().create_future()
+    # The owner's own turn: the composer steers into no other (``NOT_OWNERS_TURN``).
+    slot._turn_user_sent = slot._turn_owner_sent = True
     rc.begin_turn(slot, protected=False)
     slot._active_turn_session_key = rc.effective_session_key(slot)
     slot._acp_client = SimpleNamespace(awaiting_permission=False, has_active_turn=lambda: True)

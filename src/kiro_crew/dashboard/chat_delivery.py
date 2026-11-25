@@ -439,6 +439,19 @@ def _steer_target(slot: Any) -> tuple[object, bool, int]:
     )
 
 
+def _opened_for_another_caller(slot: Any) -> bool:
+    """Whether *slot* was opened on another caller's behalf (``session_create``, a cron).
+
+    The crew gate's own slot check (``handlers_instances_crew_reads._slot_refusal``)
+    refuses such a slot whoever sent its turn, so the owner's standing there buys
+    no crew-scoped right a steer could lose; a worker's chat keeps taking the
+    owner's steer into the turn its conductor opened.
+    """
+    return bool(getattr(slot, "_lineage_minted", False)) or bool(
+        str(getattr(slot, "_created_by", "") or "")
+    )
+
+
 async def steer_into_running_turn(
     state: "DashboardState",
     slot: "_ChatSlot",
@@ -637,6 +650,21 @@ async def steer_into_running_turn(
         # The turn IS a manual /compact: no prompt runs that a steer could join.
         logger.info("slot %s is compacting; queueing instead of steering", slot.key)
         return SteerUnavailable(steer_refusal.COMPACTING)
+    if (
+        owner_origin
+        and user_origin
+        and not channel_origin
+        and getattr(slot, "_turn_owner_sent", False) is not True
+        and not _opened_for_another_caller(slot)
+    ):
+        # The owner's own words, typed while a turn the owner did not send runs:
+        # a note from another session, a wake or an automation opened it, or
+        # their text joined it. A steer never gives a turn the owner's mark, so
+        # inside that turn the message would lose the rights it was typed with.
+        # It goes to the caller's queue path, which puts it first
+        # (``queue_for_next_turn``): it runs next, alone, as the owner's own turn.
+        logger.info("slot %s runs a turn its owner did not send; queueing first", slot.key)
+        return SteerUnavailable(steer_refusal.NOT_OWNERS_TURN)
 
     # Register as pending BEFORE the await: ``steer()`` suspends on
     # ``stdin.drain()``, and if the turn's finally runs during that suspension
@@ -1465,6 +1493,28 @@ def queue_for_next_turn(
         directive_channel_origin=directive_channel_origin,
         directive_owner_origin=directive_owner_origin,
     )
+    if (
+        refusal == steer_refusal.NOT_OWNERS_TURN
+        and directive_owner_origin
+        and directive_user_origin
+        and not directive_channel_origin
+    ):
+        # The owner's message that was kept out of a turn the owner did not send
+        # runs next: ahead of every waiting entry (a note queued before it runs
+        # after it), behind only the owner's earlier messages that wait for the
+        # same reason, so those keep their order. Only the owner's own entry
+        # moves, whatever code a caller names.
+        entry = slot._queue.pop()
+        first = next(
+            (
+                index
+                for index, waiting in enumerate(slot._queue)
+                if (waiting.get("meta") or {}).get(steer_refusal.QUEUE_META_KEY) != refusal
+                or waiting.get("_directive_owner_origin") is not True
+            ),
+            len(slot._queue),
+        )
+        slot._queue.insert(first, entry)
     if queued_work is not None:
         from kiro_crew.shared_crew import admission_entry as _sc_entry
 
