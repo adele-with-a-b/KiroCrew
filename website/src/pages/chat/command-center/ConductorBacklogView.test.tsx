@@ -97,4 +97,34 @@ describe('Conductor mode Backlog view', () => {
     expect(order()).toEqual(['it_b7', 'it_b6', 'it_b8', 'it_b9'])
     expect(vi.mocked(api.crewBoardAction)).not.toHaveBeenCalled()
   })
+
+  it('draws a board nobody planned from its facts: step, machine, PR facts and the wait on its conductor', () => {
+    // The board read's own derived step rides `plan.step`; nothing else is planned.
+    const rows = [
+      item('it_n1', 'Unbound', { step: 'todo' }, { has_worker: false, in_backlog: true }),
+      item('it_n2', 'Working', { step: 'build' }, { has_worker: true, in_backlog: false, runs_on: 'M5' }),
+      item('it_n3', 'Has a PR', { step: 'review' }, { has_worker: true, in_backlog: false, runs_on: 'wlap', pr: 118 }),
+      item('it_n4', 'Done, unanswered', { step: 'build' }, { has_worker: true, in_backlog: false, runs_on: 'M5' }),
+    ]
+    const prFacts = { it_n3: { label: 'o/r#118', url: 'u', reads: { warm_brief: { facts: { checks: { passed: 11, failed: 3 } }, observed_at: 1 } } } }
+    const waits: Record<string, { age: string; loud: boolean }> = { it_n2: { age: '4m', loud: false }, it_n4: { age: '50m', loud: true } }
+    const rowState = (id: string) => ({ needsYou: false, waitingOn: '', conductorWait: waits[id] })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <ConductorBacklogView root="root-1" items={rows} conductor={{ ...CONDUCTOR, next_pick: 'it_n1' }} prFacts={prFacts} rowState={rowState} openItem={() => undefined} needsYou={null} needCount={0} />
+      </QueryClientProvider>,
+    )
+    const row = (id: string) => within(document.querySelector(`[data-testid="plan-story"][data-item="${id}"]`) as HTMLElement)
+    expect(row('it_n1').getByTestId('plan-step').getAttribute('data-step')).toBe('todo')
+    expect(row('it_n1').queryByTestId('plan-runs-on')).toBeNull()
+    expect(row('it_n2').getByTestId('plan-runs-on').textContent).toBe('M5')
+    expect(row('it_n3').getByTestId('plan-runs-on').getAttribute('title')).toBe('Runs on wlap')
+    expect(row('it_n3').getAllByTestId('plan-pr-fact').length).toBeGreaterThan(1)
+    expect(row('it_n3').getAllByTestId('plan-pr-fact')[0].getAttribute('data-bad')).toBe('true')
+    expect(row('it_n2').getByTestId('plan-conductor-wait').getAttribute('data-loud')).toBeNull()
+    const late = row('it_n4').getByTestId('plan-conductor-wait')
+    expect(late.textContent).toBe('Waits on its Conductor 50m')
+    expect(late.getAttribute('data-loud')).toBe('true')
+  })
 })

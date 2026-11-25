@@ -297,6 +297,21 @@ function onConductor(item: WorkBoardItem): boolean {
   return (item.status === 'blocked' || item.status === 'question') && !reportAnswered(item)
 }
 
+/** A wait on the conductor this long is drawn loud: a patrol looks far more often. */
+export const CONDUCTOR_WAIT_LOUD_MINUTES = 10
+
+/** How long an open item has waited on its conductor, in minutes, or null: its
+ *  worker's last report is done, blocked or question and no decision (or the
+ *  person's steer) came after it. An ask that waits on the person is theirs, not
+ *  the conductor's. The age is the ledger's own report time. */
+export function conductorWaitMinutes(item: WorkBoardItem, now: number): number | null {
+  if (item.state !== 'open' || item.terminal || item.awaits_person) return null
+  if (item.status !== 'done' && item.status !== 'blocked' && item.status !== 'question') return null
+  if (reportAnswered(item)) return null
+  const mins = minutesBetween(item.last_report_at, now)
+  return Number.isFinite(mins) ? mins : null
+}
+
 function minutesBetween(a: string | null | undefined, b: string | number | null | undefined): number {
   const ta = a ? Date.parse(a) : NaN
   const tb = typeof b === 'number' ? b : b ? Date.parse(b) : NaN
@@ -746,9 +761,11 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     // A plan row quotes the worker's ask itself: the plan's rows sit far below the
     // Needs-you card, where "the answer above" points at nothing.
     const asked = forYou.some(i => i.item_id === itemId) ? firstSentence(m.item.summary) : ''
+    const wait = m.state === 'needs_you' ? null : conductorWaitMinutes(m.item, now)
     return {
       needsYou: m.state === 'needs_you', waitingOn: asked || m.waitingOn,
       line: <MilestoneLine item={m.item} state={m.state} waitingOn={m.waitingOn} />, age: milestoneAge(m.item, m.state, now),
+      conductorWait: wait == null ? undefined : { age: fmtMinutes(wait), loud: wait >= CONDUCTOR_WAIT_LOUD_MINUTES },
     }
   }
   // The goal as ONE line above the stories. A click opens what sat under it: the
@@ -803,7 +820,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
         </RadioChipGroup>
       </div>
       {view === 'board' ? (
-        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={runState === 'waiting' ? 0 : needCount}
+        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} prFacts={board.data?.pr_facts} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={runState === 'waiting' ? 0 : needCount}
           overview={overview} run={runState ? <RunWord state={runState} run={board.data?.run} /> : null} runDetail={runDetail(runState, board.data?.run)} pulse={pulse}
           loaded={board.isSuccess || (board.isError && isNotFoundError(board.error))} />
       ) : (

@@ -10786,6 +10786,8 @@
       "plan_tasks_toggle": "मर्ज हुए उप-कार्य: {{total}} में से {{done}}",
       "plan_estimate": "अनुमान",
       "plan_estimate_total": "कुल {{total}}",
+      "plan_runs_on": "{{name}} पर चल रहा है",
+      "plan_waits_on_conductor": "अपने Conductor की प्रतीक्षा में {{age}}",
       "plan_estimate_sort": "अनुमान के क्रम में लगाओ; रैंक के क्रम के लिए फिर से क्लिक करो",
       "plan_step_todo": "करना है",
       "plan_step_mocks": "मॉक",

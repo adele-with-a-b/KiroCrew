@@ -623,3 +623,30 @@ def test_a_row_with_no_plan_is_left_unplanned() -> None:
     planned = {"pr": 7, "state": "open", "acceptance": None, "plan": {"rank": 1.0}}
     show_step(planned, [])
     assert planned["plan"] == {"rank": 1.0, "step": "review"}
+
+
+@pytest.mark.parametrize(
+    ("plan", "pr", "state", "bound", "merged", "want"),
+    [
+        # The Board's read: a story's step from its facts, with no plan written.
+        (None, None, "open", False, False, "todo"),
+        (None, None, "open", True, False, "build"),
+        (None, 7, "open", True, False, "review"),
+        (None, 7, "open", True, True, "merged"),
+        # GitHub's merged on a closed item says nothing a close did not.
+        (None, None, "abandoned", True, True, None),
+        # A hand-written step wins where it is further along, and Mocks is design
+        # work its bound worker does: Build never passes it. A pull request still does.
+        ({"step": "build"}, None, "open", False, False, "build"),
+        ({"step": "mocks"}, None, "open", True, False, "mocks"),
+        ({"step": "mocks"}, 7, "open", True, False, "review"),
+        ({"step": "todo"}, None, "open", True, False, "build"),
+        # An epic and a sub-task are never bound: no To do or Build of their own.
+        ({"level": "epic"}, None, "open", False, False, None),
+        ({"level": "task", "parent": "it_00000001"}, None, "open", False, False, None),
+    ],
+)
+def test_the_board_s_step_fills_from_facts(plan, pr, state, bound, merged, want) -> None:
+    row = {"pr": pr, "state": state, "acceptance": None, **({"plan": plan} if plan else {})}
+    show_step(row, [], worker_bound=bound, pr_merged=merged)
+    assert (row.get("plan") or {}).get("step") == want

@@ -10786,6 +10786,8 @@
       "plan_tasks_toggle": "gemergte Teilaufgaben: {{done}} von {{total}}",
       "plan_estimate": "Schätzung",
       "plan_estimate_total": "Gesamt {{total}}",
+      "plan_runs_on": "Läuft auf {{name}}",
+      "plan_waits_on_conductor": "Wartet auf seinen Conductor {{age}}",
       "plan_estimate_sort": "Nach Schätzung sortieren; erneut klicken für die Rangfolge",
       "plan_step_todo": "Zu erledigen",
       "plan_step_mocks": "Entwürfe",

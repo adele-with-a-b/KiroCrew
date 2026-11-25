@@ -174,6 +174,10 @@ async def test_a_row_is_the_conductor_item_shape_minus_the_masked_field():
         "has_worker",
         "in_backlog",
         "events",
+        # The step its facts reach (Build: a worker is bound), on the read only.
+        "plan",
+        # Which machine the bound worker runs on.
+        "runs_on",
     }
     joined = {"alive", "outstanding", "terminal"}
     assert set(row) == item_keys | derived | joined
@@ -195,6 +199,48 @@ async def test_a_story_no_worker_is_on_reads_as_backlog_and_takes_no_seat_on_the
     body, _ = await _call(_state({WORKER: _slot()}), CONDUCTOR)
     # The free-slot line's count: the waiting row holds a seat, though no worker is on.
     assert body["conductor"]["seats_held"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_board_nobody_planned_fills_its_steps_and_machines_from_facts(monkeypatch):
+    """The wiped board: no plan on any row. Each row's step and its worker's machine
+    are worked out on the read, and nothing of it is written to the ledger."""
+    monkeypatch.setattr("kiro_crew.relay_client.lease.default_display_name", lambda: "M5")
+    waiting, working, with_pr, merged = (
+        _item(title="waiting"),
+        _item(title="working"),
+        _item(title="has a pr"),
+        _item(title="pr merged"),
+    )
+    for item_id, worker in ((working, WORKER), (with_pr, "chat-3-w"), (merged, "chat-4-w")):
+        _bind(item_id, worker)
+    _report(with_pr, "progress", pr=12)
+    _report(merged, "done", pr=13)
+    facts = {
+        merged: {
+            "label": "o/r#13",
+            "url": "u",
+            "reads": {"warm_brief": {"facts": {"state": "MERGED"}}},
+        }
+    }
+    monkeypatch.setattr(board, "pr_facts", lambda slot, items: facts)
+    body, _ = await _call(_state({WORKER: _slot()}), CONDUCTOR)
+    rows = {row["item_id"]: row for row in body["items"]}
+    steps = {item_id: (rows[item_id].get("plan") or {}).get("step") for item_id in rows}
+    assert steps == {waiting: "todo", working: "build", with_pr: "review", merged: "merged"}
+    assert "runs_on" not in rows[waiting]
+    assert {rows[i]["runs_on"] for i in (working, with_pr, merged)} == {"M5"}
+    # Derived, never stored: the ledger still holds no plan on any of them.
+    assert all(item.plan is None for item in wl.list_work_items(CONDUCTOR))
+
+
+@pytest.mark.asyncio
+async def test_a_hand_written_mocks_step_is_kept_while_its_worker_builds():
+    item_id = _item(title="design pass")
+    wl.apply_plan_write(CONDUCTOR, item_id, {"step": "mocks"})
+    _bind(item_id)
+    body, _ = await _call(_state({WORKER: _slot()}), CONDUCTOR)
+    assert body["items"][0]["plan"]["step"] == "mocks"
 
 
 @pytest.mark.asyncio

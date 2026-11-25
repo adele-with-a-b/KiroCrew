@@ -519,6 +519,31 @@ def pr_facts(slot: str, items: list[work_ledger.WorkItem]) -> dict[str, dict[str
     return out
 
 
+def _pr_merged(facts: Mapping[str, Any] | None) -> bool:
+    """Whether :func:`pr_facts`' read for one item saw its pull request merged."""
+    reads = facts.get("reads") if isinstance(facts, Mapping) else None
+    warm = reads.get("warm_brief") if isinstance(reads, Mapping) else None
+    seen = warm.get("facts") if isinstance(warm, Mapping) else None
+    state = seen.get("state") if isinstance(seen, Mapping) else None
+    # GitHub answers ``MERGED`` as readily as ``merged``.
+    return isinstance(state, str) and state.lower() == "merged"
+
+
+def _runs_on_names(state: DashboardState, items: list[work_ledger.WorkItem]) -> dict[str, str]:
+    """Which machine each bound item's worker runs on, by item id: another crew's
+    name (the conductor read's ``runs_on``), or this machine's own name, the one the
+    Crew list shows, where that read says ``local``. BLOCKING; never raises."""
+    from kiro_crew.dashboard.handlers.work_ledger_read import _crew_names, _runs_on
+    from kiro_crew.relay_client.lease import default_display_name
+
+    bound = [item for item in items if item.worker_session_key]
+    crews = _crew_names(state) if any(item.worker_instance_id for item in bound) else {}
+    here = default_display_name()
+    return {
+        item.item_id: _runs_on(item, crews) if item.worker_instance_id else here for item in bound
+    }
+
+
 def closed_items(slot_key: str) -> list[dict[str, Any]]:
     """The closed items on thread *slot_key*'s own ledger, as this board reads them.
 
@@ -747,14 +772,26 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     )
 
     remote_live = await asyncio.to_thread(work_ledger.remote_liveness_map, key, items)
+    # What the warm welcome last read about each item's pull request, with its read
+    # time. Read before the rows: a merged one moves its row's step to Merged.
+    facts_by_item = await asyncio.to_thread(pr_facts, requested, items)
+    runs_on = await asyncio.to_thread(_runs_on_names, state, items)
     rows: list[dict[str, Any]] = []
     for item in items:
         row = item.to_dict()
-        show_step(row, record.releases)
         # Backlog or sprint, and whether a worker holds it, worked out here because
         # the page never gets the worker's key: a story with no worker and no
         # ``plan.backlog`` is a backlog row, on every board (``in_backlog``).
         has_worker = bool(item.worker_session_key)
+        # Every row's step, a row with no plan included, from what happened to it.
+        show_step(
+            row,
+            record.releases,
+            worker_bound=has_worker,
+            pr_merged=_pr_merged(facts_by_item.get(item.item_id)),
+        )
+        if item.item_id in runs_on:
+            row["runs_on"] = runs_on[item.item_id]
         row["has_worker"] = has_worker
         row["in_backlog"] = in_backlog(item.plan, state=item.state, worker_bound=has_worker)
         row["orphaned"] = work_ledger.is_orphaned(item, conductor_slot_exists=conductor_alive)
@@ -801,8 +838,6 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     asks = await asyncio.to_thread(
         _conductor_asks, requested, {item.item_id for item in items if not item.is_terminal}
     )
-    # What the warm welcome last read about each item's pull request, with its read time.
-    facts_by_item = await asyncio.to_thread(pr_facts, requested, items)
     # Done or stopped: the item states and whether the conductor's patrol is still on.
     from kiro_crew import conductor_patrol
     from kiro_crew.autonudge import get_instance

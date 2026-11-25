@@ -4489,6 +4489,8 @@
       "plan_tasks_toggle": "Sub-tasks merged: {{done}} of {{total}}",
       "plan_estimate": "Estimate",
       "plan_estimate_total": "Total {{total}}",
+      "plan_runs_on": "Runs on {{name}}",
+      "plan_waits_on_conductor": "Waits on its Conductor {{age}}",
       "plan_estimate_sort": "Sort by estimate; click again for the ranked order",
       "plan_step_todo": "To do",
       "plan_step_mocks": "Mocks",

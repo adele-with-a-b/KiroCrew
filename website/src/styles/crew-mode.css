@@ -162,6 +162,10 @@ html:root .liquid-glass.crew-chip[aria-pressed="true"]:not(:disabled):not([aria-
   color: color-mix(in srgb, var(--ok) 45%, var(--text-strong, var(--text)));
 }
 
+.crew-tone-danger {
+  color: color-mix(in srgb, var(--danger) 45%, var(--text-strong, var(--text)));
+}
+
 .crew-tone-aim {
   color: var(--conductor-mode-accent);
 }

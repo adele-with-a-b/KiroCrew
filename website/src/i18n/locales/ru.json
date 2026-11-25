@@ -11255,6 +11255,8 @@
       "plan_tasks_toggle": "Подзадач слито: {{done}} из {{total}}",
       "plan_estimate": "Оценка",
       "plan_estimate_total": "Всего {{total}}",
+      "plan_runs_on": "Работает на {{name}}",
+      "plan_waits_on_conductor": "Ждёт своего Conductor {{age}}",
       "plan_estimate_sort": "Сортировать по оценке; нажми ещё раз для порядка по рангу",
       "plan_step_todo": "К работе",
       "plan_step_mocks": "Макеты",

@@ -10539,6 +10539,8 @@
       "plan_tasks_toggle": "已合并的子任务：{{done}}/{{total}}",
       "plan_estimate": "估时",
       "plan_estimate_total": "合计 {{total}}",
+      "plan_runs_on": "运行于 {{name}}",
+      "plan_waits_on_conductor": "等待其 Conductor {{age}}",
       "plan_estimate_sort": "按估时排序；再点一次回到排名顺序",
       "plan_step_todo": "待办",
       "plan_step_mocks": "样稿",

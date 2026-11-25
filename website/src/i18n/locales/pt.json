@@ -11033,6 +11033,8 @@
       "plan_tasks_toggle": "Subtarefas mescladas: {{done}} de {{total}}",
       "plan_estimate": "Estimativa",
       "plan_estimate_total": "Total {{total}}",
+      "plan_runs_on": "Em execução em {{name}}",
+      "plan_waits_on_conductor": "Aguarda o seu Conductor {{age}}",
       "plan_estimate_sort": "Ordenar por estimativa; clique de novo para a ordem por posição",
       "plan_step_todo": "A fazer",
       "plan_step_mocks": "Protótipos",
