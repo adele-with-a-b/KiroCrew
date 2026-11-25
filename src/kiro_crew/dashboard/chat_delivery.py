@@ -31,6 +31,7 @@ from kiro_crew.dashboard.chat_utils import (
     STEER_POSSIBLY_DELIVERED_META,
     _redact_for_display,
     _redact_meta,
+    _reorder_queued_rows,
 )
 from kiro_crew.dashboard.slot_queue_repository import (
     ATTACHMENT_META_KEYS,
@@ -1493,6 +1494,7 @@ def queue_for_next_turn(
         directive_channel_origin=directive_channel_origin,
         directive_owner_origin=directive_owner_origin,
     )
+    moved_order: list[Any] | None = None
     if (
         refusal == steer_refusal.NOT_OWNERS_TURN
         and directive_owner_origin
@@ -1501,20 +1503,22 @@ def queue_for_next_turn(
     ):
         # The owner's message that was kept out of a turn the owner did not send
         # runs next: ahead of every waiting entry (a note queued before it runs
-        # after it), behind only the owner's earlier messages that wait for the
-        # same reason, so those keep their order. Only the owner's own entry
-        # moves, whatever code a caller names.
-        entry = slot._queue.pop()
-        first = next(
-            (
-                index
-                for index, waiting in enumerate(slot._queue)
-                if (waiting.get("meta") or {}).get(steer_refusal.QUEUE_META_KEY) != refusal
-                or waiting.get("_directive_owner_origin") is not True
-            ),
-            len(slot._queue),
-        )
-        slot._queue.insert(first, entry)
+        # after it), but never ahead of an earlier message of the owner's own,
+        # whatever that one waits for. Those come to the front with it, in their
+        # order, so the owner's messages keep their order and all run first.
+        # Only the owner's own entries move, whatever code a caller names.
+        before = [item["id"] for item in slot._queue]
+        owners = [
+            item
+            for item in slot._queue
+            if item.get("_directive_owner_origin") is True
+            and item.get("_directive_user_origin") is True
+            and not item.get("_directive_channel_origin")
+        ]
+        moved = {id(item) for item in owners}
+        slot._queue[:] = owners + [item for item in slot._queue if id(item) not in moved]
+        if [item["id"] for item in slot._queue] != before:
+            moved_order = [item["id"] for item in slot._queue]
     if queued_work is not None:
         from kiro_crew.shared_crew import admission_entry as _sc_entry
 
@@ -1572,6 +1576,13 @@ def queue_for_next_turn(
 
     _rc.mark_written_on_push(slot, qid, push)
     state.broadcast_ws("queue_push", push)
+    if moved_order is not None:
+        # `queue_push` draws the card last; tell open tabs where it really is,
+        # as every other server-side move does, so a drag from a stale tab
+        # cannot put it back behind the notes.
+        _reorder_queued_rows(slot.messages, moved_order)
+        slot.invalidate_source_links()
+        state.broadcast_ws("queue_reorder", {"slot": slot.key, "order": moved_order})
     start_queue_persist(state, slot)
     return qid
 

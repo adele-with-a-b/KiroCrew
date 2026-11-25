@@ -4114,10 +4114,13 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   (owner's own dashboard request, not through a channel, running turn without
   `_turn_owner_sent`), with nothing registered and nothing changed on the turn.
   The composer's queue path (`queue_for_next_turn`) then puts that entry at the
-  FRONT of the queue, behind only the owner's earlier entries waiting for the same
-  reason: it runs next, alone, as the owner's own turn with the mark, and an entry
-  queued before it (a peer's note) runs after it, without the mark. Only an entry
-  carrying the owner's own marks moves, whatever code a caller names. The card,
+  FRONT of the queue, and the owner's own earlier waiting entries, whatever those
+  wait for, come to the front with it in their order, so the owner's messages
+  never change order: it runs next after them, alone, as the owner's own turn
+  with the mark, and an entry queued before it (a peer's note) runs after it,
+  without the mark. Only entries carrying the owner's own marks move, whatever
+  code a caller names, and a move is sent to open tabs as a `queue_reorder`
+  frame after the `queue_push`. The card,
   the row and the send's reply carry the code (`meta.steerRefusal`,
   `steerRefusal`). The responsive path takes its own queue arm for a steer that
   did not go in: the message waits as a priority entry, the running turn is asked

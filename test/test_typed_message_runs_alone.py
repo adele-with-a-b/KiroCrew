@@ -684,14 +684,6 @@ def test_only_the_owners_entry_goes_first_whatever_code_a_caller_names(tmp_path)
         directive_channel_origin=True,
         steer_refused=code,
     )
-    queue_for_next_turn(
-        state,
-        slot,
-        "the owner, another cause",
-        directive_user_origin=True,
-        directive_owner_origin=True,
-        steer_refused=steer_refusal.TOO_MANY,
-    )
     assert [item["content"] for item in slot._queue][0] == "a waiting note"
 
     queue_for_next_turn(
@@ -708,8 +700,57 @@ def test_only_the_owners_entry_goes_first_whatever_code_a_caller_names(tmp_path)
         "no marks",
         "a person, not the owner",
         "a channel's",
-        "the owner, another cause",
     ]
+
+
+def test_a_kept_out_message_never_passes_the_owners_earlier_one(tmp_path) -> None:
+    """The owner's "do A" queued for another cause behind a note, then "then B"
+    kept out: A comes to the front with B and still runs first, both before
+    every note, and open tabs get the order."""
+    state, slot = _foreign_turn(tmp_path)
+    slot.queue_append("a waiting note")
+    queue_for_next_turn(
+        state,
+        slot,
+        "do A",
+        directive_user_origin=True,
+        directive_owner_origin=True,
+        steer_refused=steer_refusal.BETWEEN_STEPS,
+    )
+    queue_for_next_turn(state, slot, "a later note")
+    state.broadcast_ws.reset_mock()
+
+    queue_for_next_turn(
+        state,
+        slot,
+        "then B",
+        directive_user_origin=True,
+        directive_owner_origin=True,
+        steer_refused=steer_refusal.NOT_OWNERS_TURN,
+    )
+
+    assert [item["content"] for item in slot._queue] == [
+        "do A",
+        "then B",
+        "a waiting note",
+        "a later note",
+    ]
+    frames = [c.args for c in state.broadcast_ws.call_args_list]
+    assert [f[0] for f in frames] == ["queue_push", "queue_reorder"]
+    assert frames[1][1]["order"] == [item["id"] for item in slot._queue]
+
+
+def test_a_kept_out_message_already_last_sends_no_reorder(tmp_path) -> None:
+    state, slot = _foreign_turn(tmp_path)
+    queue_for_next_turn(
+        state,
+        slot,
+        "only one",
+        directive_user_origin=True,
+        directive_owner_origin=True,
+        steer_refused=steer_refusal.NOT_OWNERS_TURN,
+    )
+    assert [c.args[0] for c in state.broadcast_ws.call_args_list] == ["queue_push"]
 
 
 def test_the_sender_is_told_it_runs_next_as_their_own_turn() -> None:

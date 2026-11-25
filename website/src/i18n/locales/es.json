@@ -9221,7 +9221,7 @@
         "permission_wait": "no pudo entrar a mitad del turno: el turno espera una aprobación",
         "too_long": "no pudo entrar a mitad del turno: el mensaje es demasiado largo",
         "refused": "no pudo entrar a mitad del turno: el agente no lo aceptó",
-        "not_owners_turn": "se ejecuta a continuación como su propio turno: usted no inició el que está en curso"
+        "not_owners_turn": "se ejecuta a continuación como tu propio turno: tú no iniciaste el que está en curso"
       },
       "sub_agent_results_ready_many": "{{count}} resultados de subagentes listos: se procesarán después del turno actual",
       "sub_agent_results_ready_one": "{{count}} resultado del subagente listo: se procesará después del turno actual",

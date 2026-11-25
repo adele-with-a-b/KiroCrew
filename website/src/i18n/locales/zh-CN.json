@@ -8771,7 +8771,7 @@
         "permission_wait": "无法在轮次中途送入：轮次正在等待批准",
         "too_long": "无法在轮次中途送入：消息太长",
         "refused": "无法在轮次中途送入：智能体没有接受它",
-        "not_owners_turn": "接下来将作为您自己的轮次运行：当前轮次不是由您发起的"
+        "not_owners_turn": "接下来将作为你自己的轮次运行：当前轮次不是由你发起的"
       },
       "sub_agent_results_ready_other": "{{count}} 个子代理结果已就绪，将在当前轮次结束后处理",
       "queued_count_other": "{{count}} 条已排队"

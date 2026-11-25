@@ -9221,7 +9221,7 @@
         "permission_wait": "n'a pas pu entrer en cours de tour : le tour attend une approbation",
         "too_long": "n'a pas pu entrer en cours de tour : le message est trop long",
         "refused": "n'a pas pu entrer en cours de tour : l'agent ne l'a pas pris",
-        "not_owners_turn": "s'exécute ensuite comme votre propre tour : vous n'avez pas lancé celui en cours"
+        "not_owners_turn": "s'exécute ensuite comme ton propre tour : tu n'as pas lancé celui en cours"
       },
       "sub_agent_results_ready_many": "{{count}} résultats de sous-agent prêts — traitement après le tour en cours",
       "sub_agent_results_ready_one": "{{count}} résultat de sous-agent prêt — traitement après le tour en cours",

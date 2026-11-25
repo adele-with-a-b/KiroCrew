@@ -8996,7 +8996,7 @@
         "permission_wait": "konnte nicht mitten im Durchgang hinein: der Durchgang wartet auf eine Freigabe",
         "too_long": "konnte nicht mitten im Durchgang hinein: die Nachricht ist zu lang",
         "refused": "konnte nicht mitten im Durchgang hinein: der Agent hat sie nicht angenommen",
-        "not_owners_turn": "läuft als Nächstes als Ihr eigener Durchgang: den laufenden haben Sie nicht gestartet"
+        "not_owners_turn": "läuft als Nächstes als dein eigener Durchgang: den laufenden hast du nicht gestartet"
       },
       "sub_agent_results_ready_one": "{{count}} Subagenten-Ergebnis bereit — wird nach dem aktuellen Durchlauf verarbeitet",
       "sub_agent_results_ready_other": "{{count}} Subagenten-Ergebnisse bereit — werden nach dem aktuellen Durchlauf verarbeitet",
