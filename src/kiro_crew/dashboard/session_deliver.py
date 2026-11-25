@@ -168,7 +168,9 @@ async def deliver(
     (:func:`_deliver_idle`); a slot that is closing or the gateway is shutting
     down answers :data:`NOT_DELIVERED` and the caller falls back. Running slot: an
     automation wake is steered into the turn (its row is the same nudge row,
-    written by ``steer_into_running_turn``), and a cron or app message is queued
+    written by ``steer_into_running_turn``), unless the turn holds the owner's
+    mark: such a turn takes no wake and the answer is :data:`NOT_DELIVERED`, so
+    the sender delivers it when the turn ends. A cron or app message is queued
     behind it with a ``queued`` card, so an injection never starts a second
     turn.
 
@@ -251,6 +253,15 @@ async def _deliver_running(
 ) -> str:
     """The running-slot half of :func:`deliver`."""
     if origin.kind == ORIGIN_AUTOMATION:
+        if getattr(slot, "_turn_owner_sent", False) is True:
+            # The owner sent the running turn and it holds the owner's mark. A
+            # steer that is not the owner's ends that mark for the rest of the
+            # turn (``steer_into_running_turn``), so a wake steered in mid-turn
+            # would take the owner's rights from the owner's own request: a
+            # crew-scoped call the turn makes after it would be refused. The wake
+            # is held out instead. Not delivered means the sender keeps it owed,
+            # and its turn-end retry delivers it as its own turn.
+            return NOT_DELIVERED
         from kiro_crew.dashboard.chat_delivery import (
             STEER_REQUEUED,
             STEER_STEERED,

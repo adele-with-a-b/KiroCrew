@@ -23,7 +23,7 @@ import pytest
 import steer_requeue_helpers
 from aiohttp.test_utils import TestClient, TestServer
 from chat_test_helpers import _make_app, _make_state
-from steer_requeue_helpers import _running_slot
+from steer_requeue_helpers import _owners_running_slot as _running_slot
 
 from kiro_crew.acp.types import wrap_user_message
 from kiro_crew.dashboard import steer_retract

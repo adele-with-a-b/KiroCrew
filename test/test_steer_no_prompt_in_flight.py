@@ -16,7 +16,7 @@ import pytest
 import steer_requeue_helpers
 from aiohttp.test_utils import TestClient, TestServer
 from chat_test_helpers import _make_app, _make_state
-from steer_requeue_helpers import _running_slot
+from steer_requeue_helpers import _owners_running_slot as _running_slot
 
 _patch_sel = steer_requeue_helpers._patch_sel
 

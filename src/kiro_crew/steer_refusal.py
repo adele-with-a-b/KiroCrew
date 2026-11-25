@@ -42,6 +42,11 @@ PERMISSION_WAIT = "permission_wait"
 TOO_LONG = "too_long"
 #: The agent answered that it did not take it, or the write did not go out.
 REFUSED = "refused"
+#: The owner typed it while a turn the owner did not send was running (a note from
+#: another session, a wake or an automation opened it, or text of theirs joined
+#: it). Inside that turn it would run without the owner's standing, so it waits
+#: at the front of the queue and runs next, as the owner's own turn.
+NOT_OWNERS_TURN = "not_owners_turn"
 
 #: Every code, in the order the table below gives them.
 CODES = (
@@ -57,6 +62,7 @@ CODES = (
     PERMISSION_WAIT,
     TOO_LONG,
     REFUSED,
+    NOT_OWNERS_TURN,
 )
 
 #: The queue-entry meta key that carries the code of the steer this entry fell back from.
@@ -81,6 +87,10 @@ _WHY = {
     PERMISSION_WAIT: "the turn is waiting on a tool approval",
     TOO_LONG: "the message is longer than a steer may be",
     REFUSED: "its agent did not take it",
+    NOT_OWNERS_TURN: (
+        "you did not start the running turn (a note from another session, a wake "
+        "or an automation did), and inside it your message would not carry your rights"
+    ),
 }
 
 _WAITS = {
@@ -89,6 +99,7 @@ _WAITS = {
         "it going for as long as it works on its own"
     ),
     PERMISSION_WAIT: "It runs when this turn ends, after the approval is answered",
+    NOT_OWNERS_TURN: "It runs next, as your own turn, as soon as that turn ends",
 }
 
 

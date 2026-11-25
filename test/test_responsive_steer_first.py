@@ -105,6 +105,31 @@ async def test_steer_consumed_within_grace_never_cancels(env, clock):
 
 
 @pytest.mark.asyncio
+async def test_a_send_into_a_turn_the_owner_did_not_send_is_never_steered_into_it(
+    env, clock, monkeypatch
+):
+    """A note or a wake opened the running turn: the owner's message is kept out of
+    it (a steer never gives a turn the owner's mark) and takes the queue arm, which
+    asks that turn to stop and runs the message next, alone, as the owner's own."""
+    state, slot, request, *_ = env
+    wires = _steerable(slot)
+    slot._turn_user_sent = slot._turn_owner_sent = False
+    slot.queue_append("a note that was already waiting")
+
+    receipt = await _send(request, slot, "Q1a Go.", "send-go")
+
+    assert wires == [], "nothing of it reached the running turn"
+    assert slot._pending_steers == []
+    assert receipt["queued"] is True and receipt["responsive"] == "cancel_requested"
+    entry = next(item for item in slot._queue if item["content"] == "Q1a Go.")
+    assert rc.priority_entry(entry) and entry["_directive_owner_origin"] is True
+    received = await _drain_once(state, slot, monkeypatch)
+    assert [message for message, _ in received] == ["Q1a Go."]
+    assert received[0][1]["_directive_owner_origin"] is True
+    assert [item["content"] for item in slot._queue] == ["a note that was already waiting"]
+
+
+@pytest.mark.asyncio
 async def test_unconsumed_steer_cancels_once_after_grace_and_runs_next_turn_once(
     env, clock, monkeypatch
 ):
@@ -373,6 +398,7 @@ async def _run_original(state, slot):
             "Original task CEDAR-17",
             _responsive_human=True,
             _directive_user_origin=True,
+            _directive_owner_origin=True,
         )
     )
     slot.task = original

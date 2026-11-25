@@ -31,6 +31,7 @@ from kiro_crew.dashboard.chat_utils import (
     STEER_POSSIBLY_DELIVERED_META,
     _redact_for_display,
     _redact_meta,
+    _reorder_queued_rows,
 )
 from kiro_crew.dashboard.slot_queue_repository import (
     ATTACHMENT_META_KEYS,
@@ -439,6 +440,19 @@ def _steer_target(slot: Any) -> tuple[object, bool, int]:
     )
 
 
+def _opened_for_another_caller(slot: Any) -> bool:
+    """Whether *slot* was opened on another caller's behalf (``session_create``, a cron).
+
+    The crew gate's own slot check (``handlers_instances_crew_reads._slot_refusal``)
+    refuses such a slot whoever sent its turn, so the owner's standing there buys
+    no crew-scoped right a steer could lose; a worker's chat keeps taking the
+    owner's steer into the turn its conductor opened.
+    """
+    return bool(getattr(slot, "_lineage_minted", False)) or bool(
+        str(getattr(slot, "_created_by", "") or "")
+    )
+
+
 async def steer_into_running_turn(
     state: "DashboardState",
     slot: "_ChatSlot",
@@ -637,6 +651,21 @@ async def steer_into_running_turn(
         # The turn IS a manual /compact: no prompt runs that a steer could join.
         logger.info("slot %s is compacting; queueing instead of steering", slot.key)
         return SteerUnavailable(steer_refusal.COMPACTING)
+    if (
+        owner_origin
+        and user_origin
+        and not channel_origin
+        and getattr(slot, "_turn_owner_sent", False) is not True
+        and not _opened_for_another_caller(slot)
+    ):
+        # The owner's own words, typed while a turn the owner did not send runs:
+        # a note from another session, a wake or an automation opened it, or
+        # their text joined it. A steer never gives a turn the owner's mark, so
+        # inside that turn the message would lose the rights it was typed with.
+        # It goes to the caller's queue path, which puts it first
+        # (``queue_for_next_turn``): it runs next, alone, as the owner's own turn.
+        logger.info("slot %s runs a turn its owner did not send; queueing first", slot.key)
+        return SteerUnavailable(steer_refusal.NOT_OWNERS_TURN)
 
     # Register as pending BEFORE the await: ``steer()`` suspends on
     # ``stdin.drain()``, and if the turn's finally runs during that suspension
@@ -1465,6 +1494,31 @@ def queue_for_next_turn(
         directive_channel_origin=directive_channel_origin,
         directive_owner_origin=directive_owner_origin,
     )
+    moved_order: list[Any] | None = None
+    if (
+        refusal == steer_refusal.NOT_OWNERS_TURN
+        and directive_owner_origin
+        and directive_user_origin
+        and not directive_channel_origin
+    ):
+        # The owner's message that was kept out of a turn the owner did not send
+        # runs next: ahead of every waiting entry (a note queued before it runs
+        # after it), but never ahead of an earlier message of the owner's own,
+        # whatever that one waits for. Those come to the front with it, in their
+        # order, so the owner's messages keep their order and all run first.
+        # Only the owner's own entries move, whatever code a caller names.
+        before = [item["id"] for item in slot._queue]
+        owners = [
+            item
+            for item in slot._queue
+            if item.get("_directive_owner_origin") is True
+            and item.get("_directive_user_origin") is True
+            and not item.get("_directive_channel_origin")
+        ]
+        moved = {id(item) for item in owners}
+        slot._queue[:] = owners + [item for item in slot._queue if id(item) not in moved]
+        if [item["id"] for item in slot._queue] != before:
+            moved_order = [item["id"] for item in slot._queue]
     if queued_work is not None:
         from kiro_crew.shared_crew import admission_entry as _sc_entry
 
@@ -1522,6 +1576,13 @@ def queue_for_next_turn(
 
     _rc.mark_written_on_push(slot, qid, push)
     state.broadcast_ws("queue_push", push)
+    if moved_order is not None:
+        # `queue_push` draws the card last; tell open tabs where it really is,
+        # as every other server-side move does, so a drag from a stale tab
+        # cannot put it back behind the notes.
+        _reorder_queued_rows(slot.messages, moved_order)
+        slot.invalidate_source_links()
+        state.broadcast_ws("queue_reorder", {"slot": slot.key, "order": moved_order})
     start_queue_persist(state, slot)
     return qid
 

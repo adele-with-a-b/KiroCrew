@@ -181,6 +181,8 @@ class TestSteerFallbackSurvivesTheHold:
 
         state = self._state(tmp_path, monkeypatch)
         slot = _busy(state.get_or_create_slot("s1"))
+        # The owner's own turn: the composer steers into no other (``NOT_OWNERS_TURN``).
+        slot._turn_user_sent = slot._turn_owner_sent = True
         client_mock = MagicMock()
         client_mock.supports_steer = True
         client_mock.steer = AsyncMock(return_value=True)

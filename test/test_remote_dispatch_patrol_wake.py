@@ -188,9 +188,10 @@ async def test_a_turn_that_declares_nothing_holds_no_mark(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("owner_origin", [False, True])
-async def test_a_steer_from_a_person_or_a_peer_ends_the_patrol_mark(owner_origin: bool) -> None:
-    """A steer adds text the gateway did not write, whoever sent it."""
+@pytest.mark.parametrize("user_origin", [False, True])
+async def test_a_steer_from_a_person_or_a_peer_ends_the_patrol_mark(user_origin: bool) -> None:
+    """A steer adds text the gateway did not write, whoever sent it: a peer, or a
+    person who is not the owner (the owner's own message is kept out, below)."""
     from kiro_crew.dashboard import chat_delivery
     from kiro_crew.dashboard.state import _ChatSlot
 
@@ -200,9 +201,30 @@ async def test_a_steer_from_a_person_or_a_peer_ends_the_patrol_mark(owner_origin
     client.steer = AsyncMock(return_value=None)
     slot._acp_client = client
     await chat_delivery.steer_into_running_turn(
-        MagicMock(), slot, "also do this", user_origin=owner_origin, owner_origin=owner_origin
+        MagicMock(), slot, "also do this", user_origin=user_origin
     )
     assert slot._turn_patrol_wake is False
+
+
+@pytest.mark.asyncio
+async def test_the_owners_typed_message_stays_out_of_the_wake_and_leaves_the_mark() -> None:
+    """The owner's own message is not steered into a wake (it runs next, as the
+    owner's turn), so no text joined the wake and its mark stands."""
+    from kiro_crew import steer_refusal
+    from kiro_crew.dashboard import chat_delivery
+    from kiro_crew.dashboard.state import _ChatSlot
+
+    slot = _ChatSlot("chat-1")
+    slot._turn_patrol_wake = True
+    client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
+    client.steer = AsyncMock(return_value=None)
+    slot._acp_client = client
+    outcome = await chat_delivery.steer_into_running_turn(
+        MagicMock(), slot, "also do this", user_origin=True, owner_origin=True
+    )
+    assert chat_delivery.steer_refusal_of(outcome) == steer_refusal.NOT_OWNERS_TURN
+    client.steer.assert_not_awaited()
+    assert slot._turn_patrol_wake is True
 
 
 # ── the loop fire: declared for the fixed patrol alone ───────────────────────
@@ -586,6 +608,45 @@ def real_gate(env, monkeypatch):  # noqa: F811 -- the imported fixture
     monkeypatch.setattr(crew, "_audit_patrol_wake", lambda key, verb: audits.append((key, verb)))
     env.audits = audits
     return env
+
+
+def test_create_then_send_in_one_owner_turn_both_pass_with_a_ledger_wake_between(
+    real_gate, monkeypatch
+):
+    """Created, then seeded: the owner's turn creates a session on a linked Crew, a
+    work-ledger wake arrives, and the same turn sends that session its first
+    message. The wake is held out of the turn the owner sent, so the turn keeps
+    the owner's mark and the send is admitted like the create."""
+    from kiro_crew.dashboard import session_control as sc
+    from kiro_crew.dashboard import session_deliver
+
+    _settings(monkeypatch, patrol_wake=False)
+    caller = real_gate.caller
+    caller._turn_user_sent = caller._turn_owner_sent = True
+    agent = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
+    agent.steer = AsyncMock(return_value=True)
+    agent.has_active_turn = lambda: True
+    caller._acp_client = agent
+
+    target = _create(real_gate)
+
+    outcome = asyncio.run(
+        session_deliver.deliver(
+            real_gate.state,
+            caller,
+            "[work-ledger wake] item=it_1 status=done",
+            session_deliver.automation(1, "loop-1"),
+            admission=sc.containment_meta(real_gate.state, caller),
+        )
+    )
+    assert outcome == session_deliver.NOT_DELIVERED, "kept owed for the turn's end"
+    agent.steer.assert_not_awaited()
+    assert caller._turn_owner_sent is True
+
+    real_gate.peer.reply("GET", f"api/chat/slots/{target}", 200, {"title": "w", "messages": []})
+    status, body = _call(real_gate, "send", crew="lab", target=target, message="your first task")
+    assert status == 200, body
+    assert real_gate.audits == [], "admitted as the owner's own turn, not as a patrol wake"
 
 
 def test_a_patrol_wake_is_refused_with_the_setting_off(real_gate, monkeypatch):

@@ -72,6 +72,7 @@ const STEER_REFUSAL_KEYS: Record<string, string> = {
   permission_wait: 'components.queueStack.steer_refusal.permission_wait',
   too_long: 'components.queueStack.steer_refusal.too_long',
   refused: 'components.queueStack.steer_refusal.refused',
+  not_owners_turn: 'components.queueStack.steer_refusal.not_owners_turn',
 }
 
 /** The card's words for a queued entry that a steer fell back to, or null. */

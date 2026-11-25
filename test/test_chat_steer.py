@@ -35,6 +35,8 @@ def _running_slot(state, key="test"):
     task = MagicMock()
     task.done.return_value = False
     slot.task = task
+    # The owner's own turn: the composer steers into no other (``NOT_OWNERS_TURN``).
+    slot._turn_user_sent = slot._turn_owner_sent = True
     return slot
 
 

@@ -513,6 +513,26 @@ class TestSteeringAWakeIntoARunningTurn:
             assert await orch._fire_dashboard_nudge(loop) is True
 
     @pytest.mark.asyncio
+    async def test_a_wake_landing_in_the_owners_own_turn_is_held_for_its_end(self):
+        """A steer that is not the owner's ends the turn's owner mark, so the wake
+        stays out of a turn that holds it: the fire declines, the wake stays owed,
+        and the turn-end retry delivers it as its own turn."""
+        orch = _orchestrator()
+        loop = _ledger_loop()
+        slot = _slot(running=True)
+        slot._turn_owner_sent = True
+        orch.dashboard_state.get_slot = MagicMock(return_value=slot)
+        steer = AsyncMock(return_value="steered")
+        with (
+            patch("kiro_crew.dashboard.chat_delivery.steer_into_running_turn", steer),
+            patch("kiro_crew.dashboard.session_control.containment_meta", return_value={}),
+            patch.object(orch, "_work_ledger_wake_text", AsyncMock(return_value="WAKE TEXT")),
+        ):
+            assert await orch._fire_dashboard_nudge(loop) is False
+        steer.assert_not_awaited()
+        assert slot._turn_owner_sent is True
+
+    @pytest.mark.asyncio
     async def test_a_steer_the_backend_did_not_take_leaves_the_wake_owed(self):
         """Then the loop declines the fire exactly as it did, and the retry delivers."""
         orch = _orchestrator()
