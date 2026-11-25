@@ -36,8 +36,11 @@ wake of the default patrol (the one the gateway armed when you dispatched) may
 use `crew=` like an owner turn: create, send, read, stop and close. Try the
 call; a refusal `crew_owner_unverifiable` means one of: the setting is off;
 this wake is not that patrol; the owner has not yet dispatched from this chat
-since the patrol was armed; or another message (a worker's report, a note)
-joined this wake. In the last case the next wake can try again. A loop you
+since the patrol was armed; or another message joined this wake (a
+`session_send` from another session, a note, a person's steer). In the last
+case the next wake can try again. The patrol's own `[work-ledger wake]` line
+for one of your items is not such a message: a worker's report that lands
+while the wake runs leaves `crew=` open. A loop you
 armed yourself with your own text does not count, so keep the default patrol.
 A cron, a `session_send` turn and a worker are refused either way.
 

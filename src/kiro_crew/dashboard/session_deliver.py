@@ -69,6 +69,10 @@ class Origin:
     #: A peer's steer whose sender has no per-target budget above it, so it may
     #: wait longer for a turn that is still starting (``_steer_once_the_turn_has_a_prompt``).
     patient: bool = False
+    #: An automation wake that is the fixed patrol's own work-ledger news: steered
+    #: into a running patrol wake, it leaves that wake's ``crew=`` mark standing
+    #: (``steer_into_running_turn(patrol_news=)``). Only :func:`automation` sets it.
+    patrol_news: bool = False
 
 
 def cron(label: str) -> Origin:
@@ -98,11 +102,13 @@ def app(label: str) -> Origin:
 WAKE_GENERATION = "generation"
 
 
-def automation(cycle: int, loop_id: str, *, generation: int | None = None) -> Origin:
+def automation(
+    cycle: int, loop_id: str, *, generation: int | None = None, patrol_news: bool = False
+) -> Origin:
     nudge: dict[str, Any] = {"cycle": cycle, "loop_id": loop_id}
     if generation is not None:
         nudge[WAKE_GENERATION] = generation
-    return Origin(ORIGIN_AUTOMATION, nudge=nudge)
+    return Origin(ORIGIN_AUTOMATION, nudge=nudge, patrol_news=patrol_news is True)
 
 
 def origin_row(origin: Origin) -> tuple[str, str, dict[str, Any]]:
@@ -258,6 +264,7 @@ async def _deliver_running(
             user_origin=False,
             admission=admission,
             nudge_meta=dict(origin.nudge or {}),
+            patrol_news=origin.patrol_news,
         )
         if outcome == STEER_STEERED:
             return DELIVERED_STEERED

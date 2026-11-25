@@ -452,8 +452,9 @@ def init_ladder_fields(self: _ChatSlot) -> None:
     # patrol on this slot: the loop fire passes `_run_chat(_directive_patrol_wake=)`
     # only for a loop that still carries exactly the shipped patrol
     # (`conductor_patrol.is_fixed_patrol_payload`), so the turn's opener is text
-    # the gateway wrote. Set at the turn's outermost entry, cleared by ANY steer
-    # admitted into the turn (`chat_delivery`) and on every turn exit
+    # the gateway wrote. Set at the turn's outermost entry, cleared by a steer
+    # admitted into the turn (`chat_delivery`; that patrol's own work-ledger
+    # news alone leaves it standing) and on every turn exit
     # (`queue_cycle`), as the owner mark is. Read by the remote-dispatch gate
     # (`remote_dispatch_routes._patrol_wake_admitted`), and only while
     # `work_ledger.remote_dispatch_patrol_wake` is on.
