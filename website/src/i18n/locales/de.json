@@ -13543,6 +13543,7 @@
         "earlier_step_other": "{{count}} frühere Schritte",
         "hide_earlier_steps": "Frühere Schritte ausblenden",
         "hide_tool_calls": "Werkzeugaufrufe ausblenden",
+        "reply_continued": "Die Antwort ging weiter, nachdem sie geendet hatte",
         "worked_through_step_one": "{{count}} Schritt durchgearbeitet",
         "worked_through_step_other": "{{count}} Schritte durchgearbeitet"
       },

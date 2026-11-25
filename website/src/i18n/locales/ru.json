@@ -14189,6 +14189,7 @@
         "earlier_step_other": "{{count}} предыдущих шага",
         "hide_earlier_steps": "Скрыть предыдущие шаги",
         "hide_tool_calls": "Скрыть вызовы инструментов",
+        "reply_continued": "Ответ продолжился после того, как закончился",
         "worked_through_step_few": "Проработано {{count}} шага",
         "worked_through_step_many": "Проработано {{count}} шагов",
         "worked_through_step_one": "Проработан {{count}} шаг",

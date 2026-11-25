@@ -294,6 +294,39 @@ const isForeignInjection = (msg: ChatMessage): boolean => {
 export const hasToolStep = (items: TurnItem[]): boolean =>
   items.some(t => t.kind === 'single' && t.msg.role === 'tool')
 
+/**
+ * A reply the model ENDED on: the backend marks a segment `meta.reply_end` when
+ * the model message its text came from closed on that text with no tool call
+ * after it (`kiro_crew.acp.reply_end`, claude only).
+ */
+export const isReplyEndRow = (t: TurnItem): boolean =>
+  t.kind === 'single' && (t.msg.role === 'assistant' || t.msg.role === 'streaming' || t.msg.role === 'file') &&
+  t.msg.meta?.reply_end === true && !isSystemNoticeRow(t.msg)
+
+/** Assistant text the agent wrote (streamed or saved): not a notice row, and not
+ *  an envelope another writer appended (a workflow result, a sub-agent's report). */
+const isReplyText = (t: TurnItem): boolean =>
+  t.kind === 'single' && (t.msg.role === 'assistant' || t.msg.role === 'streaming') &&
+  !isSystemNoticeRow(t.msg) && !isEnvelopeRow(t.msg) &&
+  typeof t.msg.content === 'string' && t.msg.content.trim() !== ''
+
+/**
+ * The replies the model ended on that more of the agent's text follows in the
+ * same batch: where TurnBlock draws "The reply continued after it ended". It
+ * cannot say why: claude-agent-acp sends no frame when a Claude Code Stop hook
+ * sends the turn back, so the stream shows only that a new message began.
+ * Indices into `items`.
+ */
+export function findContinuedReplies(items: TurnItem[]): ReadonlySet<number> {
+  const out = new Set<number>()
+  let textAfter = false
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (textAfter && isReplyEndRow(items[i])) out.add(i)
+    if (isReplyText(items[i])) textAfter = true
+  }
+  return out
+}
+
 export interface GroupedTurns {
   turns: DisplayItem[]
   /** Index into `turns` of the turn object produced by the TRAILING flush, or
@@ -413,9 +446,12 @@ export function groupDisplayItems(messages: ChatMessage[]): GroupedTurns {
   // A batch with a tool call wraps at ANY length (#23017). The `> 2` rule alone
   // spread a one-tool turn (tool + answer) loose, so it never got the
   // "1 tool call" fold a two-tool turn gets. Assistant-only batches keep the
-  // length rule: a lone answer has no step to fold and must stay loose.
+  // length rule: a lone answer has no step to fold and must stay loose. A
+  // reply the turn went on from also wraps, with no step at all: TurnBlock is
+  // what draws the line between it and the text after it.
   const flushTurn = (items: TurnItem[], complete: boolean) => {
-    if (hasToolStep(items) || (hasWorkingSteps(items) && items.length > 2) || contentThinkingCount(items) >= 2) {
+    if (hasToolStep(items) || (hasWorkingSteps(items) && items.length > 2) || contentThinkingCount(items) >= 2 ||
+      findContinuedReplies(items).size > 0) {
       turns.push({ kind: 'turn', items, complete })
     } else {
       turns.push(...items)

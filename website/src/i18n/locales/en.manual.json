@@ -6267,6 +6267,7 @@
         "earlier_step_other": "{{count}} earlier steps",
         "hide_earlier_steps": "Hide earlier steps",
         "hide_tool_calls": "Hide tool calls",
+        "reply_continued": "The reply continued after it ended",
         "worked_through_step_one": "Worked through {{count}} step",
         "worked_through_step_other": "Worked through {{count}} steps"
       },

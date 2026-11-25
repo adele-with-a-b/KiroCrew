@@ -414,6 +414,27 @@ describe('ChatMessageList', () => {
       // Only 1 item between user messages, <= 2, so no TurnBlock
       expect(screen.queryByTestId('turn-block')).toBeNull()
     })
+
+    it('wraps a reply the turn went on from, with no tool call, for its step line', () => {
+      const msgs: ChatMessage[] = [
+        msg('user', 'Go'),
+        msg('assistant', 'Answer', { meta: { reply_end: true } }),
+        msg('assistant', 'More'),
+        msg('user', 'Next'),
+      ]
+      render(<ChatMessageList messages={msgs} running={false} />)
+      expect(screen.getAllByTestId('turn-block')).toHaveLength(1)
+    })
+
+    it('does not wrap a marked reply nothing followed', () => {
+      const msgs: ChatMessage[] = [
+        msg('user', 'Go'),
+        msg('assistant', 'Answer', { meta: { reply_end: true } }),
+        msg('user', 'Next'),
+      ]
+      render(<ChatMessageList messages={msgs} running={false} />)
+      expect(screen.queryByTestId('turn-block')).toBeNull()
+    })
   })
 
   describe('user messages as turn boundaries', () => {
