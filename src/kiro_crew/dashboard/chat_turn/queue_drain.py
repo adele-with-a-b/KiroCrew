@@ -883,6 +883,12 @@ async def _start_next_queued_turn(
         )
     if next_msg is None:
         return False
+    # Every dequeue above ends here, the merged ones that slice the queue included:
+    # the turn is about to start, so no receipt may still prove these entries.
+    # Imported here: this module's functions run on the composing module's globals.
+    from kiro_crew.dashboard import peer_note_receipts
+
+    peer_note_receipts.forget_entries(consumed)
     _record_queued_crew_steers(state, consumed)
 
     # A successor turn is now certain to dispatch (every no-successor path above

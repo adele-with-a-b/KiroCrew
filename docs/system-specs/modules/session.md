@@ -5020,6 +5020,29 @@ so absence clears it.
   sidebar row, board lane and command center count only
   `queue_depth - queue_held_depth` (`readyQueueDepth`), and a restored card's
   hourglass stands still, chosen or not.
+- **A peer's note is the one restored card sent without a person, and only on
+  proof the line cannot hold.** A `session_send` note that queued behind a turn
+  has nobody at its card, so held like the rest it was never delivered and its
+  sender waited. `dashboard/peer_note_receipts.py` keeps a receipt for each such
+  note in `queued_peer_notes.json` under the data home's `crew-log` root, which
+  is hidden from every sandboxed process and fenced from the file tools: the
+  entry id, the target's key and `_tab_id`, a digest of the text, the sender's
+  key and tab, and the sender label. The queue's own append writes it
+  (`queue_append`, for an entry carrying `session_send_queued` and a whole
+  sender stamp), and the queue's pop, remove and edit and the drain's dequeue
+  drop it synchronously, before the entry's turn exists. After a restore
+  (`deliver_restored`, called by `drain_restored_parked_sends`) a restored
+  entry that a receipt from the previous process names by id, target, tab and
+  digest gets the "run this next" mark (`RESTORED_SEND_CHOSEN_KEY`), its `meta`
+  rebuilt from the receipt, and the ordinary drain: it stays restored, so it
+  carries no actor, no directive authority and no containment snapshot, and is
+  judged against the slot's current constraints before it runs.
+  `sanitize_restored_queue` is unchanged. The no-resend rule above holds: a
+  note whose turn may have started has no receipt, so after a crash between the
+  drain and the save it comes back as a waiting card. A receipt whose target is
+  open and whose entry is gone or changed puts one fixed notice in the sender's
+  chat, quoting none of the note. A writer of the line can still drop or change
+  a note, as before; it cannot make one run, move one, or run one twice.
 - **Durability does not depend on the mutation site.** `_queue_persisted_sig`
   records what the last committed save wrote and `slot.queue_persist_pending`
   compares it against the live queue, so an in-place rewrite — a reorder, a

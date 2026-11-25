@@ -402,7 +402,12 @@ WRITE TARGET, so a stamp carried back off the metadata line would append the
 entry's own text to a session the editor does not own, with nothing that retracts
 it. A delivery that outlives a restart and is then dropped reports to nobody while
 the delivery itself still survives, which is the price of the stamp living in
-`meta`. The channel counterpart, `CHANNEL_RECIPIENT_META_KEY`
+`meta`. What the restart does not cost is the delivery: a queued `session_send`
+note also has a receipt outside that line (`peer_note_receipts`, under the hidden
+`crew-log` root), and a restored note its receipt proves is sent without a person,
+while one whose receipt finds no matching entry is reported to its sender from the
+receipt's own record of who sent it (see [session](session.md), "A peer's note is
+the one restored card sent without a person"). The channel counterpart, `CHANNEL_RECIPIENT_META_KEY`
 (`channel_recipient_meta` / `channel_recipient_of` / `notify_channel_recipient_dropped`,
 stamped by `dashboard/channel_handoff.py` for a message a channel conversation
 queued into a resumed dashboard session), is stripped for the same reason with a

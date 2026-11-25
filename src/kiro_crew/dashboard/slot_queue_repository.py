@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew.dashboard import queue_age
+from kiro_crew.dashboard import peer_note_receipts, queue_age
 from kiro_crew.dashboard.channel_prompt import PROMPT_ON_CHANNEL_META_KEY
 from kiro_crew.tracing import steps as trace_steps
 
@@ -590,6 +590,8 @@ async def drain_restored_parked_sends(state: Any) -> None:
     from kiro_crew.shared_crew.admission import OperationState, ReasonCode
     from kiro_crew.shared_crew.admission_entry import queued_work_ids
 
+    # A peer's note proven by its receipt is sent whether or not admission is on.
+    await peer_note_receipts.deliver_restored(state)
     service = admission_gate.installed_service()
     if service is None or not service.enabled:
         return
@@ -871,6 +873,8 @@ class SlotQueueRepository:
             item["_directive_owner_origin"] = True
         owner._queue.append(item)
         owner._note_enqueue()
+        # A ``session_send`` note gets its receipt here, so a restart can prove it.
+        peer_note_receipts.note_appended(owner, item)
         # Its queue wait starts now, timed beside the entry for the reason note_enqueue gives.
         trace_steps.note_queued(queue_id)
         queue_age.note_queued(owner, queue_id)
@@ -925,7 +929,10 @@ class SlotQueueRepository:
 
     def queue_pop(self, owner: Any, index: int = 0) -> dict[str, Any]:
         """Remove and return the exact entry at *index*."""
-        return owner._queue.pop(index)
+        item = owner._queue.pop(index)
+        # Before the caller runs it: a note that left its queue is not proven again.
+        peer_note_receipts.forget_entries((item,))
+        return item
 
     def note_pending_subagent_delivery(
         self,
@@ -969,6 +976,7 @@ class SlotQueueRepository:
         for index, item in enumerate(owner._queue):
             if item["id"] == queue_id:
                 del owner._queue[index]
+                peer_note_receipts.forget_entries((item,))
                 return item["content"]
         return None
 
@@ -1050,6 +1058,8 @@ class SlotQueueRepository:
                 # Nor are the editor's words in the linked thread, so they echo.
                 item["meta"].pop(PROMPT_ON_CHANNEL_META_KEY, None)
             item["edit_rev"] = int(item.get("edit_rev") or 0) + 1
+            # Nor is the peer's receipt theirs: an edited note waits after a restart.
+            peer_note_receipts.forget_entries((item,))
             if directive_user_origin:
                 item["_directive_user_origin"] = True
             else:
