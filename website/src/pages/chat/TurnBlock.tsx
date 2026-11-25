@@ -11,10 +11,10 @@ import { isWorkflowRunTool } from './WorkflowRunCard'
 import { isSpawnRunTool } from './SubagentRunCard'
 import { isWorkflowCompletionMessage } from './WorkflowCompletionCard'
 import { isSubagentCompletionMessage } from './subagentCompletion'
-import { findContinuedReplies, isReasoningBurst, isReplyEndRow } from './groupDisplayItems'
+import { findContinuedReplies, isReasoningBurst, isReplyEndRow, isReplyText } from './groupDisplayItems'
 import { isTurnEnd, isRecoveryInjection, isTurnStatusRow, isEnvelopeRow, isSynthesisInjection } from './groupDisplayItems'
 import { isSystemNoticeRow } from './CompactionCard'
-import { parseRecoveryMessage } from './RecoveryCard'
+import { INJECT_KIND_OPENS_TURN, parseRecoveryMessage, type InjectKind } from './RecoveryCard'
 import { isDiffToolMessage } from './toolDiff'
 import { isAskAnsweredToolMessage } from '../../utils/askQuestionAnswers'
 import { findOptionMarkers, stripOptionMarkers } from '../../app-sdk/protocol/optionMarker'
@@ -407,13 +407,69 @@ function findResumedReplyRows(items: TurnItem[]): ReadonlySet<TurnItem> {
   return rows
 }
 
+/**
+ * A reply a run turn ended on (`isTurnEnd`, the runner's stamp), unless that
+ * turn resumed. One block can hold two run turns when the second writes no row
+ * that opens one: a turn the agent started on its own (claude: a background
+ * command exits and Claude Code answers the notice) or a cron row the live
+ * slot refresh served without its kind. The later turn's reply is then the
+ * block's conclusion, which would fold the answer above it as a step, as a
+ * workflow result landing after an answer would. An inject that continues the
+ * turn above it (`recovery`, `user_replay`: the grouper's rule,
+ * `INJECT_KIND_OPENS_TURN`) before the next reply text means the same turn went
+ * on, which `findResumedReplyRows` decides, so stamped narration a resumed
+ * turn's tool calls followed still folds. Any other inject the scan passes
+ * first started a later turn, so a recovery after it resumes that turn, not
+ * the answer's. A stamped row that draws no text (a reply that is only a
+ * steering note) hands the pin to the turn's last visible reply above it, as
+ * the footer moves up to that reply (`replyTurnStats`).
+ *
+ * shortcut: a turn the agent started on its own writes no row, so when it
+ * stalls before writing any text and then resumes, it reads as the answer's own
+ * turn resuming and that answer folds. Rows carry no turn id to tell the two
+ * apart; upgrade if the runner stamps one.
+ */
+function findEndedTurnReplies(items: TurnItem[]): ReadonlySet<TurnItem> {
+  const rows = new Set<TurnItem>()
+  items.forEach((it, i) => {
+    if (it.kind !== 'single' || !isTurnEnd(it.msg)) return
+    let laterTurn = false
+    for (let k = i + 1; k < items.length; k++) {
+      const next = items[k]
+      if (next.kind === 'single' && next.msg.role === 'inject') {
+        if (!continuesTurn(next.msg)) laterTurn = true
+        else if (!laterTurn) return
+        continue
+      }
+      if (isReplyText(next)) break
+    }
+    rows.add(it)
+    if (substantiveLength(it.msg.content) > 0) return
+    for (let k = i - 1; k >= 0; k--) {
+      const prev = items[k]
+      if (prev.kind !== 'single') continue
+      if (isTurnEnd(prev.msg)) break
+      if (isReplyText(prev) && substantiveLength(prev.msg.content) > 0) { rows.add(prev); break }
+    }
+  })
+  return rows
+}
+
+/** An inject whose stamped kind the grouper reads as continuing the turn above it. */
+function continuesTurn(msg: Extract<TurnItem, { kind: 'single' }>['msg']): boolean {
+  const kind = msg.meta?.injectKind
+  return typeof kind === 'string' && Object.hasOwn(INJECT_KIND_OPENS_TURN, kind) &&
+    INJECT_KIND_OPENS_TURN[kind as InjectKind] === false
+}
+
 /** The rows a turn pins out of the collapse-all fold on top of `isVisibleInline`:
- *  an answer and the tool-refusal card that followed it, and a reply cut short
+ *  an answer and the tool-refusal card that followed it, a reply cut short
  *  and resumed with the recovery row that resumed it and the synthesis row
- *  that led it. */
+ *  that led it, and every reply a turn ended on. */
 function findPinnedRows(items: TurnItem[]): ReadonlySet<TurnItem> {
   const rows = new Set<TurnItem>(findAnsweredRefusalRows(items))
   for (const it of findResumedReplyRows(items)) rows.add(it)
+  for (const it of findEndedTurnReplies(items)) rows.add(it)
   return rows
 }
 

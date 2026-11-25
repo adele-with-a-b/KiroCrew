@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     )
     from kiro_crew.dashboard.chat_turn.native_cards import (
         _append_native_output,
+        _native_child_step,
         _post_native_question_card,
     )
     from kiro_crew.dashboard.chat_turn.recipient import (
@@ -326,11 +327,14 @@ async def _on_tool_call(turn: _ChatTurn, event) -> None:
             event.tool_identity_trusted is True,
         )
     )
+    # A native sub-agent's call is the child's step, not this model's: the
+    # parent's open text stays one segment and no tool group opens.
+    child_call = _native_child_step(turn, event)
     # Flush pre-tool text silently (no broadcast) so it persists,
     # but keep the streaming message in place for correct tool ordering.
     # The call does not end the reply, so the run the wire redactor
     # still withholds waits for the text after it (_cut_segment).
-    if not in_tool_group and turn.assistant_text:
+    if not in_tool_group and turn.assistant_text and not child_call:
         _open_construct = open_construct_at_end(turn.assistant_text)
         if _open_construct:
             _deferred_cut_text = turn.assistant_text
@@ -364,8 +368,9 @@ async def _on_tool_call(turn: _ChatTurn, event) -> None:
         # user could not see is not hashed into a durable file either.
         args=event.tool_input or "",
     )
-    in_tool_group = True
-    turn.in_tool_group = in_tool_group
+    if not child_call:
+        in_tool_group = True
+        turn.in_tool_group = in_tool_group
     _turn_emitted = True  # tool side effect — transient retry now unsafe
     turn._turn_emitted = _turn_emitted
     await _report_consumed(turn, irreversible=True)

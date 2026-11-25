@@ -305,7 +305,7 @@ export const isReplyEndRow = (t: TurnItem): boolean =>
 
 /** Assistant text the agent wrote (streamed or saved): not a notice row, and not
  *  an envelope another writer appended (a workflow result, a sub-agent's report). */
-const isReplyText = (t: TurnItem): boolean =>
+export const isReplyText = (t: TurnItem): boolean =>
   t.kind === 'single' && (t.msg.role === 'assistant' || t.msg.role === 'streaming') &&
   !isSystemNoticeRow(t.msg) && !isEnvelopeRow(t.msg) &&
   typeof t.msg.content === 'string' && t.msg.content.trim() !== ''

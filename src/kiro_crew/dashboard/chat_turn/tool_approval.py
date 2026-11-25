@@ -83,7 +83,10 @@ if TYPE_CHECKING:
         _reject_invalid_tool,
         _steer_policy_notice,
     )
-    from kiro_crew.dashboard.chat_turn.native_cards import _safe_native_crew_debug_title
+    from kiro_crew.dashboard.chat_turn.native_cards import (
+        _native_child_step,
+        _safe_native_crew_debug_title,
+    )
     from kiro_crew.dashboard.chat_turn.tool_rows import _tcid_identity_key, _tool_meta
     from kiro_crew.dashboard.chat_turn.turn_ledgers import _wt_note_approved
     from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn, _Flow
@@ -614,7 +617,11 @@ async def _on_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CONTIN
         _selectors = getattr(turn, "_send_receipt_selectors", None)
         if _selectors is not None:
             session_send_receipts.note_call(_selectors, event, initial=False)
-    if turn.assistant_text and not open_construct_at_end(turn.assistant_text):
+    if (
+        turn.assistant_text
+        and not open_construct_at_end(turn.assistant_text)
+        and not _native_child_step(turn, event)
+    ):
         slot._owed_segment_cut = functools.partial(_pay_permission_cut, turn)
     try:
         flow = await _decide_permission_request(turn, event)
