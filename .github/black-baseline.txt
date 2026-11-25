@@ -658,7 +658,6 @@ test/test_terminal_commands.py
 test/test_terminal_handler.py
 test/test_theme_authoring_skill.py
 test/test_theme_css_security.py
-test/test_theme_install.py
 test/test_thread_parent_context.py
 test/test_toolbox_migration.py
 test/test_trusted_apps_api.py

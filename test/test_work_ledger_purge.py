@@ -941,7 +941,7 @@ def test_a_purge_racing_a_finished_purge_recreates_nothing(monkeypatch):
 
     @contextlib.contextmanager
     def _first_sweep_wins(slot_key, **kwargs):
-        shutil.rmtree(directory)  # the other sweep finished just before our acquire
+        shutil.rmtree(disposable(directory))  # the other sweep finished just before our acquire
         with real_lock(slot_key, **kwargs):
             yield
 
