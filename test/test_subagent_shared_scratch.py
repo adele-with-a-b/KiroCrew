@@ -28,6 +28,7 @@ import pytest
 
 from kiro_crew import agent_scratch as sc
 from kiro_crew import agent_scratch_trees as trees
+from kiro_crew.testing.delete_guard import disposable
 
 #: A pid no live process can own on any supported platform (above every pid_max),
 #: so a cleanup path that signals a fake reaches nothing on the runner.
@@ -87,7 +88,7 @@ class TestSharedScratchWindow:
 
     def test_a_swept_allocation_is_dropped_not_recreated(self, scratch_root: Path) -> None:
         parent = sc.allocate_scratch("parent")
-        shutil.rmtree(parent)
+        shutil.rmtree(disposable(parent))
         assert sc.shared_scratch_window(parent) is None
         assert not parent.exists()
 

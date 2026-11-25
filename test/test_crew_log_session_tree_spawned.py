@@ -31,6 +31,7 @@ from kiro_crew.crew_log.session_tree import (
 )
 from kiro_crew.crew_log.session_tree_projection import CHECKPOINT_NAME, SessionTreeProjection
 from kiro_crew.dashboard.session_memory import lineage_parents
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import wait_until
 
 GATEWAY = "gateway"
@@ -456,7 +457,7 @@ def test_the_self_parented_filter_never_drops_a_spawn_from_the_held_set(_floor_m
     # Windows refuses the unlink while ANY process has the file open, and a scanner on
     # the runner can hold a freshly written log for a moment: wait for the removal.
     wait_until(
-        lambda: shutil.rmtree(w2_dir) is None,
+        lambda: shutil.rmtree(disposable(w2_dir)) is None,
         ignoring=(PermissionError,),
         describe=lambda: sorted(p.name for p in w2_dir.iterdir()) if w2_dir.exists() else [],
     )

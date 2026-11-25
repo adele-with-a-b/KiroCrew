@@ -31,6 +31,7 @@ from work_ledger_projection_helpers import (
 from kiro_crew import work_ledger as wl
 from kiro_crew.crew_log import projection
 from kiro_crew.dashboard.handlers import work_ledger as routes
+from kiro_crew.testing.delete_guard import disposable
 
 # The shared fixtures, bound here by name so pytest registers them for this module.
 _isolated = work_ledger_projection_helpers._isolated
@@ -519,9 +520,9 @@ async def test_a_legacy_workers_item_rebuilds_after_the_cache_and_bindings_are_l
     assert status == 200, body
 
     # The whole work-ledger tree goes: the board's cache and every binding file.
-    shutil.rmtree(wl.conductor_dir(CONDUCTOR))
+    shutil.rmtree(disposable(wl.conductor_dir(CONDUCTOR)))
     if wl.bindings_dir().is_dir():
-        shutil.rmtree(wl.bindings_dir())
+        shutil.rmtree(disposable(wl.bindings_dir()))
 
     counts = wl.rebuild_from_projection(CONDUCTOR)
     assert counts["items"] == 1, counts
@@ -557,7 +558,7 @@ async def test_a_legacy_boards_round_creation_and_report_stamps_survive_a_rebuil
     )
     assert status == 200, body
 
-    shutil.rmtree(wl.conductor_dir(CONDUCTOR))
+    shutil.rmtree(disposable(wl.conductor_dir(CONDUCTOR)))
     counts = wl.rebuild_from_projection(CONDUCTOR)
     assert counts["items"] == 1, counts
     rebuilt = wl.read_conductor(CONDUCTOR)

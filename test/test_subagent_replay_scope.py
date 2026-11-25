@@ -29,6 +29,7 @@ from kiro_crew.crew_log import CrewLog
 from kiro_crew.dashboard import subagent_replay_scope as scope
 from kiro_crew.dashboard import ws as dashboard_ws
 from kiro_crew.sel_request_provenance import bind_request_forwarded, current_request_forwarded
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import await_until, finished, wait_until
 
 GATEWAY = "gateway"
@@ -276,7 +277,7 @@ class TestSharedWork:
         from kiro_crew.crew_log import eager
 
         with eager.paused():
-            shutil.rmtree(crew_log_dir(lg.KIND_SESSION, "acp-x"))
+            shutil.rmtree(disposable(crew_log_dir(lg.KIND_SESSION, "acp-x")))
         handle = _unit("acp-x", "chat-1")
         handle.append("subagent/spawned", {"agent_id": "other", "task": "t"}, src=GATEWAY)
         handle.append("subagent/completed", {"agent_id": "other", "ms": 1}, src=GATEWAY)

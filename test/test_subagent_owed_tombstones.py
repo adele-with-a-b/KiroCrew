@@ -25,6 +25,7 @@ import pytest
 import kiro_crew.subagent as sa
 from kiro_crew import subagent_persistence as sp
 from kiro_crew.subagent import SubagentManager
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import async_wait_until, await_until, finished
 
 PARENT = "dashboard:chat-7"
@@ -274,7 +275,7 @@ def test_a_retry_never_recreates_a_removed_run_folder(monkeypatch):
     sp.mark_delivered("gone001", elapsed=1.0, credits=0.0)
     disk.space_returns()
     folder = sp._agent_dir("gone001")
-    shutil.rmtree(folder)
+    shutil.rmtree(disposable(folder))
     assert sp.retry_owed_tombstones() == 0
     assert not folder.exists()
     assert not sp.has_owed_tombstones()

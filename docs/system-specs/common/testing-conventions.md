@@ -1449,6 +1449,18 @@ measures, never above.
      never move the anchor.** Redirecting a matcher so a test can pass makes it assert
      against a pattern that no longer matches the thing it protects.
 
+- **A test's own delete of a path it got from a resolver MUST go through
+  `kiro_crew.testing.delete_guard.disposable`.** Write
+  `shutil.rmtree(disposable(wl.conductor_dir(CONDUCTOR)))`, or
+  `disposable(child).unlink()` in a loop over a resolver's directory. A path the test
+  built from `tmp_path` needs no guard. The floor's `KIROCREW_HOME` pin exists only
+  under pytest's rootdir conftest: `python -m unittest` and a file's `__main__` block
+  skip it, and every resolver then names the operator's real `~/.kiro/crew`. The guard
+  resolves the target's real path and raises `RefusedDelete`, before anything is
+  removed, unless the target is strictly inside the system temp dir or the test's own
+  `tmp_path`, and outside the account's `.kiro` and `.kirocrew` data homes (a
+  `scratch/<tree>/` folder inside the data home is allowed).
+
 - **Tests MUST NOT derive an expected value from the repo's declared version.**
   `kiro_crew.__version__` is an input the checkout controls, not a constant: a release
   branch declares `X.Y.Z-rc.N` by contract ([release](../../build/release.md)), a

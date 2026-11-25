@@ -28,6 +28,7 @@ from kiro_crew.dashboard.theme_validate import (
     _validate_theme_dir,
 )
 from kiro_crew.slugs import slug_hash_fallback
+from kiro_crew.testing.delete_guard import disposable
 
 # ── _slugify_theme_name hash fallback ──────────────────────────────
 
@@ -292,7 +293,7 @@ class TestLegacyCustomPackContinuity:
             assert not done.wait(timeout=2.0), "install finished while the legacy lock was held"
             assert "out" not in result
             # Stand in for a concurrent install that promoted a DIFFERENT pack.
-            shutil.rmtree(legacy)
+            shutil.rmtree(disposable(legacy))
             _legacy_pack(tv_mod._installed_theme_dir("custom"), _LEGACY_B)
         finally:
             lock.release()

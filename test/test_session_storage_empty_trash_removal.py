@@ -25,6 +25,7 @@ from session_storage_helpers import (  # noqa: F401 -- fixtures are requested by
 
 from kiro_crew import platform_compat, session_storage
 from kiro_crew.session_storage import SessionStorageError
+from kiro_crew.testing.delete_guard import disposable
 
 
 def _locked_unlink(self: platform_compat.PinnedDirectory, name: str) -> None:
@@ -716,7 +717,7 @@ class TestEmptyTrashRemoval:
         for rel in listed:
             victim = elsewhere / PurePosixPath(rel).name
             victim.write_bytes(b"LIVE DATA")
-        shutil.rmtree(holder)
+        shutil.rmtree(disposable(holder))
         holder.symlink_to(elsewhere, target_is_directory=True)
 
         session_storage.empty_trash([batch.batch_id])

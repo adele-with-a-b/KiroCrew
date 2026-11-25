@@ -38,6 +38,7 @@ from kiro_crew.crew_log.holders import (
 )
 from kiro_crew.crew_log.schema import KIND_SESSION, Entry
 from kiro_crew.crew_log.session_tree import SessionTree, TreeNode, TreeReading
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.validation import MAX_ACP_SESSION_ID_LEN, MAX_SHORT_STRING
 
 #: The repository this suite's fixtures name. Split from the SLUG rather than
@@ -860,7 +861,7 @@ class TestScannerBounds:
             # Runs BETWEEN the two scans, which is the only window the race has:
             # the mention is already captured, and the lineage is read after.
             with eager.paused():
-                shutil.rmtree(crew_store.crew_log_dir(KIND_SESSION, "sid-old"))
+                shutil.rmtree(disposable(crew_store.crew_log_dir(KIND_SESSION, "sid-old")))
             # The slot is still held -- by a newer session that took the vacancy.
             return TreeReading(nodes={"slot-shared": _node("slot-shared")}, incomplete=False)
 
@@ -1281,7 +1282,7 @@ class TestScannerHolders:
         # Retire the unit AFTER the reference scan, then fold with a lineage that
         # does not know the slot -- exactly the window's shape.
         with eager.paused():
-            shutil.rmtree(crew_store.crew_log_dir(KIND_SESSION, "sid-w"))
+            shutil.rmtree(disposable(crew_store.crew_log_dir(KIND_SESSION, "sid-w")))
         monkeypatch.setattr(
             scanner,
             "references",

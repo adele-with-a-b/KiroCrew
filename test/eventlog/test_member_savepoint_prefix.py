@@ -27,6 +27,7 @@ from kiro_crew.eventlog import types
 from kiro_crew.eventlog.log import MemberLog
 from kiro_crew.eventlog.service import MemberEventLogService
 from kiro_crew.projection import EMPTY_WATERMARK, ProjectionRegistry
+from kiro_crew.testing.delete_guard import disposable
 
 SLUG = "alice"
 
@@ -184,7 +185,7 @@ class TestADamagedFoldedLineRetiresTheSavepoint:
         # The same file with no savepoint to resume from. This is what every later
         # cold reader gets, so it is what the resumed read has to match: lagging is
         # allowed, disagreeing is not.
-        shutil.rmtree(_savepoint_dir())
+        shutil.rmtree(disposable(_savepoint_dir()))
         cold = _config_fields(_service(tmp_path, monkeypatch))
 
         assert cold == {"model": "m1", "avatar": "a1"}, "the store skips the damaged line"

@@ -35,6 +35,7 @@ from kiro_crew.crew_log.session_tree import (
     parent_payload,
 )
 from kiro_crew.session_ledger import _store_name
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.validation import MAX_ACP_SESSION_ID_LEN
 
 GATEWAY = "gateway"
@@ -429,7 +430,7 @@ def test_a_removed_unit_leaves_the_records_and_the_cache() -> None:
     assert len(scanner.records()) == 1
     directory = crew_store.crew_log_dir(lg.KIND_SESSION, "p-sid")
     for child in directory.iterdir():
-        child.unlink()
+        disposable(child).unlink()
     directory.rmdir()
     assert scanner.records() == []
     assert scanner._heads == {}

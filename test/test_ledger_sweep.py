@@ -31,6 +31,7 @@ from kiro_crew import ledger_sweep as sweep
 from kiro_crew import session_ledger as sl
 from kiro_crew import work_ledger as wl
 from kiro_crew.platform_compat import IS_POSIX
+from kiro_crew.testing.delete_guard import disposable
 
 CONDUCTOR = "chat-9-conductor"
 WORKER = "chat-9-worker"
@@ -916,7 +917,7 @@ def test_a_lock_only_residue_is_listed_as_damage_and_removable_with_the_flag():
         (directory / name).unlink()
     import shutil
 
-    shutil.rmtree(directory / "items")
+    shutil.rmtree(disposable(directory / "items"))
     (directory / ".lock").touch()
     _backdate(directory, 90)
     _backdate(directory / ".lock", 90)

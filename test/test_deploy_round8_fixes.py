@@ -1,4 +1,5 @@
 """Tests for deploy fixes: F1 (staleness checks), F2 (redaction), F3 (OAC ETag)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,6 +14,7 @@ import pytest
 from redaction_structured_cases import github_classic
 
 from kiro_crew.deploy import engine, handlers, pending
+from kiro_crew.testing.delete_guard import disposable
 
 _KEY = github_classic(seed=11)  # a token the credential plan redacts
 
@@ -84,16 +86,18 @@ class TestF1ProfileStaleness:
 
     def test_confirm_rejects_changed_profile(self, tmp_path, monkeypatch):
         """If profile resolution changes between preview and confirm, 409."""
-        entry = pending.add_pending({
-            "site_id": "test-site",
-            "local_dir": "",
-            "artifact_slug": "test-slug",
-            "profile": "my-profile",
-            "region": "us-east-1",
-            "ttl_hours": 72,
-            "scan_summary": "clean",
-            "content_digest": "",
-        })
+        entry = pending.add_pending(
+            {
+                "site_id": "test-site",
+                "local_dir": "",
+                "artifact_slug": "test-slug",
+                "profile": "my-profile",
+                "region": "us-east-1",
+                "ttl_hours": 72,
+                "scan_summary": "clean",
+                "content_digest": "",
+            }
+        )
         entry_id = entry["id"]
 
         async def _changed_profile(params):
@@ -118,16 +122,18 @@ class TestF1ProfileStaleness:
 
         original_digest = handlers._compute_content_digest(str(src_dir))
 
-        entry = pending.add_pending({
-            "site_id": "test-site",
-            "local_dir": str(src_dir),
-            "artifact_slug": "",
-            "profile": "my-profile",
-            "region": "us-east-1",
-            "ttl_hours": 72,
-            "scan_summary": "clean",
-            "content_digest": original_digest,
-        })
+        entry = pending.add_pending(
+            {
+                "site_id": "test-site",
+                "local_dir": str(src_dir),
+                "artifact_slug": "",
+                "profile": "my-profile",
+                "region": "us-east-1",
+                "ttl_hours": 72,
+                "scan_summary": "clean",
+                "content_digest": original_digest,
+            }
+        )
         entry_id = entry["id"]
 
         # Modify the content after preview
@@ -186,16 +192,18 @@ class TestF2PendingRedaction:
 
     def test_pending_list_redacts_akia_in_scan_summary(self, tmp_path):
         """A credential in scan_summary must be redacted in the response."""
-        pending.add_pending({
-            "site_id": "test-site",
-            "local_dir": "/home/user/project",
-            "artifact_slug": "",
-            "profile": "my-profile",
-            "region": "us-east-1",
-            "ttl_hours": 72,
-            "scan_summary": f"Found key: {_KEY} in config.js",
-            "content_digest": "",
-        })
+        pending.add_pending(
+            {
+                "site_id": "test-site",
+                "local_dir": "/home/user/project",
+                "artifact_slug": "",
+                "profile": "my-profile",
+                "region": "us-east-1",
+                "ttl_hours": 72,
+                "scan_summary": f"Found key: {_KEY} in config.js",
+                "content_digest": "",
+            }
+        )
 
         resp = _run(handlers._handle_pending_list(_FakeReq()))
         assert resp.status == 200
@@ -207,16 +215,18 @@ class TestF2PendingRedaction:
 
     def test_pending_list_redacts_in_site_id(self, tmp_path):
         """Credential patterns embedded in any field are redacted."""
-        pending.add_pending({
-            "site_id": f"site-{_KEY}",
-            "local_dir": "",
-            "artifact_slug": "",
-            "profile": "",
-            "region": "us-east-1",
-            "ttl_hours": 72,
-            "scan_summary": "clean",
-            "content_digest": "",
-        })
+        pending.add_pending(
+            {
+                "site_id": f"site-{_KEY}",
+                "local_dir": "",
+                "artifact_slug": "",
+                "profile": "",
+                "region": "us-east-1",
+                "ttl_hours": 72,
+                "scan_summary": "clean",
+                "content_digest": "",
+            }
+        )
 
         resp = _run(handlers._handle_pending_list(_FakeReq()))
         body = json.loads(resp.body)
@@ -249,12 +259,17 @@ class TestF3OACDeleteETag:
         mock_botocore_exceptions.ClientError = MockClientError
         mock_botocore.exceptions = mock_botocore_exceptions
 
-        with patch.dict(os.environ, {"BUCKET": "test-bucket", "DIST_ID": "E123TEST"}), \
-             patch.dict(sys.modules, {
-                 "boto3": mock_boto3,
-                 "botocore": mock_botocore,
-                 "botocore.exceptions": mock_botocore_exceptions,
-             }):
+        with (
+            patch.dict(os.environ, {"BUCKET": "test-bucket", "DIST_ID": "E123TEST"}),
+            patch.dict(
+                sys.modules,
+                {
+                    "boto3": mock_boto3,
+                    "botocore": mock_botocore,
+                    "botocore.exceptions": mock_botocore_exceptions,
+                },
+            ),
+        ):
             self.mod = _load_script("reaper_lambda/index.py")
             self.ClientError = MockClientError
 
@@ -263,16 +278,20 @@ class TestF3OACDeleteETag:
         mock_cf = MagicMock()
         # R18 F3: reaper now verifies the OAC Name before deleting a
         # manifest-supplied oac_id -- the mock must return a matching name.
-        mock_cf.get_origin_access_control = MagicMock(return_value={
-            "ETag": "ETAG1",
-            "OriginAccessControl": {"OriginAccessControlConfig": {
-                "Name": "deploy-web-test-app-abc123"}},
-        })
+        mock_cf.get_origin_access_control = MagicMock(
+            return_value={
+                "ETag": "ETAG1",
+                "OriginAccessControl": {
+                    "OriginAccessControlConfig": {"Name": "deploy-web-test-app-abc123"}
+                },
+            }
+        )
         mock_cf.get_origin_access_control.return_value = {
             "ETag": "ETAG123",
             # R18 F3: Name must match the deployment pattern or delete is skipped.
-            "OriginAccessControl": {"OriginAccessControlConfig": {
-                "Name": "deploy-web-test-slug-abc123"}},
+            "OriginAccessControl": {
+                "OriginAccessControlConfig": {"Name": "deploy-web-test-slug-abc123"}
+            },
         }
         mock_cf.delete_origin_access_control.return_value = {}
 
@@ -299,11 +318,14 @@ class TestF3OACDeleteETag:
         mock_cf = MagicMock()
         # R18 F3: reaper now verifies the OAC Name before deleting a
         # manifest-supplied oac_id -- the mock must return a matching name.
-        mock_cf.get_origin_access_control = MagicMock(return_value={
-            "ETag": "ETAG1",
-            "OriginAccessControl": {"OriginAccessControlConfig": {
-                "Name": "deploy-web-test-app-abc123"}},
-        })
+        mock_cf.get_origin_access_control = MagicMock(
+            return_value={
+                "ETag": "ETAG1",
+                "OriginAccessControl": {
+                    "OriginAccessControlConfig": {"Name": "deploy-web-test-app-abc123"}
+                },
+            }
+        )
         mock_cf.get_origin_access_control.side_effect = self.ClientError(
             {"Error": {"Code": "NoSuchOriginAccessControl", "Message": ""}},
             "GetOriginAccessControl",
@@ -329,11 +351,14 @@ class TestF3OACDeleteETag:
         mock_cf = MagicMock()
         # R18 F3: reaper now verifies the OAC Name before deleting a
         # manifest-supplied oac_id -- the mock must return a matching name.
-        mock_cf.get_origin_access_control = MagicMock(return_value={
-            "ETag": "ETAG1",
-            "OriginAccessControl": {"OriginAccessControlConfig": {
-                "Name": "deploy-web-test-app-abc123"}},
-        })
+        mock_cf.get_origin_access_control = MagicMock(
+            return_value={
+                "ETag": "ETAG1",
+                "OriginAccessControl": {
+                    "OriginAccessControlConfig": {"Name": "deploy-web-test-app-abc123"}
+                },
+            }
+        )
         # Distribution lookup fails -> already gone
         mock_cf.get_distribution_config.side_effect = self.ClientError(
             {"Error": {"Code": "NoSuchDistribution", "Message": ""}},
@@ -349,15 +374,16 @@ class TestF3OACDeleteETag:
         )
         # OAC listing returns a match
         mock_cf.list_origin_access_controls.return_value = {
-            "OriginAccessControlList": {"Items": [
-                {"Id": "OAC-FOUND", "Name": "deploy-web-test-slug-abc123"}
-            ]}
+            "OriginAccessControlList": {
+                "Items": [{"Id": "OAC-FOUND", "Name": "deploy-web-test-slug-abc123"}]
+            }
         }
         mock_cf.get_origin_access_control.return_value = {
             "ETag": "ETAG-MAIN",
             # R18 F3: Name must match or delete is skipped.
-            "OriginAccessControl": {"OriginAccessControlConfig": {
-                "Name": "deploy-web-test-slug-abc123"}},
+            "OriginAccessControl": {
+                "OriginAccessControlConfig": {"Name": "deploy-web-test-slug-abc123"}
+            },
         }
         mock_cf.delete_origin_access_control.return_value = {}
 
@@ -372,8 +398,12 @@ class TestF3OACDeleteETag:
         self.mod.s3 = mock_s3
 
         result = self.mod._reap_engine_arch(
-            {"arch": "engine", "slug": "test-slug", "distribution_id": "E2TESTDISTX123",
-             "bucket": ""},
+            {
+                "arch": "engine",
+                "slug": "test-slug",
+                "distribution_id": "E2TESTDISTX123",
+                "bucket": "",
+            },
             "test-slug",
             int(time.time()),
         )
@@ -400,22 +430,24 @@ class TestR10ArtifactStaleness:
             name = "site"
 
         # Digest of the ORIGINAL staged content, stored at preview time.
-        _f, staged, _b = handlers._stage_artifact_html(
-            _Art.kind, _Art.content, _Art.name)
+        _f, staged, _b = handlers._stage_artifact_html(_Art.kind, _Art.content, _Art.name)
         original_digest = handlers._compute_content_digest(staged)
         import shutil as _sh
-        _sh.rmtree(staged, ignore_errors=True)
 
-        entry = pending.add_pending({
-            "site_id": "art-site",
-            "artifact_slug": "my-art",
-            "local_dir": "",
-            "profile": "my-profile",
-            "region": "us-east-1",
-            "ttl_hours": 72,
-            "scan_summary": "clean",
-            "content_digest": original_digest,
-        })
+        _sh.rmtree(disposable(staged), ignore_errors=True)
+
+        entry = pending.add_pending(
+            {
+                "site_id": "art-site",
+                "artifact_slug": "my-art",
+                "local_dir": "",
+                "profile": "my-profile",
+                "region": "us-east-1",
+                "ttl_hours": 72,
+                "scan_summary": "clean",
+                "content_digest": original_digest,
+            }
+        )
         entry_id = entry["id"]
 
         # The artifact was edited after preview.
@@ -424,7 +456,8 @@ class TestR10ArtifactStaleness:
 
         monkeypatch.setattr(handlers, "_HAS_ARTIFACTS", True)
         monkeypatch.setattr(
-            handlers, "get_default_store",
+            handlers,
+            "get_default_store",
             lambda: types.SimpleNamespace(get=lambda slug: _Changed()),
         )
 
@@ -433,8 +466,7 @@ class TestR10ArtifactStaleness:
 
         monkeypatch.setattr(handlers, "_resolve_profile", _same_profile)
 
-        resp = _run(handlers._handle_pending_confirm(
-            _FakeReq(match_info={"id": entry_id})))
+        resp = _run(handlers._handle_pending_confirm(_FakeReq(match_info={"id": entry_id})))
         assert resp.status == 409
         body = json.loads(resp.body)
         assert "content changed since preview" in body["error"]

@@ -18,6 +18,7 @@ import pytest
 from redaction_structured_cases import github_classic, synth
 
 from kiro_crew import agent_panel
+from kiro_crew.testing.delete_guard import disposable
 
 CREW = "fleet-crew"
 
@@ -818,7 +819,7 @@ def test_a_symlinked_records_directory_is_refused_not_followed(tmp_path):
     """
     root = agent_panel.data_home() / agent_panel._PANELS_DIRNAME
     if root.exists():
-        shutil.rmtree(root)
+        shutil.rmtree(disposable(root))
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     root.symlink_to(elsewhere, target_is_directory=True)
@@ -842,7 +843,7 @@ def test_a_symlinked_template_directory_is_refused_too(tmp_path):
     """
     root = agent_panel.data_home() / agent_panel.TEMPLATES_DIRNAME
     if root.exists():
-        shutil.rmtree(root)
+        shutil.rmtree(disposable(root))
     elsewhere = tmp_path / "tpl-elsewhere"
     elsewhere.mkdir()
     root.symlink_to(elsewhere, target_is_directory=True)
@@ -856,7 +857,7 @@ def test_an_absent_records_directory_is_still_fine():
     """Absent is not aliased. `publish` creates it; only an ALIAS is refused."""
     root = agent_panel.data_home() / agent_panel._PANELS_DIRNAME
     if root.exists():
-        shutil.rmtree(root)
+        shutil.rmtree(disposable(root))
     assert agent_panel.panel_dir() == root  # no raise
     record = _publish()
     assert record["data"]

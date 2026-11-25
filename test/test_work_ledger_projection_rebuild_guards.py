@@ -36,6 +36,7 @@ from work_ledger_projection_helpers import (
 from kiro_crew import work_ledger as wl
 from kiro_crew.crew_log import eager, projection
 from kiro_crew.dashboard.handlers import work_ledger as routes
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import async_wait_until, await_until, default_timeout, until_parked
 
 # The shared fixtures, bound here by name so pytest registers them for this module.
@@ -110,7 +111,7 @@ async def test_a_pruned_worker_unit_leaves_the_rebuilt_report_standing(
     from kiro_crew import crew_log as lg
 
     with eager.paused():
-        shutil.rmtree(store.crew_log_dir(lg.KIND_SESSION, "u-worker"))
+        shutil.rmtree(disposable(store.crew_log_dir(lg.KIND_SESSION, "u-worker")))
     wl.rebuild_from_projection(CONDUCTOR)
     after = wl.read_work_item(CONDUCTOR, item_id)
     assert (after.status, after.summary, after.last_report_at) == (
@@ -148,7 +149,7 @@ async def test_a_rebuild_keeps_the_completeness_marker_and_a_later_prune_keeps_t
     assert (rebuilt.status, rebuilt.summary) == ("progress", "half way")
 
     with eager.paused():
-        shutil.rmtree(store.crew_log_dir(lg.KIND_SESSION, "u-worker"))
+        shutil.rmtree(disposable(store.crew_log_dir(lg.KIND_SESSION, "u-worker")))
     wl.rebuild_from_projection(CONDUCTOR)
     after = wl.read_work_item(CONDUCTOR, item_id)
     assert after is not None

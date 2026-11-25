@@ -31,6 +31,7 @@ from kiro_crew.apps.builtin_adoption_fetch import (
     stage_pin,
 )
 from kiro_crew.apps.builtin_adoption_pins import adoption_pin
+from kiro_crew.testing.delete_guard import disposable
 
 pytestmark = requires_git
 
@@ -355,7 +356,7 @@ def test_the_staged_verify_copy_is_removed(tmp_path, monkeypatch):
     assert seen and not seen[0].exists()
     leftovers = [p for p in fetch_mod.adoption_dir().iterdir() if p.name.startswith(".verify")]
     assert leftovers == []
-    shutil.rmtree(fetch_mod.adoption_dir(), ignore_errors=True)
+    shutil.rmtree(disposable(fetch_mod.adoption_dir()), ignore_errors=True)
 
 
 @pytest.mark.skipif(not platform_compat.IS_POSIX, reason="a plain symlink needs no privilege")

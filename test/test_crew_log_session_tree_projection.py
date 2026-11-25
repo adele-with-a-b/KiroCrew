@@ -36,6 +36,7 @@ from kiro_crew.crew_log.session_tree_projection import (
     SessionTreeProjection,
 )
 from kiro_crew.session_ledger import _store_name
+from kiro_crew.testing.delete_guard import disposable
 
 GATEWAY = "gateway"
 
@@ -743,7 +744,7 @@ def test_tail_replay_drops_a_removed_unit(monkeypatch):
 
     from kiro_crew.crew_log.store import crew_log_root
 
-    shutil.rmtree(crew_log_root(lg.KIND_SESSION) / _store_name("s-gone"))
+    shutil.rmtree(disposable(crew_log_root(lg.KIND_SESSION) / _store_name("s-gone")))
 
     proj = SessionTreeProjection()
     proj.ensure_seeded()

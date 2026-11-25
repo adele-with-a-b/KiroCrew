@@ -31,6 +31,7 @@ from kiro_crew.config.paths import data_home, ensure_data_home
 from kiro_crew.crew_log import CrewLog, lease, store
 from kiro_crew.security.paths import is_sensitive_path
 from kiro_crew.session_ledger import _store_name
+from kiro_crew.testing.delete_guard import disposable
 
 # The shared autouse fixture, bound here by name so pytest registers it for this module.
 _isolated_home = crew_log_core_helpers._isolated_home
@@ -168,7 +169,7 @@ def test_a_linked_kind_root_is_refused_and_named(tmp_path):
     kind_root.parent.mkdir(parents=True, exist_ok=True)
     if kind_root.exists():
         for child in sorted(kind_root.iterdir()):
-            child.unlink() if child.is_file() else None
+            disposable(child).unlink() if child.is_file() else None
         kind_root.rmdir()
     kind_root.symlink_to(elsewhere, target_is_directory=True)
 
@@ -195,7 +196,7 @@ def test_a_kind_root_resolving_outside_the_data_home_is_refused(tmp_path):
     logs = lg.crew_log_root(lg.KIND_SESSION).parent
     if logs.exists():
         for child in sorted(logs.rglob("*"), reverse=True):
-            child.unlink() if child.is_file() else child.rmdir()
+            disposable(child).unlink() if child.is_file() else disposable(child).rmdir()
         logs.rmdir()
     logs.symlink_to(outside, target_is_directory=True)
 

@@ -21,6 +21,7 @@ from kiro_crew.crew_log.store import REMOVE_ABSENT, REMOVE_OWNED, REMOVE_REMOVED
 from kiro_crew.dashboard.handlers import agents as agents_mod
 from kiro_crew.eventlog import service as service_mod
 from kiro_crew.eventlog.types import ACTIVITY_RECORD, MEMBER_CONFIG
+from kiro_crew.testing.delete_guard import disposable
 
 GONE = "retired"
 LIVE = "keeper"
@@ -1063,7 +1064,7 @@ def _stash_a_real_unit(slug: str, tmp_path: Path) -> Path:
     assert unit.is_dir(), "nothing was written, so there is nothing to replay"
     stash = tmp_path / "peer-unit"
     shutil.copytree(unit, stash)
-    shutil.rmtree(unit)
+    shutil.rmtree(disposable(unit))
     service_mod.set_service(None)  # drop the cached handle to the unit just removed
     assert not unit.exists(), "the store will not answer absent while this stands"
     return stash

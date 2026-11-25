@@ -38,6 +38,7 @@ from kiro_crew.crew_log import projection_catalogue, slot_prime
 from kiro_crew.crew_log import store as crew_log_store
 from kiro_crew.crew_log import store_cuts, store_paths, store_units
 from kiro_crew.crew_log.session_tree import SessionTree
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import await_until
 
 GATEWAY = "gateway"
@@ -524,7 +525,7 @@ def _drop_cut_counters() -> None:
     for unit_dir in root.iterdir():
         counter = store_cuts._cuts_path(unit_dir)
         if counter.exists():
-            counter.unlink()
+            disposable(counter).unlink()
             dropped += 1
     assert dropped, "the store seeds a counter at create; there must be one to drop"
 

@@ -1,4 +1,5 @@
 """Tests for kiro_crew.apps.dev_mode — app dev-mode live reload."""
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ from kiro_crew.apps.manager import (
     update_app,
 )
 from kiro_crew.apps.routes import register_app_routes
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.wait import async_wait_until
 
 
@@ -38,6 +40,7 @@ def _reset_dev_cache():
     unrelated Cache-Control assertion.
     """
     import kiro_crew.apps.dev_mode as dev_mode
+
     dev_mode._set_dev_cache(set())
     yield
     dev_mode._set_dev_cache(set())
@@ -66,6 +69,7 @@ def _setup_env(tmp_path, monkeypatch):
     kiro_agents = tmp_path / "kiro-agents"
     kiro_agents.mkdir()
     import kiro_crew.apps.bridges as bridges_mod
+
     monkeypatch.setattr(bridges_mod, "KIRO_AGENTS_DIR", kiro_agents)
     # Operator-process baseline for the runtime human-vs-agent check:
     # the TEST process may itself run inside an agent sandbox (developer
@@ -157,6 +161,7 @@ def test_set_dev_mode_rejects_builtin(tmp_path, monkeypatch):
     meta = _read_installed("dev-mode-app")
     meta.origin = "builtin"
     from kiro_crew.apps.manager import _write_installed
+
     _write_installed("dev-mode-app", meta)
     result = set_dev_mode("dev-mode-app", True)
     assert "builtin" in result["error"]
@@ -222,8 +227,8 @@ def test_set_dev_mode_writes_metadata_under_lock(tmp_path, monkeypatch):
     assert result == {"name": "dev-mode-app", "dev": True}
 
     final = _read_installed("dev-mode-app")
-    assert final.dev is True          # our toggle landed
-    assert final.version == "9.9.9"   # concurrent writer's field preserved
+    assert final.dev is True  # our toggle landed
+    assert final.version == "9.9.9"  # concurrent writer's field preserved
     assert _read_dev_sentinel() == {"dev-mode-app"}
 
 
@@ -329,6 +334,7 @@ def test_scan_ui_mtimes_detects_edit_add_delete(tmp_path):
     time.sleep(0.01)
     f1.write_text("aa")
     import os
+
     os.utime(f1, (time.time() + 5, time.time() + 5))
     count2, digest2 = _scan_ui_mtimes(ui)
     assert (count2, digest2) != (count, digest)
@@ -441,6 +447,7 @@ async def test_watch_loop_broadcasts_reload_on_edit(tmp_path, monkeypatch):
         ui_file = dev_mode.app_dir("dev-mode-app") / "ui" / "index.mjs"
         ui_file.write_text("export default () => 'edited'\n")
         import os
+
         os.utime(ui_file, (time.time() + 5, time.time() + 5))
 
         await _wait_until(lambda: bool(events), "an app_reload broadcast")
@@ -572,6 +579,7 @@ async def test_watch_loop_picks_up_out_of_process_toggle(tmp_path, monkeypatch):
         ui_file = dev_mode.app_dir("dev-mode-app") / "ui" / "index.mjs"
         ui_file.write_text("export default () => 'edited'\n")
         import os
+
         os.utime(ui_file, (time.time() + 5, time.time() + 5))
 
         await async_wait_until(
@@ -609,6 +617,7 @@ def test_update_app_preserves_dev_flag(tmp_path, monkeypatch):
     # fix (all persisted metadata), not merely the ``dev`` flag that surfaced
     # it — so a future field added to InstalledApp can't silently regress.
     from kiro_crew.apps.manager import _write_installed
+
     meta0 = _read_installed("dev-mode-app")
     meta0.enabled = False
     meta0.installedAt = "2020-01-01T00:00:00Z"
@@ -669,6 +678,7 @@ def test_reconcile_sentinel_adds_missing_entry(tmp_path, monkeypatch):
     meta = _read_installed("dev-mode-app")
     meta.dev = True
     from kiro_crew.apps.manager import _write_installed
+
     _write_installed("dev-mode-app", meta)
     assert _read_dev_sentinel() == set(), "sentinel is stale/missing the entry"
 
@@ -783,9 +793,7 @@ def test_reconcile_never_launders_a_forged_dev_flag_into_a_grant(tmp_path, monke
     assert dev_mode.dev_mode_granted_root("dev-mode-app") is None
 
 
-def test_reconcile_prunes_grants_for_absent_apps_but_keeps_live_ones(
-    tmp_path, monkeypatch
-):
+def test_reconcile_prunes_grants_for_absent_apps_but_keeps_live_ones(tmp_path, monkeypatch):
     """Remove-only grant maintenance at startup, keyed on VALID metadata.
 
     The prune checks ``_read_installed``, not the directory: an uninstall with
@@ -802,9 +810,7 @@ def test_reconcile_prunes_grants_for_absent_apps_but_keeps_live_ones(
     # The crash leftover: a grant for an app whose DIRECTORY still exists
     # (keep_data) but whose installed.json is gone.
     (dev_mode.apps_dir() / "ghost-app" / "data").mkdir(parents=True)
-    dev_mode._write_dev_grants(
-        {"dev-mode-app": live_root, "ghost-app": str(tmp_path / "anywhere")}
-    )
+    dev_mode._write_dev_grants({"dev-mode-app": live_root, "ghost-app": str(tmp_path / "anywhere")})
 
     _reconcile_sentinel_from_installed()
 
@@ -868,7 +874,7 @@ def test_enable_refuses_to_bind_a_sensitive_escaping_root(tmp_path, monkeypatch)
     app_ui = dev_mode.apps_dir() / "dev-mode-app" / "ui"
     import shutil
 
-    shutil.rmtree(app_ui)
+    shutil.rmtree(disposable(app_ui))
     outside = tmp_path / "credential-store"
     outside.mkdir()
     from conftest import make_dir_link
@@ -903,7 +909,7 @@ def test_a_refused_reenable_preserves_prior_dev_state(tmp_path, monkeypatch):
 
     # The app repoints ui at a (simulated) sensitive root...
     app_ui = dev_mode.apps_dir() / "dev-mode-app" / "ui"
-    shutil.rmtree(app_ui)
+    shutil.rmtree(disposable(app_ui))
     outside = tmp_path / "credential-store"
     outside.mkdir()
     make_dir_link(app_ui, outside)
@@ -932,7 +938,7 @@ def test_enable_refuses_a_root_CONTAINING_sensitive_leaves(tmp_path, monkeypatch
     _setup_env(tmp_path, monkeypatch)
     install_app(str(_make_app_source(tmp_path)))
     app_ui = dev_mode.apps_dir() / "dev-mode-app" / "ui"
-    shutil.rmtree(app_ui)
+    shutil.rmtree(disposable(app_ui))
     outside = tmp_path / "contains-credentials"
     outside.mkdir()
     make_dir_link(app_ui, outside)
@@ -956,7 +962,7 @@ def _repoint_ui_outside(tmp_path, dirname="external-src"):
     import kiro_crew.apps.dev_mode as dev_mode
 
     app_ui = dev_mode.apps_dir() / "dev-mode-app" / "ui"
-    shutil.rmtree(app_ui)
+    shutil.rmtree(disposable(app_ui))
     outside = tmp_path / dirname
     outside.mkdir()
     (outside / "index.mjs").write_text("export default () => null\n")
@@ -990,9 +996,7 @@ def test_enable_out_of_install_root_requires_confirmation(tmp_path, monkeypatch)
     confirmed = set_dev_mode("dev-mode-app", True, confirm_out_of_install_root=True)
 
     assert confirmed == {"name": "dev-mode-app", "dev": True}
-    assert dev_mode._read_dev_grants() == {
-        "dev-mode-app": os.path.realpath(outside)
-    }
+    assert dev_mode._read_dev_grants() == {"dev-mode-app": os.path.realpath(outside)}
     assert dev_mode.dev_mode_granted_root("dev-mode-app") == os.path.realpath(outside)
 
 
@@ -1117,9 +1121,7 @@ async def test_dev_endpoint_never_confirms_out_of_install_roots(tmp_path, monkey
             json={"enabled": True, "confirmOutOfInstallRoot": True},
         )
         assert resp.status == 400
-        assert (await resp.json())[
-            "code"
-        ] == "dev_mode_out_of_install_confirmation_required"
+        assert (await resp.json())["code"] == "dev_mode_out_of_install_confirmation_required"
         assert dev_mode._read_dev_grants() == {}
         assert dev_mode.dev_mode_granted_root("dev-mode-app") is None
 

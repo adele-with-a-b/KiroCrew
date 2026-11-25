@@ -30,6 +30,7 @@ from kiro_crew import members as members_mod
 from kiro_crew.config.paths import data_home
 from kiro_crew.crew_log import projection as crew_log_projection
 from kiro_crew.dashboard.handlers import agent_panel as routes
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.testing.synthetic_credentials import github_classic
 
 pytestmark = pytest.mark.asyncio
@@ -653,7 +654,7 @@ async def test_a_linked_template_dir_is_a_coded_refusal_not_a_500(vetted):
     elsewhere = data_home() / "somewhere-else"
     elsewhere.mkdir(parents=True, exist_ok=True)
     if over.exists() or over.is_symlink():
-        shutil.rmtree(over, ignore_errors=True)
+        shutil.rmtree(disposable(over), ignore_errors=True)
         over.unlink(missing_ok=True)
     over.symlink_to(elsewhere, target_is_directory=True)
 

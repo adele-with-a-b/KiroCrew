@@ -27,6 +27,7 @@ from kiro_crew.crew_log import session_tree_projection as stp
 from kiro_crew.crew_log.session_tree_projection import SessionTreeProjection
 from kiro_crew.crew_log.store import crew_log_root
 from kiro_crew.session_ledger import _store_name
+from kiro_crew.testing.delete_guard import disposable
 
 GATEWAY = "gateway"
 #: Filler entries per unit for the four log sizes, 1x / 4x / 16x / 64x.
@@ -474,7 +475,7 @@ def _removed_unit() -> None:
     import shutil
 
     emit.reset_caches()
-    shutil.rmtree(_dir("s-b"))
+    shutil.rmtree(disposable(_dir("s-b")))
 
 
 def _adopt_while_down() -> None:

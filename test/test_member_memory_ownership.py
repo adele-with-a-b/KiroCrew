@@ -35,6 +35,7 @@ from kiro_crew.memory_stores import (
     require_memory_store,
     resolve_store_path,
 )
+from kiro_crew.testing.delete_guard import disposable
 from kiro_crew.vector_memory import read_member_database_identity
 
 
@@ -464,7 +465,7 @@ class TestPrivateOwnership:
         root = memory_stores_root() / store
         import shutil
 
-        shutil.rmtree(root)
+        shutil.rmtree(disposable(root))
         with pytest.raises(UnknownMemoryStore, match="missing"):
             require_member_memory_store(cfg, "reviewer")
         assert not root.exists()
@@ -488,7 +489,7 @@ class TestPrivateOwnership:
         root = memory_stores_root() / store
         import shutil
 
-        shutil.rmtree(root)
+        shutil.rmtree(disposable(root))
         make_dir_link(root, memory_stores_root() / other)
         with pytest.raises(UnknownMemoryStore, match="refusing a link"):
             require_member_memory_store(cfg, "reviewer")

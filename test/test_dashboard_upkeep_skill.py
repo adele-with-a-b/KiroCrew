@@ -30,6 +30,7 @@ from kiro_crew.dashboard_templates.manifest import (
     load_template,
     parse_manifest,
 )
+from kiro_crew.testing.delete_guard import disposable
 
 SLUG = "code-reviewer"
 BUILTIN = Path(__file__).resolve().parents[1] / "src/kiro_crew/dashboard_templates/builtin"
@@ -316,7 +317,7 @@ class TestThePointer:
         (outside / "security_policy.json").write_text("{}", encoding="utf-8")
         where = dashboard_upkeep.scripts_dir(SLUG)
         for f in where.iterdir():
-            f.unlink()
+            disposable(f).unlink()
         if leaf == "scripts":
             where.rmdir()
             where.symlink_to(outside, target_is_directory=True)
@@ -335,7 +336,7 @@ class TestTheView:
     def test_the_profile_view_is_the_tool_text_and_writes_nothing(self) -> None:
         # An ADOPTED page: an unadopted one shows the suggestions page and offers no pointer.
         instance.adopt(SLUG, "project-report")
-        shutil.rmtree(dashboard_upkeep.scripts_dir(SLUG), ignore_errors=True)
+        shutil.rmtree(disposable(dashboard_upkeep.scripts_dir(SLUG)), ignore_errors=True)
         view = dashboard_upkeep.view(SLUG)
         assert view is not None
         assert view["pointer"] == dashboard_upkeep.POINTER
