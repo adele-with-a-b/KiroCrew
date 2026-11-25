@@ -762,7 +762,10 @@ def recorded_model_spellings(self: AcpProvider, model_id: str) -> frozenset[str]
     """
     caps = self.capabilities
     advertised = advertised_model_ids(self.available_models())
-    roots = {model_id, model_registry.resolve_wire_model_id(model_id, caps.model_id_namespace)}
+    roots = {
+        model_id,
+        model_registry.resolve_wire_model_id(model_id, self.capabilities.model_id_namespace),
+    }
     resolved = resolve_pin_spelling_on(model_id, advertised, backend=caps.backend)
     if resolved:
         roots.add(resolved)
