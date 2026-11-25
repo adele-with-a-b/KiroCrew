@@ -844,7 +844,8 @@ async def _send(mgr: Any, instance_id: str, slot: str, body: dict[str, Any]) -> 
     # 202 is a turn held for fair admission, and ``stopped`` one a Stop ended
     # before it began: neither has started.
     # A queued entry the crew's drain started before it answered (the turn a steer
-    # waited on had ended) carries ``started`` beside ``queued``: it is running.
+    # waited on had ended, or the sub-agent hold it waited behind lifted) carries
+    # ``started`` beside ``queued``: it is running. One the drain dropped has none.
     began = reply.get("started") is True
     queued = (
         (reply.get("queued") is True and not began) or status == 202 or reply.get("stopped") is True

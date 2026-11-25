@@ -974,6 +974,7 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
     # Shared Crew: a retry under a key already accepted answers its recorded work
     # and writes nothing (no row, no queue entry, no turn), whichever way the
     # first send went, so a retry can never run a prompt twice.
+    from kiro_crew.dashboard import agent_steer
     from kiro_crew.dashboard.chat_runner import _drain_parked_queues
     from kiro_crew.shared_crew import admission_entry as _sc_entry
 
@@ -1069,8 +1070,6 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             and not _auto_queues
             and not _admission_pending
         ):
-            from kiro_crew.dashboard import agent_steer
-
             _agent_reply, _steer_refused, _held_for_person = await agent_steer.steer(
                 state, slot, message
             )
@@ -1242,16 +1241,14 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
         # The admission await (a config refresh included, even when admission
         # turns out off) may have outlived the running turn's handoff: the
         # guarded drain starts the entry if the slot went idle meanwhile.
-        await _drain_parked_queues(state, [slot.key])
-        # The turn a steer waited on may have ended meanwhile: the drain above then
-        # started this entry, and the hub's receipt has to say so.
-        _began = _agent_origin and not any(i.get("id") == qid for i in slot._queue)
+        _began: set[str] = set()
+        await _drain_parked_queues(state, [slot.key], started_ids=_began)
         return web.json_response(
             {
                 "ok": True,
                 "queued": True,
                 "queue_id": qid,
-                **({"started": True} if _began else {}),
+                **(agent_steer.started_mark(qid, _began) if _agent_origin else {}),
                 **({"steerRefusal": _steer_refused} if _steer_refused else {}),
                 **({"heldForPerson": True} if _held_for_person else {}),
             },
@@ -1412,17 +1409,27 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             # is what lands the discard and drains the queue this send joined.
             _arm_pending_reset_retry(state, slot)
             _wake_pending_reset_retry(state, slot)
+        _hold_began: set[str] = set()
         if _behind_parked:
-            await _start_next_queued_turn(state, slot)
+            await _start_next_queued_turn(state, slot, started_ids=_hold_began)
         elif not subagents_hold_user_messages(state, _sub_key):
             # The admission await (a config refresh included, even when admission
             # turns out off) outlived the sub-agent hold: nothing else will drain
             # the entry, so start it now. A hold still in force keeps it parked.
-            await _drain_parked_queues(state, [slot.key])
+            await _drain_parked_queues(state, [slot.key], started_ids=_hold_began)
         # Same receipt contract as the busy-slot queue branch: `queue_id` binds
-        # the sender's pre-send composer state to this exact entry. An entry the
-        # durable bounds refuse is reported in the log and on the frame above.
-        return web.json_response({"ok": True, "queued": True, "queue_id": qid})
+        # the sender's pre-send composer state to this exact entry, and an entry
+        # a turn the drain above began consumed says so; one it dropped does not.
+        # An entry the durable bounds refuse is reported in the log and on the
+        # frame above.
+        return web.json_response(
+            {
+                "ok": True,
+                "queued": True,
+                "queue_id": qid,
+                **(agent_steer.started_mark(qid, _hold_began) if _agent_origin else {}),
+            }
+        )
 
     # WS mode: return JSON immediately, chunks delivered via WebSocket
     ws_mode = request.query.get("ws") == "1"

@@ -51,6 +51,19 @@ TARGET_MOVED = "target_moved"
 _ORPHANED: set["asyncio.Future[Any]"] = set()
 
 
+def started_mark(queue_id: str, started_ids: set[str]) -> dict[str, bool]:
+    """``{"started": True}`` when the route's drain began a turn on *queue_id*, else ``{}``.
+
+    An agent-origin send this crew queued can be started by the route's own drain
+    before the route answers: the turn it waited on ended, or the hold it waited
+    behind lifted. *started_ids* is what that drain consumed into a turn
+    (``_start_next_queued_turn``), so an entry it dropped, or one taken back
+    while it waited, reads as queued. The hub reads ``started`` beside
+    ``queued`` as a running turn, so its receipt says the message started one.
+    """
+    return {"started": True} if queue_id in started_ids else {}
+
+
 async def steer(
     state: "DashboardState", slot: "_ChatSlot", message: str
 ) -> tuple[dict[str, Any] | None, str, bool]:

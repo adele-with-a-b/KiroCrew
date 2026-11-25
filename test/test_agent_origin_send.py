@@ -70,6 +70,45 @@ async def _send(state, body: dict) -> tuple[dict | None, Any]:
             return seen, None
 
 
+async def _send_through_the_drain(state, body: dict) -> tuple[dict, list[str]]:
+    """POST /api/chat on ``s1`` with the real queue drain; the reply and each turn's message.
+
+    A turn the route's drain starts is awaited before this returns, so an empty
+    list means no turn began on the queued entry.
+    """
+    ran: list[str] = []
+
+    async def fake_run_chat(st, sl, msg, **kwargs):
+        ran.append(msg)
+
+    slot = state.get_or_create_slot("s1")
+    slot._titled = True
+    with (
+        patch("kiro_crew.dashboard.chat_handlers._run_chat", fake_run_chat),
+        patch("kiro_crew.dashboard.chat_runner._run_chat", fake_run_chat),
+    ):
+        async with TestClient(TestServer(_make_app(state))) as client:
+            resp = await client.post("/api/chat", json={"slot": "s1", "message": "hi", **body})
+            reply = await resp.json()
+        if isinstance(slot.task, asyncio.Task):
+            await slot.task
+    return reply, ran
+
+
+def _mirror_store(monkeypatch) -> list[str | None]:
+    """The channel-mirror read the containment stamp and the drain's sweep share.
+
+    It reads "not mirrored" until the test sets the cell to ``None``: the session
+    store could not answer, which the sweep counts as a newly held constraint, so
+    it drops the queued entry instead of starting it.
+    """
+    from kiro_crew.dashboard.session_control_parts import delivery_containment
+
+    cell: list[str | None] = [""]
+    monkeypatch.setattr(delivery_containment, "_probe_channel_mirror", lambda *_a: cell[0])
+    return cell
+
+
 def _user_row(slot) -> dict:
     return next(m for m in slot.messages if m.get("role") == "user")
 
@@ -308,29 +347,54 @@ class TestBusySlot:
         assert entry.get("_directive_user_origin", False) is False
         assert (entry.get("meta") or {}).get("steerRefusal") == "no_steer"
 
-    @pytest.mark.parametrize("drain_starts_it", [True, False])
-    async def test_a_refused_steer_whose_turn_ended_meanwhile_is_reported_started(
-        self, tmp_path, monkeypatch, _sel, drain_starts_it
+    @pytest.mark.parametrize(
+        ("body", "outcome"),
+        [
+            ({"steer": True, "turn_origin": "agent"}, "starts"),
+            ({"steer": True, "turn_origin": "agent"}, "drops"),
+            ({"steer": True, "turn_origin": "agent"}, "still busy"),
+            ({}, "starts"),
+        ],
+    )
+    async def test_a_queued_send_is_started_only_when_the_drain_ran_it(
+        self, tmp_path, monkeypatch, _sel, body, outcome
     ):
-        """The turn a steer waited on can end before the send queues. The route's own
-        drain then starts the entry, and the reply says so beside ``queued``."""
+        """The turn a send waited behind can end before the route's own drain runs.
+        That drain then starts the entry, and an agent's reply says ``started``
+        beside ``queued``. An entry the drain drops instead is gone from the queue
+        with no turn on it: the reply stays ``queued``. A person's reply never
+        carries the field."""
+        from kiro_crew.dashboard import chat_runner
+
         monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
         state = _make_state(tmp_path)
         state.broadcast_ws = MagicMock()
         slot = _busy_slot(state)
         slot._turn_user_sent = slot._turn_owner_sent = False
         slot._acp_client.supports_steer = False
+        mirror = _mirror_store(monkeypatch)
+        real_drain = chat_runner._drain_parked_queues
 
-        async def _drain(st, keys):
-            if drain_starts_it:
-                slot._queue.clear()
+        async def _turn_ends_then_drain(st, keys, **kwargs):
+            if outcome != "still busy":
+                slot.task = None
+            if outcome == "drops":
+                mirror[0] = None
+            await real_drain(st, keys, **kwargs)
 
-        monkeypatch.setattr("kiro_crew.dashboard.chat_runner._drain_parked_queues", _drain)
+        monkeypatch.setattr(chat_runner, "_drain_parked_queues", _turn_ends_then_drain)
 
-        _, resp = await _send(state, {"steer": True, "turn_origin": "agent"})
+        resp, ran = await _send_through_the_drain(state, body)
 
         assert resp.get("queued") is True and "steered" not in resp
-        assert (resp.get("started") is True) is drain_starts_it
+        if outcome == "starts" and body.get("turn_origin") == "agent":
+            assert resp["started"] is True
+        else:
+            assert "started" not in resp
+        assert ran == (["hi"] if outcome == "starts" else [])
+        assert any(i.get("id") == resp["queue_id"] for i in slot._queue) is (
+            outcome == "still busy"
+        )
 
     async def test_a_steer_queued_on_a_replaced_chat_is_refused(self, tmp_path, monkeypatch, _sel):
         from kiro_crew.dashboard import agent_steer
@@ -395,6 +459,42 @@ class TestBusySlot:
         assert resp["queued"] is True
         assert slot._queue[-1].get("_directive_user_origin", False) is False
         assert (slot._queue[-1].get("meta") or {}).get("turnActor") == "crew"
+
+    @pytest.mark.parametrize("drops", [False, True])
+    async def test_a_held_send_is_started_only_when_the_drain_ran_it(
+        self, tmp_path, monkeypatch, _sel, drops
+    ):
+        """An idle worker's sub-agent hold can lift while the send is admitted. The
+        route's own drain then starts the entry, and the reply says so beside
+        ``queued``, so the hub's receipt reads started. When the session store
+        stops answering at that moment, the drain's sweep drops the entry instead:
+        it is gone from the queue, no turn ran, and the reply stays ``queued``."""
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        state = _make_state(tmp_path)
+        state.broadcast_ws = MagicMock()
+        slot = state.get_or_create_slot("s1")
+        mirror = _mirror_store(monkeypatch)
+        holds = iter([True])  # held at the gate, lifted when the route drains
+
+        def _hold(*_a):
+            held = next(holds, False)
+            if not held and drops:
+                mirror[0] = None
+            return held
+
+        monkeypatch.setattr("kiro_crew.dashboard.chat_handlers.subagents_hold_user_messages", _hold)
+
+        resp, ran = await _send_through_the_drain(state, {"steer": True, "turn_origin": "agent"})
+
+        assert resp.get("queued") is True and "steered" not in resp
+        assert not any(i.get("id") == resp["queue_id"] for i in slot._queue)
+        if drops:
+            assert "started" not in resp
+            assert ran == []
+            assert any(m.get("role") == "notice" for m in slot.messages)
+        else:
+            assert resp["started"] is True
+            assert ran == ["hi"]
 
     @pytest.mark.parametrize(("body", "held"), [({"turn_origin": "agent"}, True), ({}, False)])
     async def test_only_a_persons_steer_skips_the_sub_agent_hold(
