@@ -673,6 +673,7 @@ async def _turn_build_prompt(turn: _ChatTurn) -> None:
         # The difference against len(message) at build_message time is how
         # far the user's text was pushed down — its offset for split_blocks.
         _core_msg_len = len(message)
+        _core_message = message
         # Bound ONLY the wait to ENTER the memory embed pool, taken here -- just
         # before the first one-shot input this branch consumes (the replay
         # suppression flag in _session_replay_history, the subagent-failure
@@ -786,6 +787,8 @@ async def _turn_build_prompt(turn: _ChatTurn) -> None:
                 # otherwise neutralize its own (registered) frame.
                 _interrupted_turn_preamble = preamble
                 turn._interrupted_turn_preamble = _interrupted_turn_preamble
+                # Earlier transcript rows join this prompt: not a bare patrol wake.
+                slot._turn_patrol_wake = False
         logger.info("🔍 Chat slot=%s is_new=%s mode=%r", slot.key, is_new, slot.mode)
         # Drain any pending subagent delivery failures so the LLM knows
         # about timed-out results and can read them from disk. Settled or put
@@ -956,6 +959,13 @@ async def _turn_build_prompt(turn: _ChatTurn) -> None:
             turn.message = message
             _request_prefix_context += persona_context
             turn._request_prefix_context = _request_prefix_context
+        # The patrol mark stands for a wake whose text the gateway wrote alone.
+        # One check for every prepend between the capture and here (a cancelled
+        # turn's rows, a late sub-agent notice, a sender line, pending context),
+        # so one added in that span ends the mark with no edit here. Text that is
+        # not the gateway's own must not be put in front of ``message`` below.
+        if message != _core_message:
+            slot._turn_patrol_wake = False
         # Scale the injected-context budget to the active model's context
         # window so a 200K model gets one-fifth the memory/lessons/history
         # chars a 1M model gets (same share of the window). Resolve from the

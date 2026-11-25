@@ -129,7 +129,6 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     remote_live = await asyncio.to_thread(work_ledger.remote_liveness_map, key, shown)
     rows: list[dict[str, Any]] = []
     crew_names: dict[str, str] | None = None
-    name_machine = _remote_dispatch_on()
     for item in shown:
         row = _row_with_flags(
             state,
@@ -143,7 +142,7 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
         show_step(row, record.releases)
         if item.worker_instance_id or item.retired_bindings:
             row.update(await asyncio.to_thread(_remote_row_fields, key, item))
-        if name_machine and item.worker_session_key:
+        if remote_on and item.worker_session_key:
             if item.worker_instance_id and crew_names is None:
                 crew_names = await asyncio.to_thread(_crew_names, state)
             row["runs_on"] = _runs_on(item, crew_names or {})

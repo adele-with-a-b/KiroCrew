@@ -709,6 +709,7 @@ _BASE_SLOT_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "_run_started_turns": ("value", "-1"),
     "_task_started_at": ("value", "None"),
     "_turn_owner_sent": ("value", "False"),
+    "_turn_patrol_wake": ("value", "False"),
     "_turn_agent_started": ("value", "False"),
     "_turn_reply_mids": ("value", "[]"),
     "_turn_retries": ("value", "{}"),

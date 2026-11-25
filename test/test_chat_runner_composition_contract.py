@@ -543,6 +543,7 @@ def test_run_chat_keeps_its_entry_signature() -> None:
         "_directive_channel_origin",
         "_directive_source_channels",
         "_directive_owner_origin",
+        "_directive_patrol_wake",
         "_commands_off",
         "_recovery_echo_owed",
         "_card_origin",

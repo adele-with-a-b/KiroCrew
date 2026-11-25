@@ -34,10 +34,12 @@ owner turn. Skip a remote item in the patrol drift check for the same reason.
 **Unless the owner turned on `work_ledger.remote_dispatch_patrol_wake`.** Then a
 wake of the default patrol (the one the gateway armed when you dispatched) may
 use `crew=` like an owner turn: create, send, read, stop and close. Try the
-call; a refusal `crew_owner_unverifiable` means the setting is off or this wake
-is not that patrol. A loop you armed yourself with your own text does not
-count, so keep the default patrol. A cron, a `session_send` turn and a worker
-are refused either way.
+call; a refusal `crew_owner_unverifiable` means one of: the setting is off;
+this wake is not that patrol; the owner has not yet dispatched from this chat
+since the patrol was armed; or another message (a worker's report, a note)
+joined this wake. In the last case the next wake can try again. A loop you
+armed yourself with your own text does not count, so keep the default patrol.
+A cron, a `session_send` turn and a worker are refused either way.
 
 **Dispatch a remote item** (`work_dispatch` is local only):
 
@@ -60,8 +62,8 @@ The crew create reply does not show the `patrol=` outcome; check with
 disk answers `crew_busy` and creates nothing. With no `crew=`, placement skips
 crews that are busy, unreachable, on another version or have the switch off,
 and answers `crew_none_available` when none admits the item. A crew that is not
-connected answers `proxy_peer_not_connected`, and one whose machine answers
-while its Crew does not, `crew_version_unknown`. In all four the item stays
+connected answers `proxy_peer_not_connected`, and one whose version cannot be
+read (its Crew is stopped, or it refused the read), `crew_version_unknown`. In all four the item stays
 open and unbound, and the reply says so: run it on this machine in the same
 turn (`session_create` without `crew` or `work_item`, `work_ledger_record`
 `action=bind`, then `session_send` the seed, since `work_dispatch` would make a
@@ -100,8 +102,9 @@ so it needs no acceptance: relay its summary to the worker that asked. A
 you send its worker a follow-up.
 
 **A lost crew.** A crew counts as down when its tunnel is, and also when the
-tunnel is up but its Crew does not answer (`remote_error`
-`crew_version_unknown`). When an item's crew has been seen down longer than
+tunnel is up but nothing answers behind it (`crew_down_since` set, with
+`remote_error` `crew_version_unknown`; the same error with no `crew_down_since`
+means the crew answered and refused the read, which is not an outage). When an item's crew has been seen down longer than
 `work_ledger.remote_dispatch_retire_minutes` (default 30), the next pull
 retires that binding: the item is open and unbound again, the row shows
 `redispatch_due` and `retired_crews`, and any later report from the retired

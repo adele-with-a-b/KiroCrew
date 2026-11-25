@@ -20,7 +20,12 @@ import test_remote_dispatch_hub_ingest as hub
 import work_ledger_projection_helpers as helpers
 from test_mcp_session_crew import _Client, _ctx
 from test_remote_dispatch_hub_ingest import CREW, PEER_SLOT, StubCrew, _read, _remote_item, _row
-from test_remote_dispatch_retire import _no_background_puller, clock, peer  # noqa: F401
+from test_remote_dispatch_retire import (  # noqa: F401
+    _closes_done,
+    _no_background_puller,
+    clock,
+    peer,
+)
 from work_ledger_projection_helpers import CONDUCTOR
 
 from kiro_crew import mcp_session_crew as tools
@@ -34,10 +39,22 @@ recorded = hub.recorded
 def _stop_the_crew(stub: StubCrew) -> None:
     """The tunnel stays connected; nothing behind it answers the version read."""
 
+    stub.version_reads = 0  # type: ignore[attr-defined]
+
     async def _no_answer(instance_id: str, path: str):
-        return False, {"code": "capability_upstream_error"}
+        stub.version_reads += 1  # type: ignore[attr-defined]
+        return False, {"code": "capability_unreachable"}
 
     stub.peer_capability = _no_answer  # type: ignore[method-assign]
+
+
+def _answer_with(stub: StubCrew, code: str) -> None:
+    """The crew is up and answers the version read with a refusal."""
+
+    async def _refused(instance_id: str, path: str):
+        return False, {"code": code}
+
+    stub.peer_capability = _refused  # type: ignore[method-assign]
 
 
 def _start_the_crew(stub: StubCrew) -> None:
@@ -75,9 +92,69 @@ def test_a_crew_that_stays_stopped_past_the_timeout_is_retired(recorded, peer): 
         assert row["redispatch_due"] is True and row["retired_crews"] == [CREW]
         item = work_ledger.read_work_item(CONDUCTOR, item_id)
         assert item.state == "open" and item.worker_session_key is None
-        # The old slot is not closed while its crew still does not answer.
+        # The old slot is not closed while its crew still does not answer: the
+        # next read, inside the freshness window, does not even ask the crew.
+        asked = peer.version_reads  # type: ignore[attr-defined]
+        await remote_ingest.ingest_board(hub._state(peer), CONDUCTOR)
+        await _closes_done()
+        assert peer.version_reads == asked  # type: ignore[attr-defined]
         assert not remote_ingest._CLOSE_TRIED
         assert all(call["method"] != "DELETE" for call in peer.calls)
+
+    asyncio.run(go())
+
+
+def test_the_retired_slot_is_closed_once_the_stopped_crew_answers(recorded, peer):  # noqa: F811
+    """A close tried while the crew is still stopped is not the one try."""
+
+    async def go() -> None:
+        item_id = await _remote_item(peer)
+        _stop_the_crew(peer)
+        await _read(peer)
+        peer.clock.now += 31 * 60  # type: ignore[attr-defined]
+        assert _row(await _read(peer), item_id)["redispatch_due"] is True
+        state = hub._state(peer)
+        # No open item is bound there any more, so nothing refreshes the read.
+        peer.clock.now += remote_ingest._UNANSWERED_FRESH_SECS + 1  # type: ignore[attr-defined]
+        await remote_ingest.ingest_board(state, CONDUCTOR)
+        await _closes_done()
+        assert all(call["method"] != "DELETE" for call in peer.calls)
+        assert not remote_ingest._CLOSE_TRIED
+        _start_the_crew(peer)
+        peer.clock.now += remote_ingest._UNANSWERED_FRESH_SECS + 1  # type: ignore[attr-defined]
+        await remote_ingest.ingest_board(state, CONDUCTOR)
+        await _closes_done()
+        deletes = [call["path"] for call in peer.calls if call["method"] == "DELETE"]
+        assert deletes == [f"api/chat/slots/{PEER_SLOT}"]
+
+    asyncio.run(go())
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "capability_unauthorized",
+        "capability_peer_too_old",
+        "capability_peer_revalidating",
+        "capability_peer_refused",
+        "capability_malformed_reply",
+    ],
+)
+def test_a_crew_that_answered_with_a_refusal_is_not_down(recorded, peer, code):  # noqa: F811
+    """Only no answer at all starts the retire clock."""
+
+    async def go() -> None:
+        item_id = await _remote_item(peer)
+        _stop_the_crew(peer)
+        await _read(peer)
+        _answer_with(peer, code)
+        row = _row(await _read(peer), item_id)
+        assert row["remote_error"] == "crew_version_unknown"
+        assert row["crew_state"] == "connected" and row["crew_down_since"] is None
+        assert CREW not in remote_ingest._UNANSWERED
+        peer.clock.now += 31 * 60  # type: ignore[attr-defined]
+        late = _row(await _read(peer), item_id)
+        assert late["worker_instance_id"] == CREW and "redispatch_due" not in late
 
     asyncio.run(go())
 
@@ -112,10 +189,17 @@ def test_one_unanswered_read_stands_only_while_it_is_fresh(peer):  # noqa: F811
 def test_a_version_skew_is_still_an_error_and_not_an_outage(recorded, peer):  # noqa: F811
     async def go() -> None:
         item_id = await _remote_item(peer)
+        _stop_the_crew(peer)
+        await _read(peer)
+        _start_the_crew(peer)
         peer.version = "0.0.1"
         row = _row(await _read(peer), item_id)
-        assert row["remote_error"] == "crew_version_mismatch" and row["crew_down_since"] is None
+        assert row["remote_error"] == "crew_version_mismatch"
+        assert row["crew_state"] == "connected" and row["crew_down_since"] is None
         assert CREW not in remote_ingest._UNANSWERED
+        peer.clock.now += 31 * 60  # type: ignore[attr-defined]
+        late = _row(await _read(peer), item_id)
+        assert late["worker_instance_id"] == CREW and "redispatch_due" not in late
 
     asyncio.run(go())
 

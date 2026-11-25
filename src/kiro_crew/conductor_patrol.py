@@ -38,6 +38,7 @@ authored here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -348,6 +349,51 @@ def _refusal_reason(state: Any, slot: str, status: object) -> str:
 
 
 async def ensure_patrol(
+    state: Any,
+    conductor_key: str,
+    *,
+    has_ledger: bool = True,
+    source: str = "work-ledger-bind",
+    attested_caller: str = "",
+) -> tuple[str, str]:
+    """:func:`_ensure_patrol`, then the owner-dispatch record for that patrol."""
+    outcome, reason = await _ensure_patrol(
+        state, conductor_key, has_ledger=has_ledger, source=source, attested_caller=attested_caller
+    )
+    if outcome in (ARMED, EXISTING):
+        await _record_owner_dispatch(state, conductor_key)
+    return outcome, reason
+
+
+async def _record_owner_dispatch(state: Any, conductor_key: str) -> None:
+    """Note in the trust record that the owner dispatched under this slot's patrol.
+
+    Only when the dispatching turn is one the owner sent, or a patrol wake that
+    record already admitted, and only for an active loop that carries exactly the
+    fixed patrol. The record is what the loop fire reads before it lets a wake use
+    ``crew=`` (``work_ledger.remote_dispatch_patrol_wake``); the loop store alone
+    is agent-writable and proves nothing. Never raises: no record is no grant.
+    """
+    try:
+        _svc, loop, slot = _loop_on(state, conductor_key)
+        if loop is None or slot is None or getattr(loop, "active", False) is not True:
+            return
+        if not is_fixed_patrol_payload(loop):
+            return
+        current = state.get_slot(slot)
+        if (
+            getattr(current, "_turn_owner_sent", False) is not True
+            and getattr(current, "_turn_patrol_wake", False) is not True
+        ):
+            return
+        from kiro_crew import autonudge_selfarm
+
+        await asyncio.to_thread(autonudge_selfarm.record_owner_patrol, str(loop.id), slot)
+    except Exception:  # noqa: BLE001 - the dispatch already committed
+        logger.warning("owner-dispatch record not written for %s", conductor_key, exc_info=True)
+
+
+async def _ensure_patrol(
     state: Any,
     conductor_key: str,
     *,

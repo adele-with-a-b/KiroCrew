@@ -22,8 +22,14 @@ a crew/member wake only when BOTH hold: ``loop.self_armed is True`` on the
 record it loaded AND ``is_recorded_self_arm(loop.id, loop.slot_key)`` here. A
 forged bit with no trust entry refuses; a stale trust entry with no bit refuses.
 
-One flat JSON object ``{loop_id: {"slot_key": ..., "armed_ts": ...}}``. An entry
-is written by exactly one path (the authorizer admitting a self-arm) and REVOKED
+One flat JSON object ``{loop_id: {"slot_key": ..., "armed_ts": ...}}``, plus the
+optional booleans ``default_patrol`` (a crewmate thread's fixed patrol),
+``owner_patrol`` (the owner dispatched under this conductor patrol,
+:func:`record_owner_patrol`; read by the loop fire through
+:func:`is_recorded_owner_patrol`) and ``grant_only`` (the entry exists for
+``owner_patrol`` alone and is no self-arm). An entry is written by the authorizer
+admitting a self-arm or a default patrol, and by ``conductor_patrol.ensure_patrol``
+after an owner-sent dispatch; it is REVOKED
 by exactly one path: its loop leaving the store (``AutoNudgeService.remove_sync``
 calls :func:`forget_self_arm` on remove and on replacement), so a removed loop's
 id cannot keep its authorization and the file cannot grow past the loops that
@@ -203,13 +209,55 @@ def is_recorded_self_arm(loop_id: str, slot_key: str) -> bool:
 
     A default-patrol grant (:func:`record_self_arm` with ``default_patrol``) is
     not a self-arm and answers False here, so it vouches for nothing a self-arm
-    does beyond the patrol's own wake.
+    does beyond the patrol's own wake. So is an entry :func:`record_owner_patrol`
+    created for a loop that had none.
     """
     entry = _read_record().get(str(loop_id))
     return (
         entry is not None
         and entry.get("slot_key") == str(slot_key)
         and entry.get("default_patrol") is not True
+        and entry.get("grant_only") is not True
+    )
+
+
+def record_owner_patrol(loop_id: str, slot_key: str) -> None:
+    """Record that the owner dispatched work from *slot_key* while it held patrol *loop_id*.
+
+    Written by ``conductor_patrol.ensure_patrol`` on a turn the owner sent (or a
+    patrol wake this record already admitted), for the fixed default patrol
+    only. It is what lets that patrol's wake use ``crew=`` when
+    ``work_ledger.remote_dispatch_patrol_wake`` is on. An upsert that keeps a
+    self-arm entry's other fields; a crewmate thread's default-patrol grant is
+    left as it is and gains nothing. Raises ``OSError`` on a failed write; the caller treats that as no
+    grant.
+    """
+    with _record_lock():
+        entries = _read_record(set_aside_damaged=True)
+        entry = entries.get(str(loop_id))
+        if entry is not None and entry.get("default_patrol") is True:
+            # A crewmate thread's patrol: never the owner's own conductor chat.
+            return
+        if entry is None or entry.get("slot_key") != str(slot_key):
+            # No arm was recorded for this loop: the entry carries this grant and
+            # nothing else, so it must not read as a self-arm.
+            entry = {"slot_key": str(slot_key), "armed_ts": time.time(), "grant_only": True}
+        if entry.get("owner_patrol") is True:
+            return
+        entries[str(loop_id)] = {**entry, "owner_patrol": True}
+        _write_record(entries)
+
+
+def is_recorded_owner_patrol(loop_id: str, slot_key: str) -> bool:
+    """Whether the trust record says the owner dispatched from *slot_key* under *loop_id*.
+
+    Total like :func:`is_recorded_self_arm`: any failure to read is False.
+    """
+    entry = _read_record().get(str(loop_id))
+    return (
+        entry is not None
+        and entry.get("slot_key") == str(slot_key)
+        and entry.get("owner_patrol") is True
     )
 
 

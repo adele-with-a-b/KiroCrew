@@ -272,7 +272,9 @@ def test_every_crew_busy_leaves_the_item_open_and_unbound(recorded, crews):
     async def body(state, items):
         exc = await _refused(state, items[0])
         assert (exc.status, exc.code) == (503, placement.CREW_NONE_AVAILABLE)
-        assert "a turn the owner sends" in exc.message
+        # One instruction: the tool reply adds how to run it on this machine.
+        assert exc.message.endswith("it stays open and unbound")
+        assert "Retry" not in exc.message and "patrol wake" not in exc.message
         stored = work_ledger.read_work_item(CONDUCTOR, items[0])
         assert stored is not None and not stored.is_terminal
         assert not stored.worker_session_key and not stored.worker_instance_id
