@@ -689,6 +689,37 @@ def undelivered_wake_brief(*, item_id: str, tool: str) -> str:
     return f"[work-ledger wake] item={item_id} reason=report_undelivered tool={tool}"
 
 
+#: How long a conductor's message may sit unread in its own worker's queue, having
+#: asked for the running turn, before the conductor is woken about it. Ten minutes:
+#: past one worker step, so a note the turn picks up at its next boundary never wakes
+#: anyone, and well inside the stall window, so a worker that will not read its
+#: conductor's correction is surfaced before the conductor would notice the silence.
+UNREAD_WAKE_SECS = 600.0
+
+
+def is_unread_overdue(oldest_secs: float | None) -> bool:
+    """Whether a message that has waited *oldest_secs* needs its sender woken.
+
+    ``None`` -- no entry carries an enqueue stamp, as after a restart -- never wakes:
+    an age nobody measured must not be read as an old one.
+    """
+    return oldest_secs is not None and oldest_secs >= UNREAD_WAKE_SECS
+
+
+def unread_wake_brief(*, item_id: str, count: int, waited_secs: float) -> str:
+    """Text for a worker that has not read its conductor's message.
+
+    Says the message is still in the worker's queue, so the conductor can tell this
+    apart from a report or a stall: the worker may be working, but it has not seen
+    what it was told. Counts and seconds only, for the reason :func:`wake_brief` is
+    structural.
+    """
+    return (
+        f"[work-ledger wake] item={item_id} reason=message_unread count={int(count)} "
+        f"oldest_waited_secs={int(waited_secs)}"
+    )
+
+
 #: Chars the briefs may contribute to a delivered wake. ``irq`` already bounds the
 #: list it joins (``irq._MAX_LIST`` entries, then a "(+n more)" tail) and every brief
 #: this module builds is one short line, so a body past this is a kernel or probe

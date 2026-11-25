@@ -643,6 +643,16 @@ async def _init_autonudge(self: GatewayOrchestrator) -> None:
 
         return ledger_wake.worker_closed(self.dashboard_state, session_key)
 
+    def _worker_unread(worker_key: str, sender_key: str) -> Any:
+        """Bind the unread-message wake to the slot table.
+
+        The logic is ``queue_age.sender_unread``, for the reason the bindings above
+        give. Imported here for theirs too: it is read only once a watch ticks.
+        """
+        from kiro_crew.dashboard import queue_age
+
+        return queue_age.sender_unread(self.dashboard_state, worker_key, sender_key)
+
     self.autonudge_svc = AutoNudgeService(
         base_dir=data_home(),
         on_fire=_fire,
@@ -651,6 +661,7 @@ async def _init_autonudge(self: GatewayOrchestrator) -> None:
         emit_judge_notice=_emit_judge_notice,
         worker_running=_worker_slot_running,
         worker_closed=_worker_slot_closed,
+        worker_unread=_worker_unread,
     )
 
     def _monitor_owner_session_id(loop: NudgeLoop) -> str:

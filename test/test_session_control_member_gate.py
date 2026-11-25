@@ -375,8 +375,13 @@ class TestEveryRouteForwardsTheCarriedVerdict:
         async def _no_note_write(_state, _slot, **_kwargs):
             return web.json_response({"ok": True})
 
+        async def _no_binding(_state, _caller_key, _target):
+            return ""
+
         monkeypatch.setattr(sc, "prewarm_enabled_check", _no_prewarm)
         monkeypatch.setattr(sc, "load_target_window", _no_window_load)
+        # The send route's work-ledger binding lookup resolves a slot on the state.
+        monkeypatch.setattr(handler, "_bound_worker", _no_binding)
         # set-note writes through the note route's body once its gate returns.
         monkeypatch.setattr(chat_handlers, "write_slot_note", _no_note_write)
         return seen

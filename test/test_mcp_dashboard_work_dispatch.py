@@ -78,7 +78,13 @@ def test_the_happy_path_returns_the_ids_the_routes_returned() -> None:
     # The ledger route decides who may dispatch; the tool reads no slot first.
     assert dash.requests[0].route == _RECORD
     (seed,) = dash.sent(_SEND)
-    assert seed.body == {"target": _WORKER, "message": _ARGS["seed"], "steer": False}
+    # A seed records no ask a reply could cut into the dispatching turn for.
+    assert seed.body == {
+        "target": _WORKER,
+        "message": _ARGS["seed"],
+        "steer": False,
+        "dispatch_seed": True,
+    }
     (create,) = dash.sent(_CREATE)
     assert create.body["agent"] == "kirocrew-worker"
     assert create.body["agent_kind"] == "template"

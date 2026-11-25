@@ -3891,7 +3891,10 @@ Contract:
   or by a session that created this one (`session_end_wait`, via
   `POST /api/session-control/end-wait`). A session-requested end also carries
   `{"end_wait_by": "<caller slot key>"}`, which the tool reads only from a reply
-  naming its own `wait_id` and uses to say which session ended the sleep. The
+  naming its own `wait_id` and uses to say which session ended the sleep. Every
+  early end also carries `{"end_wait_reason": "user" | "steer"}`; on `steer` (a
+  message steered into the turn, the person's or a peer's `session_send`) the
+  tool says a message came into the turn instead of "by the user". The
   tool breaks its loop and returns a normal string — deliberately **not**
   `ToolCancelled`, whose response is suppressed.
 - **`mcp_server_wait`** asks on the same ping what is true of one of the
@@ -4812,7 +4815,7 @@ owns them:
 | `_inflight_adds` | supervised detached writes of `mutations`, `timers`, `judge_tick`, `monitor_records` and the service |
 | `_store_dirty` | the loader's repair flag, flushed by `start()` |
 | `_on_fire`, `_on_monitor_tick`, `_collect_judge_evidence`, `_emit_judge_notice` | constructor-injected collaborators, read by `firing`, `monitor_records` and `judge_tick` |
-| `_worker_running_resolver`, `_worker_closed_resolver` | constructor-injected `worker_running` / `worker_closed` callbacks, read through the service's `_worker_running` / `_worker_closed` by the work-ledger probe that `gate` builds |
+| `_worker_running_resolver`, `_worker_closed_resolver`, `_worker_unread_resolver` | constructor-injected `worker_running` / `worker_closed` / `worker_unread` callbacks, read through the service's `_worker_running` / `_worker_closed` / `_worker_unread` by the work-ledger probe that `gate` builds (`worker_unread` is `queue_age.sender_unread` bound to the slot table, for the unread-message wake) |
 | `_pulled_forward`, `_pushed_ticks`, `_pushed_running`, `_pull_forward_counts`, `_pull_forward_capped` | the conductor pull-forward (`src/kiro_crew/conductor_wake.py`, fired from its crew-log bus subscription for a report whose status wakes): `firing` sets the first three (fire-now with `defer_if_firing`) and `conductor_wake` the per-item counts and caps; `timers` drops a spent `_pushed_ticks` entry; consumed by `firing` and `gate`; released by `mutations.remove_sync` |
 | `_base_dir`, `_observers` | the lock key, the observer hook; `_path`, the store file callers read, is a read-only view of `_store.path` |
 

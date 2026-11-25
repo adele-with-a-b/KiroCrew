@@ -1190,6 +1190,9 @@ async def _start_next_queued_turn(
     # record would see no row and redispatch it. The single-entry case keeps the
     # plain scalar so a reader of only that key is unchanged.
     _drained_decision_ids: list[str] = []
+    # Owner code runs on ``chat_runner``'s globals, so a module it reads is imported here.
+    from kiro_crew.dashboard import queue_age
+
     # circular import: session_control imports this package's modules at module level.
     from kiro_crew.dashboard.session_control import (
         CHANNEL_RECIPIENT_META_KEY,
@@ -1301,6 +1304,8 @@ async def _start_next_queued_turn(
     _drained_meta.pop(REQUEUED_STEER_ROW_MID_META, None)
     # Queue plumbing for ``session_queue``'s ownership read; never row meta.
     _drained_meta.pop(SESSION_SEND_QUEUED_META, None)
+    # Queue plumbing for the unread wake (``queue_age``); once drained it was read.
+    _drained_meta.pop(queue_age.STEER_WANTED_META, None)
     # Queue plumbing like the steer mark above, read the way the channel origin is:
     # ANY consumed entry a channel hand-off stamped keeps the merged text content,
     # so a batch cannot smuggle a channel's "/clear" into a command by sitting

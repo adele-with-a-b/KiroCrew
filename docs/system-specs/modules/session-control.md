@@ -33,7 +33,7 @@ unreachable in production because the caller's `X-Internal-Secret` is ignored.
 | `session_close` | `POST /api/session-control/close` | Close (archive) another session, or the caller itself, as the tab ✕ does — heavier than stop, and recoverable rather than a delete |
 | `session_revive` | `POST /api/session-control/revive` | Bring an archived session back into the live sidebar, as clicking it in the History tab does — the mirror of close, optionally filing it into a folder |
 | `session_history_list` | `GET /api/session-control/history` | List the archived sessions the caller could revive, newest first, optionally narrowed to one folder; every row passes the same containment and ownership fence `session_revive` applies |
-| `session_send` | `POST /api/session-control/send` | Deliver a message that another session runs as its next turn, or cut it into the turn already running (`steer`). A fenced caller may also send, without `steer`, to the one session that created it (see "A created session may message its creator") |
+| `session_send` | `POST /api/session-control/send` | Deliver a message that another session runs as its next turn, or cut it into the turn already running (`steer`). An omitted `steer` cuts into a session the caller manages and into one still in the turn that messaged the caller; `steer=false` queues (see "An omitted `steer` cuts in"). A fenced caller may also send, without `steer=true`, to the one session that created it (see "A created session may message its creator") |
 | `session_broadcast` | `POST /api/session-control/broadcast` | Deliver ONE message to the named `targets`, or with `all: true` to every session the caller created, in a required `queue` or `steer` mode, reporting the outcome per target; a call that selects neither, or both, is refused |
 | `session_status` | `GET /api/session-control/status` | List the sessions the caller stood up and what each is doing, with the roster taken from the crew log's session tree so a session that is gone still appears |
 | `session_adopt` | `POST /api/session-control/adopt` | Take another session under the caller in the session tree, keeping the parent it had on record; refused when the target is already above the caller |
@@ -376,13 +376,73 @@ worker go the wrong way can say so while the work is still in flight rather than
 after it lands. The result names the outcome: `steered` for an injection,
 `started` for a turn begun, and neither for a queued message.
 
+**An omitted `steer` cuts in where the queue would strand the message.**
+`steer` has three values on `session_send`: `true` and `false` are asked for by
+name, and an omitted (or `null`) one is the default, which `send_to_target`
+decides after the gate from who the sender is to the target
+(`steer=None`). It steers in two cases and queues in every other:
+
+- **The sender manages the target** (`manages_target`): `session_managers.holder`
+  names it (the creator, until a `session_handoff` names another), or the
+  target's work-ledger binding names it as the conductor. The route resolves the
+  target the way the gate does (key, transcript name or title) and reads the
+  binding for that slot's key (`session_control._bound_worker` →
+  `work_ledger_handback.read_send_binding`), passing the key as
+  `caller_bound_worker`; `send_to_target` counts it only when it equals the slot
+  its own gate resolved, so a title that moves in between earns nothing. Never the
+  sender's own creator: a worker's report up keeps the queue.
+- **The target is still in the turn that messaged the sender** (`awaits_reply`).
+  A `session_send` (the one caller passing `creator_message`; a create's seed, a
+  broadcast and a workflow send ask nothing, and neither does `work_dispatch`'s
+  seed, which goes through the same route marked `dispatch_seed`, so
+  `records_ask` is false) records the target on the SENDER's
+  slot, `_awaiting_replies[target] = generation`, where the generation is the
+  sender's running turn read before the send's first await (`_note_awaiting_reply`
+  writes nothing when that turn ended during the delivery, and drops entries from
+  earlier turns on each write). A reply from that target while the same
+  generation runs (`turn_running`) steers into it, and a reply that cut in spends
+  the record (`_take_awaited_reply`, only while it still names the generation the
+  reply was decided under, so a later turn's ask made during the delivery stays),
+  so each message buys at most one cut-in; one
+  the turn could not take queues and leaves the record. A reply records an ask
+  too, because an answer can carry a question back. A session that asked and then sleeps in `wait` reads the answer there:
+  `wait` returns early on any steer into its turn. Without this a reply queued
+  behind the asking turn, and the wait ran to its full length on an answer that
+  had already arrived. A Bash call cannot see either: a steer is read at the next
+  step, after the running tool call returns.
+
+**Neither default cuts into a turn the person drives** (`holds_persons_standing`:
+the running turn's `_turn_user_sent` or `_turn_owner_sent`). Any peer steer takes
+that standing away for the rest of the turn (see `chat_delivery`'s narrowing), so
+the person's own turn would silently lose its deny override, its crew-scoped
+session read and its dispatch notice to text they never asked for. A manager's
+default and a reply both queue there, marked as wanting the turn; a held reply
+spends no ask. The unread wake below covers only the manager's default, because its
+reader is the work-ledger probe of the bound worker's conductor, and a reply's
+sender is the worker. A manager's explicit `steer=true` still cuts in. A reply to
+the creator has no explicit form (the creator opening refuses it as `not_creator`),
+so it waits for the person's turn to end. The cost: a person-driven turn that asked
+and waits in `wait` reads the answer only when its turn ends, and the wait runs its
+full length. Known limit:
+two replies in flight at once can both cut in, because the ask is read before
+delivery and spent after it; the pending-steer cap bounds it.
+
+The result carries `steerDefault`: `"manager"` or `"reply"`, so the tool reply
+says why it cut in and names `steer=false` as the word that queues. A steer the
+default chose falls back to the queue exactly as an asked-for one does, with the
+same `steerRefusal`. The person's own typing, `session_broadcast` (its `mode` is
+required) and every other caller of `send_to_target` keep `steer=False`.
+
 A harness that can drop a steer it accepted (`steer_needs_loss_recovery`:
 codex, claude, goose, pi and opencode) takes a peer's steer only when
 `agent.peer_steer_loss_recovery` is on; otherwise the steer arm answers
 unavailable and the message queues. With the key on, the peer's steer is held
 as the composer's is: it counts as delivered only when its turn ends cleanly,
 and the turn's teardown otherwise requeues it as a queue card that runs as the
-next turn, so it can run twice.
+next turn, so it can run twice. The default steer does not change that trade:
+with the key off (the default) a defaulted steer to those harnesses queues marked
+as wanting the turn, so the unread wake covers it; with it on, the operator has
+already accepted "may run twice" for every peer steer, asked for or defaulted.
 
 Two properties keep the steer arm from being a hole in the queued arm's checks.
 The delivery happens NOW rather than later, which removes the queue's waiting
@@ -547,8 +607,8 @@ window and replaces it with a narrower one: the steer RPC suspends on
 A steer is a delivery MODE, not a permission: `authorize_target` decides who may
 send, unchanged, and a relay archive (`executor == "remote"`) stays refused with `relay_archive_read_only`
 before either arm is reached. `steer` is strictly typed at both entry points (the
-tool schema and the HTTP handler) and defaults false, so a caller that omits it
-keeps the queue-or-run behaviour.
+tool schema and the HTTP handler): a boolean, or absent for the default above.
+A string such as `"false"` is refused `invalid_steer`, never coerced.
 
 `session_create` earns its place on its own, not as the front half of a delivery
 design: an agent that has just worked out that a job needs its own session can
@@ -1703,7 +1763,11 @@ fence. What still holds:
   close, adopt, release, handoff, fork, rename, set_model, set_mode, set_color, set_note,
   end_wait, reload, status, retry, continue, generate_title) is refused
   `not_creator` with the wording `CREATOR_MESSAGE_ONLY`. So is `steer=true`, before
-  any RPC, so nothing is injected into the creator's running turn. A broadcast, a
+  any RPC. The one steer into the creator is the default's reply
+  (`awaits_reply`): the creator messaged this worker in the turn it is still
+  running, so the answer goes into that turn, and both steer-arm re-gates pass the
+  opening for that case alone (`reply_to_creator`). It is still answered as a
+  report (`toCreator`). A broadcast, a
   workflow script's send and a create's seed do not ask for it and keep the plain
   fence.
 - **One target.** A sibling, the person's own tabs, and the creator's own creator
@@ -2593,6 +2657,43 @@ silently skip everything in between. The caller falls back to a tail read.
 `running` is what makes the loop terminable: `running: false` with an empty
 window means the target finished and went idle, which is different from "nothing
 new yet". `queue_depth` reports how much the target still owes.
+
+`queue_oldest_secs` (on this reply and on each `session_status` row) is how long
+the oldest queued entry has waited, from `dashboard/queue_age.py`. Each entry's
+enqueue instant is kept beside the queue in `slot._queued_at` (keyed by entry
+id; `slot_queue_repository.queue_append` / `queue_insert` stamp it and drop the
+stamps of entries no longer queued), never inside the entry, because queue dicts
+are compared wholesale. The record is in memory only: an entry restored after a
+restart has no stamp, so it is counted but gives no age, and the field is absent
+when no entry has one. The tool text renders it as ", the oldest waiting 5m".
+
+A queued `session_send` whose sender wanted the running turn (an explicit or
+defaulted steer that came back to the queue, in-frame or orphaned, or a peer's
+steer the turn ended before reading, requeued by
+`steer_queue._requeue_unconsumed_steers` via `queue_age.requeued_steer_meta`)
+carries `queue_age.STEER_WANTED_META` in its meta; the drain pops it, so it never
+reaches a row. A steer the RPC accepted waits in `_pending_steers` until the
+model's next step, which one long tool call can hold off for an hour, so it is
+stamped too (`queue_age.note_steered` into `slot._steered_at`, keyed by the steer
+text, pruned to the pending steers on each write) and attributed by its
+admission's send origin; a requeued one keeps that instant as its entry's age
+(`queue_age.carry_steered`). A harness with `steer_needs_loss_recovery` reports
+every steer consumed only at a clean turn end, so its pending list holds steers
+already read. The delivery reads that flag once, where it already gates the
+peer steer, and stamps such a steer as not counted
+(`note_steered(read_reported=False)`): it keeps its send instant for a requeue
+but never counts as unread. Together these are the work-ledger probe's
+unread-message wake: `queue_age.sender_unread`, bound to the slot table by the
+gateway (`nudge_wiring._worker_unread` → `AutoNudgeService(worker_unread=…)` →
+`probes.build` → `WorkLedgerProbe`), answers a bound worker's wanted entries and
+unread steers from its conductor, and once the oldest has waited
+`ledger_wake.UNREAD_WAKE_SECS` the probe wakes the conductor once per oldest id
+(`unread:<id>`, `reason=message_unread`). The same overdue answer is folded into
+`person_wait_fingerprint` (`firing._ledger_person_wait_fp` passes the resolver),
+so a patrol held because every item waits on a person releases for that wake.
+`work_ledger_read` shows every entry the conductor queued for its worker, wanted
+or not, plus its unread steers, as the row's `messages_unread: {count,
+oldest_secs}` (`queue_age.unread_row`).
 
 A turn parked on a tool approval keeps `running` true for the whole approval
 window, so `running` alone cannot tell "working" from "waiting on a person".

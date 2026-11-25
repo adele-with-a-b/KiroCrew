@@ -118,6 +118,8 @@ class _ChatSlot:
         "_queue_persist_inflight",
         "_queue_persist_owed",
         "_last_enqueue_ts",
+        "_queued_at",
+        "_steered_at",
         "_approval_futures",
         "_approval_instances",
         "_approval_stopped",
@@ -153,6 +155,7 @@ class _ChatSlot:
         "_saved_created_by",
         "_lineage_minted",
         "_reports_to_creator",
+        "_awaiting_replies",
         "_revived_by",
         "_artifact",
         "_channel_folder_filed",
@@ -485,6 +488,7 @@ class _ChatSlot:
     _saved_created_by: str
     _lineage_minted: bool
     _reports_to_creator: bool
+    _awaiting_replies: dict[str, int]
     _revived_by: str
     _mcp_report: dict[str, Any] | None
     _mcp_report_session_id: str
@@ -584,6 +588,8 @@ class _ChatSlot:
     _queue_persist_inflight: bool
     _queue_persist_owed: bool
     _last_enqueue_ts: str
+    _queued_at: dict[str, float]
+    _steered_at: dict[str, tuple[float, bool]]
     _approval_futures: dict[str, asyncio.Future[str]]
     _approval_instances: dict[str, tuple[asyncio.Future[str], str]]
     _approval_stopped: set[str]

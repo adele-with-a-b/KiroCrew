@@ -20,7 +20,7 @@ from typing import Any
 from aiohttp import web
 
 from kiro_crew import conductor_patrol, ledger_wake, session_ledger, work_ledger
-from kiro_crew.dashboard import session_control
+from kiro_crew.dashboard import queue_age, session_control
 from kiro_crew.dashboard.handlers.work_ledger_caller import (
     _caller_key,
     _code_channel_caller,
@@ -358,6 +358,9 @@ def _row_with_flags(
 
     ``pending_overdue`` marks an item whose acceptance has read ``pending`` past the
     budget, so the conductor stops polling it and asks the user.
+
+    ``messages_unread`` is ``{"count", "oldest_secs"}`` while messages *board* sent
+    the worker are still queued unread (``queue_age.unread_row``), else ``None``.
     """
     row = item.to_dict()
     row["orphaned"] = work_ledger.is_orphaned(item, conductor_slot_exists=conductor_alive)
@@ -381,6 +384,14 @@ def _row_with_flags(
     row["unpatrolled"] = item.state == "open" and not patrolled
     row["pending_overdue"] = work_ledger.is_pending_overdue(item)
     row["report_undelivered"] = report_undelivered
+    # What this board's conductor sent the worker that still sits in its queue, so a
+    # patrol sees "my correction has waited 40 minutes" instead of a quiet worker.
+    # A remote worker's queue is on its peer, so it reads as nothing here.
+    row["messages_unread"] = (
+        None
+        if item.worker_instance_id
+        else queue_age.unread_row(_find_slot(state, item.worker_session_key or ""), board)
+    )
     return row
 
 
@@ -445,6 +456,7 @@ _COMPACT_ROW_FIELDS: tuple[str, ...] = (
     "unpatrolled",
     "pending_overdue",
     "report_undelivered",
+    "messages_unread",
 )
 
 #: Query-string spellings of ``compact``. ``true`` / ``false`` is what the tool

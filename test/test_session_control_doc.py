@@ -116,8 +116,13 @@ def test_the_documented_defaults_match_the_schemas(
 
     send = by_name["session_send"]["inputSchema"]
     assert send["required"] == ["target", "message"]
-    assert "Default false." in send["properties"]["steer"]["description"]
-    assert "default `false`" in doc_text
+    # The default depends on who the sender is to the target, so both say so.
+    steer_text = send["properties"]["steer"]["description"]
+    assert "Default when omitted:" in steer_text
+    # A crew send never forwards an omitted steer, so both must say it queues there.
+    assert "always for a session on another crew" in steer_text
+    assert "To any other session,\nand to a session on another crew, it queues." in doc_text
+    assert "**Leaving `steer` out cuts in where a queue would strand the message.**" in doc_text
 
     # ``session_create`` requires nothing, which is exactly why the page has to say so:
     # a reader who assumes ``agent`` is required cannot hit the trap above.

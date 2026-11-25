@@ -310,6 +310,21 @@ ledger write: the next `work_brief` or `work_report` call that gets through
 clears it. A conductor that sees it checks the worker's session and pull request
 and tells you what it finds, rather than calling the worker stalled.
 
+**A message the worker has not read is shown, and wakes the conductor.** A
+conductor's `session_send` to its own worker cuts into the worker's running turn
+by default, unless the person is driving that turn. When the turn cannot take
+it, the message waits in the worker's queue; when it can, the worker still reads
+it only at its next step, which one long tool call can hold off. The item then
+reads `messages_unread: {count, oldest_secs}` on `work_ledger_read` (full and
+compact), counting every message this conductor sent that the worker has not
+read yet. `session_status` and `session_read_message` say how long the oldest
+queued message has waited (`queue_oldest_secs`). A message that asked for the
+running turn, and has waited ten minutes (`ledger_wake.UNREAD_WAKE_SECS`), wakes
+the conductor's work-ledger watch once with `reason=message_unread`, even while
+the watch is holding because every item waits on a person. A message restored
+from the queue after a gateway restart carries no age, so it never causes this
+wake. Neither does a remote worker, whose queue is on its peer.
+
 Reports belong at real milestones, not on a timer.
 `summary` is capped at 500 characters.
 A longer one is **cut to the cap, not refused**: the stored value carries a note

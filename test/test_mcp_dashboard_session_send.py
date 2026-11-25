@@ -41,11 +41,18 @@ class TestSteerForwarding:
         }
         assert sent.session_key == "dashboard:chat-1-100"
 
-    def test_omitting_steer_forwards_false_rather_than_nothing(self) -> None:
-        """The API defaults it too, but an explicit false keeps the wire payload
-        one shape: a missing key and a false key must not be two cases downstream."""
+    def test_omitting_steer_forwards_nothing_so_the_gateway_picks(self) -> None:
+        """A missing key and a false key are two cases: absent lets the gateway
+        steer the caller's own worker, false asks for the queue by name."""
         _, sent = _send(
             {"target": "chat-2", "message": "later is fine"},
+            {"ok": True, "target": "chat-2", "started": False, "steered": False},
+        )
+        assert "steer" not in sent.body
+
+    def test_an_explicit_false_is_forwarded(self) -> None:
+        _, sent = _send(
+            {"target": "chat-2", "message": "after this turn", "steer": False},
             {"ok": True, "target": "chat-2", "started": False, "steered": False},
         )
         assert sent.body["steer"] is False
@@ -115,6 +122,35 @@ class TestOutcomeReports:
         assert "Queued" in out
         assert "steer" not in out.lower()
 
+    def test_a_default_steer_names_the_word_that_queues(self) -> None:
+        """The caller asked for nothing and its own worker was steered: the reply
+        says so, so a caller that wanted the queue learns how to ask for it."""
+        out, _ = _send(
+            {"target": "chat-2", "message": "the answer is yes"},
+            {
+                "ok": True,
+                "target": "chat-2",
+                "started": False,
+                "steered": True,
+                "steerDefault": "manager",
+            },
+        )
+        assert "Steered" in out and "steer=false" in out
+
+    def test_a_default_steer_that_fell_back_names_why(self) -> None:
+        out, _ = _send(
+            {"target": "chat-2", "message": "the answer is yes"},
+            {
+                "ok": True,
+                "target": "chat-2",
+                "started": False,
+                "steered": False,
+                "steerDefault": "manager",
+                "steerRefusal": "permission_wait",
+            },
+        )
+        assert "Queued" in out and "waiting on a tool approval" in out
+
 
 class TestSchema:
     def test_a_non_boolean_steer_is_refused_at_the_schema(self) -> None:
@@ -125,6 +161,6 @@ class TestSchema:
                 {"target": "chat-2", "message": "hi", "steer": "true"}, SESSION_SEND_SCHEMA
             )
 
-    def test_steer_defaults_to_false(self) -> None:
+    def test_steer_has_no_default(self) -> None:
         cleaned = validate_tool_args({"target": "chat-2", "message": "hi"}, SESSION_SEND_SCHEMA)
-        assert cleaned["steer"] is False
+        assert cleaned.get("steer") is None

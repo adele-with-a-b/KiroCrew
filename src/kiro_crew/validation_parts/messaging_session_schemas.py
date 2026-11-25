@@ -597,9 +597,10 @@ SESSION_SEND_SCHEMA = ToolSchema(
         # Delivery MODE, not a permission: a true value asks for the message to be
         # injected into the target's running turn instead of waiting for the next
         # one. Strictly typed (``bool`` is an allowed type here, so the int-guard
-        # in ``validate_field`` does not apply) and defaulted false, so a caller
-        # that omits it keeps the queue-or-run behaviour it has today.
-        FieldSpec("steer", bool, default=False),
+        # in ``validate_field`` does not apply). No default: an omitted value is
+        # forwarded as absent, and the gateway picks the delivery from who the
+        # sender is to the target (``session_messaging.manages_target``).
+        FieldSpec("steer", bool, default=None),
         # ``crew=`` (rfc-conductor-remote-dispatch.md): a remote crew's instance id
         # or exact name. Accepted here whatever ``work_ledger.remote_dispatch`` says,
         # so the gateway answers a call carrying it with the typed

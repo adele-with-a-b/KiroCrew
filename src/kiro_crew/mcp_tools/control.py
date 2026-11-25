@@ -228,7 +228,9 @@ class _WaitStep(DeferredTool):
             # read from a reply that named this wait, so it cannot describe
             # someone else's sleep.
             return self._finish(
-                ended_early=True, ended_by=str(reply.get("end_wait_by") or "")[:128]
+                ended_early=True,
+                ended_by=str(reply.get("end_wait_by") or "")[:128],
+                by_message=reply.get("end_wait_reason") == "steer",
             )
         self.next_ping = now + self.ping_secs
         return None
@@ -269,7 +271,7 @@ class _WaitStep(DeferredTool):
             outcome="success",
         )
 
-    def _finish(self, *, ended_early: bool, ended_by: str) -> str:
+    def _finish(self, *, ended_early: bool, ended_by: str, by_message: bool = False) -> str:
         seconds = self.seconds
         waited = max(0, int(seconds - max(0.0, self.deadline - mcp_core.time.monotonic())))
         self._retire_card()
@@ -281,6 +283,11 @@ class _WaitStep(DeferredTool):
             return (
                 f"Wait ended early by session `{ended_by}` (session_end_wait) after "
                 f"{waited}s of {seconds}s. Resuming: {self.reason_safe}"
+            )
+        if ended_early and by_message:
+            return (
+                f"Wait ended early after {waited}s of {seconds}s: a message came into "
+                f"this turn, and you read it next. Resuming: {self.reason_safe}"
             )
         if ended_early:
             return (

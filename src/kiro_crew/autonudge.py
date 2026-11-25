@@ -456,6 +456,7 @@ class AutoNudgeService:
         emit_judge_notice: Callable[[NudgeLoop, str], Awaitable[None]] | None = None,
         worker_running: Callable[[str], bool] | None = None,
         worker_closed: Callable[[str], bool] | None = None,
+        worker_unread: Callable[[str, str], tuple[int, float | None, str] | None] | None = None,
     ) -> None:
         self._base_dir = base_dir or config_dir()
         # The durable store's state and file protocol (see autonudge_service.store).
@@ -488,6 +489,10 @@ class AutoNudgeService:
         #: different question: a closed worker is stale AT ONCE, where an idle one waits
         #: out the staleness window. Absent means "not closed", which keeps the window.
         self._worker_closed_resolver = worker_closed
+        #: ``(worker key, sender key) -> (count, oldest_secs, oldest_id) | None``: the
+        #: sender's queued messages that asked for the running turn and are still
+        #: unread. Read by the same probe, for its unread-message wake.
+        self._worker_unread_resolver = worker_unread
         self._loops: dict[str, NudgeLoop] = {}
         self._timers: dict[str, asyncio.Task] = {}
         # Loop ids whose re-arm was requested while their fire window was open.
@@ -1302,6 +1307,24 @@ class AutoNudgeService:
         from kiro_crew import ledger_wake
 
         return ledger_wake.worker_loop_held(self, session_key)
+
+    def _worker_unread(
+        self, worker_key: str, sender_key: str
+    ) -> tuple[int, float | None, str] | None:
+        """What *sender_key* wanted read now that *worker_key* still has queued.
+
+        ``None`` with no resolver or a resolver that raises: this answer only ADDS a
+        wake about a worker that is still working, so an unreadable queue costs that
+        wake and nothing else.
+        """
+        resolver = self._worker_unread_resolver
+        if resolver is None or not worker_key or not sender_key:
+            return None
+        try:
+            return resolver(worker_key, sender_key)
+        except Exception:  # pragma: no cover - a queue read must not fail a tick
+            logger.debug("AutoNudge: unread read failed for %s", worker_key)
+            return None
 
     def _observes_work_ledger(self, loop: NudgeLoop) -> bool:
         """Whether *loop*'s monitor is a work-ledger watch THIS gateway may arm.

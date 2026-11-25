@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from kiro_crew.config.loader import KiroCrewConfig
 from kiro_crew.crew_log import emit as crew_log_emit
 from kiro_crew.crew_log.session_tree_projection import projection
+from kiro_crew.dashboard import queue_age
 from kiro_crew.dashboard.chat_delivery import sanitize_outbound
 from kiro_crew.dashboard.chat_persistence import _TRANSIENT_ROLES as _PERSISTENCE_TRANSIENT_ROLES
 from kiro_crew.dashboard.chat_persistence import _recent_session_slot_name
@@ -681,6 +682,9 @@ async def created_session_status(
             # ``idle`` row with it is waiting on something outside, not stopped.
             "looping": not running and ledger_wake.worker_looping(get_nudge(), key),
             "queue_depth": queue_depth,
+            # How long the oldest of them has waited, so a count of notes sent a
+            # minute ago reads apart from one that has sat behind a turn for hours.
+            **queue_age.oldest_field(slot),
             "process": process_state(state, slot),
             **_pending_approval_fields(state, slot),
             **(_activity_fields(slot) if via_code_channel else {}),
@@ -876,6 +880,7 @@ def read_messages(
         # "nothing happening".
         **({"streaming": True} if durable_end < len(raw_window) else {}),
         "queue_depth": len(slot._queue),
+        **queue_age.oldest_field(slot),
         # A turn parked on a tool approval is still ``running``; this says it is
         # waiting on a person rather than working.
         **_pending_approval_fields(state, slot),

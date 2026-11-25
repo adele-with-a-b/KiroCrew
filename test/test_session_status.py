@@ -158,6 +158,22 @@ class TestLiveness:
         row = _rows(_status(state, caller))["chat-2"]
         assert row["status"] == "queued" and row["queue_depth"] == 1
 
+    def test_a_row_says_how_long_its_oldest_queued_message_has_waited(self, tmp_path, monkeypatch):
+        from kiro_crew.dashboard import queue_age
+
+        now = [5_000.0]
+        monkeypatch.setattr(queue_age, "_clock", lambda: now[0])
+        state = _make_state(tmp_path)
+        caller = _slot(state, "chat-1")
+        child = _child(state, "chat-2", caller)
+        child.queue_append("first")
+        now[0] += 600
+        child.queue_append("second")
+        now[0] += 25
+        assert _rows(_status(state, caller))["chat-2"]["queue_oldest_secs"] == 625
+        read = sc.read_messages(state, caller_session_key=_key(caller), target="chat-2")
+        assert read["queue_depth"] == 2 and read["queue_oldest_secs"] == 625
+
     def test_an_idle_session_holding_only_restored_cards_is_idle(self, tmp_path):
         """A card restored after a restart never runs on its own, so the row asks
         for a decision instead of telling the patrol to wait for it."""

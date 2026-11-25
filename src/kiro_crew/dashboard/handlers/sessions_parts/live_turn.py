@@ -803,6 +803,9 @@ def _service_wait_ping(
         # field honours ``end_wait`` alone exactly as before.
         if ended_by:
             reply["end_wait_by"] = ended_by
+        # Likewise advisory: a message came into this turn, so the tool says so
+        # instead of naming the person, and the agent reads it next.
+        reply["end_wait_reason"] = reason
         logger.info("wait ending early for %s (reason=%s)", session_key, reason)
         state.push_slots_update()
 

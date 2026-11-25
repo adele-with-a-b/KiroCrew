@@ -261,6 +261,7 @@ _MAIN_ROW_KEYS = {
     "unpatrolled",
     "pending_overdue",
     "report_undelivered",
+    "messages_unread",
     "events",
 }
 

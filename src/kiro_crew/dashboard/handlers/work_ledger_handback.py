@@ -125,6 +125,27 @@ async def read_send_handback(caller_key: str, target_key: str) -> SendHandback |
     return SendHandback(conductor_key, worker_key, item_id, _report_identity(item))
 
 
+async def read_send_binding(caller_key: str, target_key: str) -> bool:
+    """Whether *target_key*'s work-ledger binding names *caller_key* as its conductor.
+
+    The ``bound`` half of "the session that created or bound the target", which
+    makes a ``session_send`` that names no delivery cut into the target's running
+    turn (``session_messaging.send_to_target``). Read from the store's own binding
+    file, folded like every key that reaches the store, never from the request.
+    Never raises: an unreadable binding reads as unbound, which keeps the queue.
+    """
+    conductor_key = session_ledger.ledger_key(caller_key)
+    worker_key = session_ledger.ledger_key(target_key)
+    if not conductor_key or not worker_key:
+        return False
+    try:
+        binding = await asyncio.to_thread(work_ledger.read_binding, worker_key)
+    except Exception:  # noqa: BLE001 - bookkeeping never fails a send
+        logger.debug("session_send binding read failed for %s", worker_key, exc_info=True)
+        return False
+    return binding is not None and binding[0] == conductor_key
+
+
 def _handback_decision(message: str) -> str | None:
     """The sent *message* as a ``decision``: redacted first, like every ledger write.
 

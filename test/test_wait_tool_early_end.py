@@ -169,6 +169,22 @@ class TestWaitLoopEarlyEnd:
         )
         assert result.endswith("Resuming: test")
 
+    def test_an_end_by_a_message_says_a_message_came_in(self):
+        """A steer ended it, from a peer's reply as often as the person's typing:
+        the result says a message came in, never "by the user"."""
+
+        def replies(n, body):
+            if n == 2:
+                return {"ok": True, "end_wait": body["wait_id"], "end_wait_reason": "steer"}
+            return {"ok": True}
+
+        result, _, _ = _run_wait(replies)
+
+        assert result.startswith("Wait ended early after ")
+        assert "a message came into this turn" in result
+        assert "by the user" not in result
+        assert result.endswith("Resuming: test")
+
     def test_a_requester_on_a_reply_for_another_wait_is_ignored(self):
         """``end_wait_by`` is read only from a reply whose ``end_wait`` names
         this sleep, so it cannot describe someone else's."""

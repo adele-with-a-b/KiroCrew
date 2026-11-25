@@ -706,10 +706,9 @@ def _session_tools() -> tuple[Tool, ...]:
                 "Send a message into another session — the way to seed a session "
                 "you just created with session_create, answer a question it "
                 "raised, or correct it while it works. An idle target starts a "
-                "turn on your message straight away. A BUSY target queues it for "
-                "its next turn, unless you pass steer=true, which injects it into "
-                "the turn already running so the target reads it mid-work; the "
-                "result says which happened. The message lands in the target's "
+                "turn on your message straight away; a BUSY one reads it at its "
+                "next step or queues it (see steer), and the result says which. "
+                "The message lands in the target's "
                 "transcript tagged as sent by your session, so the person reading "
                 "it can tell it from their own typing. Use session_read_message "
                 "afterwards to watch what the target did with it. A session an agent "
@@ -734,15 +733,15 @@ def _session_tools() -> tuple[Tool, ...]:
                     "steer": {
                         "type": "boolean",
                         "description": (
-                            "Cut into the target's RUNNING turn instead of waiting "
-                            "for it to end. Use it when waiting wastes the work in "
-                            "flight — the target is heading the wrong way, or the "
-                            "thing it is working on is already done. Ignored when "
-                            "the target is idle (the message starts a turn either "
-                            "way), and when mid-turn injection is unavailable the "
-                            "message falls back to the queue rather than being "
-                            "dropped, and the result says why and what it now "
-                            "waits for. Default false."
+                            "true: cut into the target's RUNNING turn, read at its "
+                            "next step. false: queue behind that turn, which can "
+                            "last hours. Default when omitted: true for a session "
+                            "you created, were handed or bound, and for one reply "
+                            "to each message its running turn sent you, unless the "
+                            "person drives that turn; false otherwise and always "
+                            "for a session on another crew. Ignored on an idle "
+                            "target. A steer that cannot be injected is queued; "
+                            "the result says why."
                         ),
                     },
                 },

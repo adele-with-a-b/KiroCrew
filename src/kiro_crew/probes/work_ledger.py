@@ -77,6 +77,14 @@ _STALL_KEY = "stall"
 #: (:mod:`kiro_crew.work_ledger_undelivered`).
 _UNDELIVERED_KEY = "undelivered"
 
+#: Prefix for an unread-message wake's dedupe key. The rest is the oldest waiting
+#: entry's queue id, so one stuck message wakes the conductor once.
+_UNREAD_KEY = "unread"
+
+#: What a worker's queue holds that its conductor wanted read now:
+#: ``(count, oldest_secs, oldest_id)``, or ``None``.
+UnreadResolver = Callable[[str, str], "tuple[int, float | None, str] | None"]
+
 #: The one terminal item state that means the item's bar was MET. The other two
 #: (``rejected``, ``abandoned``) close an item without meeting it, so a ledger is
 #: only a success when every item ended in THIS state. Pinned against
@@ -133,6 +141,16 @@ def _never_looping(_session_key: str) -> bool:
     return False
 
 
+def _nothing_unread(_worker_key: str, _sender: str) -> None:
+    """Default unread resolver: no queue to read, so no unread-message wake.
+
+    Unlike the liveness defaults, "nothing" here is the quiet answer, and that is
+    the right one: this wake is ADDED news about a worker that is still working, so
+    a build without a slot table loses only it and keeps every report and stall wake.
+    """
+    return None
+
+
 class WorkLedgerProbe(irq.Probe):
     """Watch one conductor's work ledger.
 
@@ -146,6 +164,9 @@ class WorkLedgerProbe(irq.Probe):
             Defaults to :func:`_never_looping`, which never suppresses a flag.
         worker_loop_held: ``session_key -> its session holds an active loop that
             cannot fire``, which voids a ``wake_at``. Defaults to never.
+        worker_unread: ``(worker key, sender key) -> (count, oldest_secs,
+            oldest_id) | None``, the sender's messages still queued unread that
+            asked for the running turn. Defaults to :func:`_nothing_unread`.
     """
 
     def __init__(
@@ -155,11 +176,13 @@ class WorkLedgerProbe(irq.Probe):
         worker_closed: Callable[[str], bool] | None = None,
         worker_looping: Callable[[str], bool] | None = None,
         worker_loop_held: Callable[[str], bool] | None = None,
+        worker_unread: UnreadResolver | None = None,
     ) -> None:
         self._worker_running = worker_running or _always_idle
         self._worker_closed = worker_closed or _always_open
         self._worker_looping = worker_looping or _never_looping
         self._worker_loop_held = worker_loop_held or _never_looping
+        self._worker_unread: UnreadResolver = worker_unread or _nothing_unread
         self._conductor = ""
         #: The polling driver's identity, read off the ctx each tick. The seen set
         #: is kept per driver; see ``ledger_wake._MAX_WATCHERS_PER_ITEM``.
@@ -395,6 +418,8 @@ class WorkLedgerProbe(irq.Probe):
                     )
                 )
 
+        found.extend(self._unread_observations(conductor_key, item))
+
         running, closed, looping, held = work_ledger.item_liveness(
             conductor_key,
             item,
@@ -429,6 +454,45 @@ class WorkLedgerProbe(irq.Probe):
                     )
                 )
         return found
+
+    def _unread_observations(
+        self, conductor_key: str, item: work_ledger.WorkItem
+    ) -> list[irq.Observation]:
+        """The wake for a worker that has not read what its conductor sent it.
+
+        Only a message that asked for the running turn counts: one queued instead
+        (the target's turn could not take it), or a steer the turn accepted and has
+        not reached a step to read (one long tool call), and only once it has waited past
+        ``ledger_wake.UNREAD_WAKE_SECS``. Keyed on the oldest such entry's queue id,
+        so one stuck message wakes once and the next stuck one is news. A remote
+        worker's queue is on its peer, which this gateway cannot read.
+        """
+        worker = item.worker_session_key or ""
+        if not worker or item.worker_instance_id:
+            return []
+        try:
+            unread = self._worker_unread(worker, conductor_key)
+        except Exception:  # noqa: BLE001 - a slot read must not fail a tick
+            logger.debug("work-ledger probe: unread read failed for %s", worker)
+            return []
+        if unread is None:
+            return []
+        count, oldest_secs, oldest_id = unread
+        if not oldest_id or not ledger_wake.is_unread_overdue(oldest_secs):
+            return []
+        token = f"{_UNREAD_KEY}:{oldest_id}"
+        if not self._spend(conductor_key, item.item_id, token, replaces=f"{_UNREAD_KEY}:"):
+            return []
+        return [
+            irq.Observation(
+                f"{_UNREAD_KEY}:{item.item_id}:{oldest_id}",
+                irq.Severity.WAKE,
+                ledger_wake.unread_wake_brief(
+                    item_id=item.item_id, count=count, waited_secs=float(oldest_secs or 0)
+                ),
+                irq.ResetsOn.NEVER,
+            )
+        ]
 
     def _spend(self, conductor_key: str, item_id: str, token: str, *, replaces: str = "") -> bool:
         """Whether this item may wake now, charging the budget if it does.
@@ -506,7 +570,10 @@ def worker_report_revision(items: list[work_ledger.WorkItem]) -> str:
 
 
 def person_wait_fingerprint(
-    conductor_key: str, *, worker_closed: Callable[[str], bool] | None = None
+    conductor_key: str,
+    *,
+    worker_closed: Callable[[str], bool] | None = None,
+    worker_unread: UnreadResolver | None = None,
 ) -> str | None:
     """The ledger's fingerprint when every open item waits on a person, else ``None``.
 
@@ -527,7 +594,9 @@ def person_wait_fingerprint(
     stall wake must reach the conductor. A worker's ``work_report`` / ``work_brief``
     that never reached the ledger (:func:`kiro_crew.work_ledger.read_undelivered`)
     moves no report field, so its record is folded into the fingerprint: each new
-    failure releases the hold once, for the probe's undelivered wake.
+    failure releases the hold once, for the probe's undelivered wake. A message of
+    the conductor's that has sat unread past ``ledger_wake.UNREAD_WAKE_SECS``
+    (*worker_unread*) is folded the same way, for the probe's unread wake.
 
     Positive evidence only, like :func:`has_open_items`: no open item, a torn item
     file, an unreadable header or a read that raises all answer ``None``, so doubt
@@ -591,12 +660,37 @@ def person_wait_fingerprint(
             if lost is not None:
                 undelivered[item.item_id] = lost["at"]
         revision = worker_report_revision(items)
-        if not undelivered:
-            return revision
-        return f"{revision}|undelivered:{ledger_wake.revision(undelivered)}"
+        if undelivered:
+            revision = f"{revision}|undelivered:{ledger_wake.revision(undelivered)}"
+        # The same for the conductor's own message that has sat unread past the
+        # threshold: the worker has not seen it, so the probe's unread wake must run.
+        unread = _overdue_unread(conductor_key, open_items, worker_unread)
+        if unread:
+            revision = f"{revision}|unread:{ledger_wake.revision(unread)}"
+        return revision
     except Exception:  # noqa: BLE001 - a read fault must never hold a patrol
         logger.debug("work-ledger probe: person-wait read failed for %s", conductor_key)
         return None
+
+
+def _overdue_unread(
+    conductor_key: str, items: list[work_ledger.WorkItem], resolver: UnreadResolver | None
+) -> dict[str, str]:
+    """``{item id: oldest unread id}`` for each local item whose worker has left a
+    message of *conductor_key*'s unread past the wake threshold."""
+    if resolver is None:
+        return {}
+    found: dict[str, str] = {}
+    for item in items:
+        if item.worker_instance_id or not item.worker_session_key:
+            continue
+        try:
+            answer = resolver(item.worker_session_key, conductor_key)
+        except Exception:  # noqa: BLE001 - a slot read never holds or fails a tick
+            continue
+        if answer is not None and answer[2] and ledger_wake.is_unread_overdue(answer[1]):
+            found[item.item_id] = answer[2]
+    return found
 
 
 def _worker_gone(
