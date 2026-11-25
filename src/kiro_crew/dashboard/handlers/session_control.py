@@ -1129,12 +1129,12 @@ async def api_session_control_broadcast(request: web.Request) -> web.Response:
         message = body.get("message")
         if not isinstance(message, str) or not message.strip():
             raise sc.SessionControlError("message is required", code="message_required")
-        # The MODE is required and typed, never inferred. A missing or misspelled
-        # mode must not fall back to either delivery: defaulting to the queue would
-        # silently swallow a caller's request to interrupt, and defaulting to the
-        # steer would interrupt sessions a caller only meant to leave a note for.
+        # Absent (or null) is the third answer, as `steer` is for a send: each
+        # target takes session_send's default, so only the caller's own workers are
+        # cut into. A value that is given must be one of the two names: a
+        # misspelled mode must not fall back to either delivery.
         mode = body.get("mode")
-        if not isinstance(mode, str) or mode not in sc.BROADCAST_MODES:
+        if mode is not None and (not isinstance(mode, str) or mode not in sc.BROADCAST_MODES):
             raise sc.SessionControlError(
                 f"mode must be one of {', '.join(sc.BROADCAST_MODES)}",
                 code="invalid_broadcast_mode",
@@ -1194,6 +1194,9 @@ async def api_session_control_broadcast(request: web.Request) -> web.Response:
             targets=targets,
             all_created=all_created,
             caller_fenced=_carried_fence(request),
+            # The send route's resolver, so the default counts a bound worker the
+            # caller did not create as its own, as session_send does.
+            bound_worker=functools.partial(_bound_worker, state, _read_session_key(request)),
         )
     except sc.SessionControlError as exc:
         return _refusal(exc)

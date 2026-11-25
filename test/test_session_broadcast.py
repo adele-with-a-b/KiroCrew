@@ -1421,13 +1421,38 @@ class TestTheRoute:
         assert resp.status == 200
         assert sends.targets() == ["chat-2"]
 
-    def test_a_missing_mode_is_refused_at_the_route(self, tmp_path):
+    @pytest.mark.parametrize("mode", ["", "interrupt", 1, True, []])
+    def test_a_mode_that_is_given_must_be_one_of_the_two(self, tmp_path, mode):
         state = _make_state(tmp_path)
         caller = _slot(state, "chat-1")
-        req = self._request(state, caller, {"message": "hi"})
+        req = self._request(state, caller, {"message": "hi", "mode": mode, "all": True})
         resp = asyncio.run(handlers_sc.api_session_control_broadcast(req))
         assert resp.status == 400
         assert self._body(resp)["code"] == "invalid_broadcast_mode"
+
+    @pytest.mark.parametrize("extra", [{}, {"mode": None}])
+    def test_a_missing_mode_takes_the_per_target_default(self, tmp_path, extra):
+        """Absent or null names no delivery, as `steer` does for one send: each
+        target gets `steer=None`, and the route's ledger resolver rides along."""
+        state = _make_state(tmp_path)
+        caller = _slot(state, "chat-1")
+        _child(state, "chat-2", caller)
+        sends = _Sends()
+        req = self._request(state, caller, {"message": "hi", "all": True, **extra})
+        with (
+            patch.object(sc, "send_to_target", new=sends),
+            patch.object(
+                handlers_sc.work_ledger_routes,
+                "read_send_binding",
+                new=AsyncMock(return_value=True),
+            ),
+        ):
+            resp = asyncio.run(handlers_sc.api_session_control_broadcast(req))
+        assert resp.status == 200
+        assert self._body(resp)["mode"] == "default"
+        (call,) = sends.calls
+        assert call["steer"] is None
+        assert call["caller_bound_worker"] == "chat-2"
 
     def test_a_bare_string_targets_is_refused_rather_than_iterated(self, tmp_path):
         """This body is model-controlled. A bare string iterates as its characters,

@@ -34,7 +34,7 @@ unreachable in production because the caller's `X-Internal-Secret` is ignored.
 | `session_revive` | `POST /api/session-control/revive` | Bring an archived session back into the live sidebar, as clicking it in the History tab does — the mirror of close, optionally filing it into a folder |
 | `session_history_list` | `GET /api/session-control/history` | List the archived sessions the caller could revive, newest first, optionally narrowed to one folder; every row passes the same containment and ownership fence `session_revive` applies |
 | `session_send` | `POST /api/session-control/send` | Deliver a message that another session runs as its next turn, or cut it into the turn already running (`steer`). An omitted `steer` cuts into a session the caller manages and into one still in the turn that messaged the caller; `steer=false` queues (see "An omitted `steer` cuts in"). A fenced caller may also send, without `steer=true`, to the one session that created it (see "A created session may message its creator") |
-| `session_broadcast` | `POST /api/session-control/broadcast` | Deliver ONE message to the named `targets`, or with `all: true` to every session the caller created, in a required `queue` or `steer` mode, reporting the outcome per target; a call that selects neither, or both, is refused |
+| `session_broadcast` | `POST /api/session-control/broadcast` | Deliver ONE message to the named `targets`, or with `all: true` to every session the caller created, in `queue` or `steer` mode or, with `mode` left out, `session_send`'s default per target, reporting the outcome per target; a note that queues replaces the caller's older unread broadcast note on that target; a call that selects neither audience, or both, is refused |
 | `session_status` | `GET /api/session-control/status` | List the sessions the caller stood up and what each is doing, with the roster taken from the crew log's session tree so a session that is gone still appears |
 | `session_adopt` | `POST /api/session-control/adopt` | Take another session under the caller in the session tree, keeping the parent it had on record; refused when the target is already above the caller |
 | `session_handoff` | `POST /api/session-control/handoff` | Make another session the manager of a target the caller manages, so the verbs that run the target answer to the new manager; `_created_by` does not move |
@@ -161,9 +161,35 @@ A session that still holds the old tool text is refused once and told to pass
 bounded at the ROUTE — both its length and each element's — before any name is
 resolved, because resolution is per-name work and
 the MCP schema's `maxItems` does not bind a caller that reaches the route itself.
-The `mode` argument (`queue` | `steer`) is required with no default, because the
-two are different instructions and defaulting either way silently substitutes one
-for the other across a whole fleet.
+The `mode` argument (`queue` | `steer`) is optional. Given, it applies to every
+target. Left out, each target takes `session_send`'s own default (see
+"Default steer for a manager's own worker" below): the caller's own busy worker
+is cut into unless a person drives that turn, and any other target queues. That
+is a per-target decision, not one mode picked for the whole fleet, and the row
+reports it (`steered`, `steerDefault`, `heldForPerson`); the call's `mode` reads
+`default`.
+
+**A newer broadcast note replaces the sender's older unread one.** When a
+broadcast QUEUES on a target (asked to, defaulted to, or a steer that fell back),
+every entry already waiting there that the same sender queued by
+`session_broadcast` is replaced by the new one
+(`session_control_parts/broadcast_supersede.py`). "Same sender" is the
+queue's own `yours` test (`_queue_entry_from` == `QUEUE_FROM_CALLER`: the sender
+slot AND tab stamped on the entry match the caller's), and "by broadcast" is the
+entry's `relay.via` being `session_broadcast`. Never replaced: another sender's
+entry, the person's own entry, a `session_send` by name, an entry with a kind or
+callbacks, a restored entry (it lost its sender stamp), an entry a person holds
+open in the editor (`edit_held`), and one whose row is already written
+(`row_already_written`) or that a turn already took. The new entry is queued
+first and the old ones dropped after, so a failure loses neither; each dropped
+entry sends a `queue_cancel` frame with no content, so open dashboards drop its
+card and no composer takes the text back. The new entry's text carries one line
+under the envelope saying how many earlier unread notes from this session it
+replaces (counted through, via the `broadcast_replaced` meta, across a chain of
+replacements), and the row's `replaced` says the same to the sender. The
+replaced entries count as free room for `queue_full`. A note that cuts in
+replaces nothing, because the queued ones were not superseded by an
+instruction that has already been read.
 
 Sequential delivery is what makes a per-delivery bound part of the contract
 rather than a refinement of it: one target that never answers is one target that
@@ -430,8 +456,12 @@ delivery and spent after it; the pending-steer cap bounds it.
 The result carries `steerDefault`: `"manager"` or `"reply"`, so the tool reply
 says why it cut in and names `steer=false` as the word that queues. A steer the
 default chose falls back to the queue exactly as an asked-for one does, with the
-same `steerRefusal`. The person's own typing, `session_broadcast` (its `mode` is
-required) and every other caller of `send_to_target` keep `steer=False`.
+same `steerRefusal`. `session_broadcast` with no `mode` passes `steer=None` per target
+with the route's same `_bound_worker` resolver, so its default is the manager rule
+above, held off the same way for a turn the person drives; it passes
+`reply_default=False`, because a broadcast answers nothing and must not spend the
+cut-in a target's asking turn is owed. The person's own typing and every other
+caller of `send_to_target` keep `steer=False`.
 
 A harness that can drop a steer it accepted (`steer_needs_loss_recovery`:
 codex, claude, goose, pi and opencode) takes a peer's steer only when

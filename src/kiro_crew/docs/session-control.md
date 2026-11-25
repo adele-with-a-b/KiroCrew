@@ -250,7 +250,7 @@ every worker rather than of one: the base moved, the approach changed, stop.
 | Argument | Required | Meaning |
 |---|---|---|
 | `message` | yes | Becomes each target's next user-role turn |
-| `mode` | yes | `queue` or `steer`. No default |
+| `mode` | no | `queue` or `steer` for every target. Omit it for `session_send`'s default per target |
 | `targets` | one of `targets` / `all` | Session keys or titles. Name at least one, or pass `all: true` instead. An empty list counts as no list |
 | `all` | one of `targets` / `all` | `true` reaches every session you created. Not together with `targets` |
 
@@ -262,12 +262,24 @@ that names `all: true`. While a tool and a gateway of different versions meet,
 the tool never sends a body without a target list unless `all: true` is set, so an
 older gateway cannot read an empty audience as every session you created.
 
-`mode` is required because the two are different instructions, not two settings
-of one. `queue` lets every target finish what it is doing; `steer` cuts into
-every running turn. "The base moved, rebase before you push" is the first. "Stop,
+`queue` lets every target finish what it is doing; `steer` cuts into every
+running turn. "When you finish, rebase before you push" is the first. "Stop,
 that issue is already fixed" is the second, and it is worth interrupting eight
-turns for. A default either way would silently pick one of those for a caller who
-meant the other.
+turns for. Leave `mode` out and each target gets what a plain `session_send`
+would give it: a busy worker you created, were handed, or bound is cut into (it
+reads the note at its next step), unless a person is driving that turn; any other
+target queues. Each row says which happened and why.
+
+**A newer note replaces your older unread one.** When a broadcast queues on a
+target that still holds an unread broadcast note from you, the new note takes
+its place instead of stacking behind it, so a worker never wakes to five "main
+moved" notes. The note it delivers opens with one line saying how many earlier
+notes from you it replaced, and the row says the same (`replaced 2 older unread
+note(s) of yours there`). Write each broadcast so it stands alone: the current
+state, not a change relative to the last note. Only your own unread broadcast
+notes are replaced: never another session's, never the person's, never a
+`session_send` you sent by name, never one a person has open to edit, and never
+one a turn has already read.
 
 Each delivery goes through the same checks a single `session_send` does, so a
 broadcast can reach nothing a `session_send` could not — including the ownership
