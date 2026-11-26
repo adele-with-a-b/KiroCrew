@@ -6,6 +6,7 @@ a segment gets when its model message ended on its text (``_on_reply_end``)."""
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -296,6 +297,12 @@ async def _release_held_text(turn: _ChatTurn, *, before_tool: bool = False) -> N
 #: it (``hooks/unreadOnAttention.ts``).
 TEXT_AFTER_QUIET_END_NOTICE = "text_after_quiet_end"
 
+#: The backend's alternation placeholder, as the model repeats it after a quiet end
+#: (see :func:`_on_text_chunk`): ``(No assistant response was recorded...)``, in its
+#: long and short forms. No one wrote it, so it is taken out of the kept text; kept,
+#: it would be one folded line per patrol wake that says nothing.
+_ALTERNATION_PLACEHOLDER = re.compile(r"\(No assistant response was recorded[^)]*\)")
+
 
 def _keep_text_after_quiet_end(turn: _ChatTurn) -> None:
     """Save the text held after a quiet end, when no steer was pending for it, as a notice row.
@@ -303,17 +310,19 @@ def _keep_text_after_quiet_end(turn: _ChatTurn) -> None:
     Called where the held run ends: a person's steer becoming pending, the next
     tool call, the steer's echo, the turn's end. The chunks are joined and go
     through the segment's redaction as ONE text, so a credential cut across two
-    chunks is whole when the redactor reads it. The row is a ``notice``, never an
-    assistant row: it is not the turn's reply, so the quiet end stays quiet (no
-    Bot report, no mirror post, no reply text), and its marker badges no unread.
-    Text held for a person's steer is left to :func:`_release_held_text`.
+    chunks is whole when the redactor reads it. The backend's placeholder is
+    taken out first (``_ALTERNATION_PLACEHOLDER``): a run that is only that keeps
+    no row, and the turn-end WARNING still counts it. The row is a ``notice``,
+    never an assistant row: it is not the turn's reply, so the quiet end stays
+    quiet (no Bot report, no mirror post, no reply text), and its marker badges no
+    unread. Text held for a person's steer is left to :func:`_release_held_text`.
     """
     held = turn._held_after_terminal
     if not held or turn._held_for_steer:
         return
-    text = "".join(ev.text or "" for ev in held)
+    text = _ALTERNATION_PLACEHOLDER.sub("", "".join(ev.text or "" for ev in held)).strip()
     held.clear()
-    if not text.strip():
+    if not text:
         return
     redacted, _records = _redact_segment_text(turn.slot, text)
     turn.slot.append(

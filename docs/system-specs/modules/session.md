@@ -1788,9 +1788,13 @@ against sweep completeness, and are torn down at `close_all`.
   `meta.notice = "text_after_quiet_end"`, a marker like the compaction cards',
   not a gateway-notice token) where its run ends: the next tool call, a
   person's steer becoming pending, that steer's echo, or the turn's end, an
-  early exit included. Its `content` is the held chunks joined and redacted as
-  one text by the segment's credential pass (`_redact_segment_text`), so a
-  credential cut across two chunks is whole when the redactor reads it. The
+  early exit included. Its `content` is the held chunks joined, with the
+  backend's placeholder taken out (`stream_chunks._ALTERNATION_PLACEHOLDER`, its
+  long and short forms: no one wrote it, and kept it would be one folded line
+  per patrol wake), and redacted as one text by the segment's credential pass
+  (`_redact_segment_text`), so a credential cut across two chunks is whole when
+  the redactor reads it. A run that is only the placeholder saves no row; the
+  WARNING still counts it. The
   dashboard draws it as one line with the text in a closed fold that one click
   opens (`messageRenderers` `text_after_quiet_end`: plain text, never rendered
   markdown), a collapsed turn keeps it in view as the turn's outcome, and the

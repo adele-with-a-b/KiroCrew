@@ -995,6 +995,56 @@ class TestDashboardRunnerHonoursTheSignal:
         assert token[:9] not in kept[0] and token[9:] not in kept[0], kept
 
     @pytest.mark.asyncio
+    async def test_the_backend_s_placeholder_after_a_quiet_end_keeps_no_notice(
+        self, tmp_path, monkeypatch
+    ):
+        """The field case of late text: a quiet end leaves the backend's history on a
+        tool result, its alternation repair writes a self-describing placeholder into
+        the next request, and the model repeats it after every later quiet end. Kept,
+        that is one folded line per patrol wake that says nothing. It is no one's
+        words, so it is stripped and leaves no row, whole or cut across chunks, in
+        the short form too; real text after a quiet end still lands as one row, with
+        the placeholder taken out of it."""
+        state = _stub_state(tmp_path)
+        slot = state.get_or_create_slot("patrol-placeholder")
+        slot._titled = True
+        placeholder = (
+            "(No assistant response was recorded for the preceding turn. This "
+            "placeholder was inserted automatically to preserve message "
+            "alternation -- it is not a reply the assistant produced.)"
+        )
+        quiet_end = [
+            _core_call("nothing_to_do", "tc-quiet"),
+            _result(
+                session_directive.encode("nothing_to_do", {}, "Quiet end requested."), "tc-quiet"
+            ),
+        ]
+        end = AcpEvent(kind=EVENT_COMPLETE, stop_reason="end_turn")
+
+        def _late(*texts: str) -> list[AcpEvent]:
+            return [AcpEvent(kind=EVENT_TEXT_CHUNK, text=t) for t in texts]
+
+        def _notices() -> list[str]:
+            return [
+                m["content"]
+                for m in slot.messages
+                if (m.get("meta") or {}).get("notice") == TEXT_AFTER_QUIET_END_NOTICE
+            ]
+
+        for late in (
+            _late(placeholder[:40], placeholder[40:]),
+            _late(placeholder),
+            _late("(No assistant response was recorded.)"),
+        ):
+            await _drive_turn(state, slot, quiet_end + late + [end], monkeypatch)
+        assert _notices() == [], slot.messages
+        answer = "CI is green again, and the fix PR is merged."
+        late = _late(placeholder, "\n\n" + answer[:12], answer[12:])
+        await _drive_turn(state, slot, quiet_end + late + [end], monkeypatch)
+        assert _notices() == [answer], slot.messages
+        assert not [m for m in slot.messages if m.get("role") == "assistant"], slot.messages
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "order", ["echo_before_reply", "echo_at_terminal", "echo_before_quiet_end"]
     )
@@ -1025,8 +1075,8 @@ class TestDashboardRunnerHonoursTheSignal:
         # placed in the stream where the person pressed send.
         admit = object()
         if order == "echo_before_reply":
-            # The filler lands before any person spoke: it answers no one, so it
-            # is kept as the folded notice, never as their reply.
+            # The filler lands before any person spoke: it answers no one and is
+            # no one's words, so it is neither their reply nor a folded notice.
             events = quiet_end + [filler, admit, consumed, reply]
             unsteered = 1
         elif order == "echo_at_terminal":
@@ -1050,18 +1100,14 @@ class TestDashboardRunnerHonoursTheSignal:
             await _drive_turn(state, slot, _stream(), monkeypatch)
         assistant = [m for m in slot.messages if m.get("role") == "assistant"]
         assert [m["content"] for m in assistant] == ["Yes, still here."], slot.messages
-        # The filler, when the model wrote it, is only ever the folded notice, and
-        # it lands before the reply it preceded.
+        # The filler, when the model wrote it, leaves no folded notice either.
         late = [
             (m["role"], m["content"])
             for m in slot.messages
             if m.get("role") == "assistant"
             or (m.get("meta") or {}).get("notice") == TEXT_AFTER_QUIET_END_NOTICE
         ]
-        assert late == [
-            *([("notice", filler.text)] if unsteered else []),
-            ("assistant", "Yes, still here."),
-        ], slot.messages
+        assert late == [("assistant", "Yes, still here.")], slot.messages
         wire = [
             c.args[1]["content"]
             for c in state.broadcast_ws.call_args_list
