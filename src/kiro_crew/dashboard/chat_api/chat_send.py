@@ -343,6 +343,12 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
             for k, v in user_meta.items()
             if k not in RESERVED_ROW_META_KEYS and k != MESSAGE_AUTHOR_META_KEY
         }
+        # The answering mode's "N answers sent" fold: a person's own send only.
+        from kiro_crew.dashboard.chat_api.answers_meta import ANSWERS_META_KEY, answers_meta
+
+        folded = answers_meta(user_meta.pop(ANSWERS_META_KEY, None), person_send=_person_send)
+        if folded is not None:
+            user_meta[ANSWERS_META_KEY] = folded
         # The whole-message quote is bounded HERE, once, for every path below:
         # the immediate row persists `user_meta` verbatim, so a bound applied
         # only where the queue paths read it would leave that row unbounded.

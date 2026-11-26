@@ -25,6 +25,11 @@ the open box hands it the key's ``arg`` again, as a new request, and never close
 Level 20 adds a link-preview card's ``card.step``: a pinned card moves to another of
 its provider's labels in the same chat, which the chat brings into view, and the
 chat's live region says the app's line.
+Level 21 adds a link-preview provider's ``answering`` and a pinned card's
+``card.answering``: on the person's press the card puts its chat into the answering
+mode, where Crew draws the answer line and holds the keys; the card hands over the
+message text, and the person's Shift+Enter, received by Crew, sends it once as
+their message and ends the mode.
 """
 
-APP_SDK_LEVEL = 20
+APP_SDK_LEVEL = 21

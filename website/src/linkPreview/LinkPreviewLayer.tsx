@@ -31,6 +31,8 @@ import { resolveTextPreview, setLinkPreviewTextPatterns, setTextPatternsOff } fr
 import { readMessageRef, type PreviewLink, type ShowTrigger } from './linkPreviewProtocol'
 import { sendAppNav, sendLinkPreviewNav, setClickOpenProbe } from './linkPreviewNav'
 import { runStep } from './linkPreviewStep'
+import { currentAnsweringMode } from './answering/answeringLayer'
+import AnsweringBar from './answering/AnsweringBar'
 
 const HOVER_DELAY_MS = 300
 /** The scope attribute's session key is `dashboard:<slot>` (`MarkdownRenderer`). */
@@ -138,6 +140,9 @@ export default function LinkPreviewLayer() {
   const anchorRef = useRef<{ el: HTMLElement; key: string; appName: string; link: PreviewLink; scope: ShowScope } | null>(null)
 
   const chip = useFrameLinkBridge(frameRefs)
+  // The answering mode a pinned card may start (`answering/answeringMode.ts`).
+  const [answering] = useState(() => currentAnsweringMode(() => providersRef.current))
+  useEffect(() => answering.start(), [answering])
 
   useEffect(() => {
     const host = new FrameHost({
@@ -153,7 +158,8 @@ export default function LinkPreviewLayer() {
         }
       },
       onTextPatternsOff: (app, ids) => setTextPatternsOff(app, ids),
-      onEscape: () => hideAllRef.current('escape'),
+      // Escape in a card leaves its answering mode first, like Escape on the page.
+      onEscape: () => { if (!answering.escape()) hideAllRef.current('escape') },
       onClosed: (key) => closedRef.current(key),
       onFramesChanged: (els) => setFrameRefs(els.map((el) => ({ current: el }))),
       // A card's asks reach only the chat its show sat in (`scope.slot`); the chat
@@ -167,6 +173,9 @@ export default function LinkPreviewLayer() {
       // A pinned card's step to another of its labels: the jump, then the label
       // centred, and the card shown again beside it (`linkPreviewStep.ts`).
       onStep: (key, ask, hooks) => runStep({ key, ...ask }, hooks),
+      // A card's answering-mode messages; none of them sends (`answeringMode.ts`).
+      onAnswering: (frame, msg, gate, reply) => answering.onFrameMessage(frame, msg, gate, reply),
+      onCardGone: (frame) => answering.cardGone(frame),
     })
     hostRef.current = host
     // A popover a press on a label would close waits while that click may still open it.
@@ -179,7 +188,7 @@ export default function LinkPreviewLayer() {
       host.disposeAll()
       hostRef.current = null
     }
-  }, [])
+  }, [answering])
 
   // Dispose the frames of providers whose app went away (disabled / uninstalled),
   // and of those whose app was updated: a frame keeps the module it loaded, so the
@@ -626,6 +635,7 @@ export default function LinkPreviewLayer() {
   return (
     <>
       {chip}
+      <AnsweringBar mode={answering} />
       {notice ? (
         <div
           ref={cardRef}

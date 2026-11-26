@@ -67,6 +67,10 @@ export interface ResolvedLinkPreview {
   fullUrl: boolean
   /** Tell the module which chat the hovered link or text sits in (`show({ sessionKey })`). */
   sessionKey: boolean
+  /** A pinned card may put its chat into the answering mode (`answering/answeringMode.ts`). */
+  answering: boolean
+  /** The app's display name (its manifest's), for what Crew writes about it. */
+  title: string
   /** Which install of the module this is (entry, version, install and update time). A frame
    *  made for another revision runs the old module and is replaced. */
   revision: string
@@ -79,8 +83,9 @@ interface AppLike {
   installedAt?: string
   updatedAt?: string
   /** What the owner approved (`apps/link_preview_grants.py`). Absent: nothing to filter. */
-  linkPreviewGrant?: { hosts?: unknown; textPatterns?: unknown; fullUrl?: unknown; sessionKey?: unknown }
+  linkPreviewGrant?: { hosts?: unknown; textPatterns?: unknown; fullUrl?: unknown; sessionKey?: unknown; answering?: unknown }
   manifest?: {
+    displayName?: unknown
     backend?: { entryPoint?: string }
     contributes?: { linkPreviews?: unknown }
   }
@@ -128,6 +133,9 @@ export function resolveLinkPreviews(apps: readonly AppLike[]): ResolvedLinkPrevi
       // The chat's session key only once the owner approved it: which conversations
       // a person has open is theirs.
       sessionKey: p.sessionKey === true && grant?.sessionKey === true,
+      // The answering mode only once the owner approved it, and only with the chat.
+      answering: p.answering === true && p.sessionKey === true && grant?.sessionKey === true && grant?.answering === true,
+      title: typeof app.manifest?.displayName === 'string' && app.manifest.displayName.trim() ? app.manifest.displayName.trim() : app.name,
       // `updatedAt` too: a same-version Sync replaces the files and keeps installedAt.
       revision: JSON.stringify([entry, app.version ?? '', app.installedAt ?? '', app.updatedAt ?? '']),
     })

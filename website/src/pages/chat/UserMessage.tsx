@@ -34,6 +34,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { readSteerRecord } from './decisionRecord'
 import { useRowDisclosure } from './rowDisclosure'
 import { revealComposer } from './composerFocus'
+import { answersFoldLine, readAnswersFold } from '../../linkPreview/answering/answersFold'
 import type { SteerRetractAction, SteerRetractRefusalNotice } from '../../hooks/useSteerRetract'
 // Steer bubbles play a one-shot entrance (slide-in + ring pulse) when they land.
 // The chat transcript is virtualized, so a row can remount when scrolled away and
@@ -213,7 +214,11 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
   // A scripted send's short label (`meta.banner`): the bubble shows it, and the
   // full message the agent received opens behind a disclosure. Copy and Quote
   // still act on the full text.
-  const rowBanner = typeof meta?.banner === 'string' && meta.banner.trim() ? meta.banner : ''
+  // A send from a card's answering mode folds the same way, under Crew's own
+  // "N answers sent" line (`meta.answers`), and is not "sent by script".
+  const answersFold = readAnswersFold(meta)
+  const rowBanner = answersFold ? answersFoldLine(answersFold)
+    : typeof meta?.banner === 'string' && meta.banner.trim() ? meta.banner : ''
   const [bannerExpanded, setBannerExpanded] = useRowDisclosure(
     rowBanner && messageTs ? `user-banner:${messageTs}` : undefined,
     false,
@@ -811,7 +816,7 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
           ) : null}
         </p>
       )}
-      {rowBanner && <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide opacity-70" data-testid="user-message-banner-from" data-message-search-skip>{i18nT('pages.chat.userMessage.sent_by_script')}</p>}
+      {rowBanner && !answersFold && <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide opacity-70" data-testid="user-message-banner-from" data-message-search-skip>{i18nT('pages.chat.userMessage.sent_by_script')}</p>}
       {carriedQuote && <QuoteCard quote={carriedQuote} variant="sent" onJump={carriedQuote.ts ? onJumpToQuote : undefined} />}
       {rowBanner ? (
         <>

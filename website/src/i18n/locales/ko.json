@@ -7915,6 +7915,27 @@
       "remote_only_failed": "연결 양식을 열 수 없습니다. 다시 시도하세요."
     },
     "linkPreview": {
+      "answering": {
+        "sending": "보내는 중…",
+        "send_prompt": "프롬프트 보내기",
+        "keep_next": "보관, 다음",
+        "bar_label": "{{app}} 답변",
+        "line_label": "내 답변",
+        "crew_tag": "{{productName}}",
+        "answers_to_other": "{{chat}}에 보낼 답변 {{count}}개",
+        "open_whole": "메시지 전체 보기",
+        "nothing_kept": "아직 보관한 답변이 없습니다",
+        "updating": "업데이트 중입니다. 다시 누르세요",
+        "not_sent": "보내지 못했습니다. ⇧↵를 눌러 다시 시도하세요.",
+        "help_next": "다음",
+        "help_send": "보내기",
+        "help_leave": "나가기",
+        "mode_name": "답변 중",
+        "say_entered": "답변 모드입니다. Enter는 답변을 보관하고, Shift+Enter는 보내고, Escape는 나갑니다.",
+        "say_ended": "답변 모드가 끝났습니다.",
+        "answers_sent_other": "답변 {{count}}개를 보냈습니다",
+        "grant_staged": "이 앱의 고정된 카드는 답변 모드를 시작할 수 있습니다. Shift+Enter를 누르면 답변이 내 메시지로 전송됩니다."
+      },
       "copied": "복사됨",
       "copy_url": "URL 복사",
       "copy_url_of": "{{name}}의 URL 복사",

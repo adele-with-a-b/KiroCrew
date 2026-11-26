@@ -140,9 +140,13 @@ def link_preview_grant_row(name: str, manifest: Any) -> dict[str, Any]:
     def reader(family: str) -> Callable[[], list[str]]:
         return lambda: declared[family]
 
+    from kiro_crew.apps.link_preview_answering_grants import answering_grant_fields
+
     granted: dict[str, list[str]] = {}
     for family in LINK_PREVIEW_GRANT_FAMILIES:
         granted[family] = staged_app_grants(name, family, reader(family))
+    # The card may start the answering mode only when approved (its own family).
+    answering = answering_grant_fields(name, contributes)
     return {
         "linkPreviewGrant": {
             "hosts": granted["linkPreviewHosts"],
@@ -163,6 +167,7 @@ def link_preview_grant_row(name: str, manifest: Any) -> dict[str, Any]:
             "sessionKey": SESSION_KEY_ENTRY in granted["linkPreviewSessionKey"],
             "stagedSessionKey": bool(declared["linkPreviewSessionKey"])
             and SESSION_KEY_ENTRY not in granted["linkPreviewSessionKey"],
+            **answering,
         }
     }
 

@@ -1,0 +1,287 @@
+/**
+ * The answering mode: one pinned card at a time puts its chat into a mode where
+ * Crew draws the answer line, the preview of the message, and the mode line, and
+ * holds the keys the mode needs (`AnsweringBar.tsx`).
+ *
+ * Who does what:
+ * - The card (an app frame) may `enter` the mode on the person's click or key in
+ *   it, `update` what it shows, `hand` over the message its kept answers make and
+ *   how many there are, and `leave`. It is told what the person did in Crew's
+ *   line (`draft`, `kept`, a declared `key`, a `button`) and why the mode `ended`.
+ * - Crew alone sends. `pressSend` is called only from the person's own press on
+ *   Crew's page: Shift+Enter in Crew's line or on the page, or a Shift+click on
+ *   Crew's button. It sends the text last handed over, exactly as the preview
+ *   shows it, through the chat page's composer send (`answersPage.ts`), once.
+ *   No frame message reaches `pressSend`: `onFrameMessage` never calls it.
+ *
+ * The mode ends, with nothing sent, on Escape, on the card's `leave`, when the
+ * chat on screen changes, and when the card closes, unpins or goes. While a send
+ * is in flight nothing changes the text and the mode ends once it is answered.
+ *
+ * @module linkPreview/answering/answeringMode
+ */
+import { readOfferedText } from '../../composerActions/literalInsert'
+import type { PreviewFrame, ShowScope } from '../linkPreviewFrames'
+import type { StepRefusal, ToFrame } from '../linkPreviewProtocol'
+import { answersPage, onAnswersPageChange } from './answersPage'
+import {
+  MAX_ANSWERS,
+  type AnsweringEvent,
+  type AnsweringMessage,
+  type AnsweringRefusal,
+  type AnsweringSetup,
+  type EndReason,
+} from './answeringProtocol'
+
+/** What the line under the preview says, besides the preview itself. */
+export type ModeNote = 'nothing' | 'updating' | 'refused' | null
+
+export interface Handed {
+  /** Cleaned once on arrival (`readOfferedText`); shown and sent as it is. */
+  text: string
+  count: number
+  rev: number
+}
+
+export interface ModeState {
+  /** One per `enter`, so a late answer of an earlier mode is told apart. */
+  token: number
+  frame: PreviewFrame
+  key: string
+  appTitle: string
+  slot: string
+  chatTitle: string
+  setup: AnsweringSetup
+  line: string
+  /** Numbers the line's text; a handed message counts only for the current one. */
+  lineRev: number
+  handed: Handed | null
+  status: 'on' | 'sending'
+  note: ModeNote
+  /** The server's reason for a refused send, when it gave one. */
+  refusal?: string
+  /** Shift is held: Crew's keep button reads "send prompt". */
+  shift: boolean
+  /** The whole message is open under the preview line. */
+  full: boolean
+}
+
+export interface ModeDeps {
+  /** The owner approved this provider for `answering`. */
+  granted(key: string): boolean
+  /** The app's name as Crew lists it. */
+  appTitle(key: string, appName: string): string
+  post(frame: PreviewFrame, msg: ToFrame): void
+  /** Say a line in the chat's live region. */
+  say?(what: 'entered' | EndReason, count: number): void
+}
+
+let tokens = 0
+
+export class AnsweringMode {
+  private s: ModeState | null = null
+  private readonly listeners = new Set<() => void>()
+  /** An end asked for while a send was in flight, applied once it is answered. */
+  private pendingEnd: EndReason | null = null
+
+  constructor(private readonly deps: ModeDeps) {}
+
+  /** Watch the chat on screen while the layer is mounted; the returned stop
+   *  ends any mode on. */
+  start(): () => void {
+    // The chat on screen changed (or the chat page went): the mode was for that chat.
+    const unwatch = onAnswersPageChange(() => {
+      const s = this.s
+      if (!s) return
+      const page = answersPage()
+      if (!page || page.slot !== s.slot) this.end('chat')
+      else if (page.chatTitle !== s.chatTitle) this.patch({ chatTitle: page.chatTitle })
+    })
+    return () => {
+      unwatch()
+      this.end('closed')
+    }
+  }
+
+  get state(): ModeState | null {
+    return this.s
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  getSnapshot = (): ModeState | null => this.s
+
+  private emit(): void {
+    for (const l of [...this.listeners]) l()
+  }
+
+  private patch(p: Partial<ModeState>): void {
+    if (!this.s) return
+    this.s = { ...this.s, ...p }
+    this.emit()
+  }
+
+  private tell(s: ModeState, event: AnsweringEvent): void {
+    if (s.frame.el.isConnected) this.deps.post(s.frame, { type: 'answering', event })
+  }
+
+  /** A card's message. Starts, changes, fills or ends the mode; never sends. */
+  onFrameMessage(frame: PreviewFrame, msg: AnsweringMessage, gate: (ShowScope & { slot: string }) | StepRefusal | null, reply: (r: true | AnsweringRefusal) => void): void {
+    const s = this.s
+    switch (msg.op) {
+      case 'enter': {
+        if (gate === null) { reply('not_shown'); return }
+        if (typeof gate === 'string') { reply(gate === 'not_found' || gate === 'load_failed' || gate === 'replaced' ? 'not_shown' : gate); return }
+        if (!this.deps.granted(frame.key)) { reply('not_granted'); return }
+        // One mode at a time: another card's mode, or this card's own send in flight.
+        if (s && (s.frame !== frame || s.status === 'sending')) { reply('busy'); return }
+        const page = answersPage()
+        if (!page || page.slot !== gate.slot) { reply('not_on_screen'); return }
+        tokens += 1
+        this.s = {
+          token: tokens, frame, key: frame.key, appTitle: this.deps.appTitle(frame.key, frame.appName),
+          slot: gate.slot, chatTitle: page.chatTitle, setup: msg.setup,
+          line: '', lineRev: s ? s.lineRev + 1 : 0, handed: null, status: 'on', note: null, shift: false, full: false,
+        }
+        this.pendingEnd = null
+        reply(true)
+        this.emit()
+        if (!s) this.deps.say?.('entered', 0)
+        return
+      }
+      case 'update': {
+        if (!s || s.frame !== frame) { reply('not_on'); return }
+        this.patch({ setup: { ...s.setup, ...msg.setup } })
+        reply(true)
+        return
+      }
+      case 'hand': {
+        if (!s || s.frame !== frame) { reply('not_on'); return }
+        // The text a press is sending stays what it was until the send is answered.
+        if (s.status === 'sending') { reply('busy'); return }
+        const count = msg.count
+        if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > MAX_ANSWERS) { reply('bad_count'); return }
+        if (msg.rev !== s.lineRev) { reply('stale'); return }
+        if (count === 0) {
+          this.patch({ handed: { text: '', count: 0, rev: msg.rev }, note: null, full: false })
+          reply(true)
+          return
+        }
+        const read = readOfferedText(msg.text)
+        if (!read.ok) { reply(read.code === 'too_large' ? 'too_large' : 'not_literal'); return }
+        this.patch({ handed: { text: read.text, count, rev: msg.rev }, note: null })
+        reply(true)
+        return
+      }
+      case 'leave':
+        if (s && s.frame === frame) this.end('left')
+        return
+    }
+  }
+
+  /** The card that started the mode stopped standing where it was. */
+  cardGone(frame: PreviewFrame): void {
+    if (this.s?.frame === frame) this.end('closed')
+  }
+
+  // -- Crew's own line, buttons and keys. Called only from the person's events
+  //    on Crew's page (`AnsweringBar.tsx`).
+
+  /** The person changed the text in Crew's answer line. */
+  setLine(text: string): void {
+    const s = this.s
+    if (!s || s.status === 'sending') return
+    const lineRev = s.lineRev + 1
+    this.patch({ line: text, lineRev, note: null })
+    this.tell(s, { kind: 'draft', text, rev: lineRev })
+  }
+
+  /** Plain Enter, or a plain click on "keep, next": the line's text is kept. */
+  keep(): void {
+    const s = this.s
+    if (!s || s.status === 'sending') return
+    const lineRev = s.lineRev + 1
+    this.patch({ line: '', lineRev, note: null })
+    this.tell(s, { kind: 'kept', text: s.line, rev: lineRev })
+  }
+
+  /** A key the card declared, pressed in Crew's line or on the page. */
+  key(name: string): boolean {
+    const s = this.s
+    if (!s || s.status === 'sending' || !s.setup.keys.some(k => k.key === name)) return false
+    this.tell(s, { kind: 'key', key: name })
+    return true
+  }
+
+  /** A click on one of the card's buttons Crew draws. */
+  button(id: string): void {
+    const s = this.s
+    if (!s || s.status === 'sending' || !s.setup.buttons.some(b => b.id === id)) return
+    this.tell(s, { kind: 'button', id })
+  }
+
+  setShift(held: boolean): void {
+    if (this.s && this.s.shift !== held) this.patch({ shift: held })
+  }
+
+  toggleFull(): void {
+    if (this.s) this.patch({ full: !this.s.full })
+  }
+
+  /** Escape: leaves the mode, nothing sent. True when the mode took the key. */
+  escape(): boolean {
+    const s = this.s
+    if (!s) return false
+    if (s.status !== 'sending') this.end('escaped')
+    return true
+  }
+
+  /**
+   * The person's Shift+Enter (or Shift+click on Crew's button): send the text
+   * handed over, as it is shown, once, and end the mode. Nothing is sent with no
+   * answer kept, while the card has not yet handed a message for the line as it
+   * stands, or while a send is already in flight.
+   */
+  async pressSend(): Promise<void> {
+    const s = this.s
+    if (!s || s.status === 'sending') return
+    const h = s.handed
+    if (!h || h.count < 1 || !h.text) { this.patch({ note: 'nothing' }); return }
+    if (h.rev !== s.lineRev) { this.patch({ note: 'updating' }); return }
+    const page = answersPage()
+    if (!page || page.slot !== s.slot) { this.end('chat'); return }
+    this.pendingEnd = null
+    this.patch({ status: 'sending', note: null, refusal: undefined })
+    let outcome
+    try {
+      outcome = await page.send({ text: h.text, count: h.count, app: s.appTitle })
+    } catch {
+      outcome = { kind: 'unconfirmed' as const }
+    }
+    if (this.s?.token !== s.token) return
+    if (outcome.kind === 'refused') {
+      const pending = this.pendingEnd
+      this.pendingEnd = null
+      this.patch({ status: 'on', note: 'refused', refusal: outcome.reason })
+      if (pending) this.end(pending)
+      return
+    }
+    // Sent, or perhaps sent: either way never again from this press.
+    this.patch({ status: 'on' })
+    this.end('sent', h.count)
+  }
+
+  private end(why: EndReason, count = 0): void {
+    const s = this.s
+    if (!s) return
+    if (s.status === 'sending') { this.pendingEnd = this.pendingEnd ?? why; return }
+    this.s = null
+    this.pendingEnd = null
+    this.tell(s, { kind: 'ended', why })
+    this.emit()
+    this.deps.say?.(why, count)
+  }
+}

@@ -7915,6 +7915,27 @@
       "remote_only_failed": "无法打开连接表单。请重试。"
     },
     "linkPreview": {
+      "answering": {
+        "sending": "正在发送…",
+        "send_prompt": "发送提示词",
+        "keep_next": "保留，下一个",
+        "bar_label": "{{app}} 的回答",
+        "line_label": "你的回答",
+        "crew_tag": "{{productName}}",
+        "answers_to_other": "发给 {{chat}} 的 {{count}} 条回答",
+        "open_whole": "显示完整消息",
+        "nothing_kept": "尚未保留任何回答",
+        "updating": "正在更新，请再按一次",
+        "not_sent": "未发送。按 ⇧↵ 重试。",
+        "help_next": "下一个",
+        "help_send": "发送",
+        "help_leave": "退出",
+        "mode_name": "回答中",
+        "say_entered": "回答模式。Enter 保留回答，Shift+Enter 发送，Escape 退出。",
+        "say_ended": "回答模式已结束。",
+        "answers_sent_other": "已发送 {{count}} 条回答",
+        "grant_staged": "其置顶卡片可开启回答模式：按下 Shift+Enter 时，回答即作为你的消息发出。"
+      },
       "copied": "已复制",
       "copy_url": "复制网址",
       "copy_url_of": "复制 {{name}} 的网址",

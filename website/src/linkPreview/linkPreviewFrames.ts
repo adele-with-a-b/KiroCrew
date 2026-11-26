@@ -35,6 +35,7 @@ import {
   type ToFrame,
 } from './linkPreviewProtocol'
 import { MAX_OPEN_PAYLOAD_BYTES, jsonBytes, type AppOpenTarget, type OpenRefusal } from './linkPreviewNav'
+import { MAX_ANSWERING_MESSAGE_BYTES, type AnsweringMessage, type AnsweringRefusal } from './answering/answeringProtocol'
 
 export { FRAME_SANDBOX, type Minted } from '../appFrame/sandboxFrame'
 /** Waiting for the module to activate; a frame that has not said `ready` by then failed. */
@@ -139,6 +140,15 @@ export interface FrameHostOptions {
   onStep?(key: string, ask: StepRequest, hooks: StepLanding): () => void
   /** The provider's card-mode hover card closed itself (`card.close`). */
   onClosed?(key: string): void
+  /** A card's answering-mode message (`answering/answeringMode.ts`). `gate` is,
+   *  for an `enter`, the chat the pinned card may enter the mode in (or why not:
+   *  the same rules as a step, a click or key in the card included); null for
+   *  the other ops, which act only on the mode `frame` itself started. `reply`
+   *  answers a numbered message. Nothing here sends: the person's press does. */
+  onAnswering?(frame: PreviewFrame, msg: AnsweringMessage, gate: (ShowScope & { slot: string }) | StepRefusal | null, reply: (result: true | AnsweringRefusal) => void): void
+  /** A pinned card stopped standing where it was: closed, unpinned, turned into
+   *  an overlay or gone. The answering mode it started ends. */
+  onCardGone?(frame: PreviewFrame): void
 }
 
 /** What a card's `step` names, in the chat its show sat in. */
@@ -448,6 +458,7 @@ export class FrameHost {
     this.settlers.delete(frame)
     this.showTokens.delete(frame)
     this.steps.get(frame)?.()
+    this.opts.onCardGone?.(frame)
     if (this.hover.get(frame.key) === frame) this.hover.delete(frame.key)
     const at = this.detached.indexOf(frame)
     if (at >= 0) this.detached.splice(at, 1)
@@ -543,7 +554,9 @@ export class FrameHost {
     if (isRelayMessage(e.data)) return
     // Bounded: an oversized message, or one past the burst allowance, is dropped unread.
     if (!takeMessage(frame.rate)) return
-    if (messageBytes(e.data) > MAX_MESSAGE_BYTES) return
+    // A handed answering message may carry up to 32,000 characters of text.
+    const answering = !!e.data && typeof e.data === 'object' && (e.data as { type?: unknown }).type === 'answering'
+    if (messageBytes(e.data) > (answering ? MAX_ANSWERING_MESSAGE_BYTES : MAX_MESSAGE_BYTES)) return
     const msg = readFrameMessage(e.data)
     if (msg) this.handle(frame, msg)
   }
@@ -704,10 +717,23 @@ export class FrameHost {
       this.step(frame, msg)
       return
     }
+    if (msg.type === 'answering') {
+      const reply = (result: true | AnsweringRefusal) => {
+        if (!('request' in msg) || msg.request === undefined || !frame.el.isConnected) return
+        this.post(frame, result === true
+          ? { type: 'answered', request: msg.request, ok: true }
+          : { type: 'answered', request: msg.request, ok: false, reason: result })
+      }
+      const gate = msg.op === 'enter' ? this.stepScope(frame, msg.invocation) : null
+      if (this.opts.onAnswering) this.opts.onAnswering(frame, msg, gate, reply)
+      else reply('not_on_screen')
+      return
+    }
     if (msg.type === 'regions') {
       // A card turning itself into an overlay keeps no earlier show's scope: only
       // shows made while it is an overlay can ask.
       if (!frame.overlay) frame.scopes.clear()
+      this.opts.onCardGone?.(frame)
       frame.overlay = true
       frame.regions = msg.rects
       this.layoutOverlay(frame)
@@ -726,6 +752,7 @@ export class FrameHost {
         if (this.detached.includes(frame)) this.destroy(frame)
         else {
           this.setVisible(frame, false)
+          this.opts.onCardGone?.(frame)
           this.opts.onClosed?.(frame.key)
         }
         return
@@ -738,6 +765,7 @@ export class FrameHost {
         // A pinned card leaves the hover, out of reach of `leave` and dismissal:
         // it keeps no click grant.
         if (msg.pinned) frame.clickGrant = null
+        else if (frame.pinned) this.opts.onCardGone?.(frame)
         frame.pinned = msg.pinned
         if (msg.pinned && this.hover.get(frame.key) === frame) {
           this.hover.delete(frame.key)

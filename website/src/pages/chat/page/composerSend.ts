@@ -277,7 +277,9 @@ export function useComposerSend({
   // (`indeterminate`: the turn may be running, so a retry could run it twice).
   // A refusal also carries the server's framed reason (a Shared Crew limit, or
   // the receipt's reason), since the suppressed page notice was where it showed.
-  const send = useCallback(async (optionText?: string, targetSlot?: string, steerNow?: boolean | 'auto', isolated = false, sendNow = false, onUndelivered?: (kind: 'refused' | 'indeterminate', reason?: string) => void): Promise<boolean> => {
+  // `rowMeta`: row meta an isolated caller adds to the sent row (the answering
+  // mode's `answers` fold); never the keys this function sets itself.
+  const send = useCallback(async (optionText?: string, targetSlot?: string, steerNow?: boolean | 'auto', isolated = false, sendNow = false, onUndelivered?: (kind: 'refused' | 'indeterminate', reason?: string) => void, rowMeta?: Record<string, unknown>): Promise<boolean> => {
     const ownsFailureReport = !!onUndelivered
     // Defense-in-depth: ChatInput already gates Send/Optimize buttons and
     // the keyboard Enter shortcut on `connected`, but a future caller (a
@@ -755,7 +757,7 @@ export function useComposerSend({
     setPendingAgent(''); setPendingModel(''); setPendingProject('')
     // Meta for persistence (files, folders, pastes, quote, knowledge), in the
     // turn's wire order.
-    const meta: Record<string, unknown> = { ...turn.meta }
+    const meta: Record<string, unknown> = { ...(isolated ? rowMeta : undefined), ...turn.meta }
     if (widgetOrigin) meta.origin = 'widget'
     if (challengeOrigin) meta.origin = CHANNEL_CHALLENGE_ORIGIN
     // A client-generated correlation ID so the server echo can be matched

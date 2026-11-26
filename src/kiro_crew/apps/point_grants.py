@@ -203,6 +203,16 @@ register_point_grants(
     ("sessionControlInserts",), _session_control_insert_grant_entries, explicit_only=True
 )
 
+from kiro_crew.apps.link_preview_answering_grants import (  # noqa: E402
+    LINK_PREVIEW_ANSWERING_GRANT_FAMILIES,
+    link_preview_answering_grant_entries,
+)
+
+# Explicit-only: an older host ignored a provider's ``answering``.
+register_point_grants(
+    LINK_PREVIEW_ANSWERING_GRANT_FAMILIES, link_preview_answering_grant_entries, explicit_only=True
+)
+
 from kiro_crew.apps.worker_auto_approve import (  # noqa: E402
     WORKER_AUTO_APPROVE_GRANT_FAMILIES,
     worker_auto_approve_grant_entries,

@@ -962,6 +962,16 @@ function answered(type, fields, ms) {
     send(type, { ...fields, request });
   });
 }
+// The answering mode's calls. `answeringRev` is the number of the answer line's
+// latest text Crew told the card about (`answering` events carry it); a `hand`
+// names it, so Crew sends only a message built from the line as it stands.
+let answeringRev = 0;
+function answeringCall(op, invocation, fields) {
+  let copy;
+  try { copy = JSON.parse(JSON.stringify(fields === undefined ? {} : fields)); } catch (_) { return Promise.resolve({ ok: false, reason: 'not_json' }); }
+  if (!copy || typeof copy !== 'object' || Array.isArray(copy)) return Promise.resolve({ ok: false, reason: 'not_json' });
+  return answered('answering', { ...copy, op, invocation }, 5000);
+}
 function cardControls(invocation) {
   return Object.freeze({
     open: () => send('open', { invocation }),
@@ -996,6 +1006,22 @@ function cardControls(invocation) {
         text: to.text, line: typeof to.line === 'string' ? to.line : undefined,
       }, 30000);
     },
+    // The answering mode, for a provider the owner approved for `answering`.
+    // `enter` (on a click or key in this PINNED card) puts the chat in the mode:
+    // Crew draws the answer line under the card and holds the keys. The card never
+    // sends: `hand` gives Crew the message text and answer count after each
+    // change, and the person's Shift+Enter, which only Crew's page receives, sends
+    // that text as their message and ends the mode. Events reach the provider's
+    // `answering(event)`. Each resolves `{ ok: true }` or `{ ok: false, reason }`.
+    answering: Object.freeze({
+      enter: (setup) => answeringCall('enter', invocation, setup),
+      update: (setup) => answeringCall('update', invocation, setup),
+      hand: (h) => answeringCall('hand', invocation, {
+        text: h && h.text, count: h && h.count,
+        rev: h && Number.isSafeInteger(h.rev) ? h.rev : answeringRev,
+      }),
+      leave: () => { send('answering', { op: 'leave', invocation }); },
+    }),
   });
 }
 const ctx = {
@@ -1038,7 +1064,15 @@ const POINT = {
       }
       case 'leave': call('leave'); return;
       case 'hide': call('hide', String(m.reason || 'other')); return;
+      case 'answering': {
+        const e = m.event;
+        if (!e || typeof e !== 'object' || typeof e.kind !== 'string') return;
+        if (Number.isSafeInteger(e.rev)) answeringRev = e.rev;
+        call('answering', Object.freeze({ ...e }));
+        return;
+      }
       case 'opened':
+      case 'answered':
       case 'stepped': {
         const done = opens.get(m.request);
         if (!done) return;

@@ -10,6 +10,8 @@ import { knownDesktopCapabilities } from '../components/appstore/desktopCapabili
 
 /** The one `linkPreviewSessionKey` entry the owner approves (`SESSION_KEY_ENTRY` in `apps/link_preview_grants.py`). */
 export const SESSION_KEY_GRANT = 'sessionKey:nav'
+/** The one `linkPreviewAnswering` entry (`ANSWERING_ENTRY` in `apps/link_preview_answering_grants.py`). */
+export const ANSWERING_GRANT = 'answering'
 
 export function stagedGrantsOf(app: AppInfo | null) {
   // Declared api/events entries outside the approved set (`approvedGrants`) are
@@ -25,6 +27,7 @@ export function stagedGrantsOf(app: AppInfo | null) {
   const stagedLinkPatterns = app?.linkPreviewGrant?.stagedTextPatterns || []
   const stagedFullUrl = app?.linkPreviewGrant?.stagedFullUrl === true
   const stagedSessionKey = app?.linkPreviewGrant?.stagedSessionKey === true
+  const stagedAnswering = app?.linkPreviewGrant?.stagedAnswering === true
   // Message-action reach an update widened (the user role, markdown, a new action).
   const stagedMessageActions = app?.messageActionGrant?.staged || []
   const declaredMessageActions = (app?.manifest as { contributes?: { messageActions?: unknown } } | undefined)?.contributes?.messageActions
@@ -46,9 +49,9 @@ export function stagedGrantsOf(app: AppInfo | null) {
   const stagedFrameSources = app?.frameSourcesGrant?.staged || []
   // So does an update that added `permissions.openFiles`.
   const stagedOpenFiles = app?.openFilesGrant?.staged === true
-  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSessionControlInserts.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedSessionKey || stagedOpenFullUrl || stagedWorkerAutoApprove || stagedOpenFiles
+  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSessionControlInserts.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedSessionKey || stagedAnswering || stagedOpenFullUrl || stagedWorkerAutoApprove || stagedOpenFiles
   return {
-    stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey,
+    stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey, stagedAnswering,
     stagedMessageActions, declaredMessageActions, stagedOpenHosts, stagedOpenFullUrl,
     stagedComposerActions, stagedSessionControlInserts, stagedSelection, declaredSelectionActions, stagedWorkerAutoApprove,
     stagedUserSessionReach, stagedDesktopCapabilities, stagedFrameSources, stagedOpenFiles, hasStagedGrants,

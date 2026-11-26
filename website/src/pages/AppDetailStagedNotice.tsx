@@ -9,7 +9,7 @@ import { selectionActionGrantLabel } from '../selectionActions/selectionActionRe
 import { actionGrant } from '../composerActions/composerActionRegistry'
 import { StagedBotScopes } from './AppDetailBotGrants'
 import { DesktopCapabilitiesStaged, OpenFilesStaged, SessionControlInsertsStaged, UserSessionReachStaged, WorkerAutoApproveStaged } from './AppDetailGrantBoxes'
-import { SESSION_KEY_GRANT, type stagedGrantsOf } from './appDetailPageStagedGrants'
+import { ANSWERING_GRANT, SESSION_KEY_GRANT, type stagedGrantsOf } from './appDetailPageStagedGrants'
 import type { AppInfo } from './appDetailPageTypes'
 
 /** The enable route's grants consent: every held-back entry, by family. */
@@ -32,7 +32,7 @@ export default function AppDetailStagedNotice({ app, staged, stagedBots, busy, o
   onApprove: (grants: StagedGrantsConsent, entries: string) => void
 }) {
   const {
-    stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey,
+    stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey, stagedAnswering,
     stagedMessageActions, declaredMessageActions, stagedOpenHosts, stagedOpenFullUrl,
     stagedComposerActions, stagedSessionControlInserts, stagedSelection, declaredSelectionActions, stagedWorkerAutoApprove,
     stagedUserSessionReach, stagedDesktopCapabilities, stagedFrameSources, stagedOpenFiles,
@@ -43,7 +43,7 @@ export default function AppDetailStagedNotice({ app, staged, stagedBots, busy, o
     </div>
   )
   const approve = () => {
-    const entries = fmtList([...stagedApi, ...stagedEvents, ...stagedBots, ...stagedLinkHosts, ...stagedLinkPatterns, ...(stagedFullUrl ? ['fullUrl'] : []), ...(stagedSessionKey ? ['sessionKey'] : []), ...stagedMessageActions.map(e => messageActionGrantLabel(e, declaredMessageActions)), ...stagedOpenHosts, ...(stagedOpenFullUrl ? ['fullUrl'] : []), ...stagedComposerActions, ...stagedSessionControlInserts, ...stagedSelection.map(e => selectionActionGrantLabel(e, declaredSelectionActions)), ...(stagedWorkerAutoApprove ? ['workerAutoApprove'] : []), ...stagedUserSessionReach, ...stagedDesktopCapabilities, ...stagedFrameSources, ...(stagedOpenFiles ? ['openFiles'] : [])], { style: 'narrow' })
+    const entries = fmtList([...stagedApi, ...stagedEvents, ...stagedBots, ...stagedLinkHosts, ...stagedLinkPatterns, ...(stagedFullUrl ? ['fullUrl'] : []), ...(stagedSessionKey ? ['sessionKey'] : []), ...(stagedAnswering ? ['answering'] : []), ...stagedMessageActions.map(e => messageActionGrantLabel(e, declaredMessageActions)), ...stagedOpenHosts, ...(stagedOpenFullUrl ? ['fullUrl'] : []), ...stagedComposerActions, ...stagedSessionControlInserts, ...stagedSelection.map(e => selectionActionGrantLabel(e, declaredSelectionActions)), ...(stagedWorkerAutoApprove ? ['workerAutoApprove'] : []), ...stagedUserSessionReach, ...stagedDesktopCapabilities, ...stagedFrameSources, ...(stagedOpenFiles ? ['openFiles'] : [])], { style: 'narrow' })
     onApprove({
       api: stagedApi,
       events: stagedEvents,
@@ -52,6 +52,7 @@ export default function AppDetailStagedNotice({ app, staged, stagedBots, busy, o
       linkPreviewTextPatterns: stagedLinkPatterns,
       linkPreviewFullUrl: stagedFullUrl ? ['fullUrl'] : [],
       linkPreviewSessionKey: stagedSessionKey ? [SESSION_KEY_GRANT] : [],
+      linkPreviewAnswering: stagedAnswering ? [ANSWERING_GRANT] : [],
       messageActions: stagedMessageActions,
       linkOpenHosts: stagedOpenHosts,
       linkOpenFullUrl: stagedOpenFullUrl ? ['fullUrl'] : [],
@@ -110,6 +111,9 @@ export default function AppDetailStagedNotice({ app, staged, stagedBots, busy, o
         )}
         {stagedSessionKey && (
           <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_session_key')}</div>
+        )}
+        {stagedAnswering && (
+          <div className="text-[13px]" data-testid="staged-answering">{i18nT('components.linkPreview.answering.grant_staged')}</div>
         )}
         {stagedMessageActions.length > 0 && (
           <div>
