@@ -209,12 +209,21 @@ read only while its ask is open, outside the memo, so a long row before the
 reply does not push the summary past its bound. The rest reads the in-memory
 approval and question records the row already reads. After a gateway restart the value is
 what the restored transcript and state still ask. A row restored without its
-window reads the tail the restore keeps (`restore_drivers.LAZY_TAIL_ROWS` rows,
-each cut to `TAIL_TEXT_BOUND` characters, start and end kept), which keeps the
-`human`, `relay` and `mid` markers this rule reads; a person's row further back
-than that tail, or a label in the cut middle of a longer reply, is read once the
-window loads. Approvals and question cards that died with the old process are
-gone from it, as they are from the chat.
+window reads the tail the restore keeps (`restore_drivers._read_display_tail`:
+the newest `LAZY_TAIL_ROWS` rows, each cut to `TAIL_TEXT_BOUND` characters,
+start and end kept), which keeps the `human` and `mid` markers this rule reads.
+When those rows hold a reply but no `user` row, a long turn pushed the row that
+began it further back, so the tail also keeps, in front of them, the newest
+`user` row within `needs_you.STARTER_SCAN_ROWS` rows of the end: the same row
+the walk meets in a loaded window, at the cost of one row rather than a tail as
+long as the look-back. A label in the cut middle of a longer reply is read once
+the window loads. Approvals and question cards that died with the old process
+are gone from it, as they are from the chat.
+
+The words of an `[OPTIONS:]` ask are its last paragraph's lines, each redacted
+before they are joined into one line, as an approval's tool and purpose are, so
+a credential the redactor matches at a line's start is masked in `first_words`
+as it is in the chat.
 
 ## Return-triggered warm task brief
 

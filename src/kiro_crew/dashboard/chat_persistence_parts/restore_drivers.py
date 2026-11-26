@@ -190,6 +190,55 @@ def _display_tail(rows: list[dict]) -> list[dict]:
     return shown
 
 
+def _turn_began_before(rows: list[dict]) -> bool:
+    """Whether *rows* hold a reply but no ``user`` row, so the reply's turn began before them.
+
+    A reply is what the row summary reads as one: an assistant row with text
+    that is not a system notice. The summary and the interrupted check both stop
+    at it, before they reach a row kept in front of *rows*.
+    """
+    # Imported here: a part binds no project name at module level.
+    from kiro_crew.dashboard.system_notices import is_system_notice
+
+    replied = False
+    for m in rows:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        if role == "user":
+            return False
+        content = m.get("content")
+        if role == "assistant" and isinstance(content, str) and content:
+            replied = replied or not is_system_notice(role, m.get("meta"))
+    return replied
+
+
+def _read_display_tail(conv_log: ConversationLog, history_key: str) -> list[dict]:
+    """A sidebar row's tail, read from disk and bounded by :func:`_display_tail`. BLOCKING.
+
+    The newest :data:`LAZY_TAIL_ROWS` rows. When a long turn pushed the row that
+    began it out of them (:func:`_turn_began_before`), the newest ``user`` row
+    within ``needs_you.STARTER_SCAN_ROWS`` rows of the end is kept in front:
+    ``needs_you`` reads who started a reply's turn from that row, and looks as
+    far back for it in a loaded window. No row between it and the tail is a
+    ``user`` row, so the walk meets the row it meets there. One row in front
+    costs less than a tail as long as that look-back, which every restored row
+    would hold until its window loads.
+    """
+    from kiro_crew.dashboard.needs_you import STARTER_SCAN_ROWS
+
+    rows = conv_log.read_messages_chained_tail(history_key, LAZY_TAIL_ROWS)
+    if len(rows) == LAZY_TAIL_ROWS and _turn_began_before(rows):
+        wider = conv_log.read_messages_chained_tail(history_key, STARTER_SCAN_ROWS)
+        older = wider[: max(len(wider) - LAZY_TAIL_ROWS, 0)]
+        starter = next(
+            (m for m in reversed(older) if isinstance(m, dict) and m.get("role") == "user"), None
+        )
+        if starter is not None:
+            rows = [starter, *rows]
+    return _display_tail(rows)
+
+
 def _prefetch_open_slot_inputs(
     conv_log: ConversationLog,
     history_key: str,
@@ -226,7 +275,7 @@ def _prefetch_open_slot_inputs(
             and _member_restore_identity(slot_name) is None
             and not crew_bound_on_disk(slot_name)
         ):
-            tail = _display_tail(conv_log.read_messages_chained_tail(history_key, LAZY_TAIL_ROWS))
+            tail = _read_display_tail(conv_log, history_key)
             if tail:
                 return (
                     meta,
@@ -271,7 +320,7 @@ def _recent_row_tail(
         or crew_bound_on_disk(slot_name)
     ):
         return None
-    return _display_tail(conv_log.read_messages_chained_tail(history_key, LAZY_TAIL_ROWS)) or None
+    return _read_display_tail(conv_log, history_key) or None
 
 
 def _loop_slot_keys() -> set[str] | None:
