@@ -11271,6 +11271,7 @@
       "board_conductor_hint": "красное через {{age}}",
       "board_section_none": "нет",
       "board_asks": "Спрашивает: {{what}}",
+      "board_reply": "Ответить",
       "board_age_of": "{{age}} из {{estimate}}",
       "board_in_all": "всего {{total}}",
       "board_steps_strip": "Истории по шагам",

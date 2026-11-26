@@ -33,11 +33,12 @@ function StepStrip({ strip }: { strip: Record<PlanStep, number> }) {
       {/* A dl's own name is not announced, so the group around it carries it. Each
           cell reads term then count; the column puts the count on top for the eye. */}
       <div role="group" aria-label={i18nT('components.crewMode.board_steps_strip')}>
-      <dl className="grid grid-cols-3 @[22rem]:grid-cols-6 rounded-lg border border-border overflow-hidden" data-testid="board-step-strip">
+      <dl className="crew-board-card grid grid-cols-3 @[22rem]:grid-cols-6 rounded-xl border border-border overflow-hidden" data-testid="board-step-strip">
         {PLAN_STEPS.map((step, n) => (
           <div key={step} className={`flex flex-col-reverse px-2 py-1.5 min-w-0 ${n % 3 ? 'border-l border-border' : ''} ${n >= 3 ? 'border-t border-border @[22rem]:border-t-0' : ''} ${n === 3 ? '@[22rem]:border-l' : ''}`} data-testid="board-step-cell" data-step={step}>
             <dt className="text-[11px] text-muted truncate" title={i18nT(STEP_KEY[step])}>{i18nT(STEP_KEY[step])}</dt>
-            <dd className={`text-[15px] font-semibold tabular-nums leading-tight ${strip[step] ? 'text-text' : 'text-muted'}`}>{fmtNumber(strip[step])}</dd>
+            {/* Landed work (merged, released) reads green; the rest neutral. */}
+            <dd className={`text-[15px] font-semibold tabular-nums leading-tight ${!strip[step] ? 'text-muted' : step === 'merged' || step === 'released' ? 'crew-tone-ok' : 'text-text'}`}>{fmtNumber(strip[step])}</dd>
           </div>
         ))}
       </dl>
@@ -46,8 +47,9 @@ function StepStrip({ strip }: { strip: Record<PlanStep, number> }) {
   )
 }
 
-function LandedRow({ icon, label, value, testId }: { icon: ReactNode; label: string; value: string; testId: string }) {
-  return <li><BoardRow mark={<span className="text-muted inline-flex">{icon}</span>} title={label} age={value} testId={testId} /></li>
+/** A landed count's row; work that landed (`ok`) wears the theme's green mark. */
+function LandedRow({ icon, label, value, testId, ok = false }: { icon: ReactNode; label: string; value: string; testId: string; ok?: boolean }) {
+  return <li><BoardRow mark={<span className={`${ok ? 'crew-tone-ok' : 'text-muted'} inline-flex`}>{icon}</span>} title={label} age={value} testId={testId} /></li>
 }
 
 /** What landed, as counts: merged, of those released, and closed not done. The
@@ -55,10 +57,10 @@ function LandedRow({ icon, label, value, testId }: { icon: ReactNode; label: str
 export function LandedRows({ landed }: { landed: BoardSteps['landed'] }) {
   return (
     <BoardRows>
-      <LandedRow icon={<GitMerge size={14} aria-hidden="true" />} label={i18nT('components.crewMode.plan_step_merged')} value={fmtNumber(landed.merged)} testId="board-landed-merged" />
+      <LandedRow icon={<GitMerge size={14} aria-hidden="true" />} label={i18nT('components.crewMode.plan_step_merged')} value={fmtNumber(landed.merged)} testId="board-landed-merged" ok={landed.merged > 0} />
       {landed.merged > 0 && (
         <LandedRow icon={<PackageCheck size={14} aria-hidden="true" />} label={i18nT('components.crewMode.plan_step_released')}
-          value={i18nT('components.crewMode.board_count_of', { n: landed.released, total: landed.merged })} testId="board-landed-released" />
+          value={i18nT('components.crewMode.board_count_of', { n: landed.released, total: landed.merged })} testId="board-landed-released" ok={landed.released > 0} />
       )}
       {landed.notDone > 0 && (
         <LandedRow icon={<CircleX size={14} aria-hidden="true" />} label={i18nT('components.crewMode.board_landed_not_done')} value={fmtNumber(landed.notDone)} testId="board-landed-not-done" />

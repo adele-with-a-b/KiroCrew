@@ -11052,6 +11052,7 @@
       "board_conductor_hint": "rosso dopo {{age}}",
       "board_section_none": "nessuno",
       "board_asks": "Chiede: {{what}}",
+      "board_reply": "Rispondi",
       "board_age_of": "{{age}} su {{estimate}}",
       "board_in_all": "{{total}} in tutto",
       "board_steps_strip": "Storie per passo",

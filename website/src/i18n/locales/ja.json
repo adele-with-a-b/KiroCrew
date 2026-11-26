@@ -10548,6 +10548,7 @@
       "board_conductor_hint": "{{age}} で赤",
       "board_section_none": "なし",
       "board_asks": "質問: {{what}}",
+      "board_reply": "返信",
       "board_age_of": "{{age}} / {{estimate}}",
       "board_in_all": "合計 {{total}}",
       "board_steps_strip": "ステップごとのストーリー数",

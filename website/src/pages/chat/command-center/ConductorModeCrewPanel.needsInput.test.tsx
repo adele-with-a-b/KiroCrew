@@ -64,15 +64,26 @@ describe('Conductor mode Needs your input', () => {
     expect(screen.queryByTestId('board-story')).toBeNull()
   })
 
-  it("puts the conductor's offered answers in one menu beside Reply: two controls in the row", async () => {
-    api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})], asks: { it_q: ['Oolong', 'Green'] } })
+  it('shows one small Reply; the rest unfolds under it, nothing lost', async () => {
+    const report = { id: 'r1', ts: '2026-10-30T00:05:00Z', item_id: 'it_q', kind: 'report', status: 'question', text: '' }
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ events: [report] as never })], asks: { it_q: ['Oolong', 'Green'] } })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
     const row = await screen.findByTestId('conductor-mode-person-ask')
     const actions = within(row).getByTestId('conductor-mode-person-ask-actions')
+    // Folded: one button, as in the mock.
+    expect(within(actions).getAllByRole('button')).toHaveLength(1)
+    const reply = within(row).getByTestId('conductor-mode-person-ask-reply')
+    expect(reply).toHaveTextContent(/^Reply$/)
+    expect(reply).toHaveAttribute('aria-expanded', 'false')
+    expect(within(row).queryByTestId('conductor-mode-person-ask-answers')).toBeNull()
+    expect(within(row).queryByTestId('conductor-mode-person-ask-hint')).toBeNull()
+    expect(within(row).queryByTestId('conductor-mode-person-ask-dismiss')).toBeNull()
+    fireEvent.click(reply)
+    // Unfolded: the answers menu, the line that says nothing is sent, and Skip.
+    expect(reply).toHaveAttribute('aria-expanded', 'true')
     expect(within(actions).getAllByRole('button')).toHaveLength(2)
-    expect(within(row).getByTestId('conductor-mode-person-ask-reply')).toHaveTextContent('Write a reply')
-    // The visible line says the buttons send nothing.
     expect(within(row).getByTestId('conductor-mode-person-ask-hint')).toHaveTextContent('Puts this in your chat box to check and send')
+    expect(within(row).getByTestId('conductor-mode-person-ask-dismiss')).toBeInTheDocument()
     openMenu(within(row).getByTestId('conductor-mode-person-ask-answers'))
     expect((await screen.findAllByTestId('conductor-mode-person-ask-option')).map(b => b.textContent)).toEqual(['Oolong', 'Green'])
   })
@@ -81,18 +92,18 @@ describe('Conductor mode Needs your input', () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})], asks: { it_q: ['Oolong'] } })
     const onAct = vi.fn()
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={onAct} />)
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
+    expect(onAct).toHaveBeenLastCalledWith('About "Pick a tea" (it_q): ')
     openMenu(await screen.findByTestId('conductor-mode-person-ask-answers'))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Oolong' }))
     expect(onAct).toHaveBeenLastCalledWith('About "Pick a tea" (it_q): Oolong')
-    fireEvent.click(screen.getByTestId('conductor-mode-person-ask-reply'))
-    expect(onAct).toHaveBeenLastCalledWith('About "Pick a tea" (it_q): ')
     expect(api.sendMessage).not.toHaveBeenCalled()
   })
 
   it('no offered answers: Reply alone, no menu', async () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
-    await screen.findByTestId('conductor-mode-person-ask-reply')
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
     expect(screen.queryByTestId('conductor-mode-person-ask-answers')).toBeNull()
   })
 
@@ -143,6 +154,7 @@ describe('Conductor mode Needs your input', () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ events: [report] as never })] })
     api.crewBoardAction.mockRejectedValue(new Error('Nothing was skipped: this ask changed or was answered since the page loaded.'))
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
     fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-dismiss'))
     expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was skipped: this ask changed or was answered since the page loaded.')
     expect(screen.getByTestId('conductor-mode-person-ask')).toBeInTheDocument()
@@ -157,6 +169,7 @@ describe('Conductor mode Needs your input', () => {
       return { ok: true, action: 'dismiss', item_id: 'it_q' }
     })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
     const close = await screen.findByRole('button', { name: 'Skip "Pick a tea" without replying' })
     expect(close).toHaveTextContent('Skip question')
     // What skipping does is on the card, not only in a tooltip.

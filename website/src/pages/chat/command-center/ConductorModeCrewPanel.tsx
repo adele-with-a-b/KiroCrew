@@ -49,6 +49,7 @@ import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/
 import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
 import BoardStoryView from '../../../components/board/BoardStoryView'
 import { useOpenStory } from '../../../components/board/storyView'
+import MergedRing from '../../../components/board/MergedRing'
 import BoardMovesView from './BoardMovesView'
 import BoardStepsView from './BoardStepsView'
 import BoardTimelineView from './BoardTimelineView'
@@ -528,17 +529,20 @@ function clip(text: string, n: number): string {
   return text.length > n ? `${text.slice(0, n - 1)}…` : text
 }
 
-/** What a story that waits on the person offers under its row: goal-board's Reply,
- *  one Write a reply button and, when the conductor offered answers, one Suggested
- *  answers menu holding them (two controls in the row). Each only FILLS the chat box
- *  (`onAct`); the person still presses send, and the line under the buttons says
- *  so. With a crew member on screen (`onAct` absent) it offers the way back to the
- *  main chat (`back`: "Back to main chat", or "Open main chat" reopening a closed
- *  one), the same as the panel's Back row. Then Skip question on its own line, with
- *  what skipping does. */
+/** What a story that waits on the person offers under its row: one small Reply
+ *  button, as in the Board mock. Reply FILLS the chat box (`onAct`) and unfolds
+ *  the rest under it: when the conductor offered answers, one Suggested answers menu
+ *  holding them, the line saying the person still presses send, and Skip question
+ *  with what skipping does. Folded, not gone: every control is one click away. With
+ *  a crew member on screen (`onAct` absent) it offers the way back to the main chat
+ *  (`back`: "Back to main chat", or "Open main chat" reopening a closed one), the
+ *  same as the panel's Back row, then Skip question. */
 function PersonAskActions({ root, item, options, onAct, back }: { root: string; item: WorkBoardItem; options: readonly string[]; onAct?: (text: string) => void; back: CrewBack }) {
   const draft = (answer: string) => i18nT('components.crewMode.conductor_mode_reply_draft', { t: clip(item.title, 70), id: item.item_id, answer })
   const small = 'inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium border border-border hover:bg-bg-hover max-w-full'
+  // The rest unfolds on the first Reply and stays open for this row.
+  const [unfolded, setUnfolded] = useState(false)
+  const shown = !onAct || unfolded
   // Dismiss: the server writes a person steer on the item, so every surface drops
   // the ask until a newer report asks again. The board is re-read either way.
   // It names the report on screen, so a newer ask filed since the last poll is
@@ -555,8 +559,9 @@ function PersonAskActions({ root, item, options, onAct, back }: { root: string; 
       {onAct ? (
         <div className="space-y-1">
           <div className="flex items-center gap-1.5" data-testid="conductor-mode-person-ask-actions">
-            <button type="button" className={`${small} conductor-mode-accent`} onClick={() => onAct(draft(''))} data-testid="conductor-mode-person-ask-reply">{i18nT('components.crewMode.conductor_mode_reply')}</button>
-            {options.length > 0 && (
+            <button type="button" className={`${small} text-text`} aria-expanded={unfolded} data-testid="conductor-mode-person-ask-reply"
+              onClick={() => { onAct(draft('')); setUnfolded(true) }}>{i18nT('components.crewMode.board_reply')}</button>
+            {unfolded && options.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button type="button" className={small} data-testid="conductor-mode-person-ask-answers">{i18nT('components.crewMode.conductor_mode_answers')}<ChevronDown size={12} aria-hidden="true" /></button>
@@ -571,7 +576,7 @@ function PersonAskActions({ root, item, options, onAct, back }: { root: string; 
               </DropdownMenu>
             )}
           </div>
-          <p className="text-[11px] text-muted" data-testid="conductor-mode-person-ask-hint">{i18nT('components.crewMode.conductor_mode_option_title')}</p>
+          {unfolded && <p className="text-[11px] text-muted" data-testid="conductor-mode-person-ask-hint">{i18nT('components.crewMode.conductor_mode_option_title')}</p>}
         </div>
       ) : (
         <div className="space-y-1">
@@ -582,7 +587,7 @@ function PersonAskActions({ root, item, options, onAct, back }: { root: string; 
           {back.reopenFailed && <ErrorNotice variant="inline" message={i18nT('commandCenter.worker_reopen_failed')} askAgent />}
         </div>
       )}
-      {reportId && (
+      {shown && reportId && (
         <p className="flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-muted">
           <button type="button" onClick={() => dismiss.mutate()} disabled={dismiss.isPending} aria-label={dismissHint} title={dismissHint} data-testid="conductor-mode-person-ask-dismiss"
             className="inline-flex items-center gap-1 rounded-sm font-medium hover:text-text disabled:opacity-50">
@@ -810,8 +815,9 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // against the goal's cap.
   const storyItems = items.filter(i => levelOf(i) === 'story')
   const cap = board.data?.conductor?.concurrency_cap
+  const mergedStories = storyItems.filter(isMerged).length
   const counts = joinParts([
-    storyItems.length > 0 ? i18nT('components.crewMode.plan_epic_progress', { done: storyItems.filter(isMerged).length, total: storyItems.length }) : '',
+    storyItems.length > 0 ? i18nT('components.crewMode.plan_epic_progress', { done: mergedStories, total: storyItems.length }) : '',
     cap != null ? i18nT('components.crewMode.plan_slots_busy', { busy: seatsBusy(items), cap }) : '',
   ])
   const detail = runDetail(runState, board.data?.run)
@@ -854,7 +860,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   const storyWorker = storyItem ? workers.find(x => x.ledger_item === storyItem.item_id) : undefined
 
   return (
-    <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={storyItem ? 'story' : view}>
+    <div className="crew-board h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={storyItem ? 'story' : view}>
       {/* A crew member on screen: one click back to its root. */}
       {viewing && viewing !== root && <CrewPanelBack root={root} />}
       {storyItem && (
@@ -878,7 +884,9 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
                 wrap whole onto the next line, never leaving a lone dot behind. */}
             <p className="flex flex-wrap items-baseline gap-x-2 text-[12px] text-muted" data-testid="plan-sprint-line">
               {runState && <RunWord state={runState} run={board.data?.run} />}
-              {counts && <span className="tabular-nums" data-testid="plan-sprint-counts">{counts}</span>}
+              {counts && <span className="inline-flex items-baseline gap-1 tabular-nums" data-testid="plan-sprint-counts">
+                {storyItems.length > 0 && <MergedRing done={mergedStories} total={storyItems.length} />}{counts}
+              </span>}
               {pulse}
             </p>
             {detail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{detail}</p>}

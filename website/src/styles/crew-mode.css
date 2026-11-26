@@ -153,17 +153,64 @@ html:root .liquid-glass.crew-chip[aria-pressed="true"]:not(:disabled):not([aria-
 }
 
 /* Status text on a card or row: the state's hue mixed toward the theme's
-   strongest text colour, so 12px labels stay at or above 4.5:1. */
+   strongest text colour, so 12px labels stay at or above 4.5:1. The hue's share
+   is `--crew-tone-mix`: 45% by default, more on the Board (`.crew-board`). */
 .crew-tone-warn {
-  color: color-mix(in srgb, var(--warn) 45%, var(--text-strong, var(--text)));
+  color: color-mix(in srgb, var(--warn) var(--crew-tone-mix, 45%), var(--text-strong, var(--text)));
 }
 
 .crew-tone-ok {
-  color: color-mix(in srgb, var(--ok) 45%, var(--text-strong, var(--text)));
+  color: color-mix(in srgb, var(--ok) var(--crew-tone-mix, 45%), var(--text-strong, var(--text)));
 }
 
 .crew-tone-danger {
-  color: color-mix(in srgb, var(--danger) 45%, var(--text-strong, var(--text)));
+  color: color-mix(in srgb, var(--danger) var(--crew-tone-mix, 45%), var(--text-strong, var(--text)));
+}
+
+/* The Board (the chat's Board tab and the all-projects page) has its own
+   surfaces, so it never reads as a grey list on the page. Both tones come from
+   the theme: the page is `--bg` with a little of `--aim` in it, a card is
+   `--bg-elevated` with a little more, so a card is one step lighter than the page
+   it sits on in dark and light alike. Every background is set with its text
+   colour. On the Board each state reads as its colour at a glance: the status
+   words carry 78% of their hue, still mixed toward the strongest text colour (a
+   dark theme lightens it, a light one darkens it). */
+.crew-board {
+  --crew-tone-mix: 78%;
+  --crew-board-page: color-mix(in srgb, var(--aim) 6%, var(--bg));
+  --crew-board-card: color-mix(in srgb, var(--aim) 8%, var(--bg-elevated));
+  background-color: var(--crew-board-page);
+  color: var(--text);
+}
+
+.crew-board-card {
+  background-color: var(--crew-board-card);
+  color: var(--text);
+}
+
+/* A section's head band inside a list: the page tone, so the rows stand out. */
+.crew-board-band {
+  background-color: var(--crew-board-page);
+  color: var(--muted);
+}
+
+/* A page column's rows (`BoardColumn`): each one its own rounded card. */
+.crew-board-cards > li {
+  background-color: var(--crew-board-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  overflow: hidden;
+}
+
+/* The merged ring (`components/board/MergedRing.tsx`): a quiet track and the
+   merged share in the theme's green. */
+.crew-board-ring-track {
+  stroke: color-mix(in srgb, var(--muted) 35%, transparent);
+}
+
+.crew-board-ring-done {
+  stroke: var(--ok);
 }
 
 .crew-tone-aim {

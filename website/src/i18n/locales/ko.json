@@ -10548,6 +10548,7 @@
       "board_conductor_hint": "{{age}} 후 빨간색",
       "board_section_none": "없음",
       "board_asks": "질문: {{what}}",
+      "board_reply": "답장",
       "board_age_of": "{{age}} / {{estimate}}",
       "board_in_all": "총 {{total}}",
       "board_steps_strip": "단계별 스토리 수",
