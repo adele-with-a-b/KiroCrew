@@ -118,10 +118,22 @@ _TAIL_CLS_BOUND = 1024
 #: ``kind`` and ``notice`` (``is_system_notice``), a dispatching inject's
 #: ``injectKind`` (``_is_turn_inject``), and the applied quiet end's trusted tool
 #: identity and flag (``is_quiet_end_row``), without which a turn that ended
-#: through ``nothing_to_do`` reads as interrupted until the window loads. Each is
+#: through ``nothing_to_do`` reads as interrupted until the window loads, and who
+#: sent a row and its id (``human``, ``relay``, ``mid``), without which a restored
+#: row's ``needs_you`` drops every ask a person's turn left open. Each is
 #: kept only as a short scalar; every other key (tool payloads, variants,
 #: records) is left out of the tail.
-_TAIL_META_KEYS = ("kind", "injectKind", "notice", "tool_name", "mcp_server", "ends_turn")
+_TAIL_META_KEYS = (
+    "kind",
+    "injectKind",
+    "notice",
+    "tool_name",
+    "mcp_server",
+    "ends_turn",
+    "human",
+    "relay",
+    "mid",
+)
 _TAIL_SCALAR_BOUND = 128
 
 

@@ -227,9 +227,11 @@ def ask_epoch(stamp: Any) -> float | None:
     return float(seconds) if bucket == 0 else None
 
 
-def _tool_words(tool: Any, purpose: Any) -> str:
-    tool_text = str(tool or "").strip()
-    purpose_text = str(purpose or "").strip()
+def _tool_words(tool: Any, purpose: Any, redact: Callable[[str], str]) -> str:
+    # Each part redacted alone, as the approval card redacts it: a pattern held to
+    # a line's start (``key=value``) misses a credential the join moves off it.
+    tool_text = redact(str(tool or "").strip())
+    purpose_text = redact(str(purpose or "").strip())
     if tool_text and purpose_text:
         return f"{tool_text} · {purpose_text}"
     return tool_text or purpose_text
@@ -292,7 +294,9 @@ def approval_asks(
             (KIND_APPROVAL,),
             1,
             _or(ask_epoch(message.get("ts")), fallback_ts),
-            clean_words(_tool_words(message.get("content"), meta.get("tool_purpose")), redact),
+            clean_words(
+                _tool_words(message.get("content"), meta.get("tool_purpose"), redact), redact
+            ),
             request_mid,
         )
         for message, meta, _request_id, request_mid in permission_rows
@@ -305,7 +309,9 @@ def approval_asks(
                 (KIND_APPROVAL,),
                 1,
                 _or(_record_epoch(record.get("ts")), fallback_ts),
-                clean_words(_tool_words(record.get("tool"), record.get("tool_purpose")), redact),
+                clean_words(
+                    _tool_words(record.get("tool"), record.get("tool_purpose"), redact), redact
+                ),
                 None,
             )
         )

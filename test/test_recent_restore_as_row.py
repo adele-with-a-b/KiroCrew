@@ -8,14 +8,18 @@ history still pages in from disk in full.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from kiro_crew.dashboard import chat_persistence as cp
-from kiro_crew.dashboard.state import DashboardState
+from kiro_crew.dashboard import slot_projection
+from kiro_crew.dashboard.state import DashboardState, _ChatSlot
 from kiro_crew.history import ConversationLog
+from kiro_crew.history_schema import HUMAN_TURN_META_KEY
+from kiro_crew.testing.clock import ManualClock
 
 ROWS = 600
 
@@ -134,3 +138,55 @@ async def test_a_foldered_row_saves_back_byte_for_byte_after_it_loads(home):
 
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()[1:]]
     assert [r["content"] for r in rows] == [f"m{i}" for i in range(ROWS)] + ["new"]
+
+
+#: The frozen "now" of the needs_you restore test: 2027-01-15T08:00:00Z.
+_NOW = 1_800_000_000.0
+
+
+def _stamp(at: float) -> str:
+    return datetime.fromtimestamp(at, timezone.utc).isoformat()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Built.\n\nShip it now, or wait?\n[OPTIONS: Ship it | Wait]",
+        "Built.\n\n[Q1a] Ship it now? I would.",
+    ],
+    ids=["options", "labelled"],
+)
+async def test_a_row_restored_without_its_window_keeps_what_it_asks_the_owner(
+    home, monkeypatch, reply
+):
+    # ``needs_you`` reads who started the reply's turn (``meta.human``) and the
+    # reply's id (``meta.mid``) off the restored tail, so the tail keeps both.
+    ManualClock(_NOW).install(monkeypatch, slot_projection)
+    rows = [
+        {
+            "role": "user",
+            "content": "Build it, then ask me.",
+            "ts": _stamp(_NOW - 120),
+            "meta": {HUMAN_TURN_META_KEY: True},
+        },
+        {"role": "assistant", "content": reply, "ts": _stamp(_NOW - 60), "meta": {"mid": "m-a"}},
+    ]
+    live = _ChatSlot("asks")
+    live.messages.extend(dict(row) for row in rows)
+    expected = live.to_dict()["needs_you"]
+    assert expected is not None and expected["row_id"] == "m-a"
+    head = {"_type": "metadata", "created_at": _stamp(_NOW - 900), "title": "asks"}
+    (home / "dashboard_asks.jsonl").write_text(
+        "\n".join(json.dumps(line) for line in (head, *rows)) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    state = _make_state(home)
+
+    assert await cp.restore_recent_sessions_async(state, window_minutes=60) == 1
+
+    slot = state._slots["asks"]
+    assert slot.window_pending is True
+    assert slot.to_dict()["needs_you"] == expected
+    assert slot.window_pending is True, "the row read its window to answer"

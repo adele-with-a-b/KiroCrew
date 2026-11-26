@@ -432,3 +432,43 @@ async def test_the_slots_list_settles_workers_after_the_crew_stamps(tmp_path, mo
     assert rows["worker-1"]["needs_you"] is None
     assert rows["root-1"]["needs_you"]["kinds"] == ["approval"]
     assert rows["root-1"]["needs_you"]["oldest_ts"] == NOW - 200
+
+
+def test_approval_words_mask_what_the_approval_card_masks(loop: asyncio.AbstractEventLoop):
+    # The redactor masks a ``key=value`` credential only at the start of a line, so
+    # redacting "tool · purpose" after the join would let one through.
+    from kiro_crew.testing.synthetic_credentials import synth
+
+    secret = synth(24, seed=5)
+    purpose = f"api_key={secret}"
+
+    direct = _slot(_person("Deploy it.", NOW - 300))
+    direct.register_approval(
+        "r1", loop.create_future(), _permission(direct, "r1", NOW - 200, purpose=purpose)
+    )
+    coordinator = _slot(_person("Deploy it.", NOW - 300))
+    coordinator._coordinator_approvals = lambda key: [
+        {"id": "spawn:1", "tool": "Bash", "tool_purpose": purpose, "ts": NOW - 200}
+    ]
+    for slot in (direct, coordinator):
+        row = slot.to_dict()
+        masked = row["pending_approval_info"]["tool_purpose"]
+        assert secret not in masked
+        assert row["needs_you"]["first_words"] == f"Bash · {masked}"
+
+    root = _slot(_person("Lead the crew.", NOW - 400))
+    root.key = "root-1"
+    worker = _ChatSlot("worker-1")
+    worker.messages.append(
+        {"role": "user", "content": "[From root] Deploy.", "ts": _stamp(NOW - 300)}
+    )
+    worker.register_approval(
+        "r1", loop.create_future(), _permission(worker, "r1", NOW - 200, purpose=purpose)
+    )
+    rows = _rows(root, worker)
+    rows[0]["crew_mode_root"] = True
+    rows[1]["crew_root"] = "root-1"
+    needs_you.settle_crew_rows(SimpleNamespace(_slots={"root-1": root, "worker-1": worker}), rows)
+    masked = rows[1]["pending_approval_info"]["tool_purpose"]
+    assert secret not in masked
+    assert rows[0]["needs_you"]["first_words"] == f"Bash · {masked}"

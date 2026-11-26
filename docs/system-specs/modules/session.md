@@ -208,8 +208,13 @@ transcript tail, so an unchanged chat costs a compare; who started its turn is
 read only while its ask is open, outside the memo, so a long row before the
 reply does not push the summary past its bound. The rest reads the in-memory
 approval and question records the row already reads. After a gateway restart the value is
-what the restored transcript and state still ask; approvals and question cards
-that died with the old process are gone from it, as they are from the chat.
+what the restored transcript and state still ask. A row restored without its
+window reads the tail the restore keeps (`restore_drivers.LAZY_TAIL_ROWS` rows,
+each cut to `TAIL_TEXT_BOUND` characters, start and end kept), which keeps the
+`human`, `relay` and `mid` markers this rule reads; a person's row further back
+than that tail, or a label in the cut middle of a longer reply, is read once the
+window loads. Approvals and question cards that died with the old process are
+gone from it, as they are from the chat.
 
 ## Return-triggered warm task brief
 
