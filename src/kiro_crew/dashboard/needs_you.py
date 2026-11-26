@@ -435,7 +435,9 @@ def _settle_crew_rows(state: Any, rows: list[dict[str, Any]]) -> None:
         )
         target = roots.get(root)
         if target is not None and target is not row and approvals:
-            target[FIELD] = needs_you_of([*_asks_of_value(target.get(FIELD)), *approvals])
+            # The permission row is the worker's, not in the conductor's transcript.
+            moved = [ask._replace(row_id=None) for ask in approvals]
+            target[FIELD] = needs_you_of([*_asks_of_value(target.get(FIELD)), *moved])
             approvals = []
         row[FIELD] = needs_you_of(
             [*approvals, *question_asks(slot, fallback_ts=fallback, redact=_redact)]

@@ -369,11 +369,13 @@ def test_a_workers_approval_moves_onto_its_listed_conductor(loop: asyncio.Abstra
     state = SimpleNamespace(_slots={"root-1": root, "worker-1": worker})
     needs_you.settle_crew_rows(state, rows)
     assert rows[1]["needs_you"] is None
+    # The permission row is in the worker's transcript, so the conductor's row
+    # names none.
     assert rows[0]["needs_you"] == {
         "count": 2,
         "oldest_ts": NOW - 200,
         "first_words": "Bash",
-        "row_id": "m-r1",
+        "row_id": None,
         "kinds": ["approval", "labelled"],
     }
 
