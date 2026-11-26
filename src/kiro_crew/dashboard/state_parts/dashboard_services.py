@@ -51,7 +51,7 @@ from kiro_crew.dashboard.turn_dispatch import BackgroundTurnAbandoned, mark_turn
 from kiro_crew.dashboard.websocket_hub import WebSocketHub
 from kiro_crew.messaging.link import is_channel_session_key
 from kiro_crew.notifications.bus import NotificationValidationError, payload_from_legacy
-from kiro_crew.preview_text import strip_markdown_preview
+from kiro_crew.preview_text import masked_preview
 from kiro_crew.safety_override import safety_override
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 from kiro_crew.sel import sel
@@ -130,10 +130,11 @@ def _web_push_payload(note: dict[str, Any]) -> dict[str, Any]:
     # Flattening drops format characters and markup, which can JOIN a credential
     # that a zero-width character or emphasis had split past the delivery-time
     # redaction, so the flattened text is redacted again before it leaves the
-    # host (strip before redact: preview_text.drop_format_chars).
+    # host (strip before redact: preview_text.drop_format_chars), before and after
+    # its lines are joined (preview_text.masked_preview).
     raw_body = note.get("body")
-    flat_body = strip_markdown_preview(raw_body) if isinstance(raw_body, str) else ""
-    body = _truncate_bytes(_redact_note_value(flat_body), _PUSH_BODY_BYTES)
+    flat_body = masked_preview(raw_body, _redact_note_value) if isinstance(raw_body, str) else ""
+    body = _truncate_bytes(flat_body, _PUSH_BODY_BYTES)
     navigate = str(note.get("url") or "/")
     if _serialized_bytes(navigate) > _PUSH_URL_BYTES:
         navigate = "/"
