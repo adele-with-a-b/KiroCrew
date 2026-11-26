@@ -66,11 +66,12 @@ export function liveMateThreads(rows: readonly { key?: string; mode?: string }[]
 }
 
 /** The live mate threads among `rows` whose sessions leave the person's lists for
- *  the Bot's Sessions tab: every one but those whose Bot turned on "Show in my
- *  Sessions list" (the server's `show_sessions_in_list` stamp on the thread's row).
- *  Read over the FULL slot store, like `liveMateThreads`. */
-export function mateThreadsHidingSessions(rows: readonly { key?: string; mode?: string; show_sessions_in_list?: boolean }[]): ReadonlySet<string> {
-  return new Set(rows.filter(r => r.mode === 'member' && r.key && r.show_sessions_in_list !== true).map(r => r.key as string))
+ *  the Bot's Sessions tab: every one but those whose sessions are listed, which the
+ *  server stamps on each thread's row (`bot_sessions_listed`: on while
+ *  `dashboard.show_bot_sessions_in_list` is on, else the Bot's own
+ *  `show_sessions_in_list`). Read over the FULL slot store, like `liveMateThreads`. */
+export function mateThreadsHidingSessions(rows: readonly { key?: string; mode?: string; bot_sessions_listed?: boolean }[]): ReadonlySet<string> {
+  return new Set(rows.filter(r => r.mode === 'member' && r.key && r.bot_sessions_listed !== true).map(r => r.key as string))
 }
 
 /** The slot keys that are busy, each slot's own key plus the mate thread it was
@@ -297,7 +298,7 @@ export function crewApprovalDecidableHere(
  *  it on. A worker whose root is closed keeps its row: no panel lists it, and its
  *  own approval or question must still reach the person. `rootsOnly` keeps just
  *  the roots, for the session filter's Crew Mode chip. */
-export function crewModeView<T extends { key?: string; mode?: string; crew_root?: string; crew_mode_root?: boolean; mate_root?: string; show_sessions_in_list?: boolean }>(
+export function crewModeView<T extends { key?: string; mode?: string; crew_root?: string; crew_mode_root?: boolean; mate_root?: string; bot_sessions_listed?: boolean }>(
   rows: T[], rootsOnly = false, mateThreads?: ReadonlySet<string>,
 ): T[] {
   if (rootsOnly) return rows.filter(r => crewModeRoot(r))

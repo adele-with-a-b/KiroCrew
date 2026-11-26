@@ -694,6 +694,7 @@ class TestServerAppliers:
             "dashboard.stale_wake",
             "dashboard.chat_runtime_sharing_toggle",
             "apps",
+            "dashboard.show_bot_sessions_in_list",
             "agents.show_sessions_in_list",
             "dashboard.command_bar_enabled",
             "dashboard.channels_enabled",

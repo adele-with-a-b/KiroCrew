@@ -1705,6 +1705,7 @@ class TestDashboardConfigPut:
             "side_panel_always_open",
             "side_panel_pin_summary",
             "file_links_open_default_app",
+            "show_bot_sessions_in_list",
             "new_chat_crew_mode",
         ]
         async with TestClient(TestServer(config_client_app)) as client:
@@ -1724,6 +1725,7 @@ class TestDashboardConfigPut:
             "side_panel_always_open": "invalid_side_panel_always_open",
             "side_panel_pin_summary": "invalid_side_panel_pin_summary",
             "file_links_open_default_app": "invalid_file_links_open_default_app",
+            "show_bot_sessions_in_list": "invalid_show_bot_sessions_in_list",
             "new_chat_crew_mode": "invalid_new_chat_crew_mode",
         }
         async with TestClient(TestServer(config_client_app)) as client:
@@ -1811,6 +1813,7 @@ class TestDashboardConfigPut:
             "side_panel_always_open": True,
             "side_panel_pin_summary": True,
             "file_links_open_default_app": False,
+            "show_bot_sessions_in_list": True,
             "new_chat_crew_mode": True,
         }
         async with TestClient(TestServer(config_client_app)) as client:

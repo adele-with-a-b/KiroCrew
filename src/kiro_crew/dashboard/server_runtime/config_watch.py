@@ -322,13 +322,15 @@ def _register_config_watch(
             state.push_refresh("config")
 
     def _push_mate_listing(change: ConfigChange) -> None:
-        # Each mate thread's row carries its Bot's "Show in my Sessions list"
-        # switch (crew_mode.stamp_rows), so a flip from any writer re-sends the
-        # slot list and refreshes the roster so every dashboard's lists and
-        # Bot Settings switch follow it.
-        if any(p.endswith(".show_sessions_in_list") for p in change.under("agents")):
-            state.push_slots_update()
-            state.push_refresh("agents")
+        # Each mate thread's row carries whether its sessions are listed
+        # (``crew_mode.stamp_rows``: the global switch, else the Bot's own), so a
+        # flip of either from any writer re-sends the slot list and refreshes the
+        # roster, and every dashboard's lists and switches follow it.
+        per_bot = any(p.endswith(".show_sessions_in_list") for p in change.under("agents"))
+        if not per_bot and not change.touched("dashboard.show_bot_sessions_in_list"):
+            return
+        state.push_slots_update()
+        state.push_refresh("agents")
 
     # The workflow-run ceiling and the channel caps are not registered here:
     # WorkflowService and ChannelManager bind their own setters in their
@@ -403,6 +405,11 @@ def _register_config_watch(
             name="dashboard.update_nudge",
         ),
         live.subscribe("apps", callback=_push_app_settings, name="apps"),
+        live.subscribe(
+            "dashboard.show_bot_sessions_in_list",
+            callback=_push_mate_listing,
+            name="dashboard.show_bot_sessions_in_list",
+        ),
         live.subscribe("agents", callback=_push_mate_listing, name="agents.show_sessions_in_list"),
         live.subscribe(
             "dashboard.command_bar_enabled",

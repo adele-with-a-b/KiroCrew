@@ -68,7 +68,7 @@ describe('dashboardSlice unread relay', () => {
     setReferrer(`${HUB}/chat`)
     Object.defineProperty(window, 'parent', { value: { postMessage }, configurable: true })
 
-    const bot: ChatSlot = { key: 'bot', mode: 'member', messages: 0, running: false, show_sessions_in_list: false }
+    const bot: ChatSlot = { key: 'bot', mode: 'member', messages: 0, running: false, bot_sessions_listed: false }
     const session: ChatSlot = { key: 'bot-session', mate_root: bot.key, messages: 1, running: false }
     let state = dashboardReducer(undefined, { type: '@@INIT' })
     state = dashboardReducer(state, sseSlots([bot, session]))
@@ -76,7 +76,7 @@ describe('dashboardSlice unread relay', () => {
     expect(postMessage).toHaveBeenLastCalledWith({ source: 'kirocrew', type: 'mc-unread-slots', count: 0 }, HUB)
     postMessage.mockClear()
 
-    state = dashboardReducer(state, sseSlots([{ ...bot, show_sessions_in_list: true }, session]))
+    state = dashboardReducer(state, sseSlots([{ ...bot, bot_sessions_listed: true }, session]))
     expect(postMessage).toHaveBeenLastCalledWith({ source: 'kirocrew', type: 'mc-unread-slots', count: 1 }, HUB)
     state = dashboardReducer(state, sseSlots([bot, session]))
     expect(postMessage.mock.calls.map(([payload]) => payload.count)).toEqual([1, 0])

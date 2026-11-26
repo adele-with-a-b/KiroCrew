@@ -328,19 +328,27 @@ describe("a Bot's sessions in the person's lists", () => {
     { key: 'orphan', mate_root: 'gone' },
     { key: 'plain' },
   ]
-  const shown = rows.map(r => (r.key === 'mate' ? { ...r, show_sessions_in_list: true } : r))
+  const shown = rows.map(r => (r.key === 'mate' ? { ...r, bot_sessions_listed: true } : r))
 
-  it('by default leaves out every session a live mate thread dispatched, and keeps the mate thread', () => {
+  it('with no listed stamp leaves out every session a live mate thread dispatched, and keeps the mate thread', () => {
     expect(crewModeView(rows).map(r => r.key)).toEqual(['mate', 'orphan', 'plain'])
     expect([...crewMemberKeys(rows)].sort()).toEqual(['deep', 'mw'])
     // The page never opens one on its own, whether or not its mate is live.
     expect(autoOpenRows(rows).map(r => r.key)).toEqual(['mate', 'plain'])
   })
 
-  it('keeps them when the Bot shows its sessions in the list', () => {
+  it("keeps them when the mate thread says its Bot's sessions are listed", () => {
     expect(crewModeView(shown).map(r => r.key)).toEqual(['mate', 'mw', 'deep', 'orphan', 'plain'])
     expect(crewMemberKeys(shown).size).toBe(0)
     expect(mateThreadsHidingSessions(shown).size).toBe(0)
+    // The page still never opens one on its own.
+    expect(autoOpenRows(shown).map(r => r.key)).toEqual(['mate', 'plain'])
+  })
+
+  it('reads only the listed stamp: the Bot setting name on the row lists nothing', () => {
+    const other = rows.map(r => (r.key === 'mate' ? { ...r, show_sessions_in_list: true, bot_sessions_listed: false } : r))
+    expect(crewModeView(other).map(r => r.key)).toEqual(['mate', 'orphan', 'plain'])
+    expect(mateThreadsHidingSessions(other)).toEqual(new Set(['mate']))
   })
 
   it('reads the mate threads from the full store when the list holds none', () => {

@@ -318,7 +318,7 @@ const statusHeldOrphanTest = (state: DashboardState): ((key: string) => boolean)
  *  not show them in the person's list, since its Sessions tab lists them. Counts shown to
  *  the person skip them; their unread entries stay for those views. One whose
  *  root is closed is a row again, so it counts. */
-export const crewMemberKeys = (slots: readonly { key: string; mode?: string; crew_root?: string; mate_root?: string; show_sessions_in_list?: boolean }[]): ReadonlySet<string> => {
+export const crewMemberKeys = (slots: readonly { key: string; mode?: string; crew_root?: string; mate_root?: string; bot_sessions_listed?: boolean }[]): ReadonlySet<string> => {
   const keys = new Set(slots.map(s => s.key))
   const mates = mateThreadsHidingSessions(slots)
   return new Set(slots.filter(s => {

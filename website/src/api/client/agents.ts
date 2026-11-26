@@ -121,9 +121,10 @@ export interface MemberRosterRow {
    *  in one click. Absent on an older gateway, which has no such switch, or when
    *  the crewmate never opted in: read it as off. */
   dashboard_card_send?: boolean
-  /** Whether the chats this Bot's thread opens also show in the person's
-   *  Sessions list. Off by default (absent reads as off): they show only on the
-   *  Bot's Sessions tab. */
+  /** Whether the sessions this Bot's thread opens also show in the person's
+   *  Sessions list while `dashboard.show_bot_sessions_in_list` is off (which lists
+   *  every Bot's). On by default; the gateway always sends it, and an older
+   *  gateway that does not reads as off. */
   show_sessions_in_list?: boolean
   /** The person created this crewmate (the Crewmates page's create, or an
    *  approved `crewmate.create` / `crewmate.import` card): `source` is
