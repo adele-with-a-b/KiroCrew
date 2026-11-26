@@ -16236,16 +16236,11 @@
       "room_pressure": "сообщается о нехватке памяти",
       "room_tight": "памяти мало",
       "room_unknown": "память не измерена",
-      "running_few": "{{count}} работают",
-      "running_many": "{{count}} работают",
-      "running_one": "{{count}} работает",
-      "running_other": "{{count}} работают",
       "this_computer": "Этот компьютер",
-      "worker_chats_few": "{{count}} чата исполнителей",
-      "worker_chats_many": "{{count}} чатов исполнителей",
-      "worker_chats_one": "{{count}} чат исполнителя",
-      "worker_chats_other": "{{count}} чата исполнителей",
-      "timeline_in_board": "Хронология каждого проекта — на его доске, в чате этого проекта."
+      "timeline_in_board": "Хронология каждого проекта — на его доске, в чате этого проекта.",
+      "seats_label": "Места",
+      "seats_here": "Места на этом компьютере",
+      "seats_on": "Места на {{name}}"
     },
     "devFleetPage": {
       "pr_state_open": "открыт",

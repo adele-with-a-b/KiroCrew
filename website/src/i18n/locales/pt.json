@@ -15827,14 +15827,11 @@
       "room_pressure": "pressão de memória informada",
       "room_tight": "memória apertada",
       "room_unknown": "memória não medida",
-      "running_many": "{{count}} em execução",
-      "running_one": "{{count}} em execução",
-      "running_other": "{{count}} em execução",
       "this_computer": "Este computador",
-      "worker_chats_many": "{{count}} chats de trabalhadores",
-      "worker_chats_one": "{{count}} chat de trabalhador",
-      "worker_chats_other": "{{count}} chats de trabalhadores",
-      "timeline_in_board": "A linha do tempo de cada projeto fica no próprio Board, no chat desse projeto."
+      "timeline_in_board": "A linha do tempo de cada projeto fica no próprio Board, no chat desse projeto.",
+      "seats_label": "Vagas",
+      "seats_here": "Vagas neste computador",
+      "seats_on": "Vagas em {{name}}"
     },
     "devFleetPage": {
       "pr_state_open": "aberta",

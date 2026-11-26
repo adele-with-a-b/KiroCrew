@@ -15418,12 +15418,11 @@
       "room_pressure": "सिस्टम मेमोरी पर दबाव बता रहा है",
       "room_tight": "मेमोरी कम है",
       "room_unknown": "मेमोरी नापी नहीं गई",
-      "running_one": "{{count}} चल रही है",
-      "running_other": "{{count}} चल रही हैं",
       "this_computer": "यह कंप्यूटर",
-      "worker_chats_one": "{{count}} कार्यकर्ता चैट",
-      "worker_chats_other": "{{count}} कार्यकर्ता चैट",
-      "timeline_in_board": "हर प्रोजेक्ट की टाइमलाइन उसके अपने बोर्ड में है, उसी प्रोजेक्ट की चैट में।"
+      "timeline_in_board": "हर प्रोजेक्ट की टाइमलाइन उसके अपने बोर्ड में है, उसी प्रोजेक्ट की चैट में।",
+      "seats_label": "सीटें",
+      "seats_here": "इस कंप्यूटर पर सीटें",
+      "seats_on": "{{name}} पर सीटें"
     },
     "devFleetPage": {
       "pr_state_open": "खुला",

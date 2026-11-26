@@ -15418,12 +15418,11 @@
       "room_pressure": "Speicherdruck gemeldet",
       "room_tight": "Speicher knapp",
       "room_unknown": "Speicher nicht gemessen",
-      "running_one": "{{count}} läuft",
-      "running_other": "{{count}} laufen",
       "this_computer": "Dieser Computer",
-      "worker_chats_one": "{{count}} Worker-Chat",
-      "worker_chats_other": "{{count}} Worker-Chats",
-      "timeline_in_board": "Die Zeitleiste jedes Projekts steht in seinem eigenen Board, im Chat dieses Projekts."
+      "timeline_in_board": "Die Zeitleiste jedes Projekts steht in seinem eigenen Board, im Chat dieses Projekts.",
+      "seats_label": "Plätze",
+      "seats_here": "Plätze auf diesem Computer",
+      "seats_on": "Plätze auf {{name}}"
     },
     "devFleetPage": {
       "pr_state_open": "offen",
