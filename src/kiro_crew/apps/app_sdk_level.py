@@ -20,7 +20,8 @@ click in its box, a session control opens its own box in another chat, with a re
 the box reads as ``via: 'control'``. Level 18 adds a session control's
 ``composerInsert`` and the SDK's ``useInsertIntoComposer``: a docked box puts text in
 its chat's message box at the caret, beside the draft, and reads nothing back but
-whether it went in.
+whether it went in. Level 19 adds a session control key's ``keepOpen``: each press on
+the open box hands it the key's ``arg`` again, as a new request, and never closes it.
 """
 
-APP_SDK_LEVEL = 18
+APP_SDK_LEVEL = 19

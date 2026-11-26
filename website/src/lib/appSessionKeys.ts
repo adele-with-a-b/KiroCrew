@@ -21,7 +21,8 @@ import type { ResolvedSessionControl } from '../hooks/useSessionControls'
 
 /**
  * Keys an app declares for its session control (`contributes.sessionControls[].keys`):
- * each opens the control's box in the chat on screen, with the key's `arg`.
+ * each opens the control's box in the chat on screen, with the key's `arg`; a
+ * `keepOpen` key pressed on the open box hands it the `arg` again instead of closing it.
  *
  * The person changes them in Settings → Shortcuts → Apps. Storage is the panel
  * toggles' pattern ({@link ./panelToggleShortcuts}): OVERRIDES only, keyed
@@ -50,6 +51,8 @@ export interface DeclaredSessionKey {
   default: Chord | null
   /** The key's `arg`, handed to the box as the request payload; null for none. */
   arg: unknown
+  /** `keepOpen: true`: a press on the open box hands it `arg` again and never closes it. */
+  keepOpen: boolean
 }
 
 /** User overrides by {@link appKeyId}: a chord, or null for a key cleared to none. */
@@ -96,11 +99,12 @@ export function parseDeclaredKeys(raw: unknown): DeclaredSessionKey[] {
   const seen = new Set<string>()
   for (const k of raw.slice(0, MAX_SESSION_CONTROL_KEYS)) {
     if (!k || typeof k !== 'object') continue
-    const { id, label, default: def, arg } = k as Record<string, unknown>
+    const { id, label, default: def, arg, keepOpen } = k as Record<string, unknown>
     if (typeof id !== 'string' || !KEY_ID_RE.test(id) || seen.has(id)) continue
     if (typeof label !== 'string' || !label.trim()) continue
     seen.add(id)
-    out.push({ id, label, default: parseKeyDefault(def), arg: arg === undefined ? null : arg })
+    // Only the JSON `true`, as the install check holds it.
+    out.push({ id, label, default: parseKeyDefault(def), arg: arg === undefined ? null : arg, keepOpen: keepOpen === true })
   }
   return out
 }

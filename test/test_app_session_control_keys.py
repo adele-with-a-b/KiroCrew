@@ -1,5 +1,7 @@
 """A session control's ``keys``: parsed, served to the dashboard, refused at install when bad.
 
+A key's ``keepOpen`` (level 19) is a JSON boolean: served and signed only when ``true``.
+
 The dashboard reads the same fields (``website/src/lib/appSessionKeys.ts``), so the
 grammar of ``default`` and the caps here are the ones it relies on.
 """
@@ -101,6 +103,30 @@ def test_ids_labels_count_and_shape_are_checked():
     too_many = [{"id": f"k{i}", "label": "x"} for i in range(MAX_SESSION_CONTROL_KEYS + 1)]
     assert any(f"at most {MAX_SESSION_CONTROL_KEYS} keys" in e for e in _key_errors(too_many))
     assert _key_errors("Alt+Q") == ["session control contribution questions keys must be an array"]
+
+
+def test_keep_open_is_served_only_when_true_and_signed():
+    """``keepOpen: true`` reaches the dashboard and the signed bytes; absent and
+    ``false`` serve nothing, so a manifest that names neither keeps its payload."""
+    plain = {"id": "next", "label": "Next question", "default": "Ctrl+Shift+N"}
+    absent, off, on = (
+        _mf([k]) for k in (plain, {**plain, "keepOpen": False}, {**plain, "keepOpen": True})
+    )
+    assert _key_errors([{**plain, "keepOpen": True}]) == []
+    assert _key_errors([{**plain, "keepOpen": False}]) == []
+    served = on.to_dict()["contributes"]["sessionControls"][0]["keys"][0]
+    assert served == {**plain, "keepOpen": True}
+    assert "keepOpen" not in absent.to_dict()["contributes"]["sessionControls"][0]["keys"][0]
+    assert off.signing_payload() == absent.signing_payload()
+    assert on.signing_payload() != absent.signing_payload()
+
+
+@pytest.mark.parametrize("bad", ["true", 1, 0, None, [], {}])
+def test_keep_open_that_is_not_a_boolean_is_refused(bad):
+    errors = _key_errors([{"id": "next", "label": "Next", "keepOpen": bad}])
+    assert errors == [
+        "session control contribution questions key next keepOpen must be true or false"
+    ]
 
 
 def test_an_arg_over_the_cap_is_refused():

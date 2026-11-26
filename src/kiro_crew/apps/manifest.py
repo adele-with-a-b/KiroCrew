@@ -518,6 +518,8 @@ def _session_control_key_errors(ctl: SessionControlContribution) -> list[str]:
                     f"{name} key {key.id or '<unnamed>'} arg is {size} bytes as JSON "
                     f"(at most {SESSION_CONTROL_KEY_ARG_MAX_BYTES})"
                 )
+        if not isinstance(key.keepOpen, bool):
+            errors.append(f"{name} key {key.id or '<unnamed>'} keepOpen must be true or false")
     return errors
 
 

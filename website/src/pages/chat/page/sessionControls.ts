@@ -73,8 +73,9 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
   // the new payload.
   // The app keys (a control's `keys`), resolved against Crew's own keys.
   const appKeys = useAppSessionKeys(sessionControls)
-  // Which key opened the box now open, so the same key again closes it. Any
-  // other open of that box (a click, a card, a status go) clears it.
+  // Which key opened the box now open, so the same key again closes it (a
+  // `keepOpen` key never does). Any other open of that box (a click, a card, a
+  // status go) clears it.
   const keyOpen = useRef<{ control: string; keyId: string } | null>(null)
   useEffect(() => {
     if (!openSessionControl || openSessionControl.key !== keyOpen.current?.control) keyOpen.current = null
@@ -101,10 +102,11 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
     return true
   }), [openOnChip])
   // An app key: in the chat on screen, on a chip it draws. Capture phase on the
-  // document, so it runs before the popover stops a key typed inside it, and
-  // after Settings' recorders (capture on the window), which stop the key they
-  // record. A terminal keeps its keys, an open modal dialog keeps the keyboard,
-  // and "Enable shortcuts" off turns these off.
+  // document, so it runs before the popover stops a key typed inside it and
+  // before the message box's own handlers (so it is heard while the person
+  // types there), and after Settings' recorders (capture on the window), which
+  // stop the key they record. A terminal keeps its keys, an open modal dialog
+  // keeps the keyboard, and "Enable shortcuts" off turns these off.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // Only the person's own key: a key event a script dispatches (an app
@@ -121,7 +123,9 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
       // A held key's repeats are claimed too (⌥⇧Q would type Œ into the draft)
       // but do nothing: one press, one open or close.
       if (e.repeat) return
-      if (open?.key === hit.control.key && open.slot === slot && keyOpen.current?.keyId === hit.key.id) {
+      // A `keepOpen` key falls through: the open box is handed its arg again, as
+      // a new request (`seq` rises), and stays mounted.
+      if (!hit.key.keepOpen && open?.key === hit.control.key && open.slot === slot && keyOpen.current?.keyId === hit.key.id) {
         // A docked box closed by its key from inside hands focus back to its
         // chip, as its close button does; focus in a popover is left as before.
         const inDock = !!(document.activeElement as Element | null)?.closest?.('[data-session-control-dock]')

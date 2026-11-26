@@ -71,7 +71,9 @@ class SessionControlKey:
     change it there; ``default`` is only the starting key, and a default one of
     Crew's own keys (or an earlier app's) holds is turned off rather than taken.
     The box reads ``arg`` through ``useSessionControlRequest()`` as
-    ``{via: 'key', payload: arg}``.
+    ``{via: 'key', payload: arg}``. The same key again closes the box it opened,
+    unless ``keepOpen`` is ``true``: then each press hands the open box ``arg``
+    again, as a new request, and the box stays open.
     """
 
     id: str = ""  # slug, unique within the control
@@ -80,6 +82,10 @@ class SessionControlKey:
     # ``validate`` to refuse.
     default: Any = ""
     arg: Any = None  # optional JSON handed to the box; None = none
+    # Optional: a press on the open box hands it ``arg`` again and never closes it.
+    # Only the JSON ``true`` turns it on; anything but a boolean is kept as is for
+    # ``validate`` to refuse.
+    keepOpen: Any = False  # noqa: N815
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"id": self.id, "label": self.label}
@@ -87,6 +93,8 @@ class SessionControlKey:
             d["default"] = self.default
         if self.arg is not None:
             d["arg"] = self.arg
+        if self.keepOpen is True:
+            d["keepOpen"] = True
         return d
 
     @classmethod
@@ -98,6 +106,7 @@ class SessionControlKey:
             label=data.get("label", "") if isinstance(data.get("label", ""), str) else "",
             default=data.get("default", ""),
             arg=data.get("arg"),
+            keepOpen=data.get("keepOpen", False),  # noqa: N815
         )
 
 
