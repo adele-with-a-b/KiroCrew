@@ -13063,6 +13063,7 @@
       },
       "noticeCard": {
         "blocked": "अवरुद्ध",
+        "text_after_quiet_end": "चुपचाप खत्म करने के बाद एजेंट ने जो लिखा",
         "warning": "चेतावनी"
       },
       "crewDispatchNotice": {

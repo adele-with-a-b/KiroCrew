@@ -777,11 +777,14 @@ async def _turn_open(turn: _ChatTurn) -> _Flow | None:
     # ``_pending_steers``, so they do not lift it.
     _person_steered_turn = False
     turn._person_steered_turn = _person_steered_turn
-    # Post-terminal text chunks that arrived while a steer was pending: streamed by
-    # _release_held_text (stream_chunks) at the steer's echo or before the next tool
-    # call, dropped if the turn ends and requeues the steer.
+    # Post-terminal text chunks. Held while a person's steer was pending
+    # (``_held_for_steer``): streamed by _release_held_text (stream_chunks) at the
+    # steer's echo or before the next tool call, dropped if the turn ends and
+    # requeues the steer. Held with none pending: kept as one folded notice row
+    # (_keep_text_after_quiet_end) where the run ends.
     _held_after_terminal: list[Any] = []
     turn._held_after_terminal = _held_after_terminal
+    turn._held_for_steer = False
 
     # When this turn began, for bounding an out-of-band directive claim to it.
     # A directive belongs to the turn that asked for it: a record parked by a turn

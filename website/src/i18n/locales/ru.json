@@ -13645,6 +13645,7 @@
       },
       "noticeCard": {
         "blocked": "Заблокировано",
+        "text_after_quiet_end": "Что агент написал после тихого завершения",
         "warning": "Предупреждение"
       },
       "crewDispatchNotice": {

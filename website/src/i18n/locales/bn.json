@@ -13063,6 +13063,7 @@
       },
       "noticeCard": {
         "blocked": "অবরুদ্ধ",
+        "text_after_quiet_end": "চুপচাপ শেষ করার পর এজেন্ট যা লিখেছে",
         "warning": "সতর্কতা"
       },
       "crewDispatchNotice": {

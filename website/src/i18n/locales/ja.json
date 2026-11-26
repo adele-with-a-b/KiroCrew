@@ -12772,6 +12772,7 @@
       },
       "noticeCard": {
         "blocked": "ブロック済み",
+        "text_after_quiet_end": "静かに終了した後にエージェントが書いた内容",
         "warning": "警告"
       },
       "crewDispatchNotice": {

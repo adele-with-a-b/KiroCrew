@@ -13354,6 +13354,7 @@
       },
       "noticeCard": {
         "blocked": "Bloccato",
+        "text_after_quiet_end": "Cosa ha scritto l'agente dopo aver finito in silenzio",
         "warning": "Avviso"
       },
       "crewDispatchNotice": {

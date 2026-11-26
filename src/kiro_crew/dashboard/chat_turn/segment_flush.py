@@ -99,6 +99,7 @@ if TYPE_CHECKING:
         owned_regenerate_target,
     )
     from kiro_crew.dashboard.chat_turn.steer_queue import _has_user_queued_followup
+    from kiro_crew.dashboard.chat_turn.stream_chunks import _keep_text_after_quiet_end
     from kiro_crew.dashboard.chat_turn.turn_entry import _session_stop_generation, _stop_pressed
     from kiro_crew.dashboard.chat_turn.turn_ledgers import _queue_recovery, _report_consumed
     from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn
@@ -1102,10 +1103,11 @@ async def _turn_settle_answer(turn: _ChatTurn) -> None:
         # turn. Text or a tool call after it is the model's violation, not
         # the runner's — the turn still ends cleanly and recovery stays
         # off (re-arming it would turn a quiet end into a notice card),
-        # so this is reported once and nowhere else. Late text was dropped
-        # at arrival (see _on_text_chunk in stream_chunks), so this count is the
-        # only trace it leaves. Counts only, by contract: no text, no tool
-        # names.
+        # so this is reported once and nowhere else. Late text was held at
+        # arrival (see _on_text_chunk in stream_chunks); what no person's
+        # steer was pending for is kept here as its folded notice row. Counts
+        # only, by contract: no text, no tool names.
+        _keep_text_after_quiet_end(turn)
         logger.warning(
             "Turn-end contract violation for slot %s: %d model event(s) "
             "(text chunks or tool calls) after the terminal directive %r applied.",

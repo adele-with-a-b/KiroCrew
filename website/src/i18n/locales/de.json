@@ -13063,6 +13063,7 @@
       },
       "noticeCard": {
         "blocked": "Blockiert",
+        "text_after_quiet_end": "Was der Agent nach dem stillen Ende geschrieben hat",
         "warning": "Warnung"
       },
       "crewDispatchNotice": {

@@ -1,10 +1,12 @@
 """The dashboard turn's stream of text and thinking chunks: each chunk's live redaction (the
 live-stream and thinking-stream sinks' redactors) and the segment a text chunk extends
-(``_on_text_chunk``, ``_on_thinking_chunk``, ``_release_held_text``), and the mark a
-segment gets when its model message ended on its text (``_on_reply_end``)."""
+(``_on_text_chunk``, ``_on_thinking_chunk``, ``_release_held_text``), the notice row
+that keeps text written after a quiet end (``_keep_text_after_quiet_end``), and the mark
+a segment gets when its model message ended on its text (``_on_reply_end``)."""
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -16,7 +18,11 @@ if TYPE_CHECKING:
         logger,
     )
     from kiro_crew.dashboard.chat_turn.regenerate_swap import note_regenerate_notice
-    from kiro_crew.dashboard.chat_turn.segment_flush import _accumulate_segment_raw, _redact_delta
+    from kiro_crew.dashboard.chat_turn.segment_flush import (
+        _accumulate_segment_raw,
+        _redact_delta,
+        _redact_segment_text,
+    )
     from kiro_crew.dashboard.chat_turn.turn_ledgers import _report_consumed
     from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn
     from kiro_crew.dashboard.chat_turn.turn_reply_seams import _cut_segment, _settle_held
@@ -137,21 +143,29 @@ async def _on_text_chunk(turn: _ChatTurn, event, *, released: bool = False) -> N
     if turn._terminal_directive_applied and not _person_steered_turn and not released:
         # Turn-end contract: the applied terminal directive is the
         # turn's LAST act, so text after it is never the turn's
-        # output. It is not accumulated, streamed or persisted: a
-        # quiet end renders no assistant bubble, whatever the model
-        # goes on to say. The only record is the count reported at
-        # turn end. The common source is not the model's own words
-        # at all: a quiet end leaves the backend's history on a
-        # tool result, the backend's alternation repair fabricates a
-        # self-describing assistant placeholder to fill that gap on
-        # the next request, and the model reads it back as its own
-        # prior reply and repeats it after each later quiet end.
-        # Dropping on the structured signal, not the placeholder's
-        # wording, covers that and every other late text alike.
+        # output. It is not accumulated or streamed: a quiet end
+        # renders no assistant bubble, whatever the model goes on to
+        # say, and the turn-end count reports it. The common source is
+        # not the model's own words at all: a quiet end leaves the
+        # backend's history on a tool result, the backend's
+        # alternation repair fabricates a self-describing assistant
+        # placeholder to fill that gap on the next request, and the
+        # model reads it back as its own prior reply and repeats it
+        # after each later quiet end. Holding on the structured
+        # signal, not the placeholder's wording, covers that and every
+        # other late text alike. The text is held, not dropped: with no
+        # person's steer pending it is kept as one folded notice row
+        # (_keep_text_after_quiet_end), so a real answer is never lost.
         _activity_after_terminal += 1
         turn._activity_after_terminal = _activity_after_terminal
-        if getattr(slot, "_pending_steers", None):
-            # May answer a pending steer: _release_held_text streams it.
+        steer_pending = bool(getattr(slot, "_pending_steers", None))
+        if steer_pending and not turn._held_for_steer:
+            # A person's steer is pending, so what follows may answer it
+            # (_release_held_text streams that). The text held before it
+            # answers no one, so it is kept as its notice first.
+            _keep_text_after_quiet_end(turn)
+            turn._held_for_steer = True
+        if steer_pending or not turn._held_for_steer:
             turn._held_after_terminal.append(event)
         return None
     # The streamed delta is NOT written to the ledger. Redacting each
@@ -245,12 +259,20 @@ async def _release_held_text(turn: _ChatTurn, *, before_tool: bool = False) -> N
     first and the transcript keeps the model's order. Text the model writes before a
     tool call is its work, not the backend's placeholder, so it is kept even if the
     steer is never echoed; only text with no tool call after it stays held.
+
+    Text held with no person's steer pending is never streamed: it goes to its
+    folded notice (:func:`_keep_text_after_quiet_end`) at the same two points.
     """
     _activity_after_terminal = turn._activity_after_terminal
     _held_after_terminal = turn._held_after_terminal
     _person_steered_turn = turn._person_steered_turn
     in_tool_group = turn.in_tool_group
     if not (_held_after_terminal and (_person_steered_turn or before_tool)):
+        return None
+    if not turn._held_for_steer:
+        # No person's steer was pending for this text, so it answers no one: it is
+        # kept as its notice here, where its run ends, in the model's order.
+        _keep_text_after_quiet_end(turn)
         return None
     # The reply to the steer, not a late chunk: it leaves the turn-end count.
     _activity_after_terminal -= len(_held_after_terminal)
@@ -266,6 +288,49 @@ async def _release_held_text(turn: _ChatTurn, *, before_tool: bool = False) -> N
     in_tool_group = _open_tool_group
     turn.in_tool_group = in_tool_group
     return None
+
+
+#: ``meta["notice"]`` marker of the notice row that keeps text written after a quiet
+#: end. Like the compaction cards' markers it is no gateway-notice token: the row's
+#: ``content`` is the model's text, and the dashboard draws it as one line with that
+#: text in a closed fold (``app-sdk/messageRenderers.tsx``) and badges no unread for
+#: it (``hooks/unreadOnAttention.ts``).
+TEXT_AFTER_QUIET_END_NOTICE = "text_after_quiet_end"
+
+#: The backend's alternation placeholder, as the model repeats it after a quiet end
+#: (see :func:`_on_text_chunk`): ``(No assistant response was recorded...)``, in its
+#: long and short forms. No one wrote it, so it is taken out of the kept text; kept,
+#: it would be one folded line per patrol wake that says nothing. It is matched only
+#: where the run starts, where the model repeats it, and never past a newline, so
+#: words the agent wrote that quote it, or follow a copy with no ``)``, are kept. The
+#: one accepted loss: an answer that starts with its exact words, in brackets.
+_ALTERNATION_PLACEHOLDER = re.compile(r"\A(?:\s*\(No assistant response was recorded[^)\n]*\))+")
+
+
+def _keep_text_after_quiet_end(turn: _ChatTurn) -> None:
+    """Save the text held after a quiet end, when no steer was pending for it, as a notice row.
+
+    Called where the held run ends: a person's steer becoming pending, the next
+    tool call, the steer's echo, the turn's end. The chunks are joined and go
+    through the segment's redaction as ONE text, so a credential cut across two
+    chunks is whole when the redactor reads it. The backend's placeholder is
+    taken out first (``_ALTERNATION_PLACEHOLDER``): a run that is only that keeps
+    no row, and the turn-end WARNING still counts it. The row is a ``notice``,
+    never an assistant row: it is not the turn's reply, so the quiet end stays
+    quiet (no Bot report, no mirror post, no reply text), and its marker badges no
+    unread. Text held for a person's steer is left to :func:`_release_held_text`.
+    """
+    held = turn._held_after_terminal
+    if not held or turn._held_for_steer:
+        return
+    text = _ALTERNATION_PLACEHOLDER.sub("", "".join(ev.text or "" for ev in held), count=1).strip()
+    held.clear()
+    if not text:
+        return
+    redacted, _records = _redact_segment_text(turn.slot, text)
+    turn.slot.append(
+        "notice", redacted, "msg msg-info", meta={"notice": TEXT_AFTER_QUIET_END_NOTICE}
+    )
 
 
 async def _on_thinking_chunk(turn: _ChatTurn, event) -> None:

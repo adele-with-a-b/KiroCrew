@@ -22,13 +22,19 @@ export function saveUnreadOnAttention(on: boolean): boolean {
  *  session (`wire_session_recycle_callback` in `dashboard/state.py`). */
 const SESSION_RECYCLED_NOTICE = 'session_recycled'
 
+/** `meta.notice` on the folded row that keeps text a turn wrote after it ended
+ *  quietly (`TEXT_AFTER_QUIET_END_NOTICE` in `dashboard/chat_turn/stream_chunks.py`). */
+export const TEXT_AFTER_QUIET_END_NOTICE = 'text_after_quiet_end'
+
 /** Whether a `chat_message` row badges its session. With the opt-in on, only
  *  a `permission` row does: the turn is parked on the user's approval. The
  *  finished turn (`chat_done`) and a question card badge on their own paths.
  *  A recycle notice never does: it lands in a session that is not running
- *  and has nothing new to read, so the badge would point at nothing. */
+ *  and has nothing new to read, so the badge would point at nothing. Nor does
+ *  the text a turn wrote after its quiet end: the turn said it had nothing to
+ *  report, and that row keeps the text without making it news. */
 export function chatMessageMarksUnread(role: string | undefined, notice?: unknown): boolean {
-  if (notice === SESSION_RECYCLED_NOTICE) return false
+  if (notice === SESSION_RECYCLED_NOTICE || notice === TEXT_AFTER_QUIET_END_NOTICE) return false
   // An MCP server's elicitation is the same kind of wait: the tool is parked
   // on the person until the card is answered.
   return !loadUnreadOnAttention() || role === 'permission' || role === 'elicitation'
