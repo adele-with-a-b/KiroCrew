@@ -200,6 +200,50 @@ async def test_a_refusal_before_the_owner_typed_says_nothing_new(tmp_path, monke
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("opener", ["owner", "wake"])
+async def test_a_refusal_in_his_own_turn_a_peer_joined_never_ends_it(
+    tmp_path, monkeypatch, opener: str
+) -> None:
+    """A peer's steer joins the turn, the owner types "go", the agent reads it and a gate
+    refuses its crew= call (the joined text ended the owner's mark). In the turn he
+    started that is all: no line under his row, no notice telling the agent to end the
+    turn, nothing run again. In a turn he did not start, both still happen."""
+    from kiro_crew.dashboard import session_control as sc
+    from kiro_crew.dashboard import session_deliver
+
+    live = _Conductor(tmp_path, monkeypatch)
+    await live.open_with(opener)
+    outcome = await session_deliver.deliver(
+        live.state,
+        live.slot,
+        "a peer's steer",
+        session_deliver.peer(steer=True, sender="dashboard:other"),
+        admission=sc.containment_meta(live.state, live.slot),
+    )
+    assert outcome == session_deliver.DELIVERED_STEERED
+    live.read("a peer's steer")
+    assert (await live.type(GO)).get("steered") is True
+    live.read(GO)
+
+    status, body = await live.crew_create()
+
+    assert status == 403 and body["code"] == crew.OWNER_UNVERIFIABLE
+    (row,) = [m for m in live.slot.messages if m.get("content") == GO]
+    labelled = owner_steer.STEER_WITHOUT_OWNER_RIGHTS_META in row["meta"]
+    told_to_end = owner_steer.REFUSAL_NOTICE in body["error"]
+    assert not live.slot.task.done(), "the turn runs on"
+    await live.finish()
+    if opener == "owner":
+        assert (labelled, told_to_end) == (False, False), body["error"]
+        assert live.owner_turns() == [] and len(live.turns) == 1, "his turn, not ended"
+    else:
+        assert (labelled, told_to_end) == (True, True), body["error"]
+        (turn,) = live.owner_turns()
+        assert turn == (owner_steer.AGAIN_NOTE + GO, True, "")
+    assert live.slot.queue_depth == 0
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("end", ["stop", "error"])
 async def test_a_stop_or_a_failed_turn_still_brings_it_once(tmp_path, monkeypatch, end) -> None:
     live = _Conductor(tmp_path, monkeypatch, first_end="error" if end == "error" else "complete")

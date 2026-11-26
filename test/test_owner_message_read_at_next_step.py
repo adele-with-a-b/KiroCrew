@@ -158,10 +158,11 @@ async def test_a_steer_into_the_owners_own_turn_says_nothing_new(tmp_path, monke
 async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
     tmp_path, monkeypatch
 ) -> None:
-    """A peer's steer ended the mark; their next message still goes in, and says so.
+    """A peer's steer ended the mark; their next message still goes in.
 
     The peer's steer drew the turn's mark and led with the gateway's join note, so the
-    owner's words go in framed with that mark, at the next step."""
+    owner's words go in framed with that mark, at the next step. The turn is still the
+    one he started, so his row says nothing about a turn he did not start."""
     from kiro_crew.dashboard import session_deliver
 
     live = _Live(tmp_path, monkeypatch)
@@ -174,11 +175,14 @@ async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
         admission=sc.containment_meta(live.state, live.slot),
     )
     assert outcome == session_deliver.DELIVERED_STEERED
+    live.state.broadcast_ws = MagicMock()
 
     receipt = await live.type("Q1a Go.")
 
     assert receipt.get("steered") is True
-    assert _row(live.slot, "Q1a Go.")["meta"][STEER_WITHOUT_OWNER_RIGHTS_META] is True
+    assert STEER_WITHOUT_OWNER_RIGHTS_META not in _row(live.slot, "Q1a Go.")["meta"]
+    (push,) = _steer_pushes(live.state)
+    assert STEER_WITHOUT_OWNER_RIGHTS_META not in push.get("meta", {}), "nor in open tabs"
     peer_wire, owner_wire = [call.args[0] for call in live.agent.steer.await_args_list]
     assert _marked_as_the_owners(owner_wire, "Q1a Go."), owner_wire
     mark = owner_wire.split(":", 1)[0].rsplit(" ", 1)[1]

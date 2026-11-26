@@ -660,6 +660,8 @@ async def steer_into_running_turn(
         # once, as the owner's own turn with their rights (``responsive_chat.accept``).
         logger.info("slot %s runs a turn its owner did not send; queueing first", slot.key)
         return SteerUnavailable(steer_refusal.NOT_OWNERS_TURN)
+    # His own turn, a note joined: nothing about his message is unusual for him.
+    without_owner_rights = without_owner_rights and not owner_steer.owners_own_turn(slot)
     if owner_steer.unannounced(
         slot, owner_origin=owner_origin, user_origin=user_origin, channel_origin=channel_origin
     ):

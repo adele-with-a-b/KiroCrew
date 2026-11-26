@@ -4119,8 +4119,11 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   stays: the owner's words take nothing from the wake, so its remote work goes on.
   The row and its `steer_push` carry `meta.steerWithoutOwnerRights` (owner's own
   dashboard request, not through a channel, running turn without `_turn_owner_sent`,
-  slot not opened for another caller), and the transcript says under the bubble
-  that it runs there without their rights and runs again as their own turn if a step
+  slot not opened for another caller, turn not the owner's own: in his own turn that
+  another sender's text joined, `owners_own_turn`, his row says nothing and the steer
+  is not recorded, so a refusal there adds no notice and nothing runs again), and
+  the transcript says under the bubble that it runs there without their rights and
+  runs again as their own turn if a step
   needs them (it does not name `crew=`: a patrol wake the operator let use `crew=`
   is admitted to it). Every gate arm that refuses for want of the owner's or the
   person's mark completes its refusal through ONE helper,
