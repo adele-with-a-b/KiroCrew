@@ -81,9 +81,12 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
     sidebarRows, slotFilter, slotFolders, sortKey, splitStale, staleExpanded, startsAutomaticSection,
     subagentApprovalCounts, unfiledAboveFolders, ungroupedSlots: ungroupedAll, unreadSet, visibleRootFolders, pinnedBandCaption } = shell
   // The "Needs you" group draws on top of every list lane; an unfiled waiting chat is
-  // drawn there instead of in the root bucket, a filed one in its folder as well.
+  // drawn there instead of in the root bucket, a filed one in its folder as well, and a
+  // code-channel worker the root bucket folds stays folded under its conductor too.
   const { renderNeedsGroup, withoutGroup } = createNeedsGroup(shell)
-  const ungroupedSlots = withoutGroup(ungroupedAll)
+  const rootFoldsCrews = !(listNarrowed || slotFilter.trim() !== '')
+  const keepShownWorker = (w: Slot) => isActiveRow(w) || pinned.has(w.key)
+  const ungroupedSlots = withoutGroup(ungroupedAll, rootFoldsCrews ? keepShownWorker : undefined)
   const flatRest = withoutGroup(flatSlots)
   // True while actively dragging a session that currently lives in a folder.
   // Used to reveal the empty-state drop placeholder inside the "No folder"
@@ -116,8 +119,8 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
     // Slack code channel crews among the ungrouped rows fold
     // under their conductor, as they do inside a folder.
     const rootFold = foldCodeChannelCrews(ungroupedSlots, rootSplit.fresh, rootSplit.stale, {
-      narrowed: listNarrowed || slotFilter.trim() !== '', expanded: conductorExpanded,
-      keepShown: w => isActiveRow(w) || pinned.has(w.key),
+      narrowed: !rootFoldsCrews, expanded: conductorExpanded,
+      keepShown: keepShownWorker,
       signals: crewSignalsFrom({ isRunning: sidebarRows.isRunning, subagentApprovalCounts, unreadSet }),
     })
     const freshRootRaw = rootFold.fresh

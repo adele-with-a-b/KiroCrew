@@ -121,7 +121,6 @@ import { askAppConfirm } from '../lib/appConfirm'
 import { crewWaitingApprovals } from './chat/command-center/model'
 import { useNeedsGroupRows, type NeedsGroup } from './chat-sidebar/needsGroup'
 import { landOnAsk } from './chat-sidebar/needsYouLanding'
-import { codeChannelCrews } from './chat-sidebar/codeChannelCrew'
 export { SIDEBAR_MIN, SIDEBAR_MAX } from './chat/sidebarWidth'
 
 /**
@@ -619,18 +618,10 @@ function ChatSidebar({
   const folderRowsDrawn = shownLane === 'tree' || shownLane === 'board'
   // The "Needs you" group on top of the list lanes (./chat-sidebar/needsGroup). Not on
   // the board, whose columns are the grouping, nor while a search ranks the list.
-  // A code-channel crew's worker stays folded under its conductor, whose line speaks
-  // for it (`foldCodeChannelCrews`, which folds only while nothing narrows the list).
-  const needsCandidates = useMemo(() => {
-    if (listNarrowed || slotFilter.trim() !== '') return flatSlots
-    const folded = new Set<string>()
-    for (const workers of codeChannelCrews(flatSlots).values()) {
-      for (const w of workers) if (w.key !== activeSlot && !pinned.has(w.key)) folded.add(sessionRowIdentity(w))
-    }
-    return folded.size ? flatSlots.filter(s => !folded.has(sessionRowIdentity(s))) : flatSlots
-  }, [flatSlots, listNarrowed, slotFilter, activeSlot, pinned])
+  // Every row the rule calls waiting joins, a code-channel crew's folded worker
+  // included, so the group counts what the tab title and the filter badge count.
   const needsGroupRows = useNeedsGroupRows({
-    rows: needsCandidates, needsOf: sidebarRows.needsOf, enabled: !boardLaneActive && !searchRanked,
+    rows: flatSlots, needsOf: sidebarRows.needsOf, enabled: !boardLaneActive && !searchRanked,
     frozen: listHovered || dragFrozen || nativeSessionDrag !== null,
   })
   const needsNarrows = activeFilters.has('needs_you') && !pausedFilters.has('needs_you')

@@ -87,10 +87,10 @@ const slots = [
   { key: 'trip', title: 'Trip planner', running: false, messages: 4, agent: 'kirocrew', last_message: 'Saved the plan', last_ts: at(8) },
 ] as unknown as ChatSlot[]
 
-function makeStore() {
+function makeStore(list: ChatSlot[] = slots) {
   return createTestStore({
     dashboard: {
-      status: {}, connected: true, slots, approvalMode: 'normal',
+      status: {}, connected: true, slots: list, approvalMode: 'normal',
       channelTrusted: false, refreshTrigger: 0, unreadSlots: ['trip'], updateProgress: null,
       slotsLoaded: true,
       subagentRunning: {}, subagentDetails: {}, subagentText: {},
@@ -102,16 +102,16 @@ function makeStore() {
   })
 }
 
-function renderSidebar() {
+function renderSidebar(list: ChatSlot[] = slots) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   qc.setQueryData(['chat-folders'], [])
   return render(
     <QueryClientProvider client={qc}>
-      <Provider store={makeStore()}>
+      <Provider store={makeStore(list)}>
         <ThemeProvider>
           <MemoryRouter>
             <ChatSidebar
-              slots={slots as never} activeSlot={null} unreadSlots={['trip']}
+              slots={list as never} activeSlot={null} unreadSlots={['trip']}
               history={[]} historyHasMore={false} defaultAgent="" installedAgents={[]}
             />
           </MemoryRouter>
@@ -198,5 +198,32 @@ describe('chat sidebar — Needs you', () => {
 describe('tab title count', () => {
   it('counts the chats that wait on the person, never the unread ones', () => {
     expect(selectChatsWaitingOnYou(makeStore().getState())).toBe(3)
+  })
+})
+
+describe('a code-channel crew', () => {
+  // A code-channel conductor and the worker it dispatched, folded under it; the
+  // worker waits on a tool approval. The summaries are the gateway's, as PR 94's
+  // `serialize_slots` writes them: the worker's own, none on the conductor.
+  const crew = [
+    { key: 'lead', title: 'Lockfile audit lead', running: false, messages: 4, agent: 'kirocrew', last_ts: at(3), needs_you: null,
+      code_channel: { channel_name: 'audit', status: 'active', web_url: '' } },
+    { key: 'worker', title: 'Lockfile audit worker', running: false, messages: 4, agent: 'kirocrew', last_ts: at(9),
+      parent: { slot: 'lead', key: 'lead' }, pending_approval: true,
+      needs_you: { count: 1, oldest_ts: (NOW - 9 * 60_000) / 1000, first_words: 'Bash · read the lockfile', row_id: 'm-r1', kinds: ['approval'] } },
+    { key: 'trip', title: 'Trip planner', running: false, messages: 4, agent: 'kirocrew', last_message: 'Saved the plan', last_ts: at(8), needs_you: null },
+  ] as unknown as ChatSlot[]
+
+  it("draws a folded worker's wait in the group, so the group, the badge and the tab title agree", async () => {
+    const { container } = renderSidebar(crew)
+    const header = await waitFor(() => {
+      const h = container.querySelector<HTMLElement>('[data-testid="needs-you-group-header"]')
+      expect(h).toBeTruthy()
+      return h!
+    })
+    expect(header.getAttribute('aria-label')).toBe('Needs you: 1 chat waits on you')
+    expect([...container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['worker'])
+    expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('1')
+    expect(selectChatsWaitingOnYou(makeStore(crew).getState())).toBe(1)
   })
 })
