@@ -235,6 +235,40 @@ def test_critical_rules_require_a_live_read_before_any_status_claim():
         assert _LIVE_STATE_RULE in rules
 
 
+def test_a_question_is_marked_as_an_ask_only_when_it_can_be_answered_now(tmp_path, monkeypatch):
+    """An open ask keeps its label at a line's start; one parked on own work goes mid-line.
+
+    The sidebar counts a question label only where it opens a line, and every
+    reply that ends in an [OPTIONS:] line (``dashboard/needs_you.py``), and it
+    reads only the newest reply. So a question still waiting on the owner is
+    asked again with its label, and only one waiting on the agent's own work is
+    named mid-sentence.
+    """
+    from kiro_crew import context as ctx_mod
+    from kiro_crew.context_assembly.output_contract import _critical_rules_for
+
+    clauses = (
+        "only for an ask the user can answer now",
+        "A question still waiting on the user is asked again until they answer: "
+        "open a line with its label.",
+        "A question that waits on your own work goes in the middle of a sentence, "
+        "never at the start of a line",
+        "a reply that asks the user nothing has no [OPTIONS:] line",
+    )
+    monkeypatch.setattr(ctx_mod, "_INCLUDE_CREW_CONTEXT_CACHE", {})
+    builder = ContextBuilder(
+        memory=MemoryStore(workspace=tmp_path / "ws"),
+        skills=SkillsLoader(skills_path=tmp_path / "skills", install_builtins=False),
+    )
+    built = builder.build_session_context(agent="kirocrew", session_key="dashboard:a")
+    for clause in clauses:
+        assert clause in _critical_rules_for("dashboard:a", "dashboard")
+        assert clause in built
+        assert clause in ctx_mod._CRITICAL_RULES_CHANNEL
+        # A sub-agent's reply goes to its parent, which draws no sidebar row.
+        assert clause not in ctx_mod._CRITICAL_RULES_SUBAGENT
+
+
 @pytest.mark.parametrize(
     ("agent", "session_key"),
     [
