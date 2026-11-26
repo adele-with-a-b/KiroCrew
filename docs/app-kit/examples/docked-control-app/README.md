@@ -21,3 +21,8 @@ Then open a chat and click the Notes chip under the message box (or press the
 key). Type a note, then scroll and click the chat: the box stays. Close it with
 the chip, the × in its header, Escape while typing in it, or, when the key
 opened it, the key again.
+
+The box also lists the notes you wrote in other chats. A click on one opens the
+box in that chat (`useSessionControlGo`, App Kit seam level 17; see
+[Session Control Go](../../api-reference.md#session-control-go)), where it says it
+came from another chat and offers the way back.

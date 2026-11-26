@@ -656,6 +656,9 @@ export type { SessionControlRequest, SessionControlOpenVia } from './sessionCont
 // A session control scrolls its own chat to one of its messages, with the Back pill (level 13).
 export { useSessionControlJump } from './sessionControlRequest'
 export type { SessionControlJumpResult } from './sessionControlRequest'
+// A session control opens its own box in another chat, on a click in it (level 17).
+export { useSessionControlGo } from './sessionControlRequest'
+export type { SessionControlGoResult } from './sessionControlRequest'
 // The way back after a status item's go sent the operator to this tab's chat.
 // Feature-detected by name, as `usePanelTabRequest` is.
 export { useStatusGoBack } from './statusGoBack'

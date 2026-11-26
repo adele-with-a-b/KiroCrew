@@ -14,18 +14,19 @@ import { useEffect, useRef } from 'react'
 
 import { sendAppNav, type AppOpenTarget, type OpenRefusal } from '../../linkPreview/linkPreviewNav'
 import { requestStatusCard } from '../../lib/statusCardRequest'
-import { getActiveStatusGo, parseStatusCardParam, setActiveStatusGo, useActiveStatusGo } from '../../lib/statusGo'
+import { getActiveStatusGo, parseStatusCardParam, setActiveStatusGo, useActiveStatusGo, type StatusGoVia } from '../../lib/statusGo'
 
 /** Open `target` of `appName` in chat `slot` with `arg`: true when the chat took it, else why not. */
-export type OpenAppTarget = (slot: string, appName: string, target: AppOpenTarget, arg: unknown) => true | OpenRefusal
+export type OpenAppTarget = (slot: string, appName: string, target: AppOpenTarget, arg: unknown, via?: StatusGoVia) => true | OpenRefusal
 
 /**
  * The same hand-off a link-preview card's open uses: the chat page takes it
  * only for the chat on screen and a tab or control `appName` declares, keeps
  * `arg` for `usePanelTabRequest()` / `useSessionControlRequest()`, and opens it.
+ * `via` is who sent the go: a status item (the default) or the app's own box.
  */
-export const openStatusTarget: OpenAppTarget = (slot, appName, target, arg) =>
-  sendAppNav({ kind: 'open', slot, appName, target, payload: arg, via: 'status' })
+export const openStatusTarget: OpenAppTarget = (slot, appName, target, arg, via) =>
+  sendAppNav({ kind: 'open', slot, appName, target, payload: arg, via: via ?? 'status' })
 
 /** How often, and for how long, a landed go retries an open the chat could
  *  not take yet (its tab or app list is still loading). */
@@ -71,7 +72,10 @@ export function useStatusLinks({ statusParam, activeSlot, open }: {
         setActiveStatusGo({ ...go, pending: null })
         return true
       }
-      const r = openRef.current(go.to, go.appName, pending.target, pending.arg)
+      // A status go names no `via`: its open is made exactly as before.
+      const r = pending.via
+        ? openRef.current(go.to, go.appName, pending.target, pending.arg, pending.via)
+        : openRef.current(go.to, go.appName, pending.target, pending.arg)
       if (r !== true) {
         refusal = r
         return false

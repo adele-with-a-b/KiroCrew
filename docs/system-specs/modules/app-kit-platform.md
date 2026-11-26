@@ -6711,6 +6711,53 @@ Writers: `apps/manifest_session_controls.py`, `apps/manifest_contributes.py`,
 `website/src/test/ChatInput.sessionControls.test.tsx`. Example:
 `docs/app-kit/examples/docked-control-app/`.
 
+## 18s. A session control opens its own box in another chat (seam level 17)
+
+Only a status item's row or go (§18l) could send the person to another chat and
+open a control's box there; a box itself could act only in its own chat (§18n's
+listener takes only the chat on screen, §18o's jump only the box's own chat). An
+app whose box lists what waits in other chats could not take the person to one.
+`useSessionControlGo()` (`app-sdk/sessionControlRequest.ts`) is that call, on the
+status go's own route, with no manifest field: a control that never calls it
+changes nothing.
+
+- **The call.** Inside a `SessionControlRequestScope` it returns `go(sid,
+  payload?)`, `null` outside one. The app and control are the scope's (`<app>:<id>`,
+  split at the first `:`, as an app name holds none), never an argument, so a box
+  opens only itself. `sid` is a slot key or `dashboard:<slot>`; after the prefix is
+  dropped it must pass `isCrewLinkKey` (`bad_chat`). `payload` must serialize to JSON
+  of at most `MAX_TARGET_ARG_BYTES` (4 KB), the status `arg` cap (`not_json`,
+  `too_large`); it is handed over as a JSON copy. These are checked first, so a
+  refused call spends no click.
+- **The click.** The scope wraps the app's module, and nothing of the host's, in a
+  `display: contents` box whose `onClickCapture` records a real click
+  (`useClickGrant`, the grant `useOpenFile` spends, §43): one go per click, within
+  `CLICK_GRANT_MS`. Without one the call is `no_click` and nothing moves. A click
+  can serve one go and one file open; the two grants are separate.
+- **The go.** `useStatusGo()(appName, {sid, sessionControl: id, arg}, 'control')`:
+  the same guarded leave, reopen of a closed chat, way back (`useStatusGoBack`) and
+  ending as a status row's. The go's `pending` carries `via: 'control'`;
+  `useStatusLinks` hands it to `openStatusTarget`, which sends the composer's open
+  with that `via` (`'status'` when the go names none, so a status row reads as
+  before). The landed chat's listener (`useComposerSessionControls`) checks the
+  control is drawn there (`not_declared`, `not_on_screen`) and stores the request
+  with `via: 'control'`. `{ ok: true }` means the switch began; the person can still
+  keep an unsaved draft and stay.
+- **Bounds.** The same as a status row's go: the person's own chats, behind the
+  person's click and the unsaved-draft guard, opening only the calling app's own
+  control. Like every in-document SDK check it is a guardrail, not a boundary
+  (`docs/architecture/app-platform-trust-model.md`).
+
+Not covered: a go that leaves the current box open in the chat it left (a chat
+switch closes it there, as before), and opening another app's control.
+
+Writers: `website/src/app-sdk/sessionControlRequest.ts`, `website/src/app-sdk/index.ts`,
+`website/public/vendor/kirocrew-app-sdk.mjs`, `website/src/lib/statusGo.ts`,
+`website/src/pages/chat/useStatusLinks.ts`, `website/src/linkPreview/linkPreviewNav.ts`,
+`apps/app_sdk_level.py`, `website/src/app-sdk/sdkLevel.ts`. Tests:
+`website/src/test/sessionControlGo.test.tsx`, `website/src/test/sessionControlOpen.test.tsx`,
+`website/src/test/appSdkTypes.test.ts`. Example: `docs/app-kit/examples/docked-control-app/`.
+
 ## 19. Spec Builder's backend is composed by lifecycle owner
 
 Spec Builder's backend carries more orchestration than a typical app: agent turns

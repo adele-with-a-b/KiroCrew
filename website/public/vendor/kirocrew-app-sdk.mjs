@@ -35,6 +35,8 @@ export const {
   useOpenFile,
   // A session control scrolls its own chat to one of its messages (level 13).
   useSessionControlJump,
+  // A session control opens its own box in another chat, on a click in it (level 17).
+  useSessionControlGo,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.

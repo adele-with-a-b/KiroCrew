@@ -11,7 +11,9 @@
  * own chat.
  *
  * The same scope gives a control `useSessionControlJump()`: scroll its own chat
- * to one of its messages, through the route a card's `jumpTo` takes.
+ * to one of its messages, through the route a card's `jumpTo` takes; and
+ * `useSessionControlGo()`: open its own box in another chat, on a click in it,
+ * through the route a status item's go takes.
  *
  * @module app-sdk/sessionControlRequest
  */
@@ -19,11 +21,15 @@ import { createContext, createElement, useCallback, useContext, useMemo, useSync
 import type { PanelTabRequest } from './panelTabRequest'
 import { sendAppNav } from '../linkPreview/linkPreviewNav'
 import { readMessageRef } from '../linkPreview/linkPreviewProtocol'
+import { useClickGrant } from '../components/appFileOpen'
+import { isCrewLinkKey } from '../lib/crewDeepLink'
+import { MAX_TARGET_ARG_BYTES, useStatusGo } from '../lib/statusGo'
 
 /** Where an open came from: a click on the app's own link-preview card, a
- *  status row or go, or one of the control's `keys` (its `arg` is the payload).
+ *  status row or go, one of the control's `keys` (its `arg` is the payload), or
+ *  the control's own box in another chat (`useSessionControlGo`).
  *  One shape for every source, so a new one is a new `via`, not a new request. */
-export type SessionControlOpenVia = 'link' | 'status' | 'key'
+export type SessionControlOpenVia = 'link' | 'status' | 'key' | 'control'
 
 /** One open request: `seq` grows with every open, so the same payload sent twice still reads as new. */
 export interface SessionControlRequest extends PanelTabRequest {
@@ -35,6 +41,12 @@ interface Where {
   sessionKey: string
   /** `<appName>:<id>`, the control's composite key. */
   control: string
+}
+
+/** What the scope gives the hooks below: where, and the box's click grant. */
+interface Scope extends Where {
+  /** True once per real click in the app's own module, within `CLICK_GRANT_MS` of it. */
+  takeClick: () => boolean
 }
 
 const requests = new Map<string, SessionControlRequest>()
@@ -71,11 +83,20 @@ function subscribe(fn: () => void): () => void {
   return () => { listeners.delete(fn) }
 }
 
-const WhereContext = createContext<Where | null>(null)
+const WhereContext = createContext<Scope | null>(null)
 
-/** Host only: the chat and control the app module below is mounted for. */
+/** Host only: the chat and control the app module below is mounted for. It wraps
+ *  the module (and nothing of the host's) in a `display: contents` box that
+ *  records a real click for `useSessionControlGo`, as `AppFileOpenRoot` does for
+ *  `useOpenFile`: the host's header and retry button never grant. */
 export function SessionControlRequestScope({ sessionKey, control, children }: Where & { children: ReactNode }) {
-  return createElement(WhereContext.Provider, { value: { sessionKey, control } }, children)
+  const { record, take } = useClickGrant()
+  const value = useMemo(() => ({ sessionKey, control, takeClick: take }), [sessionKey, control, take])
+  return createElement(
+    WhereContext.Provider,
+    { value },
+    createElement('div', { 'data-session-control-scope': '', style: { display: 'contents' }, onClickCapture: record }, children),
+  )
 }
 
 /** The request this session control's popover was opened with, or null: opened by
@@ -123,4 +144,51 @@ export function useSessionControlJump(): ((message: { ts: string; id?: string })
       if (taken !== true) resolve({ ok: false, reason: 'not_on_screen' })
     })
   }, [where])
+}
+
+/** How a go to the control's box in another chat started. `ok` means the switch
+ *  began: the person may still keep an unsaved draft and stay. `no_click`: no real
+ *  click in this box just before the call. `bad_chat`: `sid` is not a chat key.
+ *  `not_json` / `too_large`: `payload` does not serialize, or is over 4 KB as JSON. */
+export type SessionControlGoResult =
+  | { ok: true }
+  | { ok: false; reason: 'no_click' | 'bad_chat' | 'not_json' | 'too_large' }
+
+const SESSION_KEY_PREFIX = 'dashboard:'
+
+/** Open THIS control's box in chat `sid` (its slot key, or its session key
+ *  `dashboard:<slot>`), handing it `payload` as a request with `via: 'control'`,
+ *  the way a status item's row does: behind the unsaved-draft guard, reopening a
+ *  closed chat, with `useStatusGoBack()` as the way back. Only on a real click in
+ *  this box, one go per click. Null outside a session control. */
+export function useSessionControlGo(): ((sid: string, payload?: unknown) => SessionControlGoResult) | null {
+  const where = useContext(WhereContext)
+  const go = useStatusGo()
+  return useMemo(() => {
+    // The host builds the key as `<appName>:<id>`, and an app name holds no `:`.
+    const cut = where ? where.control.indexOf(':') : -1
+    if (!where || cut <= 0) return null
+    const appName = where.control.slice(0, cut)
+    const id = where.control.slice(cut + 1)
+    return (sid: string, payload?: unknown): SessionControlGoResult => {
+      const key = typeof sid === 'string' && sid.startsWith(SESSION_KEY_PREFIX) ? sid.slice(SESSION_KEY_PREFIX.length) : sid
+      if (!isCrewLinkKey(key)) return { ok: false, reason: 'bad_chat' }
+      let arg: unknown
+      if (payload !== undefined) {
+        let json: string | undefined
+        try {
+          json = JSON.stringify(payload)
+        } catch {
+          return { ok: false, reason: 'not_json' }
+        }
+        if (json === undefined) return { ok: false, reason: 'not_json' }
+        if (new TextEncoder().encode(json).length > MAX_TARGET_ARG_BYTES) return { ok: false, reason: 'too_large' }
+        arg = JSON.parse(json) as unknown
+      }
+      // Last, so a refused call spends no click.
+      if (!where.takeClick()) return { ok: false, reason: 'no_click' }
+      go(appName, { sid: key, sessionControl: id, ...(arg !== undefined ? { arg } : {}) }, 'control')
+      return { ok: true }
+    }
+  }, [where, go])
 }
