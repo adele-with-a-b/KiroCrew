@@ -10800,6 +10800,7 @@
       "board_conductor_hint": "rot nach {{age}}",
       "board_section_none": "keine",
       "board_asks": "Fragt: {{what}}",
+      "board_reply": "Antworten",
       "board_age_of": "{{age}} von {{estimate}}",
       "board_in_all": "{{total}} insgesamt",
       "board_steps_strip": "Storys pro Schritt",

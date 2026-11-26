@@ -11052,6 +11052,7 @@
       "board_conductor_hint": "vermelho após {{age}}",
       "board_section_none": "nenhum",
       "board_asks": "Pergunta: {{what}}",
+      "board_reply": "Responder",
       "board_age_of": "{{age}} de {{estimate}}",
       "board_in_all": "{{total}} no total",
       "board_steps_strip": "Histórias por etapa",

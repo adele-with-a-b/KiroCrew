@@ -10800,6 +10800,7 @@
       "board_conductor_hint": "{{age}} পরে লাল",
       "board_section_none": "কিছু নেই",
       "board_asks": "জিজ্ঞেস করছে: {{what}}",
+      "board_reply": "উত্তর দাও",
       "board_age_of": "{{estimate}}-এর মধ্যে {{age}}",
       "board_in_all": "মোট {{total}}",
       "board_steps_strip": "প্রতি ধাপে স্টোরি",

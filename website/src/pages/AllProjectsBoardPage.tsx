@@ -53,9 +53,10 @@ import {
   type AllProjects, type AllProjectsStory, type ProjectBoard, type ProjectLive, type ProjectRow, type ProjectSlotRow, type ProjectSteps,
 } from '../lib/allProjectsBoard'
 import BoardViewSwitch, { type BoardView } from '../components/board/BoardViewSwitch'
-import { BoardRow, MOVE_LABEL, MoveMark, StoryRow } from '../components/board/BoardRow'
-import { BoardRows, BoardSection, BoardSections } from '../components/board/BoardSection'
+import { BoardRow, MOVE_LABEL, MoveMark, StoryRow, joinParts } from '../components/board/BoardRow'
+import { BoardColumn, BoardRows, BoardSection } from '../components/board/BoardSection'
 import StoryFacts, { storyHasFacts } from '../components/board/StoryFacts'
+import MergedRing from '../components/board/MergedRing'
 import CapacityLine from '../components/board/CapacityLine'
 import { crewApprovalRequests } from '../components/crew/CrewApprovalCards'
 import { RUN_WORD, conductorModeCounts, firstSentence, useMinuteClock } from './chat/command-center/ConductorModeCrewPanel'
@@ -96,7 +97,7 @@ function ProjectTable({ projects }: { projects: readonly ProjectRow[] }) {
   const num = `${head} text-right`
   const wide = 'hidden md:table-cell'
   return (
-    <div className="rounded-lg border border-border overflow-x-auto">
+    <div className="crew-board-card rounded-xl border border-border overflow-x-auto">
       <table className="w-full text-[13px]" aria-label={i18nT('pages.allProjectsBoard.projects_label')} data-testid="board-projects">
         <thead>
           <tr>
@@ -120,7 +121,7 @@ function ProjectTable({ projects }: { projects: readonly ProjectRow[] }) {
                 </th>
                 <td className={`px-3 py-2 ${wide} ${quiet ? 'text-muted' : 'text-text/85'}`} data-testid="board-project-conductor">{conductorWord(p)}</td>
                 <td className={`px-3 py-2 ${wide} tabular-nums`} data-testid="board-project-merged">
-                  {p.stories > 0 ? i18nT('components.crewMode.board_count_of', { n: p.merged, total: p.stories }) : ''}
+                  {p.stories > 0 && <span className="inline-flex items-baseline gap-1"><MergedRing done={p.merged} total={p.stories} />{i18nT('components.crewMode.board_count_of', { n: p.merged, total: p.stories })}</span>}
                 </td>
                 <td className="px-3 py-2 text-right" data-testid="board-project-needs-you"><Count n={p.needsYou} tone="warn" /></td>
                 <td className="px-3 py-2 text-right" data-testid="board-project-stuck"><Count n={p.stuck} tone="danger" /></td>
@@ -168,6 +169,7 @@ function StoryCell({ s, open, labelled = true }: { s: AllProjectsStory; open: Op
 function MovesView({ board, open, openRoot }: { board: AllProjects; open: OpenStory; openRoot: (root: string) => void }) {
   const shown = board.upNext.slice(0, UP_NEXT_SHOWN)
   const folded = board.upNext.length - shown.length
+  const upNextEstimates = board.upNext.map(u => estimateMinutes(u.item)).filter((m): m is number => m !== undefined)
   // The right bar's Moves: a story whose approval has its own card is that card.
   const by = storiesByMove(board.moves)
   return (
@@ -177,7 +179,7 @@ function MovesView({ board, open, openRoot }: { board: AllProjects; open: OpenSt
         const asks = move === 'needs_you' ? board.asks : []
         const count = rows.length + asks.reduce((n, a) => n + (a.conductor ? 1 : 0) + a.approvals, 0)
         return (
-          <BoardSections key={move} testId={`all-projects-column-${move}`}>
+          <BoardColumn key={move} testId={`all-projects-column-${move}`}>
             <BoardSection id={move} name={i18nT(MOVE_LABEL[move])} count={count} hint={moveHint(move)} testId={`all-projects-section-${move}`}>
               <BoardRows>
                 {asks.map(a => (
@@ -191,10 +193,10 @@ function MovesView({ board, open, openRoot }: { board: AllProjects; open: OpenSt
                 {rows.map(s => <StoryCell key={`${s.root}:${s.item.item_id}`} s={s} open={open} />)}
               </BoardRows>
             </BoardSection>
-          </BoardSections>
+          </BoardColumn>
         )
       })}
-      <BoardSections testId="all-projects-column-up-next">
+      <BoardColumn testId="all-projects-column-up-next">
         <BoardSection id="up_next" name={i18nT('components.crewMode.board_up_next')} count={board.upNext.length} testId="all-projects-section-up-next">
           <BoardRows>
             {shown.map(u => {
@@ -209,9 +211,12 @@ function MovesView({ board, open, openRoot }: { board: AllProjects; open: OpenSt
               )
             })}
           </BoardRows>
-          {folded > 0 && <p className="px-3 py-2 text-[12px] text-muted" data-testid="all-projects-up-next-more">{i18nT('components.crewMode.board_more', { count: folded })}</p>}
+          {/* The estimates' total only when the ledger holds some: nothing made up. */}
+          {folded > 0 && <p className="px-0.5 pt-2 text-[12px] text-muted tabular-nums" data-testid="all-projects-up-next-more">
+            {joinParts([i18nT('components.crewMode.board_more', { count: folded }), upNextEstimates.length ? i18nT('components.crewMode.board_in_all', { total: fmtEstimate(upNextEstimates.reduce((a, b) => a + b, 0)) }) : ''])}
+          </p>}
         </BoardSection>
-      </BoardSections>
+      </BoardColumn>
     </div>
   )
 }
@@ -224,8 +229,8 @@ function StepsBand({ band, project, stories, open }: { band: ProjectSteps; proje
   const upNext = band.upNext.slice(0, 3)
   const cell = 'min-w-0 border-t border-border md:border-t-0 md:border-l'
   return (
-    <section className="rounded-lg border border-border overflow-hidden" data-testid="all-projects-band" data-root={band.root}>
-      <h3 className="flex flex-wrap items-baseline gap-x-3 px-3 py-2 bg-bg-hover/50 border-b border-border">
+    <section className="crew-board-card rounded-xl border border-border overflow-hidden" data-testid="all-projects-band" data-root={band.root}>
+      <h3 className="crew-board-band flex flex-wrap items-baseline gap-x-3 px-3 py-2 border-b border-border">
         <Link to={chatPath(band.root)} className="text-[13px] font-semibold text-text hover:underline [overflow-wrap:anywhere]">{band.project}</Link>
         {project && <span className="text-[12px] text-muted">{conductorWord(project)}</span>}
         {project && project.stories > 0 && <span className="text-[12px] text-muted tabular-nums">{i18nT('components.crewMode.plan_epic_progress', { done: project.merged, total: project.stories })}</span>}
@@ -378,12 +383,13 @@ export function AllProjectsBoard() {
 export default function AllProjectsBoardPage() {
   const [params] = useSearchParams()
   if ((params.get('conductor') ?? '').trim()) return <CrewBoardPage />
+  // The Board's own surfaces (`.crew-board`) behind the whole page, header included.
   return (
-    <>
+    <div className="crew-board flex-1 min-h-0 flex flex-col">
       <PageHeader title={i18nT('pages.crewBoard.page_title')} />
       <div className="px-4 pb-8 overflow-y-auto flex-1 min-h-0">
         <AllProjectsBoard />
       </div>
-    </>
+    </div>
   )
 }

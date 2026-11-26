@@ -1,10 +1,12 @@
 /** The Board's one row shape, the same in every view: a state mark, the title, and
  *  the age at the right edge in even-width digits; then one line saying why; then
- *  one quiet line of facts (worker and machine, PR, checks, sub-tasks). Rows and
- *  hairlines, not cards: a row draws no box, and the list it sits in draws the
- *  hairline between rows (`BoardSection`). Colour only where it hurts: a `warn`
- *  tone (it waits on the person) or a `danger` tone (stuck or late) colours the mark
- *  and the age; everything else stays neutral, and there is no colour per project. */
+ *  one quiet line of facts (worker and machine, PR, checks, sub-tasks). A row draws
+ *  no box itself: the layout it sits in does (`BoardSection`), as the Board mocks
+ *  draw it -- in a bar's list a hairline between rows, on a wide page each
+ *  row its own rounded card. Each state reads as its colour: a `warn` tone (it waits
+ *  on the person) or a `danger` tone (stuck or late) colours the mark and the age,
+ *  and a working story's mark is green; the rest stays neutral, and there is no
+ *  colour per project. */
 import type { ReactNode } from 'react'
 import { CircleAlert, CirclePlay, GitPullRequest, MessageCircleQuestionMark, Zap } from 'lucide-react'
 import type { WorkBoardItem } from '../../api/crewBoard'
@@ -93,14 +95,15 @@ export function moveTone(move: BoardMove, late: boolean): BoardTone | undefined 
 }
 
 /** One mark per move, each a different shape so it reads without colour. Named,
- *  because in Steps it is the only place the move is said. */
+ *  because in Steps it is the only place the move is said. A working story's mark
+ *  is green, as in the mocks; its age stays neutral. */
 export function MoveMark({ move, late = false }: { move: BoardMove; late?: boolean }) {
   const Icon = MOVE_ICON[move]
   const tone = moveTone(move, late)
   const label = i18nT(MOVE_LABEL[move])
   return (
     <span role="img" aria-label={label} title={label} data-testid="board-move-mark" data-move={move}
-      className={`inline-flex ${tone ? TONE_CLASS[tone] : 'text-muted'}`}>
+      className={`inline-flex ${tone ? TONE_CLASS[tone] : move === 'working' ? 'crew-tone-ok' : 'text-muted'}`}>
       <Icon size={14} aria-hidden="true" />
     </span>
   )

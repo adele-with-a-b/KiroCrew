@@ -4486,6 +4486,7 @@
       "board_conductor_hint": "red after {{age}}",
       "board_section_none": "none",
       "board_asks": "Asks: {{what}}",
+      "board_reply": "Reply",
       "board_age_of": "{{age}} of {{estimate}}",
       "board_in_all": "{{total}} in all",
       "board_steps_strip": "Stories per step",

@@ -10800,6 +10800,7 @@
       "board_conductor_hint": "{{age}} बाद लाल",
       "board_section_none": "कोई नहीं",
       "board_asks": "पूछता है: {{what}}",
+      "board_reply": "जवाब दो",
       "board_age_of": "{{estimate}} में से {{age}}",
       "board_in_all": "कुल {{total}}",
       "board_steps_strip": "हर चरण में स्टोरी",

@@ -53,7 +53,7 @@ export default function CapacityLine({ loads, capacity }: { loads: readonly Comp
       {loads.map(load => {
         const room = roomOf(load, here)
         return (
-          <li key={load.name} className="min-w-[10rem] rounded-lg border border-border bg-card text-card-fg px-3 py-1.5" data-testid="board-capacity-computer" data-here={load.here || undefined}>
+          <li key={load.name} className="min-w-[10rem] crew-board-card rounded-lg border border-border px-3 py-1.5" data-testid="board-capacity-computer" data-here={load.here || undefined}>
             <div className="text-[11px] text-muted truncate" data-testid="board-capacity-name">{load.here ? i18nT('pages.allProjectsBoard.seats_here') : i18nT('pages.allProjectsBoard.seats_on', { name: load.name })}</div>
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-[15px] font-semibold text-text-strong tabular-nums" data-testid="board-capacity-chats">{fmtNumber(load.chats)}</span>
@@ -95,7 +95,7 @@ export function SeatsStrip({ active }: { active: boolean }) {
   // The word alone: the free memory is the tiles' to say, and beside a count it reads as one number.
   const room = roomWord(capacity)
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-card text-card-fg px-2.5 py-1.5 text-[12px]" data-testid="board-seats-strip">
+    <div className="flex items-center gap-2 crew-board-card rounded-lg border border-border px-2.5 py-1.5 text-[12px]" data-testid="board-seats-strip">
       <Monitor size={14} aria-hidden="true" className="shrink-0 text-muted" />
       <span className="text-muted">{i18nT('pages.allProjectsBoard.seats_label')}</span>
       <ul className="flex flex-wrap items-baseline gap-x-3.5 gap-y-0.5 min-w-0" aria-label={i18nT('pages.allProjectsBoard.capacity_label')}>
