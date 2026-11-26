@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from kiro_crew.dashboard.chat_delivery_owner_steer import clear_mark as clear_owner_mark
 from kiro_crew.dashboard.chat_delivery_owner_steer import (
     deliver_again as deliver_owner_steers_again,
 )
@@ -831,6 +832,8 @@ async def _end_turn_tail(
     # authority left lying on the slot. Clearing at a nested exit that was not
     # the turn's end costs only a refusal, the direction that cannot be wrong.
     slot._turn_owner_sent = False
+    # So does the turn's announced owner mark: no later turn's steer may carry it.
+    clear_owner_mark(slot)
     # The patrol mark is authority too, so it ends on every exit as well.
     slot._turn_patrol_wake = False
     # A healthy `wait` clears its own state with a final keepalive ping, but

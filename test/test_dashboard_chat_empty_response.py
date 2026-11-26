@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from chat_test_helpers import _make_state
+from chat_test_helpers import _make_state, without_turn_opening
 
 from kiro_crew.dashboard.recovery_replays import LiveSlot, ReplayFamily
 from kiro_crew.dashboard.state import _ChatSlot
@@ -764,6 +764,7 @@ class TestProductiveTurnNeverReplaysVerbatim:
         )
         # The tool ran once. The queue was not drained in this test, so a second
         # execution could only come from a replay dispatched inside this turn.
+        executed = [without_turn_opening(prompt) for prompt in executed]
         assert executed == ["send the summary"], f"tool dispatched more than once: {executed}"
 
     @pytest.mark.asyncio

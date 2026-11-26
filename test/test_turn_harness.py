@@ -16,6 +16,7 @@ import threading
 from typing import Any
 
 import pytest
+from chat_test_helpers import without_turn_opening
 from turn_harness import (
     APPROVED,
     APPROVED_TRUST_READS,
@@ -78,7 +79,11 @@ def _shape(record: TurnRecord) -> dict:
             if frame.kind != "heartbeat"
         ],
         "rows": [(row["role"], row["content"]) for row in record.history_rows],
-        "provider": [(call.name, call.args, call.at) for call in record.provider_calls],
+        # A turn's opening names the mark it draws per run (``secrets``).
+        "provider": [
+            (call.name, tuple(without_turn_opening(a) for a in call.args), call.at)
+            for call in record.provider_calls
+        ],
         "crew": [call.name for call in record.crew_log],
         "audit": [(call.name, call.at) for call in record.audit_events],
         "sessions": [(call.name, call.at) for call in record.session_calls],
@@ -103,7 +108,7 @@ class TestTheRecord:
         assert [row["content"] for row in record.rows("assistant")] == ["the reply"]
         chunks = [frame.payload["content"] for frame in record.frames("chat_chunk")]
         assert "".join(chunks) == "the reply"
-        assert [call.args for call in record.calls("stream")] == [("hi there",)]
+        assert [without_turn_opening(c.args[0]) for c in record.calls("stream")] == ["hi there"]
         assert record.crew("on_turn_completed")
         assert record.stop_reason == STOP_REASON_END_TURN
         assert record.then is None
@@ -484,7 +489,7 @@ class TestTheScript:
             return AcpEvent(kind=EVENT_STEER_CONSUMED, text="")
 
         record = await run_turn(TurnScript(events=[Emit(_echo), _REPLY, _DONE], message="x"))
-        assert built == ["x"]
+        assert [without_turn_opening(b) for b in built] == ["x"]
         assert record.stop_reason == STOP_REASON_END_TURN
 
     @pytest.mark.asyncio
@@ -506,7 +511,7 @@ class TestTheScript:
             )
         )
         assert record.then is not None
-        assert [call.args for call in record.calls("stream")] == [("first",)]
+        assert [without_turn_opening(c.args[0]) for c in record.calls("stream")] == ["first"]
         # Each turn gets a fresh provider session, so the second is handed the
         # conversation so far ahead of its own message.
         [(prompt,)] = [call.args for call in record.then.calls("stream")]

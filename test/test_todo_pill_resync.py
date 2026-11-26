@@ -29,6 +29,7 @@ from unittest.mock import MagicMock
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
+from chat_test_helpers import without_turn_opening
 
 from kiro_crew.dashboard.chat_todo import api_chat_slot_todo
 from kiro_crew.dashboard.state import DashboardState, _ChatSlot
@@ -1392,7 +1393,9 @@ class TestChecklistFrameIsStructural:
         slot = state.get_or_create_slot("pill-chat")
         _seed_pill(slot)
         await _runner_turn(state, slot)
-        prompt = sent[0]
+        # Outermost of the turn's prefixes; only the gateway's own turn-mark opening,
+        # which leads a turn the owner did not start, comes before it.
+        prompt = without_turn_opening(sent[0])
         assert prompt.startswith("[Task checklist \u2014 automatic recovery]")
         assert "[End task checklist]" in prompt
         assert "[marker-removed]" not in prompt

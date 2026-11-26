@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from aiohttp import web
 
+from kiro_crew.dashboard.chat_delivery_owner_steer import TURN_MARK_OPENING
 from kiro_crew.dashboard.slot_ownership import slot_ownership_middleware
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.history import ConversationLog
@@ -165,6 +166,18 @@ def stub_readonly_spec_publisher(monkeypatch) -> list[tuple[str, str | None]]:
 
     monkeypatch.setattr("kiro_crew.dashboard.handlers.side.publish_readonly_spec", _fake_publish)
     return calls
+
+
+def without_turn_opening(prompt) -> str:
+    """*prompt* past the gateway's opening, which leads a turn the owner did not start.
+
+    The opening names a mark drawn per turn, so a test that pins the prompt of such a
+    turn compares what follows it.
+    """
+    text = str(prompt)
+    if not text.startswith(TURN_MARK_OPENING.split("{mark}", 1)[0]):
+        return text
+    return text.partition("]\n\n")[2]
 
 
 def _make_state(tmp_path, **kwargs):

@@ -118,6 +118,7 @@ from kiro_crew.context import (
     prefetch_session_memory,
 )
 from kiro_crew.crew_log import emit as crew_log_emit
+from kiro_crew.dashboard import chat_delivery_owner_steer as owner_steer
 from kiro_crew.dashboard import chat_turn as _chat_turn
 from kiro_crew.dashboard import directive_queue
 from kiro_crew.dashboard import engine_fallback as _engine_fallback
@@ -1176,6 +1177,11 @@ async def _run_chat(
                 _begin_compact_command(turn)
             event_stream = client.stream_command(message)
         else:
+            # Every route's prompt passes here, so the gateway's opening for a turn the
+            # owner did not start leads it, ahead of every body and prefix: the mark the
+            # owner's steers into this turn carry (`chat_delivery_owner_steer.announce`).
+            full_message = owner_steer.announce(slot, nested=turn._prompt_depth > 0) + full_message
+            turn.full_message = full_message
             event_stream = client.stream(_segment_user_span(turn, full_message))
         if _timed:
             turn_timing.mark("stream_open")

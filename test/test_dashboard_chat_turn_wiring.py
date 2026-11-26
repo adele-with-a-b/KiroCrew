@@ -6,7 +6,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from chat_test_helpers import AsyncIterator, _make_state
+from chat_test_helpers import AsyncIterator, _make_state, without_turn_opening
 from real_session_manager import fake_provider, real_sessions
 
 from kiro_crew.dashboard.chat_utils import effective_session_key
@@ -293,7 +293,7 @@ class TestRuntimeWiringTurn:
         # Minted after the egress scrub, as a prefix of the final prompt: the
         # builder's own input stays the bare recovery text.
         assert built[0] == resume_text
-        assert sent.startswith("[INTERRUPTED TURN") is expect_restore
+        assert without_turn_opening(sent).startswith("[INTERRUPTED TURN") is expect_restore
         assert ("Summarise the incident timeline for TICKET-42" in sent) is expect_restore
         assert ("first event at 09:14" in sent) is expect_restore
         # Only the interrupted turn is restored, never the one before it.
@@ -542,7 +542,7 @@ class TestRuntimeWiringTurn:
         assert cancelled_call["kwargs"]["folder_path"] == "Workspace / Demo"
         assert cancelled_call["kwargs"]["compressed_history"] == "retained conversation replay"
         assert persona_first_turn == [True, True]
-        assert dispatched == ["/tools", "cancel accepted replay"]
+        assert [without_turn_opening(d) for d in dispatched] == ["/tools", "cancel accepted replay"]
         assert replay["pending"] is True
         assert durable["sid"] == "old-full-history-sid"
         state.sessions.consume_provider_switch_replay.assert_not_called()
@@ -639,7 +639,7 @@ class TestRuntimeWiringTurn:
         assert call["context_is_new"] is False
         assert call["kwargs"]["compressed_history"] == ""
         assert persona_first_turn == [True] * 6 + [False, False, True, False]
-        assert dispatched == [
+        assert [without_turn_opening(d) for d in dispatched] == [
             "/tools",
             "cancel accepted replay",
             "synthetic replay completion",

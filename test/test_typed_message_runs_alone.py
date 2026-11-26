@@ -33,7 +33,7 @@ from test_acp_tool_identity import _stub_state
 
 from kiro_crew import steer_refusal
 from kiro_crew.config import KiroCrewConfig
-from kiro_crew.dashboard import chat_delivery
+from kiro_crew.dashboard import chat_delivery, chat_delivery_owner_steer
 from kiro_crew.dashboard import chat_runner as cr
 from kiro_crew.dashboard import session_control as sc
 from kiro_crew.dashboard import session_deliver
@@ -212,6 +212,9 @@ async def test_the_persons_messages_keep_their_order_and_the_notes_keep_theirs(t
     (typed, typed_mark, _), (notes, notes_mark, _) = turns
     assert typed == "[3 queued messages merged]\n\ntyped one\n\ntyped two\n\ntyped three"
     assert typed_mark is True
+    # The notes' turn is not the owner's: the gateway's opening names its mark first.
+    opening, _, notes = notes.partition("]\n\n")
+    assert opening.startswith("[Gateway note, the first text of this turn")
     assert notes.startswith("[2 queued messages merged]\n\n")
     assert notes.index("note one") < notes.index("note two")
     assert notes_mark is False
@@ -490,6 +493,8 @@ def _foreign_turn(tmp_path):
     slot._acp_client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
     slot._acp_client.steer = AsyncMock(return_value=True)
     slot._acp_client.has_active_turn = lambda: True
+    # Its prompt streamed with the gateway's opening, which announced the turn's mark.
+    chat_delivery_owner_steer.announce(slot, nested=False)
     return state, slot
 
 
@@ -521,7 +526,7 @@ async def test_a_steer_never_gives_the_turn_the_mark(tmp_path, origin: dict) -> 
     if origin == {"user_origin": True, "owner_origin": True}:
         # Only the owner's words are marked as theirs in a turn another sender opened.
         assert wire.startswith("[The owner's own message ")
-        assert wire.endswith("]\nredirect\n[end of the owner's message " + wire[25:37] + "]")
+        assert wire.endswith("]\nredirect\n[end of the owner's message " + wire[25:41] + "]")
     else:
         assert wire == "redirect"
 

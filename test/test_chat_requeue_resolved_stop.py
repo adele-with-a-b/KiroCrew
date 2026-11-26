@@ -21,7 +21,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from chat_test_helpers import _make_state
+from chat_test_helpers import _make_state, without_turn_opening
 
 from kiro_crew.acp.client import AcpError
 from kiro_crew.acp.transport_errors import AcpProcessDied, AcpPromptBusy
@@ -146,7 +146,7 @@ async def test_the_arm_requeues_the_prompt_when_nothing_was_stopped(tmp_path, mo
     """Positive control: without a Stop, each arm replays the prompt once."""
     calls, slot = await _run(tmp_path, monkeypatch, _ERRORS[arm], stop_resolves_first=False)
 
-    assert calls == [_MESSAGE, _MESSAGE]
+    assert [without_turn_opening(call) for call in calls] == [_MESSAGE, _MESSAGE]
     assert _retry_cards(slot)
 
 
@@ -157,7 +157,7 @@ async def test_a_stop_resolved_before_the_error_never_queues_a_replay(tmp_path, 
     is queued and no "retrying" card promises a replay that must not run."""
     calls, slot = await _run(tmp_path, monkeypatch, _ERRORS[arm], stop_resolves_first=True)
 
-    assert calls == [_MESSAGE]
+    assert [without_turn_opening(call) for call in calls] == [_MESSAGE]
     assert slot._queue == []
     assert _retry_cards(slot) == []
 

@@ -660,6 +660,13 @@ async def steer_into_running_turn(
         # once, as the owner's own turn with their rights (``responsive_chat.accept``).
         logger.info("slot %s runs a turn its owner did not send; queueing first", slot.key)
         return SteerUnavailable(steer_refusal.NOT_OWNERS_TURN)
+    if owner_steer.unannounced(
+        slot, owner_origin=owner_origin, user_origin=user_origin, channel_origin=channel_origin
+    ):
+        # The owner's words in this turn are trusted by the mark its opening announced;
+        # a turn that announced none runs them next, as the owner's own turn.
+        logger.info("slot %s runs a turn that announced no owner mark; queueing", slot.key)
+        return SteerUnavailable(steer_refusal.NOT_OWNERS_TURN)
 
     # Register as pending BEFORE the await: ``steer()`` suspends on
     # ``stdin.drain()``, and if the turn's finally runs during that suspension
@@ -838,7 +845,9 @@ async def steer_into_running_turn(
     slot._steer_rpc_in_flight.add(message)
     try:
         wire_message = (
-            responsive_chat.steer_message(slot, message)
+            owner_steer.without_turn_mark(
+                slot, message, responsive_chat.steer_message(slot, message)
+            )
             if responsive
             else owner_steer.steer_wire(slot, message)
         )

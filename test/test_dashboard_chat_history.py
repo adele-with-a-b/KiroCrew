@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
-from chat_test_helpers import _make_app, _make_state, close_before_resume
+from chat_test_helpers import _make_app, _make_state, close_before_resume, without_turn_opening
 
 from kiro_crew.dashboard.state import _ChatSlot
 from kiro_crew.history import ConversationLog
@@ -309,7 +309,7 @@ class TestKiroReadinessQueueHandoff:
         assert slot.task is not None
         await slot.task
 
-        assert delivered[0] == "first message"
+        assert without_turn_opening(delivered[0]) == "first message"
         assert delivered[1].endswith("keep this queued")
         assert slot._queue == []
         assert any(

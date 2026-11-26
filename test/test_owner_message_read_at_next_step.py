@@ -37,7 +37,7 @@ import pytest
 from test_typed_message_runs_alone import REFUSED, _Live, _note
 
 from kiro_crew import steer_refusal
-from kiro_crew.dashboard import chat_delivery
+from kiro_crew.dashboard import chat_delivery, chat_delivery_owner_steer
 from kiro_crew.dashboard import session_control as sc
 from kiro_crew.dashboard.handlers.remote_dispatch_routes import owner_unverifiable_reason
 from kiro_crew.dashboard.steer_supersedes_approval import SUPERSEDED_REJECTION_REASON
@@ -50,7 +50,7 @@ STEER_WITHOUT_OWNER_RIGHTS_META = "steerWithoutOwnerRights"
 def _marked_as_the_owners(wire: str, text: str) -> bool:
     """*wire* is *text* between the markers that name it as the owner's own words."""
     found = re.fullmatch(
-        r"\[The owner's own message ([0-9a-f]{12}): .*?\]\n(.*)\n\[end of the owner's message \1\]",
+        r"\[The owner's own message ([0-9a-f]{16}): .*?\]\n(.*)\n\[end of the owner's message \1\]",
         wire,
         re.S,
     )
@@ -158,7 +158,8 @@ async def test_a_steer_into_the_owners_own_turn_says_nothing_new(tmp_path, monke
 async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
     tmp_path, monkeypatch
 ) -> None:
-    """A peer's steer ended the mark; their next message still goes in, and says so."""
+    """A peer's steer ended the mark; their own turn announced no owner mark to frame
+    their next message with, so it waits and runs next as their own turn."""
     from kiro_crew.dashboard import session_deliver
 
     live = _Live(tmp_path, monkeypatch)
@@ -174,10 +175,12 @@ async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
 
     receipt = await live.type("Q1a Go.")
 
-    assert receipt.get("steered") is True
-    assert _row(live.slot, "Q1a Go.")["meta"][STEER_WITHOUT_OWNER_RIGHTS_META] is True
+    assert receipt.get("queued") is True and "steered" not in receipt
+    assert receipt.get("steerRefusal") == steer_refusal.NOT_OWNERS_TURN
+    live.agent.steer.assert_awaited_once()  # the peer's steer, never the owner's words
     live.slot._pending_steers.clear()
     await live.finish()
+    assert live.turns[1][:2] == ("Q1a Go.", True), "next, as the owner's own turn"
 
 
 @pytest.mark.asyncio
@@ -215,6 +218,8 @@ def _foreign_turn(tmp_path):
     slot._acp_client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
     slot._acp_client.steer = AsyncMock(return_value=True)
     slot._acp_client.has_active_turn = lambda: True
+    # Its prompt streamed with the gateway's opening, which announced the turn's mark.
+    chat_delivery_owner_steer.announce(slot, nested=False)
     return state, slot
 
 

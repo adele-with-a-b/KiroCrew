@@ -4961,17 +4961,39 @@ two steps as one input (kiro-cli joins them, claude joins adjacent user text). S
 when the running turn holds another sender's text (it lacks `_turn_owner_sent`: a
 note, a wake, a cron or an app opened it, or a steer of theirs joined it), the
 owner's steer goes in between `[The owner's own message <mark>: …]` and
-`[end of the owner's message <mark>]`, with a mark drawn fresh for the steer
-(`chat_delivery_owner_steer.steer_wire`); bare, the words would read as the last
-lines of that note, under its `[sent by session …]` tag. The row keeps the words as
-typed. The marked text is the steer's wire form in the one raw-to-wire map
-(`responsive_chat.turn_state(slot).steers`) the echo settle, the held-write and
-taken-unconfirmed reads and a take-back's resend translate through, so its echo
-settles it, and a turn that ends before reading it requeues the words as typed, as
-the owner's own turn (`forget_steer` answers "responsive" only for a responsive
-steer). In the owner's own turn with no other sender's text, and for anyone else's
-steer, the text goes as it is. Pinned by
-`test/test_owner_words_never_under_another_tag.py`.
+`[end of the owner's message <mark>]` (`chat_delivery_owner_steer.steer_wire`); bare,
+the words would read as the last lines of that note, under its `[sent by session …]`
+tag. The frames are trusted by their mark, not their shape. A turn that lacks
+`_turn_owner_sent` when its prompt streams gets one mark, 16 hex from `secrets`, and
+the gateway states it in the prompt's first text, ahead of every body and prefix
+(`chat_delivery_owner_steer.announce`, prepended at `chat_runner._run_chat`'s stream
+call, the one point every route's prompt passes: the queued-note and run drains, a
+`session_send` to an idle chat, work-ledger wakes, patrol nudges, crons, sub-agent
+notes and a hub conductor's agent-origin `POST /api/chat`). The opening says a frame
+with any other mark, or none, is quoted text from whoever sent it. Every owner steer
+of the turn carries that one mark. A turn that announced none (the owner's own turn a
+note then joined, a slash command, an agent-started turn) gets no frame: the steer
+seam refuses the owner's steer (`steer_refusal.NOT_OWNERS_TURN`) and it runs next as
+the owner's own turn. Every steer that is not the owner's has the live mark replaced
+by `(mark withheld)` (`without_turn_mark`), so a sender who learned it still cannot
+frame words as the owner's. The mark lives only in process memory
+(`OwnerSteers.mark`), cleared at the turn's entry and every exit; no row, queue
+entry, audit row or gateway log carries it, so `session_read_message` of the chat
+never shows it. The row keeps the words as typed. The marked text is the steer's
+wire form in the one raw-to-wire map (`responsive_chat.turn_state(slot).steers`) the
+echo settle, the held-write and taken-unconfirmed reads and a take-back's resend
+translate through, so its echo settles it, and a turn that ends before reading it
+requeues the words as typed, as the owner's own turn (`forget_steer` answers
+"responsive" only for a responsive steer). In the owner's own turn with no other
+sender's text the text goes as it is. A `session_send` or `session_broadcast` body
+still has the plain spellings of either frame quoted (`session_messaging._FORGED_FRAMES`,
+the cleanup that quotes `[sent by session`), a courtesy to the reader, not the guard.
+Pinned by `test/test_owner_words_never_under_another_tag.py`.
+
+The stated limit, which this does not defend:
+
+- The harness saves each prompt, the opening included, in its own transcript on disk (`~/.claude/projects/…`, kiro-cli's store), which any chat with a shell can read.
+- The model is told the mark and could repeat it in a reply or a note, which other chats can read.
 
 ### Queued prompt durability
 

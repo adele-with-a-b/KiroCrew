@@ -19,6 +19,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import pytest
+from chat_test_helpers import without_turn_opening
 from turn_harness import (
     APPROVED,
     Do,
@@ -418,7 +419,7 @@ class TestCanonicalTurnSequence:
         assert successor.args[0] == "second"
         # Not when it was queued, at virtual 0, but once the turn had ended.
         assert successor.at == 5.0
-        assert [call.args for call in record.calls("stream")] == [("first",)]
+        assert [without_turn_opening(c.args[0]) for c in record.calls("stream")] == ["first"]
         assert journal.index("session", "release") < journal.index("frame", "queue_pop")
 
     @pytest.mark.asyncio
