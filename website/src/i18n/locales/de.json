@@ -14558,6 +14558,8 @@
       "could_not_repair_images": "Die Bilder konnten nicht repariert werden"
     },
     "chatSidebar": {
+      "filter_needs_you": "Braucht dich",
+      "filter_needs_you_description": "Chats, die auf deine Genehmigung oder Antwort warten",
       "needsMeCard": {
         "card_label": "{{title}}: braucht dich",
         "recap": "Zusammenfassung",
@@ -14597,6 +14599,19 @@
         "unknown_tool": "Unbekanntes Tool"
       },
       "1_skipped_currently_selected": "(1 übersprungen — aktuell ausgewählt)",
+      "needs_you_everything_else": "Alles andere",
+      "needs_you_group": "Braucht dich",
+      "needs_you_group_count_one": "Braucht dich: {{count}} Chat wartet auf dich",
+      "needs_you_group_count_other": "Braucht dich: {{count}} Chats warten auf dich",
+      "needs_you_hidden_by_filter_one": "{{count}} weiterer Chat vom Filter „Braucht dich“ ausgeblendet",
+      "needs_you_hidden_by_filter_other": "{{count}} weitere Chats vom Filter „Braucht dich“ ausgeblendet",
+      "needs_you_more_one": "+{{count}} weitere",
+      "needs_you_more_other": "+{{count}} weitere",
+      "needs_you_oldest_first": "älteste zuerst",
+      "needs_you_open_count_one": "{{count}} offene Anfrage",
+      "needs_you_open_count_other": "{{count}} offene Anfragen",
+      "needs_you_status": "Braucht dich",
+      "needs_you_waited": "Wartet seit {{age}}",
       "no_sessions_match_folders": "Keine Sitzungen passen — nur ein Ordnername",
       "history_search_failed": "Suche fehlgeschlagen. Nur Titeltreffer werden angezeigt.",
       "search_results_count_one": "{{count}} Treffer, bester zuerst",

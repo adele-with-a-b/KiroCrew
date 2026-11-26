@@ -43,6 +43,23 @@ export interface ConductorModeRun {
   patrol_on: boolean
 }
 
+/** One kind of ask a chat holds for the person (`NeedsYou.kinds`). */
+export type NeedsYouKind = 'approval' | 'question' | 'options' | 'labelled'
+
+/** What a chat waits on the person for (`needs_you` on its slot row): the open
+ *  asks, the oldest one's age and first words, and the transcript row it sits
+ *  on. Null on the row: the chat does not wait on the person. */
+export interface NeedsYou {
+  count: number
+  /** When the oldest open ask was made, in epoch seconds. */
+  oldest_ts: number
+  /** The oldest ask's first words, at most 80 characters. */
+  first_words: string
+  /** The transcript row the oldest ask sits on, or null when it has none. */
+  row_id: string | null
+  kinds: NeedsYouKind[]
+}
+
 /** A conductor's work ledger in brief (`crew_work` on its slot row). */
 export interface CrewWorkFacts {
   open: number
@@ -471,6 +488,10 @@ export interface ChatSlot extends TurnIdentityFields {
    * `waiting_for_input` (true of every finished turn, and therefore no signal)
    * and separate from `pending_approval` (a tool gate). */
   needs_input?: boolean
+  /** What this chat waits on the person for, or null when nothing. Absent from
+   *  a gateway that does not build it: `needsYouOf` (lib/needsYou) then reads
+   *  the flags above instead. */
+  needs_you?: NeedsYou | null
   /** The transcript shows the last turn ending without a reply (trailing error
    * row or unanswered user row) — the state behind the composer's Resume
    * button. Always false while `running`. Lets the sidebar stop rendering a

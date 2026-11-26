@@ -7926,6 +7926,8 @@
       "jump_to_new_other": "{{count}} new · Jump to latest"
     },
     "chatSidebar": {
+      "filter_needs_you": "Needs you",
+      "filter_needs_you_description": "Chats waiting on your approval or answer",
       "needsMeCard": {
         "card_label": "{{title}}: needs you",
         "recap": "Recap",
@@ -8024,6 +8026,19 @@
       "more_options": "More options",
       "move_folder_to": "Move folder to",
       "needs_approval": "Needs approval",
+      "needs_you_everything_else": "Everything else",
+      "needs_you_group": "Needs you",
+      "needs_you_group_count_one": "Needs you: {{count}} chat waits on you",
+      "needs_you_group_count_other": "Needs you: {{count}} chats wait on you",
+      "needs_you_hidden_by_filter_one": "{{count}} other chat hidden by the Needs you filter",
+      "needs_you_hidden_by_filter_other": "{{count}} other chats hidden by the Needs you filter",
+      "needs_you_more_one": "+{{count}} more",
+      "needs_you_more_other": "+{{count}} more",
+      "needs_you_oldest_first": "oldest first",
+      "needs_you_open_count_one": "{{count}} open ask",
+      "needs_you_open_count_other": "{{count}} open asks",
+      "needs_you_status": "Needs you",
+      "needs_you_waited": "Waiting {{age}}",
       "running_marker": "Running",
       "switch_to_conductor_view_nested_by_creator": "Switch to conductor view (sessions nested under the session that opened them)",
       "collapse_sessions_this_one_opened": "Collapse the sessions this one opened",

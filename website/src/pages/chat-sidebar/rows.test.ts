@@ -52,7 +52,7 @@ function inputs(rows: Slot[], over: InputOverrides = {}): SidebarRowInputs {
     rows,
     local: {
       folderOf: {}, pinned: new Set(), pinnedRank: new Map(), unread: new Set(), running: new Set(), recent: new Set(),
-      searchRanks: null, manualRank: new Map(), drawnIndex: new Map(),
+      searchRanks: null, manualRank: new Map(), drawnIndex: new Map(), crewApprovals: {},
       ...over.local,
     },
     filters: {
@@ -100,7 +100,7 @@ const keys = (rows: Slot[]) => rows.map(s => s.peer_id ? `${s.peer_id}:${s.key}`
 const FULL_LOCAL: SidebarRowInputs['local'] = {
   folderOf: { k: 'F1' }, pinned: new Set(['k']), pinnedRank: new Map([['k', 0]]), unread: new Set(['k']),
   running: new Set(['k']), recent: new Set(['k']), searchRanks: null,
-  manualRank: new Map([['k', 0]]), drawnIndex: new Map([['k', 0]]),
+  manualRank: new Map([['k', 0]]), drawnIndex: new Map([['k', 0]]), crewApprovals: { k: 1 },
 }
 const FULL_SCENE_LOCAL: RowScene['local'] = {
   recentRank: new Map([['k', 1]]), subagentCounts: { k: 2 }, subagentApprovalCounts: { k: 1 }, poppedOut: new Set(['k']),
@@ -140,6 +140,14 @@ describe('a peer row never carries local state', () => {
       renameValue: 'draft', revealFlash: 'flash', pinnedOrderIndex: 0, pinnedReorderEnabled: true,
     })
     expect(views.windowOf(theLocal).keepMounted).toBe(true)
+  })
+
+  it('never waits on the person through a local crew approval its key collides with', () => {
+    const root = { crew_mode_root: true } as Partial<Slot>
+    const rows = buildSidebarRows(inputs([local('k', root), peer('k', root)], { local: FULL_LOCAL }))
+    expect(rows.needsOf(local('k', root))?.kinds).toEqual(['approval'])
+    expect(rows.needsOf(peer('k', root))).toBeNull()
+    expect(rows.statusCounts.needs_you).toBe(1)
   })
 
   it('names its crew by display name, falling back to the crew id', () => {
@@ -649,9 +657,9 @@ describe('the lanes and the folder tree', () => {
 
   it('counts each status chip over every row, peers included where the chip reads their own fields', () => {
     const rows = buildSidebarRows(inputs([
-      local('u', { pinned: true }), local('r'), peer('u', { running: true, pinned: true }), peer('old', { last_turn_ts: iso(2 * DAY) }),
+      local('u', { pinned: true }), local('r'), peer('u', { running: true, pinned: true }), peer('old', { last_turn_ts: iso(2 * DAY), pending_approval: true }),
     ], { local: { unread: new Set(['u']), running: new Set(['r']), recent: new Set(['u', 'r']) } }))
-    expect(rows.statusCounts).toEqual({ unread: 1, running: 2, pinned: 1, recent: 3, crew: 0 })
+    expect(rows.statusCounts).toEqual({ needs_you: 1, unread: 1, running: 2, pinned: 1, recent: 3, crew: 0 })
   })
 
   it('narrows to Crew Mode roots alone when the Crew Mode chip is on', () => {

@@ -127,6 +127,11 @@
   --color-notice-btn-border: var(--notice-btn-border);
   --color-notice-btn-border-hover: var(--notice-btn-border-hover);
   --color-notice-ring: var(--notice-ring);
+  /* "Needs you" (design-tokens.css derives the four). */
+  --color-needs: var(--needs);
+  --color-needs-fg: var(--needs-fg);
+  --color-needs-subtle: var(--needs-subtle);
+  --color-needs-line: var(--needs-line);
   --color-info: var(--info);
   --color-info-fg: var(--info-fg);
   --color-info-subtle: color-mix(in srgb, var(--info) 12%, transparent);

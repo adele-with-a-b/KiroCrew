@@ -102,7 +102,17 @@ describe('main window tab title', () => {
     await waitFor(() => expect(document.title).toBe('Schedule — Kiro Crew'))
   })
 
-  it('keeps the attention count first', async () => {
+  it('keeps the count of chats that wait on you first', async () => {
+    const store = renderAt('/chat')
+    act(() => {
+      store.dispatch(addSlotOptimistic(slot('s1', 'Fix the login page')))
+      store.dispatch(addSlotOptimistic({ ...slot('s2', 'Other work'), pending_approval: true }))
+      store.dispatch(setActiveSlot('s1'))
+    })
+    await waitFor(() => expect(document.title).toBe('(1) Fix the login page — Chat — Kiro Crew'))
+  })
+
+  it('puts no number in the tab for unread chats alone', async () => {
     const store = renderAt('/chat')
     act(() => {
       store.dispatch(addSlotOptimistic(slot('s1', 'Fix the login page')))
@@ -110,7 +120,7 @@ describe('main window tab title', () => {
       store.dispatch(setActiveSlot('s1'))
       store.dispatch(markSlotUnread('s2'))
     })
-    await waitFor(() => expect(document.title).toMatch(/^\(\d+\) Fix the login page — Chat — Kiro Crew$/))
+    await waitFor(() => expect(document.title).toBe('Fix the login page — Chat — Kiro Crew'))
   })
 
   it('names the remote crew whose pane fills the page, and the local page again on Local', async () => {

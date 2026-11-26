@@ -29,6 +29,7 @@ import type { LaneRows } from './laneRows'
 import type { FolderBlocks } from './folderBlocks'
 import type { SidebarScope } from './scope'
 import { KindSectionHeader, sectionHeaders, sectionRankOf, sectionRows } from './kindSections'
+import { createNeedsGroup } from './needsGroup'
 
 /** Move only the visual SESSION preview away from a pointer-owned destination
  * cue. Collision detection continues to use the real pointer coordinates; this
@@ -78,7 +79,15 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
     renderOlderSessionsHint, renderSessionRow, renderStaleSection, reportDndActive, rootFolderIds,
     rootFolders, rowAnimEnabled, searchHeader, searchLaneActive, searchRanked, setLaneScrollEl, shownCrewGroups, shownCrewRowCount,
     sidebarRows, slotFilter, slotFolders, sortKey, splitStale, staleExpanded, startsAutomaticSection,
-    subagentApprovalCounts, unfiledAboveFolders, ungroupedSlots, unreadSet, visibleRootFolders, pinnedBandCaption } = shell
+    subagentApprovalCounts, unfiledAboveFolders, ungroupedSlots: ungroupedAll, unreadSet, visibleRootFolders, pinnedBandCaption } = shell
+  // The "Needs you" group draws on top of every list lane; an unfiled waiting chat is
+  // drawn there instead of in the root bucket, a filed one in its folder as well, and a
+  // code-channel worker the root bucket's fold hides stays folded under its conductor too.
+  const { renderNeedsGroup, withoutGroup } = createNeedsGroup(shell)
+  const rootFoldsCrews = !(listNarrowed || slotFilter.trim() !== '')
+  const keepShownWorker = (w: Slot) => isActiveRow(w) || pinned.has(w.key)
+  const ungroupedSlots = withoutGroup(ungroupedAll)
+  const flatRest = withoutGroup(flatSlots)
   // True while actively dragging a session that currently lives in a folder.
   // Used to reveal the empty-state drop placeholder inside the "No folder"
   // group so there's always a reachable ungroup target.
@@ -108,10 +117,12 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
   const renderRootBucketRows = (): React.ReactNode => {
     const rootSplit = splitStale(ungroupedSlots)
     // Slack code channel crews among the ungrouped rows fold
-    // under their conductor, as they do inside a folder.
-    const rootFold = foldCodeChannelCrews(ungroupedSlots, rootSplit.fresh, rootSplit.stale, {
-      narrowed: listNarrowed || slotFilter.trim() !== '', expanded: conductorExpanded,
-      keepShown: w => isActiveRow(w) || pinned.has(w.key),
+    // under their conductor, as they do inside a folder. The fold reads the whole
+    // membership, waiting workers included, so it alone decides which of them hide
+    // under a conductor; the rest are drawn in the "Needs you" group only.
+    const rootFold = foldCodeChannelCrews(ungroupedAll, rootSplit.fresh, rootSplit.stale, {
+      narrowed: !rootFoldsCrews, expanded: conductorExpanded,
+      keepShown: keepShownWorker,
       signals: crewSignalsFrom({ isRunning: sidebarRows.isRunning, subagentApprovalCounts, unreadSet }),
     })
     const freshRootRaw = rootFold.fresh
@@ -207,6 +218,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
             {folderCreateError && renderFolderCreateError(folderCreateError.folderId, folderCreateError.columnId)}
             {searchHeader}
             {localGroupHeader}
+            {renderNeedsGroup(flatSlots.length)}
             {(() => {
               const tree = lineage
               if (!tree) return null
@@ -416,8 +428,9 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
               {folderCreateError && renderFolderCreateError(folderCreateError.folderId, folderCreateError.columnId)}
               {searchHeader}
               {localGroupHeader}
+              {renderNeedsGroup(flatSlots.length)}
               {/* Caption header before the pinned band when a property filter narrows the list. */}
-              {pinnedBandCaption && flatSlots.length > 0 && sidebarRows.isPinned(flatSlots[0]) && (
+              {pinnedBandCaption && flatRest.length > 0 && sidebarRows.isPinned(flatRest[0]) && (
                 <PinnedSessionDivider caption={pinnedBandCaption} />
               )}
               {(() => {
@@ -431,7 +444,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
                 // Hoisted above the hold so the pixel anchor can count header heights.
                 const baseSeg = (s: Slot) => (isDateSort && !sidebarRows.isPinned(s) ? dateSegment(slotActivityTs(s)) : '')
                 // "Group by kind": the unpinned rows by section, each in lane order.
-                const flatOrdered = sectionRows(flatSlots, sidebarRows.isPinned, kindSections)
+                const flatOrdered = sectionRows(flatRest, sidebarRows.isPinned, kindSections)
                 const { rows: flatRows, navScope: flatLaneScope, container: flatHoldContainer } = heldLane(flatOrdered, 'flat', 'flat', baseSeg, sectionRankOf(sidebarRows.isPinned, kindSections))
                 const flatHeaders = sectionHeaders(flatRows, sidebarRows.isPinned, kindSections)
                 // Reads the flag holdHovered just set for THIS lane, so the header
@@ -531,6 +544,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
                 {({ setNodeRef }) => (
                   <div ref={setNodeRef} className="flex flex-col flex-1 min-h-0">
                     {localGroupHeader}
+                    {renderNeedsGroup(laneSlots.length)}
                     {/* Unfiled sessions ABOVE the folders (dashboard.unfiled_sessions_above_folders).
                      *  The bucket renders first, at natural height, and only when it has
                      *  rows. The lane tail below the folders is then the whole-lower-area

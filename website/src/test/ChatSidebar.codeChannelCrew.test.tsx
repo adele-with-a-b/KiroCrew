@@ -159,7 +159,9 @@ describe('code channel crew: workers fold under the conductor row', () => {
       workerRow('w1', { running: true }),
       workerRow('w2', { pending_approval: true, running: true, last_message: 'approve git push' }),
     ])
-    expect(rowOf('w2 title')).toBeNull()
+    // Folded under its conductor, and drawn once, loud, in the Needs-you group on top.
+    expect(screen.getAllByText('w2 title')).toHaveLength(1)
+    expect(rowOf('w2 title')!.closest('[data-testid="needs-you-group"]')).not.toBeNull()
     const line = within(rowOf('cond title')!).getByTestId('code-channel-crew-state')
     expect(line).toHaveAttribute('data-crew-state', 'needs_you')
     expect(line.textContent).toBe('Needs approval · approve git push')
@@ -173,7 +175,10 @@ describe('code channel crew: workers fold under the conductor row', () => {
     renderSidebar(rows)
     const folded = within(rowOf('cond title')!).getByTestId('code-channel-crew-state').textContent
     fireEvent.click(within(rowOf('cond title')!).getByTestId('code-channel-crew-toggle'))
-    const workerText = rowOf('w2 title')!.textContent ?? ''
+    // The worker row opened under its conductor (the group on top draws it too).
+    const opened = screen.getAllByText('w2 title').map(t => t.closest('.session-row') as HTMLElement)
+      .find(r => !r.closest('[data-testid="needs-you-group"]'))
+    const workerText = opened?.textContent ?? ''
     expect(folded).toBe(`${i18nT('pages.chatSidebar.needs_approval')} · approve git push`)
     expect(workerText).toContain(folded!)
   })

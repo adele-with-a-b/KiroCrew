@@ -98,9 +98,11 @@ export function SearchFilterBar({
 export const FilterMenuButton = forwardRef<HTMLButtonElement, {
   title: string
   badge?: number
+  /** `needs`: the badge counts chats that wait on the person, in their colour. */
+  badgeTone?: 'needs'
   testId?: string
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'title' | 'children'>>(
-  function FilterMenuButton({ title, badge = 0, testId, className, ...rest }, ref) {
+  function FilterMenuButton({ title, badge = 0, badgeTone, testId, className, ...rest }, ref) {
     return (
       <button
         ref={ref}
@@ -115,7 +117,9 @@ export const FilterMenuButton = forwardRef<HTMLButtonElement, {
         {badge > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-[3px] rounded-full bg-accent text-accent-fg text-[10px] font-semibold leading-[14px] text-center pointer-events-none shadow-[0_0_4px_var(--accent-glow)]"
+            data-badge-tone={badgeTone}
+            className={cn('absolute -top-1 -right-1 min-w-[14px] h-[14px] px-[3px] rounded-full text-[10px] font-semibold leading-[14px] text-center pointer-events-none',
+              badgeTone === 'needs' ? 'bg-needs text-needs-fg shadow-[0_0_6px_var(--needs-line)]' : 'bg-accent text-accent-fg shadow-[0_0_4px_var(--accent-glow)]')}
           >
             {badge > 99 ? '99+' : badge}
           </span>

@@ -14558,6 +14558,8 @@
       "could_not_repair_images": "ছবিগুলো মেরামত করা যায়নি"
     },
     "chatSidebar": {
+      "filter_needs_you": "আপনাকে দরকার",
+      "filter_needs_you_description": "যে চ্যাটগুলো আপনার অনুমোদন বা উত্তরের অপেক্ষায় আছে",
       "needsMeCard": {
         "card_label": "{{title}}: তোমাকে দরকার",
         "recap": "সারাংশ",
@@ -14597,6 +14599,19 @@
         "unknown_tool": "অজানা টুল"
       },
       "1_skipped_currently_selected": "(1টি এড়িয়ে যাওয়া হয়েছে — এখন বেছে নেওয়া আছে)",
+      "needs_you_everything_else": "বাকি সব",
+      "needs_you_group": "আপনাকে দরকার",
+      "needs_you_group_count_one": "আপনাকে দরকার: {{count}}টি চ্যাট আপনার অপেক্ষায়",
+      "needs_you_group_count_other": "আপনাকে দরকার: {{count}}টি চ্যাট আপনার অপেক্ষায়",
+      "needs_you_hidden_by_filter_one": "আরও {{count}}টি চ্যাট “আপনাকে দরকার” ফিল্টারে লুকানো",
+      "needs_you_hidden_by_filter_other": "আরও {{count}}টি চ্যাট “আপনাকে দরকার” ফিল্টারে লুকানো",
+      "needs_you_more_one": "আরও {{count}}টি",
+      "needs_you_more_other": "আরও {{count}}টি",
+      "needs_you_oldest_first": "সবচেয়ে পুরোনো আগে",
+      "needs_you_open_count_one": "{{count}}টি খোলা অনুরোধ",
+      "needs_you_open_count_other": "{{count}}টি খোলা অনুরোধ",
+      "needs_you_status": "আপনাকে দরকার",
+      "needs_you_waited": "{{age}} ধরে অপেক্ষায়",
       "no_sessions_match_folders": "কোনও সেশন মেলেনি — কেবল একটি ফোল্ডারের নাম মিলেছে",
       "history_search_failed": "অনুসন্ধান ব্যর্থ হয়েছে। শুধু শিরোনামের মিলগুলো দেখানো হচ্ছে।",
       "search_results_count_one": "{{count}}টি মিল, সেরাটি আগে",

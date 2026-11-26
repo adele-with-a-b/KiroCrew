@@ -14908,6 +14908,8 @@
       "could_not_repair_images": "Impossibile riparare le immagini"
     },
     "chatSidebar": {
+      "filter_needs_you": "Ti aspetta",
+      "filter_needs_you_description": "Chat in attesa della tua approvazione o risposta",
       "needsMeCard": {
         "card_label": "{{title}}: ha bisogno di te",
         "recap": "Riepilogo",
@@ -14947,6 +14949,23 @@
         "unknown_tool": "Strumento sconosciuto"
       },
       "1_skipped_currently_selected": "(1 saltata — attualmente selezionata)",
+      "needs_you_everything_else": "Tutto il resto",
+      "needs_you_group": "Ti aspetta",
+      "needs_you_group_count_many": "Ti aspettano: {{count}} chat",
+      "needs_you_group_count_one": "Ti aspetta: {{count}} chat",
+      "needs_you_group_count_other": "Ti aspettano: {{count}} chat",
+      "needs_you_hidden_by_filter_many": "{{count}} altre chat nascoste dal filtro «Ti aspetta»",
+      "needs_you_hidden_by_filter_one": "{{count}} altra chat nascosta dal filtro «Ti aspetta»",
+      "needs_you_hidden_by_filter_other": "{{count}} altre chat nascoste dal filtro «Ti aspetta»",
+      "needs_you_more_many": "+{{count}} in più",
+      "needs_you_more_one": "+{{count}} in più",
+      "needs_you_more_other": "+{{count}} in più",
+      "needs_you_oldest_first": "prima il più vecchio",
+      "needs_you_open_count_many": "{{count}} richieste aperte",
+      "needs_you_open_count_one": "{{count}} richiesta aperta",
+      "needs_you_open_count_other": "{{count}} richieste aperte",
+      "needs_you_status": "Ti aspetta",
+      "needs_you_waited": "In attesa da {{age}}",
       "no_sessions_match_folders": "Nessuna sessione corrisponde — solo il nome di una cartella",
       "history_search_failed": "Ricerca non riuscita. Vengono mostrate solo le corrispondenze nel titolo.",
       "search_results_count_one": "{{count}} corrispondenza, la migliore prima",

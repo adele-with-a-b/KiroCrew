@@ -2,7 +2,7 @@
  *  ordered state resolver, the slot-scoped live state it subscribes to, its
  *  menus and its drag and keyboard gestures. The shell builds the row's `view`
  *  (./rows) and its one `actions` object; the row's memo compares both. */
-import { useRef, useEffect, useState, memo, useMemo, useContext, type ReactNode } from 'react'
+import { useRef, useEffect, useState, memo, useMemo, useContext } from 'react'
 import { motion } from 'framer-motion'
 import { X, Pin, VolumeX, EyeOff, VenetianMask, MoreVertical, CornerDownRight, Split, Loader, Loader2, Bot, ExternalLink, Workflow, TriangleAlert, Goal, MessageCircleQuestionMark, ShieldCheck, Hourglass, GripVertical, Moon, Zap } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -30,9 +30,9 @@ import { RemoteCrewChip } from '../../components/RemoteCrewChip'
 import { DndDraggable, DndDroppable } from '../../components/dnd'
 import { normalizeRunSessionKey } from '../../components/workflows/runModel'
 import { sanitizeLlmOutput } from '../../utils/sanitize'
-import type { ChatTag, CrewWorkFacts } from '../../types'
+import type { ChatTag } from '../../types'
 import { hasLiveSessionWork } from '../chat/sessionLane'
-import { crewNeedsYou, crewWorkCounts, longestStalledWork, stalledWorkKeys, useCrewWorkClock } from '../../lib/crewWork'
+import { crewWorkCounts, useCrewWorkClock } from '../../lib/crewWork'
 import { isMemoryWait, queuedWaitText } from '../chat/subagentQueuedReason'
 import { focusSiblingSessionRow } from '../chat/sessionRowNav'
 import { fmtRelativeTime, slotActivityTs } from '../chat/sessionOrder'
@@ -49,21 +49,19 @@ import { sameRowView, type SessionRowView } from './rows'
 import { memberThreadTitle } from '../../lib/memberThreadTitle'
 import { CrewOfflineContext } from './CrewGroups'
 import { useSlotTitleGenerating } from '../../hooks/slotTitleGeneration'
-import { DisclosureChevron, isOpenInTabModifierClick } from './chrome'
+import { DisclosureChevron, UNREAD_DOT_CLS, isOpenInTabModifierClick } from './chrome'
 import { SessionSourceChips } from './SessionSourceChips'
 import { useSessionCardLines, cardLineClass } from './cardLines'
 import { RowTrailingMeta, SearchHitTail } from './searchHits'
 import { connectedChannelLinks } from './connectedChannelLinks'
 import { CrewEyebrow } from '../../components/crew/CrewModeMarks'
-import { crewRootOf } from '../../lib/crewMode'
-import { summarizeCrewWorkers, crewRowCounts } from '../../lib/crewWorkers'
-import { CrewRowAttention, crewRowTooltip } from './CrewRowCounts'
-import { CrewStateWord, crewRowOwnState, type CrewRowOwnState } from './CrewRowState'
+import { crewRowOwnState } from './CrewRowState'
 // Moved to ./CrewRowState with the state words; this path keeps serving its callers.
 export { crewRowOwnState, type CrewRowOwnState } from './CrewRowState'
-import { useCrewWorkerSummary } from '../chat/command-center/CrewWorkerList'
+import { CrewRootSummaryLine } from './CrewRootSummaryLine'
 import { crewWaitingApprovals, openedSessionRunning } from '../chat/command-center/model'
-import ErrorNotice from '../../components/ErrorNotice'
+import { needsYouOf } from '../../lib/needsYou'
+import { NeedsYouLine, NeedsYouPulse, NeedsYouSide } from './NeedsYouRow'
 import { MemberRowHead } from './MemberRowFace'
 import { useCrewMode } from '../../hooks/usePreviewFlag'
 import { useInterruptedRowLabel } from './interruptedRowLabel'
@@ -244,73 +242,6 @@ interface SessionRowProps {
  *  is subscribed to HERE, slot-scoped, so a background event re-renders only
  *  the row it belongs to. */
 
-/** A conductor mode root's status line: "N needs you", "N stalled" (plus who
- *  stalled longest), "N running", or "Done" -- only what applies. With no crew
- *  and nothing owed it shows *fallback*, the row's usual line. */
-function CrewRootSummaryLine({ root, fallback, own = null, work, rootOwes = 0, dot = null }: {
-  root: string; fallback: ReactNode; own?: CrewRowOwnState | null; /** The row's unread dot, kept in front of the status. */ dot?: ReactNode
-  /** The root's ledger in brief (`crew_work`): what waits on a person, what stalled. */
-  work?: CrewWorkFacts | null
-  /** The root itself holds an approval or a question for the person. */
-  rootOwes?: number
-}) {
-  // The server's groups (the worker list API), so the row, the panel and the
-  // breadcrumb agree. Only what needs attention is drawn (CrewRowAttention); the
-  // full counts live in the tooltip. A failed poll says so in the status line.
-  const { lastWorkers, failed, paused } = useCrewWorkerSummary(root)
-  const { groups, done, total, remoteRunning } = summarizeCrewWorkers(lastWorkers ?? [])
-  const rowCounts = crewRowCounts(groups)
-  const running = rowCounts.find(c => c.bucket === 'working')?.count ?? 0
-  // The ledger's own stall rule (the Board's Milestones read the same one).
-  useCrewWorkClock(work ? [work] : [])
-  const stall = useAppSelector(st => {
-    const now = Date.now()
-    const counts = crewWorkCounts(work, st.dashboard.slots, now)
-    // A running conductor turn is picking its stalls up: none are shown meanwhile.
-    const handling = !!st.dashboard.slots.find(x => x.key === root)?.running
-    // The crew members whose live row waits on a tool approval, as one string so
-    // the selector compares by value.
-    const live = st.dashboard.slots.filter(x => x.pending_approval && crewRootOf(x) === root).map(x => x.key).join(' ')
-    return { person: counts?.person ?? 0, stalled: handling ? 0 : counts?.stalled ?? 0, keys: handling ? '' : stalledWorkKeys(work, st.dashboard.slots, now), live }
-  }, shallowEqual)
-  // A stalled line's duration reads the clock: step it once a minute while shown.
-  const [, setMinute] = useState(0)
-  useEffect(() => {
-    if (stall.stalled <= 0) return
-    const id = setInterval(() => setMinute(n => n + 1), 60_000)
-    return () => clearInterval(id)
-  }, [stall.stalled])
-  const longest = longestStalledWork(stall.keys, worker => {
-    const at = lastWorkers?.find(w => w.key === worker)?.last_activity
-    return at ? Date.parse(at) : NaN
-  })
-  const longestSlot = useAppSelector(st => (longest?.worker ? st.dashboard.slots.find(x => x.key === longest.worker)?.title ?? '' : ''))
-  const needsYou = crewNeedsYou(lastWorkers, stall.live ? stall.live.split(' ') : [], stall.person, work?.person_workers) + rootOwes
-  const member = longest ? lastWorkers?.find(w => w.key === longest.worker) : undefined
-  const stalledForMs = longest ? Date.now() - longest.since : 0
-  const stalledName = member?.title || member?.agent || longestSlot || i18nT('commandCenter.worker_untitled')
-  const title = crewRowTooltip(total, rowCounts, stall.stalled, needsYou, remoteRunning)
-  // Finished only when the main chat is settled too, and, with a ledger, the gateway's run verdict says done.
-  const allDone = (work?.run ? work.run.settled === 'done' : total > 0 && done === total) && !own
-  // An interrupted turn or a stalled goal loop of the main chat is said first.
-  const ownFirst = !paused && own && (own.kind === 'paused' || own.kind === 'stalled') ? own : null
-  // Nothing needs attention and the crew is not finished (or paused): the row's usual line.
-  if (!failed && !paused && !ownFirst && !allDone && needsYou === 0 && stall.stalled === 0 && running === 0) return <>{fallback}</>
-  return (
-    <div className={ROW_STATUS_LINE_CLS} data-testid="crew-root-summary">{dot}
-      {/* The row's own state outranks a failed crew read: it is said first. */}
-      {failed && own && <CrewStateWord kind={own.kind} title={own.title} />}
-      {!failed && ownFirst && <CrewStateWord kind={ownFirst.kind} title={ownFirst.title} />}
-      {failed ? (
-        <ErrorNotice variant="inline" askAgent className="min-w-0" messageClassName="truncate" message={i18nT('commandCenter.workers_error')} />
-      ) : (
-        <CrewRowAttention needsYou={needsYou} stalled={stall.stalled} running={running} done={allDone} paused={paused} remoteRunning={remoteRunning}
-          stalledName={stall.stalled > 0 ? stalledName : undefined} stalledForMs={stall.stalled > 0 ? stalledForMs : undefined} title={title} />
-      )}
-    </div>
-  )
-}
-
 export const SessionRow = memo(function SessionRow({ view, actions }: SessionRowProps) {
   const {
     slot: s, showDivider, scope, navScope, holdContainer, isActive, isSidebarActiveSlot, isCrewParent, crewWindowCovers, isOut, isPinned, isUnread, isRunning,
@@ -452,6 +383,10 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
   // the loop-waiting row could fire, so other rows skip the slot scan.
   const openedRunning = useAppSelector(st => ((s.has_options || s.crew_work) && !s.running)
     ? openedSessionRunning(st.dashboard.slots, s.key) : false)
+  // Whether this chat waits on the person: the one rule every Needs-you surface reads.
+  const needs = needsYouOf(s, crewWaiting)
+  // A Crew Mode root's open asks are what its crew summary line counts (CrewRootSummaryLine).
+  const [crewAsks, setCrewAsks] = useState(0)
   // This session's open ledger work, counted against the live rows: still moving,
   // gone quiet, or waiting on a person. Only rows that conduct a ledger scan.
   const crewWork = useAppSelector(st => s.crew_work && !s.running
@@ -1183,17 +1118,13 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
     const unreadDot = !rowState && isUnread && showUnreadDot !== false
       // A DOT, so it keeps its own size: `ROW_ICON_PX` sizes the lucide glyphs,
       // whose ink covers a fraction of their box, while a filled disc covers all
-      // of it. At 10px it reads as heavier than every state that outranks it.
-      // `--ok`, not `--accent`: this dot signals STATE (the agent finished and
-      // the result is unread), so it reads the semantic status token that the
-      // `recent` status chip (`SESSION_FILTERS`) and the connection-status dot (InstancesPanel's
-      // `bg-ok`) already use, not the brand/interactive color. A theme where
-      // the two hues differ can then keep the status cue distinct from
-      // ordinary accent chrome.
-      ? <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--ok)' }}
+      // of it. Small and grey: the quiet signal (`UNREAD_DOT_CLS`).
+      ? <span className={UNREAD_DOT_CLS} data-testid="session-unread-dot"
         role="img" aria-label={i18nT('pages.chatSidebar.agent_finished_your_turn')}
         title={i18nT('pages.chatSidebar.agent_finished_your_turn')} />
       : null
+    // What a waiting chat waits on, said where its status goes (a crew root's when its summary has nothing to say).
+    const needsLine = needs ? <NeedsYouLine needs={needs} lastMessage={s.last_message} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} /> : null
     // The row's tail line when no state claims it: the last message, led by the
     // unread dot. A crew card shows it too until its workers summary has an answer.
     const lastMessageLine = (s.last_message || unreadDot) ? (
@@ -1224,7 +1155,8 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
       const muted = resolvedColor.index != null ? boost.mutedColors[resolvedColor.index] : boostFor(resolvedColor.hex).mutedColors[0]
       if (muted) boostStyle['--session-muted'] = muted
     }
-    if (recent) boostStyle.boxShadow = recencyTintShadow(recent, recentTintCount)
+    // A waiting row's edge bar is its own (`session-needs-you`), so the tint stays off it.
+    if (recent && !needs) boostStyle.boxShadow = recencyTintShadow(recent, recentTintCount)
     // A session that's open in its own window is dimmed here so the main
     // sidebar reads as "handed off" (skipped while active — you may be viewing it).
     if (isOut && !isActive) boostStyle.opacity = '0.6'
@@ -1380,7 +1312,7 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
         <ContextMenuStableTrigger content={rowContextMenuContent} disabled={isDragging}>
         <div ref={dndRow ? setNodeRef : undefined} {...(dndRow ? listeners : {})}
           data-draggable={(!isRenaming && !foreignRow).toString()}
-          className={`session-row focus-ring-accent-inset group relative flex items-start ${ROW_BOX_CLS} text-sm transition-all select-none ${isActive ? !connected ? `session-active ${ROW_ACTIVE_CLS} cursor-not-allowed` : `session-active ${ROW_ACTIVE_CLS} cursor-pointer` : !connected ? 'text-muted opacity-50 cursor-not-allowed' : `${ROW_IDLE_CLS} cursor-pointer`} ${goalLoopStalled ? 'session-loop-stalled' : ''} ${rowColor ? 'session-colored' : ''} ${rowColor && colorMode === 'gradient' ? 'session-gradient' : ''} ${isCrewParent ? 'session-crew-parent' : ''} ${isDragging ? 'opacity-40' : ''} ${revealFlash ? `session-reveal-flash${revealFlash === 'fade' ? ' session-reveal-flash-fade' : ''}` : ''}`}
+          className={`session-row focus-ring-accent-inset group relative flex items-start ${ROW_BOX_CLS} text-sm transition-all select-none ${isActive ? !connected ? `session-active ${ROW_ACTIVE_CLS} cursor-not-allowed` : `session-active ${ROW_ACTIVE_CLS} cursor-pointer` : !connected ? 'text-muted opacity-50 cursor-not-allowed' : `${ROW_IDLE_CLS} cursor-pointer`} ${goalLoopStalled ? 'session-loop-stalled' : ''} ${needs ? 'session-needs-you' : ''} ${rowColor ? 'session-colored' : ''} ${rowColor && colorMode === 'gradient' ? 'session-gradient' : ''} ${isCrewParent ? 'session-crew-parent' : ''} ${isDragging ? 'opacity-40' : ''} ${revealFlash ? `session-reveal-flash${revealFlash === 'fade' ? ' session-reveal-flash-fade' : ''}` : ''}`}
           data-crew-root={crewRoot ? 'true' : undefined}
           data-crew-parent={isCrewParent ? 'true' : undefined}
           style={boostStyle as React.CSSProperties}
@@ -1920,11 +1852,13 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
                 tail's place (ONE line); a search's snippet stands in for the tail. */}
             {crewRoot
               // A conductor mode row shows only what needs attention (counts in the tooltip), else the usual tail.
-              ? <CrewRootSummaryLine root={s.key} fallback={<SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={rowState ?? lastMessageLine} />} own={crewOwnState} work={s.crew_work} dot={unreadDot}
+              // Waiting too: its line counts every ask under it, the crew list's included.
+              ? <CrewRootSummaryLine root={s.key} fallback={<SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={needsLine ?? rowState ?? lastMessageLine} />} own={crewOwnState} work={s.crew_work} dot={unreadDot} lineCls={ROW_STATUS_LINE_CLS} onNeedsYou={setCrewAsks}
                   // What the main chat itself holds for the person: an approval, a question, a
                   // spawn approval, or an armed loop asking (a ledger item on the person is counted from `crew_work`).
                   rootOwes={s.pending_approval || s.needs_input || subagentAwaiting > 0 || (loopWaiting && !(crewWork?.person ?? 0)) ? 1 : 0} />
-              : <SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={rowState ?? lastMessageLine} />}
+              // A chat that waits on the person says what for, above any other state.
+              : <SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={needsLine ?? rowState ?? lastMessageLine} />}
             {s.source_links && s.source_links.length > 0 && (
               <SessionSourceChips
                 slotKey={s.key}
@@ -1939,6 +1873,8 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
             {/* No tag chips here: every tag renders in the meta line above as
              *  tinted `· name` text. A chip row would print each tag twice. */}
           </div>
+          {needs && <NeedsYouSide needs={crewRoot && crewAsks > 0 ? { ...needs, count: crewAsks } : needs} />}
+          {needs && <NeedsYouPulse needs={needs} />}
           {/* Under Manual an unpinned row wears a drag handle in its LEFT PAD,
            *  out of flow, so the agent name, title and status line stay on the
            *  content column and keep the folder name's left edge

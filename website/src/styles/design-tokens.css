@@ -239,6 +239,14 @@ html:lang(ko) {
    the focus ring --notice-ring. errorNoticeImpactContrast.test.ts reads every
    mix from this rule and measures it in every palette. Internal, derived,
    outside the [data-theme] blocks so packs cannot set it. */
+/* "Needs you": a chat that waits on the person (lib/needsYou). One hue for that
+   and nothing else: orange, between --warn and --danger, so it is none of
+   Running's yellow, Unread's green or an error's red, in every palette. The ink
+   on a solid needs fill is the page's own --bg: --needs keeps the contrast its
+   two parents keep against --bg, whichever polarity paints. Internal, derived,
+   outside the [data-theme] blocks so packs cannot set it; a pack that retunes
+   --warn or --danger moves it with them. */
+:root{--needs:color-mix(in srgb, var(--warn) 45%, var(--danger));--needs-fg:var(--bg);--needs-subtle:color-mix(in srgb, var(--needs) 13%, transparent);--needs-line:color-mix(in srgb, var(--needs) 50%, transparent);}
 :root{--danger-ink:color-mix(in srgb, var(--danger-text) 84%, var(--text));--danger-body:color-mix(in srgb, var(--danger-text) 72%, var(--text));--danger-ink-nested:color-mix(in srgb, var(--danger-text) 55%, var(--text));--danger-body-nested:color-mix(in srgb, var(--danger-text) 45%, var(--text));--minor-link:color-mix(in srgb, var(--accent) 40%, var(--text-strong));--notice-btn-border:color-mix(in srgb, var(--text-strong) 80%, var(--card));--notice-btn-border-hover:var(--text-strong);--notice-ring:color-mix(in srgb, var(--ring) 60%, var(--text-strong));}
 :root,[data-theme="dark"],[data-theme="amber-dark"]{
   --search-highlight:rgba(255,167,38,.45);--search-highlight-current:rgba(255,120,0,.85);--search-highlight-current-border:rgba(255,255,255,.9);
