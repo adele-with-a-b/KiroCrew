@@ -818,6 +818,24 @@ async def api_spawn(request: web.Request) -> web.Response:
             },
             status=400,
         )
+    from kiro_crew import conductor_step
+    from kiro_crew.dashboard.chat_utils import dashboard_slot_key
+
+    _parent_tab = dashboard_slot_key(parent_session) if parent_session else ""
+    if call_id and conductor_step.is_conductor_slot(
+        state.get_slot(_parent_tab) if _parent_tab else None, parent_session
+    ):
+        # A member of a ``spawn_sub_agents`` call, whose collection holds the
+        # caller's tool call open for up to two hours. A Conductor holds no call
+        # past one step (``conductor_step``, the one rule the shell gate reads too);
+        # ``spawn_run`` returns at once.
+        return web.json_response(
+            {
+                "error": conductor_step.collection_refusal(),
+                "code": conductor_step.NO_COLLECTION_CODE,
+            },
+            status=403,
+        )
     try:
         batch_total = max(0, min(body_int(body.get("batch_total", 0) or 0), 1000))
     except (TypeError, ValueError):

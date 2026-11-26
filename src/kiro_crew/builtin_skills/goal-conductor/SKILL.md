@@ -827,6 +827,12 @@ corrections alike. Pass `steer: false` only for something that must wait for the
 turn boundary. A worker's reply to you while you are still in the turn that
 messaged it cuts into that turn the same way, so `wait` for it rather than a
 shell sleep: `wait` returns early when the reply lands, and a Bash call does not.
+You hold no call longer than 60 s, so the person's message is read at your next
+step: a `spawn_sub_agents` collection and a shell call that asks to wait longer
+(a `timeout` past 60000 ms without `run_in_background`) are refused, and a `wait`
+ends early when a message comes in. Poll in steps of 60 s or less, or make a
+longer watch a worker's job: have it wait and report with `work_report`, then end
+your turn.
 Neither default cuts into a turn the person is driving, yours or the worker's:
 there the message queues until that turn ends, and a `wait` for it runs its full
 length. A steer does not withdraw what is already queued: if `session_read_message`

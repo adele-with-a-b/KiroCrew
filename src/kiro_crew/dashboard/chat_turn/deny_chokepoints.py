@@ -316,6 +316,70 @@ async def _reject_invalid_tool(
     refusal_reasons.append((title, _reason))
 
 
+async def _refuse_conductor_long_shell(
+    client: Any,
+    slot: Any,
+    event: Any,
+    *,
+    session_key: str,
+    backend: str,
+    state: Any,
+    refusal_reasons: list[tuple[str, str]],
+    refusal_notices: list[str],
+) -> bool:
+    """Refuse a Conductor's own shell call that declares a wait past one step.
+
+    A Conductor holds no tool call open past ``conductor_step``'s bound, so the
+    owner's message is read at its next step. Asked first, before any rung could
+    approve the call, so session trust does not carry it past the bound. Only a
+    call the harness asks permission for reaches this step: on Claude Code a call
+    claude approves itself (a read-only command, an allow rule in the user's or the
+    project's settings, its own auto or bypass mode) raises no request and is not refused. A
+    sub-agent's call is the child's, not the Conductor's: one with a
+    ``sub_session_id``, and a native child's, which carries only
+    ``native_child_call`` (the rule ``tool_approval._targets_own_child`` reads).
+    Returns whether the call was refused; the reject, row, audit and reason go
+    together, as on every deny here. The two harnesses whose shell declares a length
+    (``shell_wait_secs``: Claude Code and Copilot CLI) take neither a refusal steer
+    nor a rejection reason, so the model reads the bound in the turn from its prompt
+    (``spec_prompts._STEP_BOUND_RULE``) and this refusal's reason in the recovery turn
+    that follows (``refusal_reasons``). *backend* is the client's harness, read by
+    the caller (``tool_approval``).
+    """
+    from kiro_crew import conductor_step
+
+    if getattr(event, "sub_session_id", "") or getattr(event, "native_child_call", False):
+        return False
+    declared = conductor_step.shell_wait_secs(event, backend)
+    if declared <= conductor_step.CONDUCTOR_STEP_MAX_SECS:
+        return False
+    if not conductor_step.is_conductor_slot(slot, session_key):
+        return False
+    title = _redact_display_text(event.title)
+    reason = conductor_step.shell_refusal(declared, backend)
+    # Audit FIRST, before any wire I/O for this decision (see _reject_hook_blocked).
+    sel().log_tool_invocation(
+        session_key=session_key,
+        agent=slot.agent or "kirocrew",
+        source="dashboard",
+        tool_name=title,
+        tool_kind=event.tool_kind,
+        outcome="denied",
+        request_id=event.request_id,
+        error=f"conductor_step_bound: {declared}s",
+    )
+    await _steer_policy_notice(client, title, reason, refusal_notices, slot, state)
+    await _reject_attributed(client, event.request_id, attribution="steered")
+    slot.append(
+        "tool",
+        f"🚫 {title} (a Conductor waits at most {conductor_step.CONDUCTOR_STEP_MAX_SECS} s)",
+        "msg msg-tool",
+        meta=_tool_meta(event),
+    )
+    refusal_reasons.append((title, reason))
+    return True
+
+
 async def _reject_hook_error(
     client: Any,
     slot: Any,
