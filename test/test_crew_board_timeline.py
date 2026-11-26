@@ -136,6 +136,70 @@ async def test_the_window_keeps_one_line_from_before_it_and_drops_closed_items(c
 
 
 @pytest.mark.asyncio
+async def test_a_story_closed_inside_the_window_keeps_its_lines_up_to_the_close(clock):
+    """A story that closed inside the window keeps its lane (the page ends it at the
+    close); one that closed before it is not in the picture. The window's own left
+    edge counts as inside it."""
+    morning = _item(clock, "closed this morning", hours_ago=10)
+    _at(clock, 9)
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=morning, worker_session_key=WORKER)
+    _at(clock, 4)
+    wl.apply_worker_report(CONDUCTOR, morning, status="done", summary="shipped")
+    _at(clock, 3.5)
+    wl.apply_conductor_action(CONDUCTOR, "verdict", item_id=morning, verdict="pass")
+    _at(clock, 3)
+    wl.apply_conductor_action(CONDUCTOR, "close", item_id=morning, state="accepted")
+    edge = _item(clock, "closed at the edge", hours_ago=8)
+    _at(clock, 6)
+    wl.apply_conductor_action(CONDUCTOR, "close", item_id=edge, state="abandoned")
+    before = _item(clock, "closed before it", hours_ago=8)
+    _at(clock, 6.5)
+    wl.apply_conductor_action(CONDUCTOR, "close", item_id=before, state="abandoned")
+
+    body, _ = await _call(f"conductor={CONDUCTOR}&hours=6")
+    assert [line["kind"] for line in body["events"][morning]] == [
+        "bind",
+        "report",
+        "verdict",
+        "close",
+    ]
+    assert [line["kind"] for line in body["events"][edge]] == ["create", "close"]
+    assert before not in body["events"]
+
+
+@pytest.mark.asyncio
+async def test_a_plan_write_never_leads_the_window(clock):
+    # Ranked, bound, then planned, all before the window, and quiet since: the lead
+    # must still be the bind, or the page draws a running story as an empty lane.
+    item_id = _item(clock, "quiet runner", hours_ago=15)
+    _at(clock, 14.5)
+    wl.apply_person_rank(CONDUCTOR, item_id, 1)
+    _at(clock, 14)
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=item_id, worker_session_key=WORKER)
+    _at(clock, 13)
+    wl.apply_plan_write(CONDUCTOR, item_id, {"rank": 2})
+
+    body, _ = await _call(f"conductor={CONDUCTOR}&hours=12")
+    assert [line["kind"] for line in body["events"][item_id]] == ["bind"]
+
+
+@pytest.mark.asyncio
+async def test_a_persons_drag_is_marked_as_theirs_and_the_conductors_plan_is_not(clock):
+    # Both lines come from their real writers, so a change to the person's wording
+    # that the route's reading does not follow fails here.
+    item_id = _item(clock, "ranked row", hours_ago=5)
+    _at(clock, 4)
+    wl.apply_plan_write(CONDUCTOR, item_id, {"rank": 2})
+    _at(clock, 3)
+    wl.apply_person_rank(CONDUCTOR, item_id, 1)
+
+    body, response = await _call(f"conductor={CONDUCTOR}&hours=6")
+    plans = [line for line in body["events"][item_id] if line["kind"] == "plan"]
+    assert [line.get("by") for line in plans] == [None, "person"]
+    assert "by the person" not in response.body.decode()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("hours", ["0", "48", "12.5", "-6", "six"])
 async def test_only_the_offered_windows_are_read(clock, hours):
     _item(clock, "any", hours_ago=1)

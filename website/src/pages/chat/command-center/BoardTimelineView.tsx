@@ -6,9 +6,10 @@
  *  into stretches): a worker had it, its Conductor owed it a move, it waited on the
  *  person, or nobody was on it. Nothing is estimated and nothing is a percentage of
  *  "done" -- Crew cannot know that -- so a lane says WHEN, never how far along. The
- *  Conductor's lane ticks where it wrote on the board and names the longest stretch
- *  of the window it wrote nothing in; the ledger records no READS, so a tick is a
- *  move it made, which is what the lane's own line says.
+ *  Conductor's lane ticks where it wrote on the board and names a stretch of the
+ *  window it wrote nothing in (a late one whenever there is one, else the longest);
+ *  the ledger records no READS, so a tick is a move it made, which is what the
+ *  lane's own line says.
  *
  *  Each lane's row is the Board's one row shape (`BoardRow`), the same mark, title,
  *  facts and age as Moves and Steps; only the bar under it is new. The bars are
@@ -23,9 +24,10 @@
  *  should see. This one asks for times and kinds only, and joins them to the rows
  *  the panel worked out. */
 import { useMemo, useState } from 'react'
-import { Zap } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { CircleCheck, CircleX, Zap } from 'lucide-react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api } from '../../../api/client'
+import type { WorkBoardItem } from '../../../api/crewBoard'
 import {
   boardTimelineQueryKey, TIMELINE_DEFAULT_WINDOW, TIMELINE_POLL_MS, TIMELINE_WINDOWS,
   type TimelineLine, type TimelineResponse,
@@ -46,14 +48,16 @@ import { BoardRow, MoveMark, moveTone, type BoardStory } from '../../../componen
 import { BoardSections } from '../../../components/board/BoardSection'
 import { RadioChipGroup, radioChip } from '../../../components/RadioChipGroup'
 
-/** The tone each stretch is drawn in, as the Board's tones: the project's own colour
- *  while a worker has it, the person's yellow where it waits on them, red once a
- *  Conductor's move is late, quiet grey otherwise. `bg-current` fills from these. */
-const SPAN_TONE: Record<SpanKind, string> = {
-  working: 'crew-tone-aim',
-  conductor: 'text-muted',
-  person: 'crew-tone-warn',
-  idle: 'text-muted opacity-50',
+/** How each stretch is drawn, in the Board's tones: the project's own colour while a
+ *  worker has it, the person's yellow where it waits on them, quiet grey otherwise.
+ *  Red has ONE meaning, late (`spanLook`): a stuck stretch is an empty outline, not
+ *  a second red, since nobody is left on it. `bg-current` fills from the tone. */
+const SPAN_LOOK: Record<SpanKind, string> = {
+  working: 'bg-current crew-tone-aim',
+  conductor: 'bg-current text-muted',
+  person: 'bg-current crew-tone-warn',
+  stuck: 'border border-current crew-tone-muted',
+  idle: 'bg-current text-muted opacity-50',
 }
 
 /** The legend, in the order the lanes are most likely to show them. */
@@ -62,6 +66,7 @@ const LEGEND: ReadonlyArray<{ kind: SpanKind; late?: boolean; key: string }> = [
   { kind: 'conductor', key: 'components.crewMode.board_timeline_legend_conductor' },
   { kind: 'person', key: 'components.crewMode.board_timeline_legend_person' },
   { kind: 'conductor', late: true, key: 'components.crewMode.board_timeline_late_rule' },
+  { kind: 'stuck', key: 'components.crewMode.board_timeline_legend_stuck' },
   { kind: 'idle', key: 'components.crewMode.board_timeline_legend_idle' },
 ]
 
@@ -71,13 +76,15 @@ function byMoveThenWait(a: BoardStory, b: BoardStory): number {
   return BOARD_MOVES.indexOf(a.move) - BOARD_MOVES.indexOf(b.move) || longestWaitingFirst(a.item, b.item)
 }
 
-/** A percentage for a CSS length: plain digits, never locale-formatted ones. */
+/** A share of the window as a CSS length. Never through the locale's percent
+ *  format: a French "25 %" or Bengali digits are no CSS length, and the bar would
+ *  not draw. A `calc` of plain digits is what the browser parses. */
 function pct(value: number): string {
-  return `${value}%`
+  return `calc(${value} * 1%)`
 }
 
-function spanClass(kind: SpanKind, late: boolean): string {
-  return late ? 'crew-tone-danger' : SPAN_TONE[kind]
+function spanLook(kind: SpanKind, late: boolean): string {
+  return late ? 'bg-current crew-tone-danger' : SPAN_LOOK[kind]
 }
 
 /** One lane: its stretches on the window, and a diamond where its worker reported.
@@ -94,14 +101,17 @@ function Lane({ lane, since, until, testId = 'board-timeline-lane' }: {
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-bg-hover" />
       {lane.spans.map(span => {
         const { left, width } = place(span.from, span.to, since, until)
+        // Keyed by the line that opened it, never by where the window cuts it: a
+        // new read or a tick moves only the open end of a bar, never remounts it.
         return (
-          <span key={`${span.from}-${span.kind}`} data-span={span.kind} data-late={span.late || undefined}
-            className={`absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-current ${spanClass(span.kind, span.late)}`}
+          <span key={`${span.opened}-${span.kind}-${span.late ? 'late' : 'on'}`} data-span={span.kind} data-late={span.late || undefined}
+            className={`absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full ${spanLook(span.kind, span.late)}`}
             style={{ left: pct(left), width: pct(width), minWidth: 2 }} />
         )
       })}
-      {lane.reports.map(ms => (
-        <span key={ms} data-testid="board-timeline-report"
+      {/* Two reports can share a second, so the key is the place in the list too. */}
+      {lane.reports.map((ms, n) => (
+        <span key={`${ms}-${n}`} data-testid="board-timeline-report"
           className="absolute top-1/2 w-2 h-2 -ml-1 -translate-y-1/2 rotate-45 border border-text bg-bg-elevated"
           style={{ left: pct(markAt(ms, since, until)) }} />
       ))}
@@ -129,15 +139,20 @@ function Axis({ since, until }: { since: number; until: number }) {
   )
 }
 
-/** The Conductor's lane: a tick per move it made, and the longest stretch of the
- *  window with no move in it, red once it passes the Board's own rule. */
-function ConductorLane({ events, since, until }: {
+/** The Conductor's lane: a tick per move it made, and a stretch of the window with
+ *  no move in it: a late one whenever the window has one (red, a story waited on it
+ *  through the Board's own rule), else the longest, quiet. */
+function ConductorLane({ events, since, until, owed }: {
   events: Readonly<Record<string, readonly TimelineLine[]>>
   since: number
   until: number
+  /** Every stretch a story waited on its Conductor, from the lanes below. */
+  owed: readonly { from: number; to: number }[]
 }) {
-  const { ticks, longestGap } = useMemo(() => conductorLane(events, { since, until }), [events, since, until])
-  const gap = longestGap && longestGap.minutes >= 1 ? longestGap : null
+  const { ticks, gap: named } = useMemo(() => conductorLane(events, { since, until, owed }), [events, since, until, owed])
+  const gap = named && named.minutes >= 1 ? named : null
+  // Red only when something was late in it, the text and the line alike.
+  const tone = gap?.late ? 'crew-tone-danger' : 'text-muted'
   return (
     <div className="px-3 py-2 space-y-1" data-testid="board-timeline-conductor">
       <div className="flex items-baseline gap-2">
@@ -145,9 +160,9 @@ function ConductorLane({ events, since, until }: {
         <span className="text-[13px] font-medium text-text">{i18nT('components.crewMode.board_timeline_conductor')}</span>
         <span className="min-w-0 text-[11px] text-muted [overflow-wrap:anywhere]">{i18nT('components.crewMode.board_timeline_conductor_hint')}</span>
         {gap && (
-          <span className={`ml-auto shrink-0 text-[12px] tabular-nums ${gap.minutes >= LATE_MINUTES ? 'crew-tone-danger' : 'text-muted'}`}
-            data-testid="board-timeline-gap">
-            {i18nT('components.crewMode.board_timeline_gap', { age: fmtMinutes(gap.minutes) })}
+          <span className={`ml-auto shrink-0 text-[12px] tabular-nums ${tone}`}
+            data-testid="board-timeline-gap" data-late={gap.late || undefined}>
+            {i18nT(gap.late ? 'components.crewMode.board_timeline_gap_late' : 'components.crewMode.board_timeline_gap', { age: fmtMinutes(gap.minutes) })}
           </span>
         )}
       </div>
@@ -157,7 +172,7 @@ function ConductorLane({ events, since, until }: {
             style={{ left: pct(markAt(ms, since, until)) }} />
         ))}
         {gap && (
-          <span className="absolute top-1/2 h-px -translate-y-1/2 bg-current crew-tone-danger" data-testid="board-timeline-gap-line"
+          <span className={`absolute top-1/2 h-px -translate-y-1/2 bg-current ${tone}`} data-testid="board-timeline-gap-line"
             style={{ left: pct(place(gap.from, gap.to, since, until).left), width: pct(place(gap.from, gap.to, since, until).width) }} />
         )}
       </div>
@@ -171,7 +186,7 @@ function Legend() {
       {LEGEND.map(({ kind, late, key }) => (
         <li key={key} className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" data-span={kind} data-late={late || undefined}
-            className={`w-5 h-1.5 rounded-full bg-current ${spanClass(kind, !!late)}`} />
+            className={`w-5 h-1.5 rounded-full ${spanLook(kind, !!late)}`} />
           {i18nT(key, { age: fmtMinutes(LATE_MINUTES) })}
         </li>
       ))}
@@ -183,10 +198,44 @@ function Legend() {
   )
 }
 
-export default function BoardTimelineView({ root, stories, active = true }: {
+/** A story that closed inside the window: its lane, ended at its close, under a
+ *  quiet row that says when. It has no move left, so no move mark and no age; its
+ *  mark says how it ended, as Steps' Landed does: a check only when it was accepted,
+ *  the cross when it was abandoned or rejected, each named for a screen reader. */
+function ClosedStory({ item, lane, since, until }: {
+  item: WorkBoardItem
+  lane: TimelineLane
+  since: number
+  until: number
+}) {
+  const closedAt = Date.parse(item.closed_at ?? '')
+  const when = i18nT('components.crewMode.board_timeline_closed', {
+    time: fmtDateFields(closedAt, { hour: '2-digit', minute: '2-digit', hour12: false }),
+  })
+  const accepted = item.state === 'accepted'
+  const Icon = accepted ? CircleCheck : CircleX
+  return (
+    <li>
+      <BoardRow mark={(
+        <span className="inline-flex text-muted" role="img" data-testid="board-timeline-closed-mark" data-ended={accepted ? 'accepted' : 'not_done'}
+          aria-label={i18nT(accepted ? 'components.crewMode.board_landed' : 'components.crewMode.board_landed_not_done')}>
+          <Icon size={14} aria-hidden="true" />
+        </span>
+      )} title={item.title} age={when} testId="board-timeline-closed" item={item.item_id} />
+      <div className="px-3 pb-2">
+        <Lane since={since} until={until} lane={lane} />
+      </div>
+    </li>
+  )
+}
+
+export default function BoardTimelineView({ root, stories, closed = [], active = true }: {
   root: string
   /** The same rows Moves and Steps draw, from the panel's own board read. */
   stories: readonly BoardStory[]
+  /** The board read's closed stories; the ones that closed inside the window keep
+   *  their lane, ended at the close. */
+  closed?: readonly WorkBoardItem[]
   /** Polled only while the Board tab is the one on screen. */
   active?: boolean
 }) {
@@ -200,16 +249,41 @@ export default function BoardTimelineView({ root, stories, active = true }: {
     enabled: !!root && active,
     refetchInterval: interval,
     retry: false,
+    // A switch of window keeps the last window's lanes on screen until the new
+    // read lands, instead of blanking every lane in between.
+    placeholderData: keepPreviousData,
   })
   // The server's own read time and window edge, so the bars and the event stamps
-  // are measured against the same clock. Before the first answer the browser's
-  // clock stands in, and the lanes are empty anyway.
-  const until = read.data ? Date.parse(read.data.read_at) : Date.now()
-  const since = read.data ? Date.parse(read.data.since) : until - hours * 3_600_000
-  const events = read.data?.events ?? {}
+  // are measured against the same clock.
+  const data = read.data
+  const until = data ? Date.parse(data.read_at) : 0
+  const since = data ? Date.parse(data.since) : 0
+  const events = useMemo(() => data?.events ?? {}, [data])
   const lanes = useMemo(() => [...stories].sort(byMoveThenWait), [stories])
+  const ended = useMemo(() => closed
+    .filter(item => {
+      const at = Date.parse(item.closed_at ?? '')
+      return Number.isFinite(at) && at >= since && at <= until
+    })
+    .sort((a, b) => Date.parse(b.closed_at ?? '') - Date.parse(a.closed_at ?? '')), [closed, since, until])
+  // Each lane once: the open ones end as their row reads (its move and lateness, the
+  // one owner), and the Conductor's lane reads what every lane says was owed it.
+  const openLanes = useMemo(() => lanes.map(story => timelineLane(events[story.item.item_id] ?? [], {
+    since, until, reason: story.item.reason,
+    row: {
+      move: story.move, late: story.late, hasWorker: story.item.has_worker,
+      waitSince: story.move === 'conductor' ? Date.parse(story.item.last_report_at ?? '') : undefined,
+    },
+  })), [lanes, events, since, until])
+  const endedLanes = useMemo(() => ended.map(item => timelineLane(events[item.item_id] ?? [], {
+    since, until, closedAt: Date.parse(item.closed_at ?? ''), reason: item.reason,
+  })), [ended, events, since, until])
+  const owed = useMemo(() => [...openLanes, ...endedLanes].flatMap(lane => lane.owed), [openLanes, endedLanes])
+  // The window on screen, not the one asked for: a switch keeps the last window's
+  // lanes until the new read lands, and the head must name what is drawn.
+  const shownHours = data?.hours ?? hours
   return (
-    <div className="space-y-2" data-testid="board-timeline" data-hours={hours} data-loading={read.isPending || undefined}>
+    <div className="space-y-2" data-testid="board-timeline" data-hours={hours} data-loading={read.isPending || read.isPlaceholderData || undefined}>
       {/* A ledger the conductor never opened is the empty board, which the panel
           already says; any other failure says so here and offers the hand-off. */}
       {read.isError && !isNotFoundError(read.error) && (
@@ -217,7 +291,7 @@ export default function BoardTimelineView({ root, stories, active = true }: {
       )}
       <div className="flex items-baseline gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted" data-testid="board-timeline-head">
-          {i18nT('components.crewMode.board_timeline_window', { age: fmtUnit(hours, 'hour', { unitDisplay: 'long' }) })}
+          {i18nT('components.crewMode.board_timeline_window', { age: fmtUnit(shownHours, 'hour', { unitDisplay: 'long' }) })}
         </h3>
         <RadioChipGroup ariaLabel={i18nT('components.crewMode.board_timeline_window_pick')}
           className="ml-auto shrink-0 flex gap-0.5 rounded-lg border border-border bg-bg-hover/40 p-0.5" data-testid="board-timeline-windows">
@@ -235,31 +309,37 @@ export default function BoardTimelineView({ root, stories, active = true }: {
         <span aria-hidden="true" className="w-5 h-1.5 shrink-0 rounded-full bg-current crew-tone-danger" />
         {i18nT('components.crewMode.board_timeline_late_rule', { age: fmtMinutes(LATE_MINUTES) })}
       </p>
-      <BoardSections testId="board-timeline-lanes">
-        <div className="px-3 pt-2"><Axis since={since} until={until} /></div>
-        <ConductorLane events={events} since={since} until={until} />
-        {lanes.length === 0
-          ? <p className="px-3 py-2 text-[12px] text-muted" data-testid="board-timeline-empty">{i18nT('components.crewMode.board_timeline_empty')}</p>
-          : (
-            <ul className="divide-y divide-border">
-              {lanes.map(story => (
-                <li key={story.item.item_id}>
-                  <BoardRow mark={<MoveMark move={story.move} late={story.late} />} title={story.item.title} onOpen={story.onOpen}
-                    age={story.age} tone={moveTone(story.move, story.late)} facts={story.facts}
-                    testId="board-timeline-story" item={story.item.item_id} move={story.move} />
-                  <div className="px-3 pb-2">
-                    <Lane since={since} until={until}
-                      lane={timelineLane(events[story.item.item_id] ?? [], {
-                        since, until,
-                        awaitsPerson: story.item.awaits_person === true,
-                        closedAt: story.item.closed_at ? Date.parse(story.item.closed_at) : null,
-                      })} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-      </BoardSections>
+      {/* Before the first answer there is no window to draw: a groove with no bars
+          would read as "nothing happened". A failed first read says so above. */}
+      {!data ? (!read.isError && (
+        <p className="px-3 py-2 text-[12px] text-muted" data-testid="board-timeline-loading">{i18nT('components.crewMode.board_timeline_loading')}</p>
+      )) : (
+        <div className={`transition-opacity ${read.isPlaceholderData ? 'opacity-60' : ''}`} aria-busy={read.isPlaceholderData || undefined}>
+        <BoardSections testId="board-timeline-lanes">
+          <div className="px-3 pt-2"><Axis since={since} until={until} /></div>
+          <ConductorLane events={events} since={since} until={until} owed={owed} />
+          {lanes.length === 0 && ended.length === 0
+            ? <p className="px-3 py-2 text-[12px] text-muted" data-testid="board-timeline-empty">{i18nT('components.crewMode.board_timeline_empty')}</p>
+            : (
+              <ul className="divide-y divide-border">
+                {lanes.map((story, n) => (
+                  <li key={story.item.item_id}>
+                    <BoardRow mark={<MoveMark move={story.move} late={story.late} />} title={story.item.title} onOpen={story.onOpen}
+                      age={story.age} tone={moveTone(story.move, story.late)} facts={story.facts}
+                      testId="board-timeline-story" item={story.item.item_id} move={story.move} />
+                    <div className="px-3 pb-2">
+                      <Lane since={since} until={until} lane={openLanes[n]} />
+                    </div>
+                  </li>
+                ))}
+                {ended.map((item, n) => (
+                  <ClosedStory key={item.item_id} item={item} lane={endedLanes[n]} since={since} until={until} />
+                ))}
+              </ul>
+            )}
+        </BoardSections>
+        </div>
+      )}
       <Legend />
     </div>
   )

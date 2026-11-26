@@ -104,7 +104,13 @@ const real = (name) => {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-const BOARD_BODY = real('board.json') ?? BOARD
+// A stand-in row whose worker's turn runs again (a test Crew has no running turn to
+// read), so a frame can show its lane follow its Moves row: `TL_RUNNING=it_gate`.
+const RUNNING = process.env.TL_RUNNING || ''
+const STAND_IN = RUNNING
+  ? { ...BOARD, items: BOARD.items.map(it => it.item_id === RUNNING ? { ...it, alive: 'running' } : it) }
+  : BOARD
+const BOARD_BODY = real('board.json') ?? STAND_IN
 const WINDOWS = Object.fromEntries([6, 12, 24].map(h => [h, real(`timeline-${h}.json`) ?? timeline(h)]))
 const CONDUCTOR = BOARD_BODY.conductor?.slot_key || ROOT
 
@@ -118,7 +124,7 @@ const extra = async (path, route) => {
   }
   if (path === `/api/chat/slots/${ROOT}/crew-workers`) {
     await json(route, { root: ROOT, workers: [
-      { key: 'w-menu', title: 'menu-worker', agent: 'kirocrew-worker', status: 'working', group: 'working', last_activity: at(1.1), ledger_item: BOARD_BODY.items?.[2]?.item_id || 'it_menu', created_by: ROOT },
+      { key: 'w-menu', title: 'menu-worker', agent: 'kirocrew-worker', status: 'working', group: 'working', last_activity: at(1.1), ledger_item: BOARD_BODY.items?.find(it => it.title === 'Draft the menu')?.item_id || 'it_menu', created_by: ROOT },
     ] })
     return true
   }
@@ -146,14 +152,20 @@ async function frame(browser, base, { theme, width, height, name, hours }) {
       'mc-privacy-notice-v1': '1', 'mc-preview-crew-mode': '1',
       // The right bar at the width the Board is designed for.
       'mc-side-panel-width': '460',
+      // The panel as this chat last left it: open. A phone never opens it on
+      // entry (it lands on the chat), so without this there is no Board to frame.
+      [`mc-activity-open:${ROOT}`]: 'true',
     },
   })
   await page.goto(`${base}/chat?sid=${ROOT}`, { waitUntil: 'domcontentloaded' })
   await page.getByTestId('conductor-mode-view-timeline').click({ timeout: 20000 })
   await page.getByTestId('board-timeline-lanes').waitFor({ timeout: 20000 })
   if (hours && hours !== 12) await page.getByTestId(`board-timeline-window-${hours}`).click()
-  // Wait for the read to land: a frame of the empty lanes proves nothing.
-  await page.locator('[data-testid="board-timeline-story"] ~ div [data-span]').first().waitFor({ timeout: 20000 })
+  // Wait for THIS window's read to land: a switch keeps the last window's lanes on
+  // screen, marked `data-loading`, until the new one arrives.
+  await page.locator(`[data-testid="board-timeline"][data-hours="${hours || 12}"]:not([data-loading])`).waitFor({ timeout: 20000 })
+  // A frame of the empty lanes proves nothing.
+  await page.locator('[data-testid="board-timeline-lane"] [data-span]').first().waitFor({ timeout: 20000 })
   await page.waitForTimeout(600)
   // The theme SEED is not the theme RENDERED; a pair of frames in one mode is no pair.
   const rendered = await page.evaluate(() => document.documentElement.getAttribute('data-theme') || '')
@@ -172,11 +184,21 @@ const { LD_LIBRARY_PATH: _mise, ...env } = process.env
 const browser = await chromium.launch({ env, headless: true })
 try {
   console.log(`conductor ${CONDUCTOR}${FROM ? ` · bodies from ${FROM}` : ' · built-in fixture'}`)
-  for (const theme of ['dark', 'light']) {
-    await frame(browser, base, { theme, width: 1400, height: 1100, name: `bar-${theme}` })
-    await frame(browser, base, { theme, width: 390, height: 900, name: `phone-${theme}` })
+  // `TL_FRAMES=name:hours,...` takes only those dark bar frames (a proof of one
+  // case); without it, the full set.
+  const only = (process.env.TL_FRAMES || '').split(',').filter(Boolean)
+  if (only.length) {
+    for (const spec of only) {
+      const [name, hours] = spec.split(':')
+      await frame(browser, base, { theme: 'dark', width: 1400, height: 1100, name, hours: Number(hours) || 12 })
+    }
+  } else {
+    for (const theme of ['dark', 'light']) {
+      await frame(browser, base, { theme, width: 1400, height: 1100, name: `bar-${theme}` })
+      await frame(browser, base, { theme, width: 390, height: 900, name: `phone-${theme}` })
+    }
+    await frame(browser, base, { theme: 'dark', width: 1400, height: 1100, name: 'bar-dark-24h', hours: 24 })
   }
-  await frame(browser, base, { theme: 'dark', width: 1400, height: 1100, name: 'bar-dark-24h', hours: 24 })
 } finally {
   await browser.close()
   srv.close()

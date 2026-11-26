@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
 import { createTestStore } from '../../../test/helpers'
 
-const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), resumeChatSlot: vi.fn(), crewBoard: vi.fn(), sessionSummary: vi.fn() }))
+const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), resumeChatSlot: vi.fn(), crewBoard: vi.fn(), crewBoardTimeline: vi.fn(), sessionSummary: vi.fn() }))
 vi.mock('../../../api/client', () => ({ api }))
 const panel = vi.hoisted(() => ({ openPanelView: vi.fn() }))
 vi.mock('../../../hooks/usePanelTabs', () => ({ openPanelView: panel.openPanelView }))
@@ -333,8 +333,9 @@ describe('Conductor mode Crew tab', () => {
     expect(radios.map(r => r.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false', 'false'])
   })
 
-  it('switches the body under the same head: Steps groups by step, Timeline says it is coming', async () => {
+  it('switches the body under the same head: Steps groups by step, Timeline draws its window', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
+    api.crewBoardTimeline.mockResolvedValue({ read_at: '2026-11-25T12:00:00Z', since: '2026-11-25T00:00:00Z', hours: 12, events: {} })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
     expect(await screen.findByTestId('board-moves')).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('conductor-mode-view-steps'))
@@ -342,7 +343,7 @@ describe('Conductor mode Crew tab', () => {
     expect(screen.getByTestId('conductor-mode-goal')).toHaveTextContent('Plan the launch.')
     expect(screen.queryByTestId('board-moves')).toBeNull()
     fireEvent.click(screen.getByTestId('conductor-mode-view-timeline'))
-    expect(screen.getByTestId('board-timeline-coming')).toHaveTextContent('The Timeline comes in a later update.')
+    expect(await screen.findByTestId('board-timeline')).toHaveAttribute('data-hours', '12')
     expect(screen.getByTestId('conductor-mode-goal')).toBeInTheDocument()
   })
 

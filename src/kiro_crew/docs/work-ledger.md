@@ -565,14 +565,19 @@ line's text leaves the gateway, because a `bind` line's text is a worker's sessi
 key and a report's is the summary the board read already sends, redacted, on the
 row. That is what lets this read send EVERY line of the window instead of the board
 read's newest twenty per item. The window also carries the newest line from BEFORE
-it, so an item already running when the window opened is drawn from its left edge;
-an item closed before the window is left out. Only 6, 12 and 24 hours are served,
+it that opens a stretch (a `plan` write never does), so an item already running
+when the window opened is drawn from its left edge; an item closed before the
+window is left out. A `plan` line the person wrote (a rank drag on Up next,
+`apply_person_rank`) carries `by: "person"`: the writer owns its text
+(`work_ledger_plan.PERSON_RANK_TEXT`), the route reads it with
+`is_person_rank_text`, and no text is sent. No schema field records the writer. Only 6, 12 and 24 hours are served,
 and anything else is refused with `invalid_hours`.
 
 The ledger records what a conductor WRITES, never what it reads. So the Timeline's
 Conductor lane ticks on its own writes (`create`, `bind`, `decision`, `verdict`,
-`plan`, `ask`, `close`) and names the longest stretch of the window it wrote
-nothing in; no surface claims a conductor "looked" at a time, because nothing
+`plan`, `ask`, `close`; never a `plan` line marked `by: "person"`) and names the
+longest stretch of the window it wrote nothing in, from its newest write before the
+window when the read carries one, so a window with no tick at all is one gap; no surface claims a conductor "looked" at a time, because nothing
 stores that. Nothing on the Timeline is a forecast or a share of "done" either:
 the ledger holds no such number, and the view draws only the lines it wrote.
 

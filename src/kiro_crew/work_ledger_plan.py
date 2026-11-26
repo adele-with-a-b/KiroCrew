@@ -281,8 +281,27 @@ def apply_person_rank(slot_key: str, item_id: str, rank: Any) -> dict[str, Any]:
                 field="plan.backlog",
             )
         item.plan = merge_plan(item.plan, {"rank": number})
-        event = _commit_item_locked(slot_key, item, "plan", f"ranked {number:g} by the person")
+        event = _commit_item_locked(slot_key, item, "plan", PERSON_RANK_TEXT.format(rank=number))
     return {"item": item, "event": event}
+
+
+#: The text of the one ``plan`` line a person writes (:func:`apply_person_rank`).
+#: A ledger line records no writer, so this text is what tells a person's drag from
+#: the conductor's own ``plan`` writes (which read ``plan …``, :func:`_plan_event_text`).
+#: Readers test a line with :func:`is_person_rank_text`, never a copy of the string.
+PERSON_RANK_TEXT = "ranked {rank:g} by the person"
+
+
+def is_person_rank_text(text: str) -> bool:
+    """Whether a ``plan`` line's *text* is a person's drag, as the writer words it."""
+    head, tail = PERSON_RANK_TEXT.split("{rank:g}")
+    if len(text) <= len(head) + len(tail) or not (text.startswith(head) and text.endswith(tail)):
+        return False
+    try:
+        float(text[len(head) : len(text) - len(tail)])
+    except ValueError:
+        return False
+    return True
 
 
 def apply_release_write(slot_key: str, release: Any) -> dict[str, Any]:

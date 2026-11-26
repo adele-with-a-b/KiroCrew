@@ -9,7 +9,7 @@
  * already holds, and asks for nothing the row does not carry.
  */
 
-import type { WorkBoardEvent, WorkReportStatus, WorkVerdict } from './crewBoard'
+import { type WorkBoardEvent, type WorkReportStatus, type WorkVerdict } from './crewBoard'
 
 /** The windows the route serves, in hours. Anything else answers `invalid_hours`. */
 export const TIMELINE_WINDOWS: readonly number[] = [6, 12, 24]
@@ -32,6 +32,9 @@ export interface TimelineLine {
   status: WorkReportStatus
   /** On a `verdict` line only: the verdict the conductor wrote. */
   verdict?: WorkVerdict
+  /** On a person's rank drag (a `plan` line) only: the person wrote it, not the
+   *  conductor. The server reads it from the writer's own wording. */
+  by?: 'person'
 }
 
 export interface TimelineResponse {
@@ -41,7 +44,9 @@ export interface TimelineResponse {
   since: string
   hours: number
   /** Lines per item id, oldest first. An item with nothing in the window is absent;
-   *  one that was already running carries the newest line from before `since`. */
+   *  one that was already running is led by the newest line from before `since`
+   *  that opens a stretch (never a `plan` write, which says nothing about who has
+   *  the work). */
   events: Record<string, TimelineLine[]>
 }
 
@@ -50,7 +55,10 @@ export interface TimelineResponse {
 export const TIMELINE_POLL_MS = 60_000
 
 /** React Query key. One timeline per conductor AND window: a switch to 24 h is a
- *  different read, not a refetch of the same one. */
+ *  different read, not a refetch of the same one. Its OWN key, never under the
+ *  board's: a crew push re-reads the board several times a second, and each Timeline
+ *  read walks every shown story's whole log. So it is read every `TIMELINE_POLL_MS`
+ *  and no faster; a board action shows on the Timeline at its next read. */
 export function boardTimelineQueryKey(conductor: string, hours: number): readonly unknown[] {
   return ['crew-board-timeline', conductor, hours]
 }
