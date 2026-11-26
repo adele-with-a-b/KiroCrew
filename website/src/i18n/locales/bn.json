@@ -15418,12 +15418,11 @@
       "room_pressure": "সিস্টেম মেমরির চাপ জানাচ্ছে",
       "room_tight": "মেমরি কম",
       "room_unknown": "মেমরি মাপা হয়নি",
-      "running_one": "{{count}}টি চলছে",
-      "running_other": "{{count}}টি চলছে",
       "this_computer": "এই কম্পিউটার",
-      "worker_chats_one": "{{count}}টি কর্মী চ্যাট",
-      "worker_chats_other": "{{count}}টি কর্মী চ্যাট",
-      "timeline_in_board": "প্রতিটি প্রজেক্টের টাইমলাইন তার নিজের বোর্ডে আছে, সেই প্রজেক্টের চ্যাটে।"
+      "timeline_in_board": "প্রতিটি প্রজেক্টের টাইমলাইন তার নিজের বোর্ডে আছে, সেই প্রজেক্টের চ্যাটে।",
+      "seats_label": "আসন",
+      "seats_here": "এই কম্পিউটারে আসন",
+      "seats_on": "{{name}}-এ আসন"
     },
     "devFleetPage": {
       "pr_state_open": "খোলা",

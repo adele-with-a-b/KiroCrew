@@ -15827,14 +15827,11 @@
       "room_pressure": "pression mémoire signalée",
       "room_tight": "mémoire juste",
       "room_unknown": "mémoire non mesurée",
-      "running_many": "{{count}} en cours",
-      "running_one": "{{count}} en cours",
-      "running_other": "{{count}} en cours",
       "this_computer": "Cet ordinateur",
-      "worker_chats_many": "{{count}} chats d’exécutants",
-      "worker_chats_one": "{{count}} chat d’exécutant",
-      "worker_chats_other": "{{count}} chats d’exécutants",
-      "timeline_in_board": "La chronologie de chaque projet se trouve dans son propre Board, dans le chat de ce projet."
+      "timeline_in_board": "La chronologie de chaque projet se trouve dans son propre Board, dans le chat de ce projet.",
+      "seats_label": "Places",
+      "seats_here": "Places sur cet ordinateur",
+      "seats_on": "Places sur {{name}}"
     },
     "devFleetPage": {
       "pr_state_open": "ouverte",

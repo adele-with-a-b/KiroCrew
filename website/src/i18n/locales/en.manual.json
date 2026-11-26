@@ -7352,10 +7352,6 @@
       "empty_body": "Each chat in Conductor mode shows its project here.",
       "capacity_label": "Worker chats by computer",
       "this_computer": "This computer",
-      "worker_chats_one": "{{count}} worker chat",
-      "worker_chats_other": "{{count}} worker chats",
-      "running_one": "{{count}} running",
-      "running_other": "{{count}} running",
       "free_gb": "{{gb}} GB free",
       "room_ample": "has room",
       "room_tight": "memory tight",
@@ -7363,7 +7359,10 @@
       "room_pressure": "memory pressure reported",
       "room_unknown": "memory not measured",
       "room_linked": "room not reported",
-      "timeline_in_board": "Each project's Timeline is in its own Board, in that project's chat."
+      "timeline_in_board": "Each project's Timeline is in its own Board, in that project's chat.",
+      "seats_label": "Seats",
+      "seats_here": "Seats on this computer",
+      "seats_on": "Seats on {{name}}"
     },
     "devFleetPage": {
       "pr_state_open": "open",

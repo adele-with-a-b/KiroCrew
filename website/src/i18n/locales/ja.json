@@ -15009,10 +15009,11 @@
       "room_pressure": "システムがメモリ圧迫を報告しています",
       "room_tight": "メモリ逼迫",
       "room_unknown": "メモリ未計測",
-      "running_other": "{{count}} 件実行中",
       "this_computer": "このコンピューター",
-      "worker_chats_other": "ワーカーチャット {{count}} 件",
-      "timeline_in_board": "各プロジェクトのタイムラインは、そのプロジェクトのチャットのボードにあります。"
+      "timeline_in_board": "各プロジェクトのタイムラインは、そのプロジェクトのチャットのボードにあります。",
+      "seats_label": "枠",
+      "seats_here": "このコンピューターの枠",
+      "seats_on": "{{name}} の枠"
     },
     "devFleetPage": {
       "pr_state_open": "オープン",

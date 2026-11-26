@@ -15009,10 +15009,11 @@
       "room_pressure": "系统报告内存压力",
       "room_tight": "内存紧张",
       "room_unknown": "未测量内存",
-      "running_other": "{{count}} 个运行中",
       "this_computer": "这台计算机",
-      "worker_chats_other": "{{count}} 个执行者聊天",
-      "timeline_in_board": "各项目的时间线在该项目聊天的看板中。"
+      "timeline_in_board": "各项目的时间线在该项目聊天的看板中。",
+      "seats_label": "席位",
+      "seats_here": "此电脑上的席位",
+      "seats_on": "{{name}} 上的席位"
     },
     "devFleetPage": {
       "pr_state_open": "已打开",

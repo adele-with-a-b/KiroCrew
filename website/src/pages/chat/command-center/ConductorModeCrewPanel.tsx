@@ -52,6 +52,7 @@ import BoardStepsView from './BoardStepsView'
 import BoardTimelineView from './BoardTimelineView'
 import BoardUpNext, { fmtEstimate } from './BoardUpNext'
 import OtherProjectsLine from './OtherProjectsLine'
+import { SeatsStrip } from '../../../components/board/CapacityLine'
 
 export interface ConductorModeCounts { total: number; done: number; running: number; approvals: number; questions: number }
 
@@ -866,6 +867,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
             </p>
             {detail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{detail}</p>}
           </section>
+          <SeatsStrip active={active} />
           {loaded && (view === 'moves'
             ? <BoardMovesView stories={moveStories} needsYouLead={needsYouLead} needsYouLeadCount={needsYouLeadCount} upNext={upNext} />
             : view === 'steps'

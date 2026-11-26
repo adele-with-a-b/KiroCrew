@@ -15009,10 +15009,11 @@
       "room_pressure": "시스템이 메모리 압박을 보고합니다",
       "room_tight": "메모리 부족",
       "room_unknown": "메모리 측정 안 됨",
-      "running_other": "{{count}}개 실행 중",
       "this_computer": "이 컴퓨터",
-      "worker_chats_other": "작업자 채팅 {{count}}개",
-      "timeline_in_board": "각 프로젝트의 타임라인은 그 프로젝트 채팅의 보드에 있습니다."
+      "timeline_in_board": "각 프로젝트의 타임라인은 그 프로젝트 채팅의 보드에 있습니다.",
+      "seats_label": "자리",
+      "seats_here": "이 컴퓨터의 자리",
+      "seats_on": "{{name}}의 자리"
     },
     "devFleetPage": {
       "pr_state_open": "열림",

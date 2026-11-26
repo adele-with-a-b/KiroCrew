@@ -355,14 +355,14 @@ describe('AllProjectsBoardPage', () => {
   it('carries the capacity line from real counts, this computer and a linked Crew', async () => {
     await mount()
     const computers = await screen.findAllByTestId('board-capacity-computer')
-    expect(computers.map(c => within(c).getByTestId('board-capacity-name').textContent)).toEqual(['This computer', 'linked-crew'])
+    expect(computers.map(c => within(c).getByTestId('board-capacity-name').textContent)).toEqual(['Seats on this computer', 'Seats on linked-crew'])
     // Two idle reviews and one idle ask here; the running build is on the linked Crew.
-    await waitFor(() => expect(within(computers[0]).getByTestId('board-capacity-chats')).toHaveTextContent('3 worker chats'))
-    expect(within(computers[0]).queryByTestId('board-capacity-running')).toBeNull()
+    // A count alone: no computer refuses a worker chat past a number, so no "of N".
+    await waitFor(() => expect(within(computers[0]).getByTestId('board-capacity-chats').textContent).toBe('3'))
     expect(within(computers[0]).getByTestId('board-capacity-room')).toHaveTextContent('10.3 GB free · has room')
-    expect(within(computers[1]).getByTestId('board-capacity-chats')).toHaveTextContent('1 worker chat')
+    expect(within(computers[1]).getByTestId('board-capacity-chats').textContent).toBe('1')
     expect(within(computers[1]).getByTestId('board-capacity-room')).toHaveTextContent('room not reported')
-    expect(screen.queryByText(/%/)).toBeNull()
+    expect(screen.getByTestId('board-capacity')).not.toHaveTextContent(/ of |%/)
   })
 
   it('reds the room only when memory hurts', async () => {
