@@ -269,8 +269,17 @@ async def api_member_self_propose(request: web.Request) -> web.Response:
         and not (name == "capabilities" and _gateway_servers_only(raw.get("draft")))
     ):
         _audit(sk, OP_PROPOSE_SELF, "denied", "not a user turn")
+        from kiro_crew.dashboard.chat_delivery_owner_steer import refused_for_owner_rights
+
+        state = request.app["state"]
         return _deny(
-            403, "not_user_turn", "only a message the user sent in the dashboard can start this"
+            403,
+            "not_user_turn",
+            refused_for_owner_rights(
+                state,
+                state.get_slot(slot_key),
+                "only a message the user sent in the dashboard can start this",
+            ),
         )
     kind = SELF_PROPOSALS[name]
     params: dict[str, Any]

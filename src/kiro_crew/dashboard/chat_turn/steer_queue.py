@@ -16,7 +16,10 @@ from kiro_crew.dashboard.chat_delivery import (
     knowledge_meta,
     queued_text_for_display,
     quote_meta,
+    start_queue_persist,
 )
+from kiro_crew.dashboard.chat_delivery_owner_steer import DELIVERED_AGAIN_KEY
+from kiro_crew.dashboard.chat_delivery_owner_steer import forget as forget_owner_steer
 from kiro_crew.dashboard.chat_utils import (
     AUTOMATION_NOTICE_KIND,
     COMPOSER_SEND_META,
@@ -252,8 +255,12 @@ def _settle_consumed_steers(
     from kiro_crew.dashboard.chat_handlers import crew_steer_consumed
 
     consumed_wake = None
+    settled_msgs = [m for m in dict.fromkeys(previous) if m not in remaining]
+    # An owner's unread steer is on disk with the queue (``chat_delivery_owner_steer``):
+    # read now, it leaves that copy at once, so a restart cannot hand it back.
+    owner_read = any(slot._steer_owner_origin.get(m) for m in settled_msgs)
     # Send order, so the newest settled wake is the one kept.
-    for settled_msg in [m for m in dict.fromkeys(previous) if m not in remaining]:
+    for settled_msg in settled_msgs:
         # A person's steer into a Crew Mode crew member lands on its ledger now.
         crew_steer_consumed(state, slot, settled_msg)
         responsive_chat.forget_steer(slot, settled_msg)
@@ -273,6 +280,8 @@ def _settle_consumed_steers(
         from kiro_crew.dashboard import steer_retract
 
         steer_retract.on_settled(slot)
+    if owner_read and state is not None:
+        start_queue_persist(state, slot)
     return consumed_wake
 
 
@@ -636,6 +645,11 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
             directive_channel_origin=_channel,
             directive_owner_origin=_owner and _requeue_user_origin,
         )
+        # The owner's steer taken without their rights comes back here, unread, as
+        # their own turn, so the turn's end does not queue it again. One the agent
+        # took into the failed turn unconfirmed went in, and its turn says so.
+        if forget_owner_steer(slot, steer_msg) and steer_msg in taken:
+            slot._queue[0][DELIVERED_AGAIN_KEY] = True
         # The loop runs newest first, so each lands ahead of the ones already
         # put back and they keep their order: the owner's after his waiting
         # entries, any other after all of his.

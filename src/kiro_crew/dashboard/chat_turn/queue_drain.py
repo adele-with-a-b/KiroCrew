@@ -22,6 +22,7 @@ from kiro_crew.dashboard.chat_delivery import (
     queued_text_for_display,
     quote_meta,
 )
+from kiro_crew.dashboard.chat_delivery_owner_steer import DELIVERED_AGAIN_KEY
 from kiro_crew.dashboard.chat_title import RESTORED_TURN_META_KEY
 from kiro_crew.dashboard.chat_utils import (
     AUTOMATION_NOTICE_KIND,
@@ -1560,6 +1561,8 @@ async def _start_next_queued_turn(
             _run_kwargs["_recovered_wake"] = consumed[0][_RECOVERED_WAKE_KEY]
     if _possibly_delivered_steer:
         _run_kwargs["_steer_possibly_delivered"] = True
+    if any(item.get(DELIVERED_AGAIN_KEY) is True for item in consumed):
+        _run_kwargs["_owner_steer_again"] = True
     # A re-routed automation refusal carries the originating wake's provenance
     # on its (non-durable, live-only) entry meta, so the successor turn it opens
     # inherits `_directive_self_wake` / `_directive_loop_id`. Without it, a

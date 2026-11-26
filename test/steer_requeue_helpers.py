@@ -31,9 +31,8 @@ def _running_slot(state, key="test"):
 def _owners_running_slot(state, key="test"):
     """:func:`_running_slot` whose running turn the owner sent.
 
-    The composer steers the owner's message only into a turn that holds the
-    owner's mark (``steer_refusal.NOT_OWNERS_TURN``), and such a turn takes no
-    automation wake.
+    The owner's steer into such a turn is the one whose row is as it always was
+    (no ``steerWithoutOwnerRights``), and such a turn takes no automation wake.
     """
     slot = _running_slot(state, key)
     slot._turn_user_sent = slot._turn_owner_sent = True

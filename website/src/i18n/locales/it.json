@@ -13930,6 +13930,8 @@
         "redirecting_the_running_turn_not_yet_confirmed": "Reindirizzamento del turno in corso — non ancora confermato.",
         "turn_ended_before_this_applied_runs_as_its_own_message": "Il turno è terminato prima che questo venisse applicato — viene eseguito come messaggio separato.",
         "went_in_turn_failed_may_not_have_run": "È entrato nel turno, che poi è terminato con un errore — potrebbe non essere stato eseguito.",
+        "steer_without_owner_rights": "È entrato in un turno che non hai avviato, quindi lì viene eseguito senza i tuoi diritti. Se un passaggio di quel turno ne ha bisogno, viene eseguito di nuovo come tuo turno.",
+        "owner_steer_again": "Il tuo messaggio di nuovo, ora come tuo turno: un passaggio del turno in cui era entrato richiedeva i tuoi diritti.",
         "quote_message": "Cita messaggio",
         "more_actions": "Altre azioni",
         "edit_replaces_below": "L'invio sostituisce le risposte sotto",

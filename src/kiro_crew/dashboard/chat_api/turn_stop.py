@@ -678,6 +678,10 @@ async def stop_slot_turn(
             slot._steer_possibly_delivered.discard(_discarded)
             crew_steer_discarded(slot, _discarded)
         slot._pending_steers.clear()
+        # A hard Stop discards the queue too, so the turn's end sends nothing again.
+        from kiro_crew.dashboard import chat_delivery_owner_steer
+
+        chat_delivery_owner_steer.discard(slot)
         state.push_slots_update()
         logger.info("Stop (force): hard-killing session for slot %s", name)
 

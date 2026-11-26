@@ -13930,6 +13930,8 @@
         "redirecting_the_running_turn_not_yet_confirmed": "Réorientation du tour en cours — pas encore confirmé.",
         "turn_ended_before_this_applied_runs_as_its_own_message": "Le tour s'est terminé avant que ceci ne s'applique — s'exécute comme un message distinct.",
         "went_in_turn_failed_may_not_have_run": "Est entré dans le tour, qui s'est ensuite terminé par une erreur — n'a peut-être pas été exécuté.",
+        "steer_without_owner_rights": "Ajouté à un tour que tu n'as pas lancé, il s'y exécute donc sans tes droits. Si une étape de ce tour en a besoin, il s'exécute de nouveau comme ton propre tour.",
+        "owner_steer_again": "Ton message à nouveau, cette fois comme ton propre tour. Une étape du tour où il est entré avait besoin de tes droits.",
         "quote_message": "Citer le message",
         "more_actions": "Plus d'actions",
         "edit_replaces_below": "L'envoi remplace les réponses ci-dessous",

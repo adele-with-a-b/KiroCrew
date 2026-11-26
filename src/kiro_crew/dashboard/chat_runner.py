@@ -885,6 +885,10 @@ async def _run_chat(
     # (``STEER_POSSIBLY_DELIVERED_META``): the model input, and only it, is led
     # by ``STEER_POSSIBLY_DELIVERED_NOTE``.
     _steer_possibly_delivered: bool = False,
+    # The drained entry is the owner's steer coming again as their own turn
+    # (``chat_delivery_owner_steer.DELIVERED_AGAIN_KEY``): the model input, and only
+    # it, is led by ``chat_delivery_owner_steer.AGAIN_NOTE``.
+    _owner_steer_again: bool = False,
     _responsive_human: bool = False,
     _responsive_protected: bool = False,
     _directive_user_origin: bool = False,
@@ -1009,6 +1013,7 @@ async def _run_chat(
         _synthetic_recovery_turn=_synthetic_recovery_turn,
         _replays_completion=_replays_completion,
         _steer_possibly_delivered=_steer_possibly_delivered,
+        _owner_steer_again=_owner_steer_again,
         _responsive_human=_responsive_human,
         _responsive_protected=_responsive_protected,
         _directive_user_origin=_directive_user_origin,

@@ -6358,6 +6358,8 @@
         "delivery_pending": "Delivery pending…",
         "turn_ended_before_this_applied_runs_as_its_own_message": "Turn ended before this applied — runs as its own message.",
         "went_in_turn_failed_may_not_have_run": "Went into the turn, which then ended with an error — may not have run.",
+        "steer_without_owner_rights": "Went into a turn you didn't start, so it runs there without your rights. If a step there needs them, it runs again as your own turn.",
+        "owner_steer_again": "Your message again, now as your own turn: a step in the turn it went into needed your rights.",
         "quote_message": "Quote message",
         "more_actions": "More actions",
         "seed_from_conductor": "From the main chat",

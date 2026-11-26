@@ -7,7 +7,7 @@ import { readRelay } from './sessionRelay'
 import { pasteBlocksOf, unseededUserText } from './userMessageText'
 import SenderAvatar from './SenderAvatar'
 import { motion } from 'framer-motion'
-import { Pencil, Send, Copy, Check, Link2, MessageSquare, Target, Pin, PinOff, X, Clock, Quote, MoreHorizontal, Undo2, ArrowUpFromLine, ChevronRight, type LucideIcon } from 'lucide-react'
+import { Pencil, Send, Copy, Check, Link2, MessageSquare, Target, Pin, PinOff, X, Clock, Quote, MoreHorizontal, Undo2, ArrowUpFromLine, ChevronRight, ShieldOff, type LucideIcon } from 'lucide-react'
 import { copyToClipboard } from '../../utils/clipboard'
 import { copySessionLink } from '../../utils/shareUrl'
 import { ICON_ACTION_ROW_CLS } from '../../utils/touchActions'
@@ -353,6 +353,24 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
   // carries it (the steer path drops its bubble on this receipt), so the two
   // pending treatments stay disjoint.
   const pendingSend = !!(meta as { deliveryUnconfirmed?: boolean } | undefined)?.deliveryUnconfirmed
+  // The owner's words went into a turn the owner did not start (`steerWithoutOwnerRights`,
+  // `chat_delivery_owner_steer.py`), so inside it they run without the owner's rights. Not on
+  // a steer the turn ended before reading: that one runs as the owner's own turn, with them.
+  const withoutOwnerRights = !hideSteerBadge && steerMeta
+    && steerState !== 'requeued' && steerState !== 'superseded'
+    && (meta as { steerWithoutOwnerRights?: unknown } | undefined)?.steerWithoutOwnerRights === true
+  // The same message, run again as the owner's own turn after a step in that turn needed
+  // their rights (`ownerSteerAgain` names the row it first ran as).
+  const ownerSteerAgain = !steerMeta && !!(meta as { ownerSteerAgain?: unknown } | undefined)?.ownerSteerAgain
+  const withoutOwnerRightsLine = withoutOwnerRights ? (
+    <div className="inline-flex items-center gap-1 text-[12px] leading-5 text-muted mb-1 pr-1" data-testid="steer-without-owner-rights">
+      <ShieldOff size={12} className="shrink-0" aria-hidden="true" /> {i18nT('pages.chat.userMessage.steer_without_owner_rights')}
+    </div>
+  ) : ownerSteerAgain ? (
+    <div className="inline-flex items-center gap-1 text-[12px] leading-5 text-muted mb-1 pr-1" data-testid="owner-steer-again">
+      <Undo2 size={12} className="shrink-0" aria-hidden="true" /> {i18nT('pages.chat.userMessage.owner_steer_again')}
+    </div>
+  ) : null
 
   useEffect(() => {
     if (editing && taRef.current) {
@@ -847,6 +865,7 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
           <div className="inline-flex items-center gap-1 text-[12px] leading-5 font-semibold text-accent mb-1 pr-1">
             <Target size={12} className="shrink-0" /> {i18nT('pages.chat.userMessage.steered_into_the_running_turn')}
           </div>
+          {withoutOwnerRightsLine}
           {/* WHICH app sent it, when one did: a steered answer is still not the owner's typing. */}
           <AppSenderByline meta={meta} />
           {/* WHO chose this, when the sender did not. Below the badge that says
@@ -994,6 +1013,7 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
               <Target size={12} className="shrink-0" /> {i18nT('pages.chat.userMessage.went_in_turn_failed_may_not_have_run')}
             </div>
           )}
+          {withoutOwnerRightsLine}
           {/* A queued send has no badge of its own here, so on this arm the line
               is the only thing that says the handling was decided rather than
               chosen. Drawn in both arms rather than above them: the confirmed-steer

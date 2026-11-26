@@ -25,7 +25,9 @@ from typing import TYPE_CHECKING, Any
 
 from kiro_crew import steer_refusal
 from kiro_crew.config import live
+from kiro_crew.dashboard import chat_delivery_owner_steer as owner_steer
 from kiro_crew.dashboard import queue_age, steer_carry
+from kiro_crew.dashboard.chat_delivery_owner_steer import STEER_WITHOUT_OWNER_RIGHTS_META
 from kiro_crew.dashboard.chat_utils import (
     COMPOSER_SEND_META,
     STEER_POSSIBLY_DELIVERED_META,
@@ -447,19 +449,6 @@ def _steer_target(slot: Any) -> tuple[object, bool, int]:
     )
 
 
-def _opened_for_another_caller(slot: Any) -> bool:
-    """Whether *slot* was opened on another caller's behalf (``session_create``, a cron).
-
-    The crew gate's own slot check (``handlers_instances_crew_reads._slot_refusal``)
-    refuses such a slot whoever sent its turn, so the owner's standing there buys
-    no crew-scoped right a steer could lose; a worker's chat keeps taking the
-    owner's steer into the turn its conductor opened.
-    """
-    return bool(getattr(slot, "_lineage_minted", False)) or bool(
-        str(getattr(slot, "_created_by", "") or "")
-    )
-
-
 async def steer_into_running_turn(
     state: "DashboardState",
     slot: "_ChatSlot",
@@ -531,8 +520,10 @@ async def steer_into_running_turn(
     admission for a steer that is not the owner's, since the model can act on the
     injected text before the RPC returns and a crew-scoped session read it then
     makes would carry the owner's authority. The requeue reads it for
-    ``directive_owner_origin`` on the queue entry. Defaults to FALSE: the owner's
-    mark is the one thing a caller cannot acquire by saying nothing.
+    ``directive_owner_origin`` on the queue entry. And the owner's own steer into a
+    turn without their mark is told apart by it (:mod:`chat_delivery_owner_steer`).
+    Defaults to FALSE: the owner's mark is the one thing a caller cannot acquire by
+    saying nothing.
 
     ``admission`` is the containment that held when the caller's gate cleared this
     send (``session_control.containment_meta``). It is recorded for the REQUEUE,
@@ -580,8 +571,8 @@ async def steer_into_running_turn(
     fixed patrol on this slot, which the loop fire alone can say
     (``nudge_dashboard_fire._steer_work_ledger_wake``). It leaves the running
     turn's ``_turn_patrol_wake`` as it is and grants nothing: a turn without
-    the mark stays without it. Defaults to FALSE, so every other steer ends
-    the mark.
+    the mark stays without it. The owner's own steer leaves it too: their words
+    take nothing from a wake. Defaults to FALSE, so every other steer ends it.
 
     ``app_label`` stamps ``meta.appLabel`` on the persisted row (and on a requeued
     steer's drained row), the attribution pill an app inject row uses. The
@@ -658,19 +649,15 @@ async def steer_into_running_turn(
         # The turn IS a manual /compact: no prompt runs that a steer could join.
         logger.info("slot %s is compacting; queueing instead of steering", slot.key)
         return SteerUnavailable(steer_refusal.COMPACTING)
-    if (
-        owner_origin
-        and user_origin
-        and not channel_origin
-        and getattr(slot, "_turn_owner_sent", False) is not True
-        and not _opened_for_another_caller(slot)
-    ):
-        # The owner's own words, typed while a turn the owner did not send runs:
-        # a note from another session, a wake or an automation opened it, or
-        # their text joined it. A steer never gives a turn the owner's mark, so
-        # inside that turn the message would lose the rights it was typed with.
-        # It goes to the caller's queue path, which puts it first
-        # (``queue_for_next_turn``): it runs next, alone, as the owner's own turn.
+    # The owner's own words, typed while a turn the owner did not send runs. They go
+    # in and are read at the next step, without the owner's rights inside that turn
+    # (:mod:`chat_delivery_owner_steer` keeps them from having to be typed again).
+    without_owner_rights = owner_steer.without_owner_rights(
+        slot, owner_origin=owner_origin, user_origin=user_origin, channel_origin=channel_origin
+    )
+    if without_owner_rights and responsive:
+        # A Bot conversation's queue arm stops the running turn and runs the message at
+        # once, as the owner's own turn with their rights (``responsive_chat.accept``).
         logger.info("slot %s runs a turn its owner did not send; queueing first", slot.key)
         return SteerUnavailable(steer_refusal.NOT_OWNERS_TURN)
 
@@ -782,10 +769,9 @@ async def steer_into_running_turn(
         # can ask the model for a crew-scoped session read, which only the
         # owner's own turn may make. Same timing, same reset.
         slot._turn_owner_sent = False
-    # A patrol wake is admitted to `crew=` because its opener is the gateway's
-    # own text. A steer adds text that is not, whoever sent it; the one that
-    # does not is that patrol's own work-ledger news, which the gateway wrote.
-    if patrol_news is not True:
+    # A patrol wake is admitted to `crew=` because its opener is gateway text. A steer adds
+    # text that is not; the mark stays for that patrol's own news and the owner's words.
+    if patrol_news is not True and not without_owner_rights:
         slot._turn_patrol_wake = False
     if admission is not None:
         slot._steer_admissions[message] = admission
@@ -839,7 +825,12 @@ async def steer_into_running_turn(
         # Held for the REQUEUE like the maps above: a steer the turn ends before
         # taking drains as its own row, and that row must still be the nudge.
         slot._steer_automation[message] = dict(nudge_meta)
+    if without_owner_rights:
+        shown = {**attachments, **quote, **knowledge}
+        owner_steer.note_taken(slot, message, delivery_id, admission, shown)
     slot._pending_steers.append(message)
+    if owner_origin and user_origin and not channel_origin:
+        start_queue_persist(state, slot)  # unread, it is on disk as a queued send is
     # How long it sits unread is what wakes its sender (``queue_age.waits``). A
     # harness that reports a steer read only at turn end gives no unread to count.
     queue_age.note_steered(slot, message, read_reported=not loses_steers)
@@ -957,6 +948,7 @@ async def steer_into_running_turn(
             slot._pending_steers.remove(message)
             slot._steer_possibly_delivered.discard(message)
             responsive_chat.forget_steer(slot, message)
+            owner_steer.forget(slot, message)
             slot._steer_delivery_ids.pop(message, None)
             slot._steer_send_ids.pop(message, None)
             slot._steer_user_origin.pop(message, None)
@@ -1214,6 +1206,8 @@ async def steer_into_running_turn(
     )
     if _retractable:
         meta[STEER_RETRACTABLE_META] = True
+    if without_owner_rights:
+        meta[STEER_WITHOUT_OWNER_RIGHTS_META] = True
     # The row survives a page reload via the dirty-flush cycle. The session's own
     # human's steer is stored as typed, like an ordinary send's row; a peer's is
     # stored sanitized, because its text has no human author to be its reader. A
@@ -1277,14 +1271,20 @@ async def steer_into_running_turn(
         push_payload.setdefault("meta", {}).update(quote)
     if banner:
         push_payload.setdefault("meta", {})[CHAT_BANNER_META_KEY] = banner
+    if without_owner_rights:
+        push_payload.setdefault("meta", {})[STEER_WITHOUT_OWNER_RIGHTS_META] = True
     if relay_meta:
         # A peer's steer: an open tab draws the row from this frame, so without
         # the sender it would show the raw provenance prefix until a reload.
         push_payload.setdefault("meta", {})["relay"] = dict(relay_meta)
     state.broadcast_ws("steer_push", push_payload)
-    if _state == STEER_STATE_WRITTEN and _shown_as_typed and owner_origin:
-        # Still held, so a card open now is the one it was typed over. Without
-        # this the steer waits behind the card until someone clicks it.
+    if (
+        _state == STEER_STATE_WRITTEN
+        and _shown_as_typed
+        and owner_origin
+        and not without_owner_rights
+    ):
+        # Still held in the owner's own turn, so a card open now is the one it was typed over.
         reject_approvals_superseded_by_steer(state, slot)
     return STEER_STEERED
 

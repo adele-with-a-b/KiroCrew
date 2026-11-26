@@ -651,4 +651,15 @@ describe('useWebSocket frame router', () => {
     expect(steers[0]?.meta?.relay).toEqual({ senderKey: 'chat-1', via: 'session_send' })
     expect(steers[1]?.meta?.relay).toBeUndefined()
   })
+
+  it("the owner's steer echo keeps the mark that it went in without the owner's rights, and only a true one", () => {
+    const { ws } = mount()
+    act(() => {
+      ws.simulateMessage({ type: 'steer_push', data: { slot: ACTIVE, content: 'Go.', ts: '30', steerState: 'written', meta: { steerWithoutOwnerRights: true } } })
+      ws.simulateMessage({ type: 'steer_push', data: { slot: ACTIVE, content: 'also', ts: '31', steerState: 'written', meta: { steerWithoutOwnerRights: 'yes' } } })
+    })
+    const steers = chat().messages.filter(m => m.meta?.steer === true)
+    expect(steers[0]?.meta?.steerWithoutOwnerRights).toBe(true)
+    expect(steers[1]?.meta?.steerWithoutOwnerRights).toBeUndefined()
+  })
 })

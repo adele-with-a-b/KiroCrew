@@ -80,6 +80,7 @@ class _ChatTurn:
     _synthetic_recovery_turn: "bool"
     _replays_completion: "bool"
     _steer_possibly_delivered: "bool"
+    _owner_steer_again: "bool"
     _responsive_human: "bool"
     _responsive_protected: "bool"
     _directive_user_origin: "bool"
@@ -375,6 +376,7 @@ class _ChatTurn:
         _synthetic_recovery_turn: "bool",
         _replays_completion: "bool",
         _steer_possibly_delivered: "bool",
+        _owner_steer_again: "bool",
         _responsive_human: "bool",
         _responsive_protected: "bool",
         _directive_user_origin: "bool",
@@ -413,6 +415,7 @@ class _ChatTurn:
         self._synthetic_recovery_turn = _synthetic_recovery_turn
         self._replays_completion = _replays_completion
         self._steer_possibly_delivered = _steer_possibly_delivered
+        self._owner_steer_again = _owner_steer_again
         self._responsive_human = _responsive_human
         self._responsive_protected = _responsive_protected
         self._directive_user_origin = _directive_user_origin

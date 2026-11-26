@@ -8,9 +8,9 @@ and the real gate:
 
 * the turn's ``_turn_patrol_wake`` mark is adopted only from the loop fire's
   ``_directive_patrol_wake``, never beside a user-sent or channel opener, and is
-  cleared at the turn's end and by any steer but one: the work-ledger news of
+  cleared at the turn's end and by any steer but two: the work-ledger news of
   that same recorded fixed patrol, which the loop fire alone can name and which
-  grants no mark to a turn that held none;
+  grants no mark to a turn that held none, and the owner's own typed message;
 * the loop fire declares it only for a loop that still carries the fixed patrol
   (``conductor_patrol.is_fixed_patrol_payload``) AND that the keystone-gated
   trust record names as one the owner dispatched under, so a row forged in the
@@ -188,10 +188,19 @@ async def test_a_turn_that_declares_nothing_holds_no_mark(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("user_origin", [False, True])
-async def test_a_steer_from_a_person_or_a_peer_ends_the_patrol_mark(user_origin: bool) -> None:
-    """A steer adds text the gateway did not write, whoever sent it: a peer, or a
-    person who is not the owner (the owner's own message is kept out, below)."""
+@pytest.mark.parametrize(
+    ("origin", "kept"),
+    [
+        ({"user_origin": False}, False),
+        ({"user_origin": True}, False),
+        ({"user_origin": True, "owner_origin": True}, True),
+    ],
+    ids=["a peer", "a person who is not the owner", "the owner"],
+)
+async def test_only_the_owners_steer_leaves_the_patrol_mark(origin: dict, kept: bool) -> None:
+    """A steer adds text the gateway did not write: a peer's or another person's ends
+    the mark. The owner's own typed message goes in too and leaves it, since the
+    owner's words take nothing from the wake."""
     from kiro_crew.dashboard import chat_delivery
     from kiro_crew.dashboard.state import _ChatSlot
 
@@ -200,31 +209,9 @@ async def test_a_steer_from_a_person_or_a_peer_ends_the_patrol_mark(user_origin:
     client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
     client.steer = AsyncMock(return_value=None)
     slot._acp_client = client
-    await chat_delivery.steer_into_running_turn(
-        MagicMock(), slot, "also do this", user_origin=user_origin
-    )
-    assert slot._turn_patrol_wake is False
-
-
-@pytest.mark.asyncio
-async def test_the_owners_typed_message_stays_out_of_the_wake_and_leaves_the_mark() -> None:
-    """The owner's own message is not steered into a wake (it runs next, as the
-    owner's turn), so no text joined the wake and its mark stands."""
-    from kiro_crew import steer_refusal
-    from kiro_crew.dashboard import chat_delivery
-    from kiro_crew.dashboard.state import _ChatSlot
-
-    slot = _ChatSlot("chat-1")
-    slot._turn_patrol_wake = True
-    client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
-    client.steer = AsyncMock(return_value=None)
-    slot._acp_client = client
-    outcome = await chat_delivery.steer_into_running_turn(
-        MagicMock(), slot, "also do this", user_origin=True, owner_origin=True
-    )
-    assert chat_delivery.steer_refusal_of(outcome) == steer_refusal.NOT_OWNERS_TURN
-    client.steer.assert_not_awaited()
-    assert slot._turn_patrol_wake is True
+    await chat_delivery.steer_into_running_turn(MagicMock(), slot, "also do this", **origin)
+    client.steer.assert_awaited_once()
+    assert slot._turn_patrol_wake is kept
 
 
 # ── the loop fire: declared for the fixed patrol alone ───────────────────────

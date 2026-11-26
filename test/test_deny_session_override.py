@@ -1706,3 +1706,44 @@ class TestBatchCascadeKeepsTheRuleRefusal:
             if json.loads(m["cls"]).get("request_id") == "req-1"
             and DENY_OVERRIDE_META_KEY in json.loads(m["cls"])
         ]
+
+
+class TestTheOwnersSteerIntoAnotherTurn:
+    """The owner's message went into a patrol wake's turn; the denied command's card is
+    withheld there for want of the owner's mark. The refusal says so, and the message
+    runs again as the owner's own turn, where the card is offered."""
+
+    @pytest.mark.asyncio
+    async def test_the_withheld_card_says_so_and_the_message_runs_again_with_it(
+        self, tmp_path, monkeypatch
+    ):
+        import asyncio
+
+        from kiro_crew.dashboard import chat_delivery_owner_steer as owner_steer
+
+        _no_pins(monkeypatch)
+        state, client = _make_state(tmp_path, context_builder=_scripted_gate([_RM_ROOT]))
+        slot = _make_slot()
+        # The steer path's own record of the owner's steer this wake's turn read.
+        owner_steer.note_taken(slot, "clean the build dir", "d-1", None, {})
+        _set_stream(client, _stream())
+        answer = asyncio.create_task(_answer_approval(slot, "req-1", "rejected"))
+        try:
+            with _patch_stats():
+                await finished(
+                    _run_chat(state, slot, "check the work ledger", _directive_patrol_wake=True),
+                    "the wake's turn completing",
+                )
+                await await_until(answer, what="the owner's own turn being offered the card")
+        finally:
+            await _drain(answer)
+
+        refused, *answered = [
+            m for m in slot.messages if m.get("role") == "tool" and _RM_ROOT in m["content"]
+        ]
+        assert owner_steer.REFUSAL_NOTICE in refused["content"], "the wake's turn is told"
+        assert all(owner_steer.REFUSAL_NOTICE not in m["content"] for m in answered)
+        (again,) = [m for m in slot.messages if m.get("content") == "clean the build dir"]
+        assert again["meta"][owner_steer.OWNER_STEER_AGAIN_META] is True
+        (card,) = _permission_rows(slot)
+        assert DENY_OVERRIDE_META_KEY in json.loads(card["cls"]), "his own turn gets the card"

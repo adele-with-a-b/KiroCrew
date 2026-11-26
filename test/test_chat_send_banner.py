@@ -152,7 +152,7 @@ async def test_steered_send_keeps_its_label_on_the_row_and_the_requeue(tmp_path,
     state.broadcast_ws = MagicMock()
     slot = state.get_or_create_slot(_SLOT)
     slot.task = MagicMock(done=MagicMock(return_value=False))
-    # The owner's own turn: the composer steers into no other (``NOT_OWNERS_TURN``).
+    # The owner's own turn: their steer's row carries no ``steerWithoutOwnerRights``.
     slot._turn_user_sent = slot._turn_owner_sent = True
     requeue_meta: dict = {}
 

@@ -14,6 +14,7 @@ from kiro_crew.context_blocks import (
     attributable_user_chars,
     split_blocks,
 )
+from kiro_crew.dashboard.chat_delivery_owner_steer import AGAIN_NOTE
 from kiro_crew.dashboard.chat_utils import (
     _SYNTHETIC_RECOVERY_MSGS,
     STEER_POSSIBLY_DELIVERED_NOTE,
@@ -360,6 +361,10 @@ async def _turn_dispatch_gates(turn: _ChatTurn) -> _Flow | None:
         # Model input only: dispatch, the mirror legs and the row read the
         # user's own text.
         full_message = STEER_POSSIBLY_DELIVERED_NOTE + full_message
+        turn.full_message = full_message
+    if turn._owner_steer_again and not is_slash:
+        # Model input only, as above: the owner's message comes again as their turn.
+        full_message = AGAIN_NOTE + full_message
         turn.full_message = full_message
 
     # Checklist resync. The pill's snapshot outlives the native conversation

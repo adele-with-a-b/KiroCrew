@@ -287,10 +287,14 @@ async def _resolve_agent_caller(
             request[REQ_OWN_GOAL_TURN] = True
             return slot_key, sk
         _audit(sk, operation, "denied", "not a user turn")
+        from kiro_crew.dashboard.chat_delivery_owner_steer import refused_for_owner_rights
+
         raise GuideError(
             403,
             "not_user_turn",
-            "only a message the user sent in the dashboard can start this",
+            refused_for_owner_rights(
+                state, slot, "only a message the user sent in the dashboard can start this"
+            ),
         )
     return slot_key, sk
 

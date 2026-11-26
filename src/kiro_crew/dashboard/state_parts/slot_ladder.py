@@ -19,7 +19,8 @@ Writes: ``_acp_pipe_death_retries``, ``_active_fallback_model``, ``_batch_reject
 ``_last_turn_model_refused_loop_id``, ``_last_turn_structural_terminal``,
 ``_last_turn_structural_terminal_loop_gen``, ``_last_turn_structural_terminal_loop_id``,
 ``_model_access_fallback_used``, ``_native_subagent_output``,
-``_native_subagent_tracker``, ``_pending_steers``, ``_pending_subagent_failures``,
+``_native_subagent_tracker``, ``_owner_steer_turn``, ``_pending_steers``,
+``_pending_subagent_failures``,
 ``_pending_synthesis``, ``_poisoned_reset_used``, ``_posttoken_retry_used``,
 ``_prestream_exhausted_cycles``, ``_prev_turn_ctx_session``, ``_prev_turn_ctx_used``, ``_promise_only_retries``, ``_prompt_busy_retries``,
 ``_refusal_client_pick_epoch``, ``_refusal_fallback_attempted``,
@@ -49,6 +50,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from kiro_crew.dashboard.chat_delivery_owner_steer import OwnerSteers
 from kiro_crew.dashboard.recovery_replays import RecoveryReplays
 
 if TYPE_CHECKING:
@@ -454,7 +456,7 @@ def init_ladder_fields(self: _ChatSlot) -> None:
     # (`conductor_patrol.is_fixed_patrol_payload`), so the turn's opener is text
     # the gateway wrote. Set at the turn's outermost entry, cleared by a steer
     # admitted into the turn (`chat_delivery`; that patrol's own work-ledger
-    # news alone leaves it standing) and on every turn exit
+    # news and the owner's own typed message leave it standing) and on every turn exit
     # (`queue_cycle`), as the owner mark is. Read by the remote-dispatch gate
     # (`remote_dispatch_routes._patrol_wake_admitted`), and only while
     # `work_ledger.remote_dispatch_patrol_wake` is on.
@@ -561,6 +563,11 @@ def init_ladder_fields(self: _ChatSlot) -> None:
     # carries. Requeue stamps the nudge on the entry (``AUTOMATION_STEER_META``),
     # so the drained row is a nudge row too.
     self._steer_automation = {}
+    # The running turn's owner steers taken without the owner's rights, and whether
+    # a gate refused a call in it for those rights (``chat_delivery_owner_steer``).
+    # Emptied at every turn exit by the hand-off, which delivers them again when a
+    # refusal happened, and by a hard Stop.
+    self._owner_steer_turn = OwnerSteers()
     # In-flight `wait` tool sleep, as reported by the tool's own keepalive
     # ping: {"wait_id": str, "seconds": int, "deadline_ts": float}. The
     # deadline is on the dashboard's clock (see api_session_keepalive) so

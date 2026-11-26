@@ -9,6 +9,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from kiro_crew.dashboard.chat_delivery_owner_steer import (
+    deliver_again as deliver_owner_steers_again,
+)
 from kiro_crew.dashboard.chat_utils import SYNTHESIS_HELD, SYNTHESIS_UNKNOWN
 from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY, RESTORED_SEND_CHOSEN_KEY
 from kiro_crew.dashboard.state import SUBAGENT_FINAL_COMPLETION_NOTE, SUBAGENT_SYNTHESIS_PROMPT
@@ -563,6 +566,10 @@ async def _hand_off_queue(
     cancellable) and the cycle ends with its terminal ``chat_done``. The
     ``predecessor_*`` pair names the ending turn, so the drain marks its end
     unless the head is that turn's own recovery."""
+    # The owner's steers this turn read without their rights, when a call in it was
+    # refused for those rights: each runs again, once, as the owner's own turn. First,
+    # so they stay ahead of the steers the turn never read, as he typed them.
+    deliver_owner_steers_again(state, slot)
     # Steers outrank queued messages, so they go to the head before the drain.
     _requeue_unconsumed_steers(state, slot)
     if drain and slot._queue:
