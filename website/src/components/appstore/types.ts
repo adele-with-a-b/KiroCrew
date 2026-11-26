@@ -168,6 +168,8 @@ export type InstalledApp = {
   /** Approved link-open hosts, and the ones an update holds back. */
   linkOpenGrant?: LinkOpenGrantRow
   composerActionGrant?: ComposerActionGrantRow
+  /** Session controls whose `composerInsert` is approved, and the ids an update added that wait. */
+  sessionControlInsertGrant?: { approved?: string[]; staged?: string[] }
   /** Approved selection-action items, and the changed ones an update holds back. */
   selectionActionGrant?: SelectionActionGrantRow
   /** Whether the owner approved `permissions.workerAutoApprove`; absent when undeclared. */

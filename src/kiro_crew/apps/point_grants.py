@@ -59,10 +59,18 @@ def _refuse_clash(families: tuple[str, ...]) -> None:
         raise ValueError(f"grant families already registered: {clash}")
 
 
-def register_point_grants(families: tuple[str, ...], entries: EntriesFn) -> None:
-    """Register one point's grant families and how a manifest declares them."""
+def register_point_grants(
+    families: tuple[str, ...], entries: EntriesFn, *, explicit_only: bool = False
+) -> None:
+    """Register one point's grant families and how a manifest declares them.
+
+    ``explicit_only`` as for :func:`register_permission_grants`: for a field an
+    older host ignored, so a stored set written there must not approve it.
+    """
     _refuse_clash(families)
     _REGISTRY.append((tuple(families), entries))
+    if explicit_only:
+        _EXPLICIT_ONLY.extend(families)
 
 
 def register_permission_grants(
@@ -178,6 +186,22 @@ from kiro_crew.apps.selection_action_grants import (  # noqa: E402
 )
 
 register_point_grants(SELECTION_ACTION_GRANT_FAMILIES, selection_action_grant_entries)
+
+
+def _session_control_insert_grant_entries(contributes: Any) -> dict[str, list[str]]:
+    # Deferred, like ``open_files`` below: off an MCP server's pre-list module budget.
+    from kiro_crew.apps.session_control_insert_grants import (  # noqa: PLC0415
+        session_control_insert_grant_entries,
+    )
+
+    return session_control_insert_grant_entries(contributes)
+
+
+#: ``session_control_insert_grants.SESSION_CONTROL_INSERT_FAMILY``, named here so
+#: registering it imports nothing. Explicit-only: an older host ignored the field.
+register_point_grants(
+    ("sessionControlInserts",), _session_control_insert_grant_entries, explicit_only=True
+)
 
 from kiro_crew.apps.worker_auto_approve import (  # noqa: E402
     WORKER_AUTO_APPROVE_GRANT_FAMILIES,

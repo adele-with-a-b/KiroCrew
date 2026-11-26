@@ -12,7 +12,8 @@ import { safeGetItem } from '../../../utils/safeStorage'
 import { hasBlockingOverlay } from '../../../utils/blockingOverlay'
 import type { ChatFolder, ChatSlot } from '../../../types'
 import { onLinkPreviewNav } from '../../../linkPreview/linkPreviewNav'
-import { clearSessionControlRequest, putSessionControlRequest, type SessionControlOpenVia } from '../../../app-sdk/sessionControlRequest'
+import { clearSessionControlRequest, noteSessionControlAct, putSessionControlRequest, type SessionControlOpenVia } from '../../../app-sdk/sessionControlRequest'
+import { isTrustedEvent } from '../../../components/trustedClick'
 
 /** One shared empty list, so an absent folder cache keeps a stable identity. */
 const NO_CHAT_FOLDERS: ChatFolder[] = []
@@ -106,7 +107,10 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
   // and "Enable shortcuts" off turns these off.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing) return
+      // Only the person's own key: a key event a script dispatches (an app
+      // module can dispatch its own chord) opens nothing, hands nothing over and
+      // starts no insert window.
+      if (e.defaultPrevented || e.isComposing || !isTrustedEvent(e)) return
       const { activeSlot: slot, appKeys: keys, openSessionControl: open, refreshSessionControlStatuses: refresh } = latestOpen.current
       const hit = keys.length > 0 ? matchAppKeyEvent(e, keys, shortcutPlatform()) : null
       if (!hit || !slot || isTerminalTarget(e.target) || safeGetItem(SHORTCUTS_ENABLED_KEY) === '0') return
@@ -128,6 +132,7 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
         return
       }
       keyOpen.current = { control: hit.control.key, keyId: hit.key.id }
+      noteSessionControlAct(dashboardSessionKey(slot), hit.control.key)
       openOnChip(hit.control, slot, chip, hit.key.arg, 'key')
     }
     document.addEventListener('keydown', onKeyDown, true)

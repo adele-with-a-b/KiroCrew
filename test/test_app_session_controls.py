@@ -358,3 +358,46 @@ class TestSessionControlDock:
         fields = {"stayOpen": True} if dock is None else {"stayOpen": True, "dock": dock}
         errs = self._manifest(**fields).validate(None)
         assert "session control contribution c stayOpen needs dock: true" in errs
+
+
+class TestSessionControlComposerInsert:
+    """``composerInsert`` lets a docked box put text in its chat's message box (level 18)."""
+
+    def _manifest(self, **ctl):
+        return AppManifest.from_dict(
+            {
+                **BASE,
+                "contributes": {
+                    "sessionControls": [{"id": "c", "entryPoint": "dist/c.mjs", **ctl}]
+                },
+            }
+        )
+
+    def test_absent_is_off_and_omitted_from_output(self):
+        m = self._manifest(dock=True)
+        assert "composerInsert" not in m.to_dict()["contributes"]["sessionControls"][0]
+        assert m.contributes.sessionControls[0].composerInsert is False
+        assert m.validate(None) == []
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_a_boolean_with_dock_validates_and_round_trips(self, value):
+        m = self._manifest(dock=True, composerInsert=value)
+        assert m.validate(None) == []
+        out = m.to_dict()["contributes"]["sessionControls"][0]
+        assert ("composerInsert" in out) is value
+        again = AppManifest.from_dict(m.to_dict()).contributes.sessionControls[0]
+        assert again.composerInsert is value
+
+    @pytest.mark.parametrize("bad", ["true", 1, 0, None, [True], {"on": True}])
+    def test_anything_but_a_boolean_is_refused(self, bad):
+        errs = self._manifest(dock=True, composerInsert=bad).validate(None)
+        assert errs == ["session control contribution c composerInsert must be true or false"]
+
+    @pytest.mark.parametrize("dock", [None, False])
+    def test_composer_insert_without_dock_is_refused(self, dock):
+        # Only a box docked beside the message box may put text in it.
+        fields = (
+            {"composerInsert": True} if dock is None else {"composerInsert": True, "dock": dock}
+        )
+        errs = self._manifest(**fields).validate(None)
+        assert errs == ["session control contribution c composerInsert needs dock: true"]

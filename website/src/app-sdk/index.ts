@@ -659,6 +659,9 @@ export type { SessionControlJumpResult } from './sessionControlRequest'
 // A session control opens its own box in another chat, on a click in it (level 17).
 export { useSessionControlGo } from './sessionControlRequest'
 export type { SessionControlGoResult } from './sessionControlRequest'
+// A docked session control puts text in its chat's message box; it reads nothing back (level 18).
+export { useInsertIntoComposer } from './sessionControlRequest'
+export type { ComposerInsertCode, ComposerInsertResult } from './sessionControlRequest'
 // The way back after a status item's go sent the operator to this tab's chat.
 // Feature-detected by name, as `usePanelTabRequest` is.
 export { useStatusGoBack } from './statusGoBack'

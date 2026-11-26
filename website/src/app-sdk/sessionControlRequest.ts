@@ -13,15 +13,19 @@
  * The same scope gives a control `useSessionControlJump()`: scroll its own chat
  * to one of its messages, through the route a card's `jumpTo` takes; and
  * `useSessionControlGo()`: open its own box in another chat, on a click in it,
- * through the route a status item's go takes.
+ * through the route a status item's go takes; and `useInsertIntoComposer()`:
+ * put text in its chat's message box from a docked box, through the composer's
+ * own app-text write.
  *
  * @module app-sdk/sessionControlRequest
  */
-import { createContext, createElement, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, createElement, useCallback, useContext, useMemo, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import type { PanelTabRequest } from './panelTabRequest'
 import { sendAppNav } from '../linkPreview/linkPreviewNav'
 import { readMessageRef } from '../linkPreview/linkPreviewProtocol'
 import { useClickGrant } from '../components/appFileOpen'
+import { isTrustedClick, isTrustedKey } from '../components/trustedClick'
+import { readOfferedText } from '../composerActions/literalInsert'
 import { isCrewLinkKey } from '../lib/crewDeepLink'
 import { MAX_TARGET_ARG_BYTES, useStatusGo } from '../lib/statusGo'
 
@@ -43,10 +47,20 @@ interface Where {
   control: string
 }
 
+/** Why the host put none of an app's text in the message box. `no_gesture`: no act
+ *  of the person on this control in the last `INSERT_ACT_MS`. */
+export type ComposerInsertCode = 'stale' | 'too_large' | 'not_allowed' | 'not_literal' | 'no_gesture'
+
+/** Host only: put `text` in the message box of the box's own chat; nothing back
+ *  when it went in, or why not. Given to the scope only while the box is open. */
+export type ScopeComposerInsert = (text: unknown) => ComposerInsertCode | undefined
+
 /** What the scope gives the hooks below: where, and the box's click grant. */
 interface Scope extends Where {
   /** True once per real click in the app's own module, within `CLICK_GRANT_MS` of it. */
   takeClick: () => boolean
+  /** The host's insert, for a box that may insert (`composerInsert`, approved). */
+  insert?: ScopeComposerInsert
 }
 
 const requests = new Map<string, SessionControlRequest>()
@@ -55,6 +69,33 @@ let seq = 0
 
 const keyOf = (sessionKey: string, control: string) => `${sessionKey}\u0000${control}`
 const emit = () => { for (const fn of [...listeners]) fn() }
+
+/** How long after a real act of the person aimed at a control its box may put text
+ *  in the message box (`useInsertIntoComposer`): the person opening the box with its
+ *  chip or its key, pressing its key again, or a trusted key or click in the box.
+ *  The newest act restarts it. Outside it a call answers `no_gesture`, so a timer
+ *  in a box nobody touched writes nothing. */
+export const INSERT_ACT_MS = 5_000
+/** The clock the window is measured on; a test sets `now`. */
+export const insertActClock = { now: (): number => performance.now() }
+/** When the person last acted on each chat's control. */
+const lastActs = new Map<string, number>()
+const actIsRecent = (sessionKey: string, control: string): boolean => {
+  const at = lastActs.get(keyOf(sessionKey, control))
+  if (at === undefined) return false
+  const age = insertActClock.now() - at
+  return age >= 0 && age <= INSERT_ACT_MS
+}
+
+/** Host only: the person acted on control `control` of chat `sessionKey`, so its
+ *  insert window restarts. Called only for a trusted event of the person: a click
+ *  on the control's chip or a press of its key that opens the box or hands it a
+ *  request, and a key or click inside the box (`SessionControlRequestScope`). An
+ *  open the app asked for (a card, a status go, `useSessionControlGo`), the box
+ *  mounting, and an open the host restores on its own are no act. */
+export function noteSessionControlAct(sessionKey: string, control: string): void {
+  lastActs.set(keyOf(sessionKey, control), insertActClock.now())
+}
 
 /** Host only: record `payload` for control `control` (`<app>:<id>`) of chat `sessionKey`. */
 export function putSessionControlRequest(sessionKey: string, control: string, payload: unknown, via: SessionControlOpenVia): void {
@@ -68,8 +109,10 @@ export function sessionControlRequestSeq(sessionKey: string, control: string): n
   return requests.get(keyOf(sessionKey, control))?.seq ?? 0
 }
 
-/** Host only: the popover closed, so opening the chip by hand reads null, not the old payload. */
+/** Host only: the popover closed, so opening the chip by hand reads null, not the old
+ *  payload, and a box the app opens again does not inherit the person's last act. */
 export function clearSessionControlRequest(sessionKey: string, control: string): void {
+  lastActs.delete(keyOf(sessionKey, control))
   if (requests.delete(keyOf(sessionKey, control))) emit()
 }
 
@@ -85,17 +128,30 @@ function subscribe(fn: () => void): () => void {
 
 const WhereContext = createContext<Scope | null>(null)
 
+/** Whether an event the scope's box heard happened on its own elements. */
+const inBox = (e: ReactMouseEvent | ReactKeyboardEvent): boolean => e.target instanceof Node && e.currentTarget.contains(e.target)
+
 /** Host only: the chat and control the app module below is mounted for. It wraps
  *  the module (and nothing of the host's) in a `display: contents` box that
  *  records a real click for `useSessionControlGo`, as `AppFileOpenRoot` does for
  *  `useOpenFile`: the host's header and retry button never grant. */
-export function SessionControlRequestScope({ sessionKey, control, children }: Where & { children: ReactNode }) {
+export function SessionControlRequestScope({ sessionKey, control, insert, children }: Where & { insert?: ScopeComposerInsert; children: ReactNode }) {
   const { record, take } = useClickGrant()
-  const value = useMemo(() => ({ sessionKey, control, takeClick: take }), [sessionKey, control, take])
+  const value = useMemo(() => ({ sessionKey, control, takeClick: take, insert }), [sessionKey, control, take, insert])
+  // Each trusted key or click in the box restarts the insert window. In the box's
+  // own elements only: React carries an event from a portal the module draws
+  // elsewhere on the page up through this scope too.
+  const onClickCapture = useCallback((e: ReactMouseEvent) => {
+    record(e)
+    if (isTrustedClick(e) && inBox(e)) noteSessionControlAct(sessionKey, control)
+  }, [record, sessionKey, control])
+  const onKeyDownCapture = useCallback((e: ReactKeyboardEvent) => {
+    if (isTrustedKey(e) && inBox(e)) noteSessionControlAct(sessionKey, control)
+  }, [sessionKey, control])
   return createElement(
     WhereContext.Provider,
     { value },
-    createElement('div', { 'data-session-control-scope': '', style: { display: 'contents' }, onClickCapture: record }, children),
+    createElement('div', { 'data-session-control-scope': '', style: { display: 'contents' }, onClickCapture, onKeyDownCapture }, children),
   )
 }
 
@@ -143,6 +199,40 @@ export function useSessionControlJump(): ((message: { ts: string; id?: string })
       })
       if (taken !== true) resolve({ ok: false, reason: 'not_on_screen' })
     })
+  }, [where])
+}
+
+/** What an insert answers, and all it answers: never the draft, the caret or a
+ *  send. For text that passes the rules on its own, a refusal says one thing about
+ *  the box at that moment: `stale`, that it could not take text then; `not_literal`,
+ *  that the characters next to the caret would have joined the text into something
+ *  that resolves. At most one bit about the draft per call, and only while the
+ *  person acts. */
+export type ComposerInsertResult = { ok: true } | { ok: false; code: ComposerInsertCode }
+
+/** Put `text` in the message box of the box's own chat, at the person's caret
+ *  (at the end when they placed none), after one space when the text before it
+ *  does not end in one; what they typed stays, focus moves to the box with the
+ *  caret after the text, and nothing is sent. Taken while this control's box is
+ *  open docked in its chat, within `INSERT_ACT_MS` of the person's last act on it
+ *  (opening the box with its chip or key, its key again, a key or click in the
+ *  box; never an event the module dispatches), else `no_gesture`.
+ *  The text is judged on its own first, so a text refused alone answers the same
+ *  whatever the box holds. Null outside a session control, and while the control
+ *  has no approved `composerInsert`; a grant withdrawn while the box is open
+ *  answers `not_allowed`. */
+export function useInsertIntoComposer(): ((text: string) => ComposerInsertResult) | null {
+  const where = useContext(WhereContext)
+  return useMemo(() => {
+    if (!where?.insert) return null
+    const { insert, sessionKey, control } = where
+    return (text: string): ComposerInsertResult => {
+      const offered = readOfferedText(text)
+      if (!offered.ok) return { ok: false, code: offered.code }
+      if (!actIsRecent(sessionKey, control)) return { ok: false, code: 'no_gesture' }
+      const code = insert(text)
+      return code ? { ok: false, code } : { ok: true }
+    }
   }, [where])
 }
 

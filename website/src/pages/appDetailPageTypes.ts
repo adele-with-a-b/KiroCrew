@@ -75,6 +75,8 @@ type AppInfo = Pick<RegistryApp, '_registry' | 'provenance'> & {
   messageActionGrant?: MessageActionGrantRow
   linkOpenGrant?: LinkOpenGrantRow
   composerActionGrant?: ComposerActionGrantRow
+  /** Session controls whose `composerInsert` is approved, and the ids an update added that wait. */
+  sessionControlInsertGrant?: { approved?: string[]; staged?: string[] }
   selectionActionGrant?: SelectionActionGrantRow
   /** Whether the owner approved `permissions.workerAutoApprove`; absent when undeclared. */
   workerAutoApproveGrant?: { approved: boolean; staged: boolean }

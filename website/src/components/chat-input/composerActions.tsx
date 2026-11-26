@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import AppIcon from '../AppIcon'
 import { OverlayPortal, useCloseWhenCrewHidden } from '../overlayRoot'
@@ -8,9 +8,11 @@ import { i18nT } from '../../i18n/t'
 import { currentTheme } from '../../appFrame/sandboxFrame'
 import { ComposerActionHost, type EndReason } from '../../composerActions/composerActionHost'
 import type { ComposerActionItem } from '../../composerActions/composerActionRegistry'
-import { composerWouldResolve, draftIsEmpty } from '../../composerActions/literalInsert'
+import { caretOutOfTokens, composerWouldResolve, draftIsEmpty, joinAtCaret, joinWouldResolve, readOfferedText } from '../../composerActions/literalInsert'
+import type { ComposerInsertCode } from '../../app-sdk/sessionControlRequest'
 import type { ComposerControl } from '../composerControl'
 import type { PasteBlock } from '../../utils/pasteTokens'
+import { requestComposerExpand } from '../../pages/chat/composerFocus'
 
 /* App composer actions (`contributes.composerActions`): rows in the "+" menu that
    open the app's sandboxed frame in a popover above the composer. The app is
@@ -19,7 +21,18 @@ import type { PasteBlock } from '../../utils/pasteTokens'
    would resolve nothing (no command, mention, skill, paste token, marker or
    path). Otherwise the host refuses it and says why in the popover. Accepted text
    is ordinary draft text: whatever the person types after it is their own and
-   resolves normally. The person reads it and sends it; the app never sends. */
+   resolves normally. The person reads it and sends it; the app never sends.
+
+   The same hook owns the other way app text enters this box: a docked session
+   control's `insertIntoComposer` (`insertAtCaret` below), which joins its text at
+   the caret beside the draft. Both go through one write (`put`). */
+
+/** Why the box took no text from a docked session control's insert: the SDK's codes. */
+export type AppInsertRefusal = ComposerInsertCode
+
+/** This composer's insert for a docked session control: `slot` is the chat the
+ *  box is open for. Answers nothing when the text went in, or the refusal. */
+export type AppTextInsert = (slot: string | null, raw: unknown) => AppInsertRefusal | undefined
 
 /** How long one invocation may stay open; each resize or offer resets it. */
 export const COMPOSER_ACTION_DEADLINE_MS = 2 * 60_000
@@ -54,19 +67,71 @@ export interface ComposerActionsOptions {
   locked?: boolean
   /** Where the popover hangs from: its left edge and the top it sits above. */
   anchor: () => { left: number; top: number } | null
+  /** Filled with `insertAtCaret` while this composer is mounted, for the host's
+   *  docked session control box. Absent: no box can insert here. */
+  insertRef?: MutableRefObject<AppTextInsert | null>
+  /** The last caret the person left in the box, null before they placed one. */
+  caretRef?: MutableRefObject<{ start: number; end: number } | null>
+  /** The host's clamp of an offset out of a mention or a pasted chip. */
+  clampOffset?: (text: string, at: number) => number
+  /** The box takes no inserted text now (a terminal command, a disabled box, the
+   *  optimizer rewriting it): an insert answers `stale`. */
+  insertPaused?: boolean
 }
 
-export function useComposerActions({ items, value, onChange, pasteBlocks, composerControl, scopeKey, locked = false, anchor }: ComposerActionsOptions) {
+export function useComposerActions({ items, value, onChange, pasteBlocks, composerControl, scopeKey, locked = false, anchor, insertRef, caretRef, clampOffset, insertPaused = false }: ComposerActionsOptions) {
   const [open, setOpen] = useState<Open | null>(null)
   const [phase, setPhase] = useState<Phase>({ kind: 'running' })
   const [frameHeight, setFrameHeight] = useState(DEFAULT_FRAME_HEIGHT)
   const frameRef = useRef<ComposerActionHost | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
   // Read at offer time, after the app worked: the live draft, not the render's.
-  const live = useRef({ value, pasteBlocks, onChange, composerControl, locked })
-  live.current = { value, pasteBlocks, onChange, composerControl, locked }
+  const live = useRef({ value, pasteBlocks, onChange, composerControl, locked, scopeKey, caretRef, clampOffset, insertPaused })
+  live.current = { value, pasteBlocks, onChange, composerControl, locked, scopeKey, caretRef, clampOffset, insertPaused }
   const openRef = useRef(open)
   openRef.current = open
+
+  // The one write of an app's text into the box: the new draft, then, once it
+  // has committed, the caret just after the text, with focus in the box. A box
+  // the person collapsed comes back first. The live draft takes the new text at
+  // once, so a second write before the commit builds on the first.
+  const put = useCallback((next: string, caret: number) => {
+    live.current.onChange(next)
+    live.current.value = next
+    const place = () => live.current.composerControl()?.setSelection(caret, caret, { focus: true })
+    requestAnimationFrame(() => {
+      if (live.current.composerControl()) place()
+      else if (requestComposerExpand()) requestAnimationFrame(place)
+    })
+  }, [])
+
+  // A docked session control's text, at the caret (the end when there is none),
+  // beside the draft and never in place of it. The text is judged on its own
+  // first, so a text refused alone answers the same whatever the box holds; only
+  // then is the live box read, and the caller learns only whether it went in.
+  const insertAtCaret = useCallback<AppTextInsert>((slot, raw) => {
+    const offered = readOfferedText(raw)
+    if (!offered.ok) return offered.code
+    const now = live.current
+    // Another chat in this box, a typing lock, or a box that takes no text now.
+    if (slot !== (now.scopeKey ?? null) || now.locked || now.insertPaused) return 'stale'
+    const caret = now.caretRef?.current
+    const end = caret ? Math.min(caret.end, now.value.length) : null
+    const clamped = end != null && now.clampOffset ? now.clampOffset(now.value, end) : end
+    // Never inside, or glued in front of, something of the person's that resolves.
+    const at = clamped == null ? null : caretOutOfTokens(now.value, clamped)
+    const joined = joinAtCaret(now.value, at, offered.text)
+    // The text with the person's own characters around it must not form anything.
+    if (joinWouldResolve(now.value, joined.value)) return 'not_literal'
+    put(joined.value, joined.caret)
+    if (now.caretRef) now.caretRef.current = { start: joined.caret, end: joined.caret }
+    return undefined
+  }, [put])
+  useEffect(() => {
+    if (!insertRef) return
+    insertRef.current = insertAtCaret
+    return () => { if (insertRef.current === insertAtCaret) insertRef.current = null }
+  }, [insertRef, insertAtCaret])
 
   const close = useCallback(() => {
     frameRef.current?.cancel('cancelled')
@@ -103,8 +168,7 @@ export function useComposerActions({ items, value, onChange, pasteBlocks, compos
         if (!draftIsEmpty(now.value, now.pasteBlocks)) { setPhase({ kind: 'running', refused: 'not_empty' }); return 'not_empty' }
         // The text alone would resolve: a command, mention, skill or path.
         if (composerWouldResolve(text)) { setPhase({ kind: 'running', refused: 'not_literal' }); return 'not_literal' }
-        now.onChange(text)
-        requestAnimationFrame(() => now.composerControl()?.setSelection(text.length, text.length, { focus: true }))
+        put(text, text.length)
         frameRef.current = null
         setOpen(null)
         return undefined
@@ -120,7 +184,7 @@ export function useComposerActions({ items, value, onChange, pasteBlocks, compos
     })
     frameRef.current = frame
     frame.start()
-  }, [open, phase.kind, close])
+  }, [open, phase.kind, close, put])
 
   // Another session's draft in this composer: cancel, never insert into it.
   const scopeRef = useRef(scopeKey)

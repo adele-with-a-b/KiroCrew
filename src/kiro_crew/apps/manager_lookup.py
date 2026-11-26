@@ -435,9 +435,13 @@ def missing_agent_reason(agent: str, *, member: str = "") -> str:
 
 def list_apps() -> list[dict[str, Any]]:
     """Return metadata for all installed apps."""
-    # Deferred: frame_sources and open_files stay off an MCP server's pre-list import budget.
+    # Deferred: frame_sources, open_files and session_control_insert_grants stay off an
+    # MCP server's pre-list import budget.
     from kiro_crew.apps.frame_sources import frame_sources_grant_row  # noqa: PLC0415
     from kiro_crew.apps.open_files import open_files_grant_row  # noqa: PLC0415
+    from kiro_crew.apps.session_control_insert_grants import (  # noqa: PLC0415
+        session_control_insert_grant_row,
+    )
 
     root = apps_dir()
     if not root.is_dir():
@@ -498,6 +502,7 @@ def list_apps() -> list[dict[str, Any]]:
             **message_action_grant_row(entry.name, manifest_data),
             **link_open_grant_row(entry.name, manifest_data),
             **composer_action_grant_row(entry.name, manifest_data),
+            **session_control_insert_grant_row(entry.name, manifest_data),
             **selection_action_grant_row(entry.name, manifest_data),
             **worker_auto_approve_grant_row(entry.name, manifest_data),
             **user_session_reach_grant_row(entry.name, manifest_data),
@@ -520,9 +525,13 @@ def list_apps() -> list[dict[str, Any]]:
 
 def get_app(name: str) -> dict[str, Any] | None:
     """Return full metadata for a single installed app, or None."""
-    # Deferred: frame_sources and open_files stay off an MCP server's pre-list import budget.
+    # Deferred: frame_sources, open_files and session_control_insert_grants stay off an
+    # MCP server's pre-list import budget.
     from kiro_crew.apps.frame_sources import frame_sources_grant_row  # noqa: PLC0415
     from kiro_crew.apps.open_files import open_files_grant_row  # noqa: PLC0415
+    from kiro_crew.apps.session_control_insert_grants import (  # noqa: PLC0415
+        session_control_insert_grant_row,
+    )
 
     meta = _read_installed(name)
     if not meta:
@@ -549,6 +558,7 @@ def get_app(name: str) -> dict[str, Any] | None:
         **message_action_grant_row(name, manifest_data),
         **link_open_grant_row(name, manifest_data),
         **composer_action_grant_row(name, manifest_data),
+        **session_control_insert_grant_row(name, manifest_data),
         **selection_action_grant_row(name, manifest_data),
         **worker_auto_approve_grant_row(name, manifest_data),
         **user_session_reach_grant_row(name, manifest_data),

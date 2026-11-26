@@ -75,15 +75,22 @@ describe('vendor/kirocrew-app-sdk.d.ts', () => {
     expect(typeErrors(app)).toEqual([])
   }, 60_000)
 
-  it("types a session control's request, its jump, its go and the open-file hook, a key's open included", () => {
+  it("types a session control's request, its jump, its go, its insert and the open-file hook, a key's open included", () => {
     // An app copies this one file for current typings, so the newer hooks and the
     // `via` a key opens with have to be in it, typed, not any.
     const app = `
-      import { useOpenFile, useSessionControlGo, useSessionControlJump, useSessionControlRequest } from '@kirocrew/app-sdk'
+      import { useInsertIntoComposer, useOpenFile, useSessionControlGo, useSessionControlJump, useSessionControlRequest } from '@kirocrew/app-sdk'
       export default function App() {
         const req = useSessionControlRequest()
         const jump = useSessionControlJump()
         const go = useSessionControlGo()
+        const insertIntoComposer = useInsertIntoComposer()
+        const put = insertIntoComposer?.('Q4a agreed')
+        // @ts-expect-error the text is a string
+        void insertIntoComposer?.(4)
+        const notLiteral: boolean = put?.ok === false && (put.code === 'not_literal' || put.code === 'no_gesture')
+        // @ts-expect-error not a code the insert answers
+        const bogusCode: boolean = put?.ok === false && put.code === 'no_click'
         const openFile = useOpenFile()
         const byKey: boolean = req?.via === 'key'
         const fromAnotherChat: boolean = req?.via === 'control'
@@ -96,7 +103,7 @@ describe('vendor/kirocrew-app-sdk.d.ts', () => {
         // @ts-expect-error a go takes the chat's key
         void go?.(4)
         const refused: boolean = went?.ok === false && went.reason === 'no_click'
-        return <p>{String(byKey || fromAnotherChat || bogus || refused || typeof openFile === 'function')}</p>
+        return <p>{String(byKey || fromAnotherChat || bogus || refused || notLiteral || bogusCode || typeof openFile === 'function')}</p>
       }
     `
     expect(typeErrors(app)).toEqual([])

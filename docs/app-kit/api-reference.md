@@ -1182,6 +1182,41 @@ const req = useSessionControlRequest?.() ?? null
 if (req?.via === 'control') { /* came from this app's box in another chat */ }
 ```
 
+## Insert Into Composer
+
+`useInsertIntoComposer()` lets a docked session control that declares `composerInsert` ([manifest reference](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)) put text in its chat's message box. It returns `insertIntoComposer(text)`, or `null` outside a session control and while the control has no approved `composerInsert`, so your box knows the grant state when it opens.
+
+- **Where.** At the person's caret in the message box, or at the end when they placed none, after one space when the text before it is not empty and does not end in a space or a newline. Your text's trailing space stays, except before a space or newline already there. A caret inside, or at the start of, something of the person's that resolves (a mention, a `$skill`, a command, a path, a pasted chip, a marker) moves to its end. The draft stays; focus moves to the message box with the caret after your text. Nothing is sent. Two calls in one handler both land, in order.
+- **When.** While your box is open, docked, in the chat it was opened in, and within **5 seconds** of the person's last act on this control: opening the box with its chip or its key, pressing that key again (a request with `via: 'key'`), or a real key press or click inside the box. The newest act restarts the 5 seconds; events your module dispatches do not count, and neither does an open your app asks for (a card, a status go, `useSessionControlGo`) or one Kiro Crew restores on its own. No click is needed: call it from a click or a key handler, or on the key's request.
+- **What comes back.** Only whether it went in, and nothing of the message box: not the draft, the caret, the selection or a send. No SDK call reads it. A refusal of text that passes the rules on its own says one thing about the box at that moment: `stale`, that it could not take text then; `not_literal`, that the characters next to the caret would have joined your text into something that resolves. At most one bit about the draft per call, and only while the person acts.
+
+Your text is judged on its own first: a text refused on its own gets the same code whatever the message box holds.
+
+| Answer | When |
+|---|---|
+| `{ ok: true }` | the text is in the message box |
+| `{ ok: false, code: 'not_allowed' }` | the text is not a string or is blank once cleaned; or the box is drawn as a popover (a narrow window), or the owner withdrew the grant while it was open |
+| `{ ok: false, code: 'too_large' }` | the text is over 32,000 characters |
+| `{ ok: false, code: 'not_literal' }` | the text would be read as more than text (a command, a mention, a `$skill`, a path, a marker, a tag), alone or joined with the characters next to the caret |
+| `{ ok: false, code: 'no_gesture' }` | no act of the person on this control in the last 5 seconds |
+| `{ ok: false, code: 'stale' }` | your box is closed, its chat is gone from the screen, or the message box takes no text now (another tab holds the typing lock, the prompt optimizer is rewriting it, terminal-command mode, disabled) |
+
+A refused call changes nothing. Needs `APP_SDK_LEVEL >= 18`; read it off the namespace import:
+
+```tsx
+type InsertResult = { ok: true } | { ok: false; code: 'stale' | 'not_allowed' | 'too_large' | 'not_literal' | 'no_gesture' }
+const useInsertIntoComposer = (sdk as Record<string, unknown>).useInsertIntoComposer as
+  (() => ((text: string) => InsertResult) | null) | undefined
+
+// Inside the docked box (null until the owner approves composerInsert):
+const insertIntoComposer = useInsertIntoComposer?.() ?? null
+<li tabIndex={0} onKeyDown={(e) => {
+  if (e.key !== 'Enter' || !insertIntoComposer) return
+  const r = insertIntoComposer(`${row.label} agreed`)
+  if (!r.ok) setNote(r.code)
+}}>{row.label}</li>
+```
+
 ## Chat Marker Protocol
 
 An agent encodes UI affordances inline in the prose it streams. A surface that renders a transcript
@@ -2289,7 +2324,9 @@ above the message box, [manifest reference](manifest-reference.md)), and level 1
 adds `contributes.sessionControls[].dock` and `stayOpen` (a box docked above the
 message box that may stay open, [manifest reference](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)), and level 17
 adds the [session control go](#session-control-go) (`useSessionControlGo`, a request's
-`via: 'control'`); each level
+`via: 'control'`), and level 18 adds `contributes.sessionControls[].composerInsert` with
+the [insert into composer](#insert-into-composer) (`useInsertIntoComposer`: a docked box
+puts text in its chat's message box and reads nothing back); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

@@ -1,6 +1,103 @@
 import { describe, expect, it } from 'vitest'
-import { composerWouldResolve, draftIsEmpty } from './literalInsert'
+import { caretOutOfTokens, cleanOfferedText, composerWouldResolve, draftIsEmpty, joinAtCaret, joinWouldResolve, readOfferedText } from './literalInsert'
 import type { PasteBlock } from '../utils/pasteTokens'
+
+describe('joinAtCaret', () => {
+  it('puts the text at the caret and keeps the draft on both sides', () => {
+    expect(joinAtCaret('hello world', 6, 'big ')).toEqual({ value: 'hello big world', caret: 10 })
+  })
+
+  it('puts it at the end when there is no caret, and clamps one past the end', () => {
+    expect(joinAtCaret('hello ', null, 'Q4a')).toEqual({ value: 'hello Q4a', caret: 9 })
+    expect(joinAtCaret('hello ', 99, 'Q4a')).toEqual({ value: 'hello Q4a', caret: 9 })
+  })
+
+  it('puts one space first when the text before does not end in whitespace', () => {
+    expect(joinAtCaret('hello', null, 'Q4a')).toEqual({ value: 'hello Q4a', caret: 9 })
+    expect(joinAtCaret('see:x', 4, 'Q4a')).toEqual({ value: 'see: Q4ax', caret: 8 })
+  })
+
+  it("keeps the text's trailing space, and drops it before a space or newline already there", () => {
+    expect(joinAtCaret('hello', null, 'Q3a ')).toEqual({ value: 'hello Q3a ', caret: 10 })
+    expect(joinAtCaret('hello there', 5, 'Q3a ')).toEqual({ value: 'hello Q3a there', caret: 9 })
+    expect(joinAtCaret('hello\nthere', 5, 'Q3a ')).toEqual({ value: 'hello Q3a\nthere', caret: 9 })
+  })
+
+  it('puts no space into an empty box, after a newline or after a tab', () => {
+    expect(joinAtCaret('', null, 'Q4a')).toEqual({ value: 'Q4a', caret: 3 })
+    expect(joinAtCaret('notes\n', null, 'Q4a')).toEqual({ value: 'notes\nQ4a', caret: 9 })
+    expect(joinAtCaret('a\tb', 2, 'Q4a')).toEqual({ value: 'a\tQ4ab', caret: 5 })
+    expect(joinAtCaret('hello', 0, 'Q4a ')).toEqual({ value: 'Q4a hello', caret: 4 })
+  })
+})
+
+describe('joinWouldResolve', () => {
+  const join = (draft: string, at: number | null, text: string) => joinWouldResolve(draft, joinAtCaret(draft, at, text).value)
+
+  it.each([
+    ['a $skill from a trailing $', 'please deploy now', 7, 'run $'],
+    ['an image path from a slash before a file name', 'see shot.png', 4, 'dir/'],
+    ['a markdown image from a trailing !', 'look [x](y)', 5, 'a!'],
+    ['a raw tag from a trailing <', 'b>bold', 0, 'x<'],
+    ['a command when a newline puts a slash at a line start', 'go /clear', 3, 'x\n'],
+    ['a mention when a space comes before the @ the person typed', 'a@b.com', 1, 'x '],
+    ['an image path across the joining space', 'open a/b', null, 'c.png'],
+  ])('flags %s', (_name, draft, at, text) => {
+    expect(composerWouldResolve(text)).toBe(false)
+    expect(join(draft, at, text)).toBe(true)
+  })
+
+  it.each([
+    ['plain text at the end', 'thanks', null, 'Q4a agreed'],
+    ['plain text mid-line', 'I say  today', 6, 'yes'],
+    ['text beside a mention the person typed', '@notes.txt read', null, 'Q4a agreed'],
+    ['text beside a skill the person typed', 'use $deploy', null, 'now'],
+  ])('accepts %s', (_name, draft, at, text) => {
+    expect(join(draft, at, text)).toBe(false)
+  })
+})
+
+describe('caretOutOfTokens', () => {
+  it.each([
+    ['inside a $skill', 'run $deploy', 6, 11],
+    ['at the start of a mention', '@src/a.ts', 0, 9],
+    ['inside a pasted chip', 'a [ Paste #1 · 3 lines ] b', 6, 24],
+    ['inside a spaced image path', 'see /tmp/my photo.png ok', 11, 21],
+    ['inside a folder marker', 'x [attached_dir 1] y', 5, 18],
+  ])('moves a caret %s to its end', (_name, draft, at, to) => {
+    expect(caretOutOfTokens(draft, at)).toBe(to)
+  })
+
+  it.each([
+    ['in plain words', 'hello there', 3],
+    ['at the end of a token', 'run $deploy now', 11],
+    ['after an e-mail address', 'a@b.com x', 2],
+  ])('leaves a caret %s', (_name, draft, at) => {
+    expect(caretOutOfTokens(draft, at)).toBe(at)
+  })
+})
+
+describe('readOfferedText', () => {
+  it.each([
+    [42, 'not_allowed'],
+    ['  \n', 'not_allowed'],
+    ['x'.repeat(32_001), 'too_large'],
+    ['/clear', 'not_literal'],
+  ])('refuses %j as %s', (raw, code) => {
+    expect(readOfferedText(raw)).toEqual({ ok: false, code })
+  })
+
+  it('takes literal text, cleaned', () => {
+    expect(readOfferedText('Q4a\r\nagreed')).toEqual({ ok: true, text: 'Q4a\nagreed' })
+  })
+})
+
+describe('cleanOfferedText', () => {
+  it('turns CRLF and CR into a newline and drops control, bidi and invisible characters', () => {
+    expect(cleanOfferedText('a\r\nb\rc')).toBe('a\nb\nc')
+    expect(cleanOfferedText('a\u0007b\u202ec\u200bd\tq')).toBe('abcd\tq')
+  })
+})
 
 describe('composerWouldResolve', () => {
   it.each([

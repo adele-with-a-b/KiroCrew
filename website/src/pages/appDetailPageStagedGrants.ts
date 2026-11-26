@@ -33,6 +33,8 @@ export function stagedGrantsOf(app: AppInfo | null) {
   const stagedOpenFullUrl = app?.linkOpenGrant?.stagedFullUrl === true
   // A composer button an update added waits the same way.
   const stagedComposerActions = app?.composerActionGrant?.staged || []
+  // So does a docked session control an update let put text in the message box.
+  const stagedSessionControlInserts = app?.sessionControlInsertGrant?.staged || []
   // Selection actions an update added or changed (a new source, more text, a new effect).
   const stagedSelection = app?.selectionActionGrant?.staged || []
   const declaredSelectionActions = (app?.manifest as { contributes?: { selectionActions?: unknown } } | undefined)?.contributes?.selectionActions
@@ -44,11 +46,11 @@ export function stagedGrantsOf(app: AppInfo | null) {
   const stagedFrameSources = app?.frameSourcesGrant?.staged || []
   // So does an update that added `permissions.openFiles`.
   const stagedOpenFiles = app?.openFilesGrant?.staged === true
-  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedSessionKey || stagedOpenFullUrl || stagedWorkerAutoApprove || stagedOpenFiles
+  const hasStagedGrants = stagedApi.length + stagedEvents.length + stagedLinkHosts.length + stagedLinkPatterns.length + stagedMessageActions.length + stagedOpenHosts.length + stagedComposerActions.length + stagedSessionControlInserts.length + stagedSelection.length + stagedUserSessionReach.length + stagedDesktopCapabilities.length + stagedFrameSources.length > 0 || stagedFullUrl || stagedSessionKey || stagedOpenFullUrl || stagedWorkerAutoApprove || stagedOpenFiles
   return {
     stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey,
     stagedMessageActions, declaredMessageActions, stagedOpenHosts, stagedOpenFullUrl,
-    stagedComposerActions, stagedSelection, declaredSelectionActions, stagedWorkerAutoApprove,
+    stagedComposerActions, stagedSessionControlInserts, stagedSelection, declaredSelectionActions, stagedWorkerAutoApprove,
     stagedUserSessionReach, stagedDesktopCapabilities, stagedFrameSources, stagedOpenFiles, hasStagedGrants,
   }
 }

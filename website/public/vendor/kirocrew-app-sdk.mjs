@@ -37,6 +37,8 @@ export const {
   useSessionControlJump,
   // A session control opens its own box in another chat, on a click in it (level 17).
   useSessionControlGo,
+  // A docked session control puts text in its chat's message box (level 18).
+  useInsertIntoComposer,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.

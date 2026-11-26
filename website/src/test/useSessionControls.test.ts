@@ -114,6 +114,20 @@ describe('resolveSessionControls', () => {
     expect(one({ dock: 'true', stayOpen: 1 })).toEqual({ dock: false, stayOpen: false })
   })
 
+  it('lets a box insert only with dock, the literal true and the owner approving that control', () => {
+    const one = (over: Record<string, unknown>, approved: unknown = ['scope']) =>
+      resolveSessionControls([app({ sessionControlInsertGrant: { approved } }, [ctl(over)])])[0].composerInsert
+    expect(one({ dock: true, composerInsert: true })).toBe(true)
+    expect(one({ dock: true })).toBe(false)
+    expect(one({ composerInsert: true })).toBe(false)
+    expect(one({ dock: true, composerInsert: 'true' })).toBe(false)
+    // Waiting for the owner, or approved for another control only.
+    expect(one({ dock: true, composerInsert: true }, [])).toBe(false)
+    expect(one({ dock: true, composerInsert: true }, ['inbox'])).toBe(false)
+    expect(one({ dock: true, composerInsert: true }, 'scope')).toBe(false)
+    expect(resolveSessionControls([app({}, [ctl({ dock: true, composerInsert: true })])])[0].composerInsert).toBe(false)
+  })
+
   it('handles a non-array input', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(resolveSessionControls(undefined as any)).toEqual([])

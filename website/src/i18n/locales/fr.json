@@ -12235,6 +12235,7 @@
         "installed_needs_newer_host": "La version installée de {{name}} nécessite une version plus récente de {{productName}}. Mets à jour {{productName}} ; tes données restent inchangées."
       },
       "grants_reconsent_composer_actions": "Boutons de l'éditeur : permet à l'app d'ajouter ces boutons au menu + de l'éditeur. Un clic insère le texte de l'app dans ton brouillon ; l'app ne peut ni voir le brouillon ni l'envoyer.",
+      "grants_reconsent_session_control_inserts": "Texte dans la zone de message : permet à ces zones ancrées d'insérer du texte dans ta zone de message au curseur, juste après que tu les ouvres ou agis dans elles, sans toucher à ce que tu as tapé. L'app ne peut ni lire ton brouillon ni l'envoyer. Si son texte n'entre pas, elle peut apprendre une chose sur ta zone de message à ce moment : qu'elle ne pouvait pas prendre de texte alors, ou que les caractères à côté du curseur auraient joint son texte en quelque chose qui se résout. C'est au plus un bit sur ton brouillon par essai, et seulement pendant que tu agis.",
       "grants_reconsent_selection_actions": "Actions sur le texte sélectionné : permet aux éléments de l’app de recevoir le texte que tu sélectionnes dans les réponses du chat et de proposer un résultat à Copier ou Ouvrir."
     },
     "appPage": {

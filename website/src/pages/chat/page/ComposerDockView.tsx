@@ -1,5 +1,5 @@
 import type { NavigateFunction } from 'react-router-dom'
-import { useId, useMemo, useState, type RefObject, type Dispatch, type SetStateAction, type MutableRefObject } from 'react'
+import { useCallback, useId, useMemo, useRef, useState, type RefObject, type Dispatch, type SetStateAction, type MutableRefObject } from 'react'
 import { OverlayPortal } from '../../../components/overlayRoot'
 import { Undo2 } from 'lucide-react'
 import { CrewModeComposerChip } from '../../../components/crew/CrewModeMarks'
@@ -57,6 +57,9 @@ import ChatInput from '../../../components/ChatInput'
 import { useStableCallbackProps } from '../useStableCallbackProps'
 import type { ComposerTypingLock } from '../shared-crew/useComposerTypingLock'
 import SessionControlHost, { SessionControlDockSlot } from '../../../components/SessionControlHost'
+import type { AppTextInsert } from '../../../components/chat-input/composerActions'
+import { noteSessionControlAct } from '../../../app-sdk/sessionControlRequest'
+import type { ScopeComposerInsert } from '../../../app-sdk/sessionControlRequest'
 import ErrorNotice from '../../../components/ErrorNotice'
 import { pinIsWithheld } from '../../../lib/model'
 import FollowUpCard, { type FollowupStartMode } from '../../../components/FollowUpCard'
@@ -417,6 +420,15 @@ export default function ComposerDockView({
     ? sessionControls.find(c => c.key === openSessionControl.key) ?? null
     : null
   const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null)
+  // The composer fills this with its insert at the caret. The open box reaches
+  // the message box of the chat it was opened in through it, and only that one:
+  // the composer answers `stale` once it holds another chat.
+  const appInsertRef = useRef<AppTextInsert | null>(null)
+  const openSlot = openControl ? openSessionControl?.slot ?? null : null
+  const insertIntoComposer = useCallback<ScopeComposerInsert>(
+    text => (appInsertRef.current ? appInsertRef.current(openSlot, text) : 'stale'),
+    [openSlot],
+  )
   return (
     <>
             {/* Composer dock. Floats over the bottom of the transcript scroller
@@ -731,6 +743,7 @@ export default function ComposerDockView({
               // A tree row dropped on the composer is "Add to chat" by drag.
               onTreeEntryDrop={handleAddToContext}
               clampDropOffset={clampOutOfTokens}
+              appInsertRef={appInsertRef}
               onMentionKey={mentionKeyEdit}
               optimizerMentionGuard={optimizerMentionGuard}
               mentionEditRange={mentionEditRange}
@@ -781,7 +794,7 @@ export default function ComposerDockView({
               }}
               sessionControls={composerSessionControls}
               composerActions={composerActions}
-              onSessionControlClick={(key, rect, trigger) => {
+              onSessionControlClick={(key, rect, trigger, byPerson) => {
                 anchorSessionControl(rect, trigger)
                 // Two independent setState calls, not one updater with a side
                 // effect: React may run an updater twice (StrictMode does in
@@ -795,6 +808,9 @@ export default function ComposerDockView({
                   // is gated on it still matching activeSlot, so a chat switch
                   // can never mount the control against the next session.
                   setOpenSessionControl({ key, slot: activeSlot })
+                  // The person opening the box starts its insert window; a
+                  // script's click on the chip opens it and starts none.
+                  if (byPerson) noteSessionControlAct(sessionControlKey, key)
                 }
               }}
               contextPct={contextPct ?? 0}
@@ -997,6 +1013,7 @@ export default function ComposerDockView({
                 control={openControl}
                 anchorRect={sessionControlRect}
                 dockSlot={dockSlot}
+                insertIntoComposer={insertIntoComposer}
                 onClose={() => {
                   setOpenSessionControl(null)
                   refreshSessionControlStatuses()
