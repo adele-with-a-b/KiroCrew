@@ -189,7 +189,7 @@ def reusable_row(slot: Any, consumed: list[dict], text: str) -> dict | None:
     if len(consumed) != 1:
         return None
     if not priority_entry(consumed[0]):
-        return _restored_row(slot, consumed[0], text)
+        return _restored_row(slot, consumed[0], text) or _run_retry_row(slot, consumed[0], text)
     if consumed[0].get("content") != text:
         return None
     return _present_row(slot, consumed[0])
@@ -210,6 +210,22 @@ def _restored_row(slot: Any, item: dict, text: str) -> dict | None:
         ):
             return existing
     return None
+
+
+def _run_retry_row(slot: Any, item: dict, text: str) -> dict | None:
+    """The row an agent run's entry already has, when the run's retry drains it.
+
+    A run's turn that failed before it landed puts its entries back on the queue
+    (``turn_ledgers._requeue_agent_run``), each naming the row the drain wrote for
+    it, with its own sender card. While that row is still in the window and holds
+    exactly this text, the retry opens on it again instead of writing a second one.
+    """
+    from kiro_crew.dashboard.chat_utils_injected_rows import AGENT_RUN_ROW_KEY
+
+    row = item.get(AGENT_RUN_ROW_KEY)
+    if not isinstance(row, dict) or row.get("content") != text:
+        return None
+    return row if any(existing is row for existing in slot.messages) else None
 
 
 def _durable_base(slot: Any) -> int:

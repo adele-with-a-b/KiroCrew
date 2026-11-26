@@ -108,6 +108,8 @@ class _ChatTurn:
     _on_irreversibly_consumed: "Callable[[], Awaitable[None] | None] | None"
     monitor_completion: "MonitorCompletionHook | None"
     _current_message: "dict | None"
+    # The agent run's drained entries, each with the row it wrote (``_run_chat``).
+    _agent_run_entries: "list[dict] | None"
     # The agent started this turn on its own between prompts: it reads the
     # session's pending turn with ``stream_unsolicited`` and sends no prompt.
     _agent_started: "bool"
@@ -402,6 +404,7 @@ class _ChatTurn:
         monitor_completion: "MonitorCompletionHook | None",
         _current_message: "dict | None",
         _agent_started: "bool" = False,
+        _agent_run_entries: "list[dict] | None" = None,
     ) -> None:
         self.state = state
         self.slot = slot
@@ -442,6 +445,10 @@ class _ChatTurn:
         self._on_irreversibly_consumed = _on_irreversibly_consumed
         self.monitor_completion = monitor_completion
         self._current_message = _current_message
+        self._agent_run_entries = _agent_run_entries
+        if _agent_run_entries:
+            # The turn its exit guard's unread mark settles against (``_settle_unread_run``).
+            turn_exit.run_turn = self
         self._agent_started = _agent_started
         self._agent_turn_stream = None
         self._agent_cancel_owed = False

@@ -309,7 +309,10 @@ from kiro_crew.dashboard.chat_turn.turn_failures import (  # noqa: F401
     _on_prompt_busy,
     _on_session_closing,
 )
-from kiro_crew.dashboard.chat_turn.turn_ledgers import _replay_owes_delivery
+from kiro_crew.dashboard.chat_turn.turn_ledgers import (  # noqa: F401
+    _end_agent_run,
+    _replay_owes_delivery,
+)
 from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn, _Flow
 from kiro_crew.dashboard.chat_turn.turn_marker import (  # noqa: F401
     _clear_local_turn_marker,
@@ -331,6 +334,7 @@ from kiro_crew.dashboard.chat_turn.worker_wait import _note_worker_question
 from kiro_crew.dashboard.chat_utils import (  # noqa: F401
     _BLOCKED_SLASH_COMMANDS,
     _MAX_TOOL_PURPOSE,
+    _dequeue_agent_run,
     _dequeue_next_message,
     _dequeue_next_system_message,
     _maybe_consolidate,
@@ -757,6 +761,10 @@ def _hands_off_queue_on_exit(
         turn_exit.runner = asyncio.current_task()
         if kwargs.get("_agent_started") is not True:
             slot._preparing_turn = turn_exit
+        # An agent run is unread until the model starts to answer it. Marked before
+        # admission, so a refused or expired one still settles it (``_settle_unread_run``).
+        _run_entries = kwargs.get("_agent_run_entries")
+        turn_exit.unread_run = _run_entries if isinstance(_run_entries, list) else None
         try:
             # Shared Crew fair admission for a turn no admitted work started
             # (shared_crew.turn_gate); a pass-through when admission is off.
@@ -998,6 +1006,11 @@ async def _run_chat(
     _on_irreversibly_consumed: "Callable[[], Awaitable[None] | None] | None" = None,
     monitor_completion: MonitorCompletionHook | None = None,
     _current_message: dict | None = None,
+    # The agent run's entries this turn drained (``_dequeue_agent_run``), each with
+    # its own meta and the row it wrote. A turn that fails before it lands puts them
+    # back on the queue instead of one retry of every text (``_queue_recovery``).
+    # Only the queue drain sets it.
+    _agent_run_entries: "list[dict] | None" = None,
 ) -> None:
     """Stream LLM response into *slot*.  Survives browser disconnect."""
     turn = _ChatTurn(
@@ -1039,6 +1052,7 @@ async def _run_chat(
         monitor_completion=monitor_completion,
         _current_message=_current_message,
         _agent_started=_agent_started,
+        _agent_run_entries=_agent_run_entries,
     )
     # Bench timing (KIROCREW_TURN_TIMING): top-level user prompts only, the
     # same population as the TTFT histogram.
@@ -1176,6 +1190,10 @@ async def _run_chat(
                 await _send_owed_agent_cancel(turn, client, event)
             if _ask_the_owed_cancel_answered(turn, event):
                 continue
+            if event.kind in (EVENT_TEXT_CHUNK, EVENT_TOOL_CALL, EVENT_PERMISSION_REQUEST):
+                # The model is answering: an agent run's notes are delivered. A
+                # thought alone is not: a session lost after it never answered them.
+                turn_exit.unread_run = None
             if (_todo_sync_rendered or _todo_recovery_carried) and (
                 event.kind in _TODO_BLOCK_READ_EVENT_KINDS
             ):

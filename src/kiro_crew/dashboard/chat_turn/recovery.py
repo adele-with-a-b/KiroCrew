@@ -29,7 +29,12 @@ from kiro_crew.dashboard.chat_utils import (
     build_recovery_requeue,
     is_synthetic_payload_item,
 )
+from kiro_crew.dashboard.chat_utils_injected_rows import AGENT_RUN_RETRY_KEY
 from kiro_crew.dashboard.poisoned_escalation import PoisonedConversationEscalation
+from kiro_crew.dashboard.slot_queue_repository import (
+    broadcast_queue_order,
+    put_owner_entries_first,
+)
 from kiro_crew.dashboard.state import SUBAGENT_SYNTHESIS_PROMPT
 from kiro_crew.llm_helpers import acp_error_is_throttle
 
@@ -561,11 +566,44 @@ def _rearm_allowances(
         PoisonedConversationEscalation(slot).refund_one_shot()
 
 
+def _replay_ids(slot: _ChatSlot) -> list[object]:
+    """Every id a queued entry answers to as a replay's entry.
+
+    Its own, and for a failed agent run's entry put back as its retry also the
+    retry's (``AGENT_RUN_RETRY_KEY``), the id a replay armed on that retry records
+    (``_requeue_agent_run``). So a record names the whole run: it stays while any
+    entry of the run is queued, and no other entry answers to it.
+    """
+    ids: list[object] = []
+    for item in slot._queue:
+        ids.append(item.get("id"))
+        if item.get(AGENT_RUN_RETRY_KEY):
+            ids.append(item[AGENT_RUN_RETRY_KEY])
+    return ids
+
+
 def _drop_queued_replay(state: DashboardState, slot: _ChatSlot, queue_id: str) -> None:
-    """Remove a revoked recovery replay's queue entry and its placeholder row."""
-    slot.queue_remove_by_id(queue_id)
-    if _remove_queued_by_id(slot.messages, queue_id):
-        state.broadcast_ws("queue_pop", {"slot": slot.key, "content": "", "queue_id": queue_id})
+    """Remove a revoked recovery replay's queue entry and its placeholder row.
+
+    A failed agent run's entries put back as the retry *queue_id* names are not
+    removed: a Stop or the owner's message cancels the retry, never the notes. They
+    lose the retry's mark and stay queued as agents' rows no turn has read, behind
+    the owner's entries (``put_owner_entries_first``), so the owner's message runs
+    first and they run next.
+    """
+    run = [q for q in slot._queue if q.get(AGENT_RUN_RETRY_KEY) == queue_id]
+    for item in run:
+        del item[AGENT_RUN_RETRY_KEY]
+    if run:
+        if put_owner_entries_first(slot._queue):
+            broadcast_queue_order(state, slot, [q["id"] for q in slot._queue])
+        return
+    for item in [q for q in slot._queue if q.get("id") == queue_id]:
+        slot.queue_remove_by_id(item["id"])
+        if _remove_queued_by_id(slot.messages, item["id"]):
+            state.broadcast_ws(
+                "queue_pop", {"slot": slot.key, "content": "", "queue_id": item["id"]}
+            )
 
 
 def _forget_swept_replays(slot: _ChatSlot) -> None:
@@ -580,7 +618,7 @@ def _forget_swept_replays(slot: _ChatSlot) -> None:
     from kiro_crew.dashboard.recovery_replays import ENTRY_FAMILIES, POLICIES, replays_of
 
     head = tuple(f for f in ENTRY_FAMILIES if POLICIES[f].swept_at == "head")
-    for family, entry_id in replays_of(slot).sweep((q.get("id") for q in slot._queue), head):
+    for family, entry_id in replays_of(slot).sweep(_replay_ids(slot), head):
         _rearm_allowances(slot, POLICIES[family].sweep_refunds)
         logger.info(POLICIES[family].sweep_log, slot.key, entry_id)
 
@@ -611,9 +649,7 @@ async def _drop_revoked_replays(state: DashboardState, slot: _ChatSlot) -> bool:
         if not entry_id:
             continue
         policy = POLICIES[family]
-        if policy.swept_at == "step" and replays.sweep(
-            (q.get("id") for q in slot._queue), (family,)
-        ):
+        if policy.swept_at == "step" and replays.sweep(_replay_ids(slot), (family,)):
             _rearm_allowances(slot, policy.sweep_refunds)
             continue
         revocation = replays.revalidate(family, _replay_live(state, slot))

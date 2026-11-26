@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import secrets
 
 from aiohttp import web
 
@@ -150,6 +151,33 @@ def _is_gateway_prompt_row(row: dict) -> bool:
     )
 
 
+def _agent_run_span(msgs: list[dict], u_idx: int, ai_idx: int) -> tuple[int, str] | None:
+    """``(index of the run's last row, the run's prompt)`` when *u_idx* is an agent
+    run's row, else None.
+
+    The queue drain writes a run's rows one after another, each marked with the
+    run's id (``AGENT_RUN_META``), and its turn reads them as one prompt
+    (``agent_run_prompt``). The row Regenerate found is the run's last note; the
+    run's rows around it, up to the reply at *ai_idx*, are the rest of the request.
+    """
+    from kiro_crew.dashboard.chat_utils_injected_rows import AGENT_RUN_META, agent_run_prompt
+
+    def _run_of(row: dict) -> object:
+        meta = row.get("meta")
+        return meta.get(AGENT_RUN_META) if isinstance(meta, dict) else None
+
+    run_id = _run_of(msgs[u_idx])
+    if not (isinstance(run_id, str) and run_id):
+        return None
+    first, last = u_idx, u_idx
+    while first > 0 and _run_of(msgs[first - 1]) == run_id:
+        first -= 1
+    while last + 1 < ai_idx and _run_of(msgs[last + 1]) == run_id:
+        last += 1
+    texts = [str(row.get("content") or "") for row in msgs[first : last + 1]]
+    return last, agent_run_prompt(texts, secrets.token_hex(6))
+
+
 async def api_chat_slot_regenerate(request: web.Request) -> web.Response:
     """POST /api/chat/slots/{slot}/regenerate — regenerate the last assistant reply.
 
@@ -242,6 +270,10 @@ async def api_chat_slot_regenerate(request: web.Request) -> web.Response:
             return web.json_response(
                 {"error": "no preceding user message", "code": "no_user_message"}, status=400
             )
+        # The reply may answer a whole agent run (its rows share ``agentRun``): the
+        # run re-runs as the one prompt it first ran as, from its own rows, and the
+        # run's later rows (a wake after the last note) are not replaced.
+        run_span = _agent_run_span(msgs, u_idx, ai_idx)
 
         # A reply the agent started answers no prompt, so re-running the prompt
         # before it would retire that reply, and any reply between them, for a
@@ -255,7 +287,7 @@ async def api_chat_slot_regenerate(request: web.Request) -> web.Response:
                 status=400,
             )
 
-        user_msg = msgs[u_idx].get("content", "")
+        user_msg = run_span[1] if run_span else msgs[u_idx].get("content", "")
         if not user_msg:
             return web.json_response(
                 {"error": "empty user message", "code": "empty_user_message"}, status=400
@@ -278,7 +310,8 @@ async def api_chat_slot_regenerate(request: web.Request) -> web.Response:
         # A turn that ends empty -- refused, cancelled before output, failed --
         # leaves it where it is.
         slot._pending_variants = variants
-        replacing = list(slot.messages[u_idx + 1 :])
+        request_idx = run_span[0] if run_span else u_idx
+        replacing = list(slot.messages[request_idx + 1 :])
         # Pin the replace write to the transcript and slot object authorized
         # here. A same-name close-and-recreate or a rebind during the turn then
         # refuses it, so it cannot rewrite the replacement's transcript.
@@ -315,7 +348,7 @@ async def api_chat_slot_regenerate(request: web.Request) -> web.Response:
         # Regenerate writes no row of its own, so the notes land after the reply it
         # replaces, above the new one, and stay when the swap retires that reply:
         # ``replacing`` was captured above, before these rows existed.
-        request_row = msgs[u_idx]
+        request_row = msgs[request_idx]
         flush_restored_hold(slot, logger=logger)
         task = asyncio.create_task(
             _run_chat(

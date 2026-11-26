@@ -51,6 +51,7 @@ if TYPE_CHECKING:
         _restore_consumed_merge_contexts,
         _stamp_and_reconcile_consumed_merge_contexts,
     )
+    from kiro_crew.dashboard.chat_turn.turn_ledgers import _settle_unread_run
     from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn
     from kiro_crew.dashboard.chat_turn.turn_marker import _gateway_shutdown_requested
     from kiro_crew.dashboard.chat_turn.turn_reply_seams import _turn_full_reply_text
@@ -686,12 +687,21 @@ class _TurnExit:
         "outcome",
         "reached_provider",
         "responsive_owner",
+        "run_turn",
         "runner",
         "stop_reason",
         "turn_id",
+        "unread_run",
     )
 
     def __init__(self) -> None:
+        # The agent run's entries (``_dequeue_agent_run``) the model has not started
+        # to answer and no put-back has taken, marked by the exit guard before
+        # admission: its tail settles them (``_settle_unread_run``), and a hard Stop
+        # ends them with the queue. ``run_turn`` is the turn that runs them, None
+        # while admission has not let it start.
+        self.unread_run: list[dict] | None = None
+        self.run_turn: Any = None
         # The turn's crew-log actor and its recovery id, so the hand-off can tell
         # this turn's own recovery from a new turn (``_start_next_queued_turn``).
         self.actor = ""
@@ -875,6 +885,11 @@ async def _end_turn_tail(
     if slot._responsive is not None and slot._responsive.owner is turn_exit.responsive_owner:
         slot._responsive.owner = None
         slot._responsive.cancel_grace()
+    # Guarded: a raise here would skip the hand-off and strand the whole queue.
+    try:
+        _settle_unread_run(state, slot, turn_exit)
+    except Exception:
+        logger.warning("unread agent run settle failed for slot %s", slot.key, exc_info=True)
     await _hand_off_queue(
         state,
         slot,

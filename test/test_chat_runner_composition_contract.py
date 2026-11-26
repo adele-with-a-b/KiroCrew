@@ -66,6 +66,7 @@ _OWNER_MODULES = frozenset(
         "decisions_hooks",
         "deny_chokepoints",
         "directives",
+        "drained_rows",
         "eager_spawn",
         "elicitation_prompt",
         "file_changes",
@@ -556,6 +557,7 @@ def test_run_chat_keeps_its_entry_signature() -> None:
         "_on_irreversibly_consumed",
         "monitor_completion",
         "_current_message",
+        "_agent_run_entries",
     ]
     assert all(p.kind is inspect.Parameter.KEYWORD_ONLY for p in list(sig.parameters.values())[4:])
     assert inspect.iscoroutinefunction(cr._run_chat)
@@ -1279,6 +1281,7 @@ _GUARDED_CONSTRUCT_HOMES: dict[str, tuple[str, ...]] = {
         "dashboard/chat_turn/acp_recovery.py",
         "dashboard/chat_turn/builtin_tools_notice.py",
         "dashboard/chat_turn/deny_chokepoints.py",
+        "dashboard/chat_turn/drained_rows.py",
         "dashboard/chat_turn/eager_spawn.py",
         "dashboard/chat_turn/elicitation_prompt.py",
         "dashboard/chat_turn/file_changes.py",

@@ -33,8 +33,10 @@ from kiro_crew.dashboard.chat_utils import (
     is_system_injection_item,
 )
 from kiro_crew.dashboard.chat_utils_injected_rows import (
+    AGENT_RUN_RETRY_KEY,
     AUTOMATION_STEER_META,
     REQUEUED_STEER_ROW_MID_META,
+    _is_agent_row,
 )
 from kiro_crew.dashboard.session_deliver import WAKE_GENERATION
 from kiro_crew.dashboard.slot_queue_repository import (
@@ -814,11 +816,22 @@ def _has_user_queued_followup(slot: "_ChatSlot") -> bool:
     A restored card the user has not sent is excluded too: no drain runs it, so
     it is not a follow-up that takes over from a retry, continuation or replay.
     Counting it would switch those off for as long as the card waits. A restored
-    card the user chose to run counts like any other entry."""
+    card the user chose to run counts like any other entry.
+
+    While a failed agent run's retry is queued or its turn has not yet read it
+    (``AGENT_RUN_RETRY_KEY``, a process-local key only ``_requeue_agent_run`` sets;
+    the turn's ``_TurnExit.unread_run``), no agent's row (``_is_agent_row``) is a
+    follow-up: the run's own entries are that retry, and another session's note or
+    a wake queued since waits behind it for the next turn, so neither cancels the
+    retry and the notes it carries."""
+    queue = getattr(slot, "_queue", [])
+    starting = getattr(getattr(slot, "_preparing_turn", None), "unread_run", None)
+    behind_run_retry = any(q.get(AGENT_RUN_RETRY_KEY) for q in [*queue, *(starting or ())])
     return any(
         not _queue_entry_is_orchestration(q)
         and not (q.get(RESTORED_QUEUE_KEY) and not q.get(RESTORED_SEND_CHOSEN_KEY))
-        for q in getattr(slot, "_queue", [])
+        and not (behind_run_retry and _is_agent_row(q))
+        for q in queue
     )
 
 

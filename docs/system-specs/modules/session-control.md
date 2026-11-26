@@ -605,7 +605,7 @@ An entry whose text equals the new text also ends the carry and stays queued:
 steered first, it would leave the new text refused as `same_pending`.
 
 A reply into the creator's asking turn (`reply_to_creator`) carries nothing: that
-ask admits one cut-in, and the worker's queued reports wait for their own turn.
+ask admits one cut-in, and the worker's queued reports wait in the queue.
 
 `carried` is reported whenever entries went in, also when the new text itself was
 refused and queued: on the local result, on a broadcast's per-target row, and on

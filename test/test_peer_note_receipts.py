@@ -490,11 +490,44 @@ async def test_a_note_whose_target_was_moved_to_another_workspace_does_not_run(
 
 
 @pytest.mark.asyncio
-async def test_notes_a_live_drain_merges_into_one_turn_lose_their_receipts(tmp_path, monkeypatch):
-    """A merged dequeue slices the queue itself and never reaches ``queue_pop``."""
+async def test_notes_a_live_drain_takes_into_one_turn_lose_their_receipts(tmp_path, monkeypatch):
+    """An agent run slices the queue itself and never reaches ``queue_pop``."""
     state, target, sender = _pair(tmp_path)
     first = _queue_note(state, target, sender, "first")
     second = _queue_note(state, target, sender, "second")
+    assert set(json.loads(peer_note_receipts._path().read_text("utf-8"))) == {first, second}
+    before_the_drain = _saved(target, sender)
+    merged: list[int] = []
+    real = chat_runner._dequeue_agent_run
+
+    def dequeue(slot):
+        run = real(slot)
+        merged.append(len(run[1]) if run else 0)
+        return run
+
+    monkeypatch.setattr(chat_runner, "_dequeue_agent_run", dequeue)
+    monkeypatch.setattr(chat_runner, "subagents_hold_user_messages", lambda *_: False)
+    monkeypatch.setattr(chat_runner, "spawn_guarded_turn", lambda _s, _slot, coro: coro.close())
+    assert await chat_runner._start_next_queued_turn(state, target)
+    assert merged == [2] and target._queue == []
+    assert json.loads(peer_note_receipts._path().read_text("utf-8")) == {}
+    # The crash before the save: both notes are back on the line, and both wait.
+    restored = _restart(tmp_path, before_the_drain)
+    assert await _boot(restored, monkeypatch) == []
+
+
+@pytest.mark.asyncio
+async def test_notes_a_live_merge_takes_into_one_turn_lose_their_receipts(tmp_path, monkeypatch):
+    """A merged dequeue slices the queue itself and never reaches ``queue_pop``.
+
+    A ``session_send`` note carries its sender's card (``meta.relay``) and drains in
+    an agent run; without the card it is an ordinary entry the merge takes.
+    """
+    state, target, sender = _pair(tmp_path)
+    first = _queue_note(state, target, sender, "first")
+    second = _queue_note(state, target, sender, "second")
+    for entry in target._queue:
+        entry["meta"].pop("relay")
     assert set(json.loads(peer_note_receipts._path().read_text("utf-8"))) == {first, second}
     before_the_drain = _saved(target, sender)
     config = MagicMock()
