@@ -11343,6 +11343,7 @@
       "conductor_mode_ms_stuck_chat_closed": "Застряло · его чат закрыт, попроси главный чат перезапустить его",
       "conductor_mode_ms_stuck_unread": "Застряло · главный чат закрыт, открой его снова, чтобы отчёты прочитали",
       "conductor_mode_ms_quiet": "Затихло · ничто не запланировано, чтобы разбудить его",
+      "conductor_mode_ms_standing_by": "В готовности · проснётся при следующей задаче своего Conductor",
       "conductor_mode_ms_waiting_pr": "Ждёт PR #{{n}}",
       "conductor_mode_ms_waiting_no_reason": "На паузе, причина не указана",
       "conductor_mode_ms_pr": "PR #{{n}}",

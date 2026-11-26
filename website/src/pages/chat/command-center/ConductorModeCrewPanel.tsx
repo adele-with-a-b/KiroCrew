@@ -43,7 +43,7 @@ import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
 import { conductorModeRunState, type ConductorModeRunState } from '../../../lib/conductorModeRun'
 import { boardPlan, childProgress, estimateMinutes, isMerged, isOpen as itemOpen, levelOf, planOf, seatsBusy } from '../../../lib/crewPlan'
-import { approvalCarded, boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, movesStories, needsYouCount, reportAnswered, type MilestoneState } from '../../../lib/boardMoves'
+import { approvalCarded, boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, movesStories, needsYouCount, reportAnswered, standingManager, type MilestoneState } from '../../../lib/boardMoves'
 import BoardViewSwitch, { type BoardView } from '../../../components/board/BoardViewSwitch'
 import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/BoardRow'
 import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
@@ -248,7 +248,8 @@ const PERSON_REASONS = new Set(['approval', 'needs_human'])
 // The rule lives with the Board's moves (`lib/boardMoves`), which read it too.
 export { reportAnswered }
 
-export function milestoneState(item: WorkBoardItem, waiting: boolean): MilestoneState {
+/** `manager`: the item's bound worker chat is a standing manager (`standingManager`). */
+export function milestoneState(item: WorkBoardItem, waiting: boolean, manager = false): MilestoneState {
   // A closed item is finished whatever its last report said: done when
   // accepted, not done when rejected or abandoned. Then the person; then a
   // session working again reads as running even after an earlier "done"
@@ -270,6 +271,10 @@ export function milestoneState(item: WorkBoardItem, waiting: boolean): Milestone
   // unstarted item, keeps its own state even on an orphaned board.
   const handedBack = item.status === 'done' && reportAnswered(item)
   if ((open || handedBack) && (item.alive === 'closed' || item.orphaned)) return 'stuck'
+  // Standing by: a standing manager's open chat, idle between jobs, rests until its
+  // Conductor's next note wakes it, so it is never quiet or stuck. A report the
+  // Conductor still owes (an open ask, a done it has not decided) keeps its state.
+  if (manager && item.alive === 'idle' && !onConductor(item) && !(item.status === 'done' && !handedBack)) return 'standing_by'
   // Quiet: the board's `stale` flag with the chat still there. Its worker is
   // idle with no loop to wake it and the next move is its own, so it stays
   // visible, but calmer than stuck: the chat can still be resumed. An item
@@ -377,6 +382,9 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
       </span>
       {said && <span className={WRAP} title={said} data-testid="conductor-mode-quiet-said">{said}</span>}
     </span>
+  } else if (state === 'standing_by') {
+    const text = i18nT('components.crewMode.conductor_mode_ms_standing_by')
+    sub = <span className={WRAP} title={text} data-testid="conductor-mode-standing-by">{text}</span>
   } else if (state === 'waiting') {
     // What it waits on, only as far as the board knows: the PR it reported, then
     // the worker's own words; with neither, a calm "no reason given".
@@ -731,7 +739,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   const crewBack = useCrewBack(root)
   // An epic is the plan's container for its stories, never an outcome of its own.
   const milestones = items.filter(item => levelOf(item) !== 'epic').map(item => {
-    const state = milestoneState(item, carded.has(item.item_id) || asks.has(item.item_id))
+    const state = milestoneState(item, carded.has(item.item_id) || asks.has(item.item_id), standingManager(item, workers))
     const waitingOn = approvalWorker.has(item.item_id)
       ? i18nT('components.crewMode.worker_approval_waiting', { name: approvalWorker.get(item.item_id) })
       : firstSentence(item.summary) || i18nT('components.crewMode.conductor_mode_needs_you')
@@ -762,7 +770,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // the same rows.
   const stories: BoardStory[] = plan.sprint.map(item => {
     const m = byId.get(item.item_id)
-    const state: MilestoneState = m?.state ?? milestoneState(item, false)
+    const state: MilestoneState = m?.state ?? milestoneState(item, false, standingManager(item, workers))
     const wait = state === 'needs_you' ? null : conductorWaitMinutes(item, now)
     const move = boardMove(item, state, wait)
     const estimate = estimateMinutes(item)

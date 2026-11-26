@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { CrewWorker } from '../../../types'
 import type { WorkBoardItem } from '../../../api/crewBoard'
-import { CONDUCTOR_WAIT_LOUD_MINUTES } from '../../../lib/boardMoves'
+import { CONDUCTOR_WAIT_LOUD_MINUTES, boardMove, standingManager } from '../../../lib/boardMoves'
 import { CREW_BOARD_EXPANDED_KEY, conductorWaitMinutes, crewAncestors, crewRowOpen, crewTree, doneWhen, goalDoneWhen, goalScope, goalSentence, latestChange, milestoneState, readCrewBoardExpanded, visibleCrewRows, type CrewTreeNode } from './ConductorModeCrewPanel'
 
 const item = (over: Partial<WorkBoardItem>): WorkBoardItem => ({
@@ -204,6 +204,30 @@ describe('milestoneState', () => {
     expect(milestoneState(item({ status: null, stale: true, alive: 'closed' }), false)).toBe('next')
     expect(milestoneState(item({ status: 'blocked', ...ANSWERED }), false)).toBe('waiting')
     expect(milestoneState(item({ status: 'question', outstanding: false, ...ANSWERED }), false)).toBe('waiting')
+  })
+
+  it('standing by: a standing manager idle between jobs is never quiet or stuck', () => {
+    const seat = (title: string, over: Partial<WorkBoardItem>) => {
+      const it0 = item(over)
+      const state = milestoneState(it0, false, standingManager(it0, [{ ...worker('w-1', 'root'), title, ledger_item: it0.item_id }]))
+      return { state, move: boardMove(it0, state, conductorWaitMinutes(it0, Date.parse('2026-10-30T03:00:00Z'))) }
+    }
+    // Idle and open, gone past the stale window: its normal rest, filed under Working.
+    expect(seat('Manager: Lantern builds', { status: 'progress', stale: true, ...R })).toEqual({ state: 'standing_by', move: 'working' })
+    expect(seat('Manager: Lantern builds', { status: 'progress', ...R })).toEqual({ state: 'standing_by', move: 'working' })
+    expect(seat('Manager: Lantern builds', { status: 'done', stale: true, ...ANSWERED })).toEqual({ state: 'standing_by', move: 'working' })
+    expect(seat('Manager: Lantern builds', { status: null, stale: true })).toEqual({ state: 'standing_by', move: 'working' })
+    // An ordinary worker with nothing to wake it still reads Quiet, and Stuck in Moves.
+    expect(seat('Fix the lantern', { status: 'progress', stale: true, ...R })).toEqual({ state: 'quiet', move: 'stuck' })
+    expect(seat('Lantern Manager: notes', { status: 'progress', stale: true, ...R })).toEqual({ state: 'quiet', move: 'stuck' })
+    // Its chat closed is a real fault; its turn running reads as any running task.
+    expect(seat('Manager: Lantern builds', { status: 'progress', stale: true, alive: 'closed', ...R })).toEqual({ state: 'stuck', move: 'stuck' })
+    expect(seat('Manager: Lantern builds', { status: 'progress', alive: 'running', ...R }).state).toBe('running')
+    // A report its Conductor still owes keeps the Conductor's move.
+    expect(seat('Manager: Lantern builds', { status: 'question', outstanding: true, ...R })).toEqual({ state: 'waiting', move: 'conductor' })
+    expect(seat('Manager: Lantern builds', { status: 'done', ...R })).toEqual({ state: 'done', move: 'conductor' })
+    // Not bound to this item: the mark of another task's chat does not count.
+    expect(standingManager(item({}), [{ ...worker('w-2', 'root'), title: 'Manager: other', ledger_item: 'it_2' }])).toBe(false)
   })
 
   it('stuck: a closed session on an open report, or an orphaned board', () => {
