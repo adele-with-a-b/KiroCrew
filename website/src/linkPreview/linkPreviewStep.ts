@@ -24,6 +24,12 @@ import { resolveTextPreview } from './textPatterns'
 /** The session key prefix a chat message's preview scope carries (`LinkPreviewLayer`). */
 const SESSION_PREFIX = 'dashboard:'
 
+/** The jump of the latest step that went through the chat, until the chat
+ *  answers it. Ending a step does not withdraw its jump: the chat's pin jump
+ *  keeps waiting for the page that holds the message, and only a newer jump
+ *  replaces it (`transcriptPins.ts`, told `replaced`). */
+let waitingJump: object | null = null
+
 /** One step: provider `key` asks for its label `text` in message `target` of the chat in `slot`. */
 export interface StepAsk {
   key: string
@@ -138,26 +144,33 @@ export function runStep(ask: StepAsk, hooks: StepHooks): () => void {
 
   // A label already in view: the card moves to it and nothing scrolls (no
   // highlight, no Back spot), so stepping through the labels on screen keeps
-  // the chat still.
+  // the chat still. Not while an earlier step's jump still waits on older
+  // history: only a newer jump replaces that one, so this step jumps too.
   const seen = findStepLabel(ask)
-  if (seen && wholeInView(seen)) {
+  if (seen && wholeInView(seen) && !waitingJump) {
     landed = true
     hooks.land(rectOf(seen), link)
     if (ask.line) sayStepLine(ask.line)
     end(true)
   } else {
+    const mine = {}
+    waitingJump = mine
     const r = sendAppNav({
       kind: 'jump',
       slot: ask.slot,
       target: ask.target,
       from: 'view',
       onDone: (o) => {
+        if (waitingJump === mine) waitingJump = null
         if (over) return
         if (o === true) converge()
         else end(o)
       },
     })
-    if (r !== true && !over) end('not_on_screen')
+    if (r !== true) {
+      if (waitingJump === mine) waitingJump = null
+      if (!over) end('not_on_screen')
+    }
   }
   return () => {
     if (over) return

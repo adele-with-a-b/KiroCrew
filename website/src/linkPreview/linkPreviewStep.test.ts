@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { FrameHost, type PreviewFrame, type ShowScope, type StepLanding, type StepRequest } from './linkPreviewFrames'
+import { describe, it, expect, afterEach, beforeEach, onTestFinished, vi } from 'vitest'
+import { FrameHost, type FrameHostOptions, type PreviewFrame, type ShowScope, type StepLanding, type StepRequest } from './linkPreviewFrames'
 import { readFrameMessage, type FromFrame } from './linkPreviewProtocol'
 import { onLinkPreviewNav, type JumpOutcome, type LinkPreviewNav } from './linkPreviewNav'
 import { findStepLabel, runStep } from './linkPreviewStep'
@@ -20,7 +20,8 @@ const rect = (top: number) => ({ left: 100, top, width: 40, height: 16 })
 let steps: { key: string; ask: StepRequest; hooks: StepLanding; cancelled: boolean }[] = []
 let host: FrameHost
 
-function makeHost(withStep = true) {
+/** A frame host whose steps are recorded in `steps`, or run by `onStep`. */
+function makeHost(onStep?: FrameHostOptions['onStep']) {
   return new FrameHost({
     mint: async () => ({ frame: '/app-frame/labels-app/lp/f/tok', capability: 'cap', ttl: 3600 }),
     theme: () => 'light',
@@ -28,13 +29,11 @@ function makeHost(withStep = true) {
     onTextPatternsOff() {},
     onEscape() {},
     onFramesChanged() {},
-    ...(withStep ? {
-      onStep: (key: string, ask: StepRequest, hooks: StepLanding) => {
-        const entry = { key, ask, hooks, cancelled: false }
-        steps.push(entry)
-        return () => { entry.cancelled = true }
-      },
-    } : {}),
+    onStep: onStep ?? ((key: string, ask: StepRequest, hooks: StepLanding) => {
+      const entry = { key, ask, hooks, cancelled: false }
+      steps.push(entry)
+      return () => { entry.cancelled = true }
+    }),
   })
 }
 
@@ -147,23 +146,28 @@ describe('FrameHost: a card steps', () => {
   })
 })
 
-describe('runStep: the host side', () => {
-  function message(ts: string, labels: string[]) {
-    const scope = document.createElement('div')
-    scope.setAttribute('data-link-preview-scope', '')
-    scope.setAttribute('data-link-preview-session', 'dashboard:chat-7')
-    scope.setAttribute('data-link-preview-ts', ts)
-    for (const text of labels) {
-      const span = document.createElement('span')
-      span.setAttribute('data-link-preview-text', '')
-      span.textContent = text
-      span.getClientRects = () => [{}] as unknown as DOMRectList
-      span.getBoundingClientRect = () => ({ left: 10, top: 40, width: 30, height: 16, right: 40, bottom: 56, x: 10, y: 40, toJSON() {} })
-      scope.append(span)
+/** Message `ts` of chat-7 drawn with `labels`, each at viewport top `top()`. */
+function message(ts: string, labels: string[], top: () => number = () => 40) {
+  const scope = document.createElement('div')
+  scope.setAttribute('data-link-preview-scope', '')
+  scope.setAttribute('data-link-preview-session', 'dashboard:chat-7')
+  scope.setAttribute('data-link-preview-ts', ts)
+  for (const text of labels) {
+    const span = document.createElement('span')
+    span.setAttribute('data-link-preview-text', '')
+    span.textContent = text
+    span.getClientRects = () => [{}] as unknown as DOMRectList
+    span.getBoundingClientRect = () => {
+      const y = top()
+      return { left: 10, top: y, width: 30, height: 16, right: 40, bottom: y + 16, x: 10, y, toJSON() {} }
     }
-    document.body.append(scope)
-    return scope
+    scope.append(span)
   }
+  document.body.append(scope)
+  return scope
+}
+
+describe('runStep: the host side', () => {
   const ASK = { key: KEY, slot: 'chat-7', target: { ts: 't9' }, text: '[A9]', line: '[A9] · 9 of 9' }
 
   it('finds only the asking provider\'s own label, in that chat and message', () => {
@@ -210,5 +214,62 @@ describe('runStep: the host side', () => {
     const nobody = vi.fn()
     runStep(ASK, { land: vi.fn(), done: nobody })
     expect(nobody).toHaveBeenCalledWith('not_on_screen')
+  })
+})
+
+describe('a step while an earlier step is still paging older history in', () => {
+  /** The chat's jump as the pin jump runs it (`transcriptPins.ts`): a loaded
+   *  message is scrolled to at once, a message older than the loaded rows waits
+   *  for its page, and a newer jump replaces the one waiting (told `replaced`). */
+  function pagingChat(loaded: Set<string>) {
+    const chat: { at: string; waiting: { ts: string; done?: (o: JumpOutcome) => void } | null } = { at: 't6', waiting: null }
+    const scrollTo = (ts: string, done?: (o: JumpOutcome) => void) => { chat.at = ts; done?.(true) }
+    const off = onLinkPreviewNav((req) => {
+      if (req.kind !== 'jump') return false
+      const older = chat.waiting
+      chat.waiting = null
+      if (loaded.has(req.target.ts)) scrollTo(req.target.ts, req.onDone)
+      else chat.waiting = { ts: req.target.ts, done: req.onDone }
+      older?.done?.('replaced')
+      return true
+    })
+    /** The page holding `ts` arrives: a jump still waiting on it lands. */
+    const pageArrives = (ts: string) => {
+      loaded.add(ts)
+      const waiting = chat.waiting
+      chat.waiting = null
+      if (waiting) scrollTo(waiting.ts, waiting.done)
+    }
+    return { chat, pageArrives, off }
+  }
+
+  it('the newer step replaces the far jump, so the chat stays on its label and the card by it', async () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance', 'Date'] })
+    vi.setSystemTime(new Date('2026-11-26T12:00:00Z'))
+    onTestFinished(() => { vi.useRealTimers() })
+    host.disposeAll()
+    host = makeHost((key, ask, hooks) => runStep({ key, ...ask }, hooks))
+    const { chat, pageArrives, off } = pagingChat(new Set(['t6']))
+    onTestFinished(off)
+    // A label is on screen while the chat is on its message, else far off it.
+    const at = (ts: string) => () => (chat.at === ts ? 300 : -5000)
+    const [a6] = message('t6', ['[A6]'], at('t6')).children
+    const frame = await shownCard()
+    clickedIn(frame)
+
+    // Up to [A1], far up: its page is still loading when the person steps back
+    // down to [A6], which is on screen.
+    step(frame, 1, { target: { ts: 't1' }, text: '[A1]' })
+    expect(chat.waiting?.ts).toBe('t1')
+    step(frame, 2, { target: { ts: 't6' }, text: '[A6]' })
+    await vi.advanceTimersByTimeAsync(50)
+    // The old messages arrive.
+    message('t1', ['[A1]'], at('t1'))
+    pageArrives('t1')
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(chat.at).toBe('t6')
+    expect(frame.el.style.top).toBe(`${a6.getBoundingClientRect().bottom + 6}px`)
+    expect(answers(frame).map((m) => [m.request, m.ok, m.reason])).toEqual([[1, false, 'replaced'], [2, true, undefined]])
   })
 })
