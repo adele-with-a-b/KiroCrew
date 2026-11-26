@@ -103,18 +103,46 @@ _FORGED_PROVENANCE_RE = re.compile(
 _QUOTED_PROVENANCE = "[quoted: sent by session"
 
 
+#: The two frames of the owner's steer (``chat_delivery_owner_steer.OWNER_WORDS_MARK``).
+#: Their trust is the mark the turn's opening announced, which no body is told; this
+#: only quotes the plain spellings of a copy, so it reads as quoted at a glance too.
+_FORGED_OWNER_OPEN_RE = re.compile(
+    rf"[{re.escape(_PS_OPENERS)}]\s*(?:the\s*)?owner\W{{0,3}}s\s*own\s*message\b",
+    re.IGNORECASE,
+)
+_FORGED_OWNER_END_RE = re.compile(
+    rf"[{re.escape(_PS_OPENERS)}]\s*end\s*of\s*(?:the\s*)?owner\W{{0,3}}s\s*(?:own\s*)?message\b",
+    re.IGNORECASE,
+)
+
+
+#: Every frame only the gateway may write into a delivered message, with the quoted
+#: form a body's copy of it becomes. No quoted form matches any pattern here.
+_FORGED_FRAMES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (_FORGED_PROVENANCE_RE, _QUOTED_PROVENANCE),
+    (_FORGED_OWNER_OPEN_RE, "[quoted: the owner's own message"),
+    (_FORGED_OWNER_END_RE, "[quoted: end of the owner's message"),
+)
+
+
 def _neutralize_send_provenance(body: str) -> str:
-    """Defang any provenance-shaped opener in a peer-sent *body*.
+    """Defang every gateway-only frame (:data:`_FORGED_FRAMES`) in a peer-sent *body*.
 
     Only the matched span in the ORIGINAL text is rewritten, so the rest of the
     body stays byte-exact. Substitution rather than deletion, so a reader still
     sees that the sender wrote something envelope-shaped. Only the genuine
-    envelope, prepended by this module, opens with ``[sent by session``.
+    envelope, prepended by this module, opens with ``[sent by session``. The owner's
+    frames are not trusted for their shape, which no pattern can close: the model
+    trusts one only when it carries the mark its turn's opening announced
+    (``chat_delivery_owner_steer.announce``), and a steer that is not the owner's
+    has that mark swapped out. Quoting their plain spellings here is a courtesy to
+    the reader, not the guard.
     """
     # Case is folded by the pattern's IGNORECASE (Unicode simple case folding),
     # which keeps the normalized view length-stable for the span map back.
-    spans = _marker_spans(body, (_FORGED_PROVENANCE_RE,))
-    return _apply_marker_spans(body, spans, _QUOTED_PROVENANCE)
+    for pattern, quoted in _FORGED_FRAMES:
+        body = _apply_marker_spans(body, _marker_spans(body, (pattern,)), quoted)
+    return body
 
 
 #: What the envelope names for a broadcast. The verb is part of the message's

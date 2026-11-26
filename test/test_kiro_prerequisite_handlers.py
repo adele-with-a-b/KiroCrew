@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
-from chat_test_helpers import _make_state
+from chat_test_helpers import _make_state, without_turn_opening
 from kiro_prerequisite_helpers import _agents_dir_never_the_real_home  # noqa: F401
 from kiro_prerequisite_helpers import _isolate_agent_specs  # noqa: F401
 from kiro_prerequisite_helpers import _FakeRuntime, _make_executable, _no_audit
@@ -472,7 +472,7 @@ class TestKiroPrerequisiteHandlers:
         await _run_chat(state, slot, "message that hits the auth wall")
 
         # Only the original turn ran; neither queued prompt was consumed.
-        assert delivered == ["message that hits the auth wall"]
+        assert [without_turn_opening(d) for d in delivered] == ["message that hits the auth wall"]
         assert len(slot._queue) == 2
         # And the actionable message reached the transcript.
         assert any(
@@ -535,7 +535,7 @@ class TestKiroPrerequisiteHandlers:
         await queued_turn
 
         # Both turns ran despite the stale not-ready latch.
-        assert delivered[0] == "first message"
+        assert without_turn_opening(delivered[0]) == "first message"
         assert delivered[1].endswith("keep this queued")
         assert slot._queue == []
         assert slot.task is None
@@ -604,7 +604,7 @@ class TestKiroPrerequisiteHandlers:
         assert synthesis_task is not None
         await synthesis_task
 
-        assert delivered[0] == "first message"
+        assert without_turn_opening(delivered[0]) == "first message"
         assert any(message.endswith(SUBAGENT_SYNTHESIS_PROMPT) for message in delivered[1:])
         assert slot._pending_synthesis is False
 

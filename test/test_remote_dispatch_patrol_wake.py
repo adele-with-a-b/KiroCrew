@@ -201,11 +201,13 @@ async def test_only_the_owners_steer_leaves_the_patrol_mark(origin: dict, kept: 
     """A steer adds text the gateway did not write: a peer's or another person's ends
     the mark. The owner's own typed message goes in too and leaves it, since the
     owner's words take nothing from the wake."""
-    from kiro_crew.dashboard import chat_delivery
+    from kiro_crew.dashboard import chat_delivery, chat_delivery_owner_steer
     from kiro_crew.dashboard.state import _ChatSlot
 
     slot = _ChatSlot("chat-1")
     slot._turn_patrol_wake = True
+    # The wake's prompt streamed with the gateway's opening, which announced its mark.
+    chat_delivery_owner_steer.announce(slot, nested=False)
     client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
     client.steer = AsyncMock(return_value=None)
     slot._acp_client = client

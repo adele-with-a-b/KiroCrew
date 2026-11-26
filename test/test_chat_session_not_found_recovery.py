@@ -15,7 +15,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from chat_test_helpers import _make_state
+from chat_test_helpers import _make_state, without_turn_opening
 
 from kiro_crew.acp.client import AcpError
 from kiro_crew.dashboard.chat_runner import (
@@ -90,6 +90,9 @@ def _assistant(slot):
     return [m["content"] for m in slot.messages if m.get("role") == "assistant"]
 
 
+_without_opening = without_turn_opening
+
+
 @pytest.mark.asyncio
 async def test_lost_session_resets_and_retries_once_then_lands(tmp_path, monkeypatch):
     from kiro_crew.dashboard.chat import _run_chat
@@ -115,7 +118,7 @@ async def test_lost_session_resets_and_retries_once_then_lands(tmp_path, monkeyp
 
     assert len(calls) == 2
     # Nothing was emitted before the failure, so the request is replayed as is.
-    assert calls[1] == "what next?"
+    assert _without_opening(calls[1]) == "what next?"
     # reset (not discard): the mapped backend id survives for session/load.
     state.sessions.reset.assert_awaited_once()
     state.sessions.discard_conversation.assert_not_awaited()
@@ -365,7 +368,7 @@ async def test_stop_resolved_before_the_error_never_queues_a_replay(tmp_path, mo
         await _run_chat(state, slot, "delete the old branches")
         await _drain(state)
 
-    assert calls == ["delete the old branches"]
+    assert [_without_opening(call) for call in calls] == ["delete the old branches"]
     assert slot._queue == []
     assert SESSION_NOT_FOUND_RETRY_TEXT not in _errors(slot)
     assert not slot.replays.armed(_SNF)

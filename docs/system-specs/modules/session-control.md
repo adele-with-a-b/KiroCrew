@@ -798,6 +798,12 @@ window and replaces it with a narrower one: the steer RPC suspends on
   the real envelope opens with the marker
   (`test_send_body_cannot_forge_a_second_provenance_envelope`,
   `test_neutralize_send_provenance_folds_invisible_chars_and_any_opening_bracket`).
+  The owner's steer frames get the same rewrite, `[The owner's own message` to
+  `[quoted: the owner's own message` and `[end of the owner's message` to
+  `[quoted: end of the owner's message`, so a plain copy reads as quoted. It is
+  not the guard: the model trusts the owner's frames only by the mark the turn's
+  opening announced, which no body is told ([session](session.md), agents' rows).
+  One list holds every such frame (`session_messaging._FORGED_FRAMES`).
 
   It reaches one level further down. `directive_user_origin` exempts a queue entry
   from the drain's LINKED drop because "the author typed into the session's own

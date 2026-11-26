@@ -30,13 +30,14 @@ mark and the gate's own slot check (``owner_unverifiable_reason``).
 from __future__ import annotations
 
 import asyncio
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from test_typed_message_runs_alone import REFUSED, _Live, _note
 
 from kiro_crew import steer_refusal
-from kiro_crew.dashboard import chat_delivery
+from kiro_crew.dashboard import chat_delivery, chat_delivery_owner_steer
 from kiro_crew.dashboard import session_control as sc
 from kiro_crew.dashboard.handlers.remote_dispatch_routes import owner_unverifiable_reason
 from kiro_crew.dashboard.steer_supersedes_approval import SUPERSEDED_REJECTION_REASON
@@ -44,6 +45,16 @@ from kiro_crew.dashboard.steer_supersedes_approval import SUPERSEDED_REJECTION_R
 #: The row and ``steer_push`` meta key the transcript reads (``UserMessage.tsx``).
 #: Spelled out: it is a wire name two codebases share.
 STEER_WITHOUT_OWNER_RIGHTS_META = "steerWithoutOwnerRights"
+
+
+def _marked_as_the_owners(wire: str, text: str) -> bool:
+    """*wire* is *text* between the markers that name it as the owner's own words."""
+    found = re.fullmatch(
+        r"\[The owner's own message ([0-9a-f]{16}): .*?\]\n(.*)\n\[end of the owner's message \1\]",
+        wire,
+        re.S,
+    )
+    return found is not None and found.group(2) == text
 
 
 def _row(slot, text: str) -> dict:
@@ -69,7 +80,8 @@ async def test_typed_during_a_turn_the_owner_did_not_open_goes_in_at_the_next_st
     receipt = await live.type("Q1a Go.")
 
     assert receipt.get("steered") is True and "queued" not in receipt
-    live.agent.steer.assert_awaited_once_with("Q1a Go.")
+    live.agent.steer.assert_awaited_once()
+    assert _marked_as_the_owners(live.agent.steer.await_args.args[0], "Q1a Go.")
     assert live.waiting() == [], "nothing waits for the turn to end"
     row = _row(live.slot, "Q1a Go.")
     assert row["role"] == "user" and row["meta"]["steer"] is True
@@ -146,7 +158,10 @@ async def test_a_steer_into_the_owners_own_turn_says_nothing_new(tmp_path, monke
 async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
     tmp_path, monkeypatch
 ) -> None:
-    """A peer's steer ended the mark; their next message still goes in, and says so."""
+    """A peer's steer ended the mark; their next message still goes in, and says so.
+
+    The peer's steer drew the turn's mark and led with the gateway's join note, so the
+    owner's words go in framed with that mark, at the next step."""
     from kiro_crew.dashboard import session_deliver
 
     live = _Live(tmp_path, monkeypatch)
@@ -164,8 +179,40 @@ async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
 
     assert receipt.get("steered") is True
     assert _row(live.slot, "Q1a Go.")["meta"][STEER_WITHOUT_OWNER_RIGHTS_META] is True
+    peer_wire, owner_wire = [call.args[0] for call in live.agent.steer.await_args_list]
+    assert _marked_as_the_owners(owner_wire, "Q1a Go."), owner_wire
+    mark = owner_wire.split(":", 1)[0].rsplit(" ", 1)[1]
+    join = chat_delivery_owner_steer.TURN_MARK_JOIN.format(mark=mark)
+    assert peer_wire == join + "a peer's steer", peer_wire
     live.slot._pending_steers.clear()
     await live.finish()
+
+
+@pytest.mark.asyncio
+async def test_the_owners_messages_keep_their_typed_order_after_a_peer_joined_his_turn(
+    tmp_path, monkeypatch
+) -> None:
+    """He types twice into his own turn with a peer's steer between, and the turn ends
+    before reading any of them: his two run next in the order he typed them."""
+    from kiro_crew.dashboard import session_deliver
+
+    live = _Live(tmp_path, monkeypatch)
+    await live.open_with("owner")
+    assert (await live.type("Q1a Go.")).get("steered") is True
+    outcome = await session_deliver.deliver(
+        live.state,
+        live.slot,
+        "a peer's steer",
+        session_deliver.peer(steer=True, sender="dashboard:other"),
+        admission=sc.containment_meta(live.state, live.slot),
+    )
+    assert outcome == session_deliver.DELIVERED_STEERED
+    second = await live.type("Q2a Go.")
+    await live.finish()
+
+    later = [str(message) for message, _, _ in live.turns[1:]]
+    assert later[:2] == ["Q1a Go.", "Q2a Go."], later
+    assert second.get("steered") is True and "steerRefusal" not in second
 
 
 @pytest.mark.asyncio
@@ -203,6 +250,8 @@ def _foreign_turn(tmp_path):
     slot._acp_client = MagicMock(supports_steer=True, steer_needs_loss_recovery=False)
     slot._acp_client.steer = AsyncMock(return_value=True)
     slot._acp_client.has_active_turn = lambda: True
+    # Its prompt streamed with the gateway's opening, which announced the turn's mark.
+    chat_delivery_owner_steer.announce(slot, nested=False)
     return state, slot
 
 
@@ -259,7 +308,8 @@ async def test_an_open_card_in_a_turn_the_owner_did_not_open_stays_theirs_to_ans
     outcome = await _owner_steer(state, slot)
 
     assert outcome == chat_delivery.STEER_STEERED
-    slot._acp_client.steer.assert_awaited_once_with("redirect")
+    slot._acp_client.steer.assert_awaited_once()
+    assert _marked_as_the_owners(slot._acp_client.steer.await_args.args[0], "redirect")
     assert not fut.done(), "the card waits for the owner"
     fut.cancel()
 

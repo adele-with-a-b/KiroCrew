@@ -164,9 +164,14 @@ def settle_steers(
 
 
 def forget_steer(slot: Any, message: str) -> bool:
+    """Drop *message*'s wire form; answer whether it was a responsive steer.
+
+    ``steers`` also holds the owner's marked steer (``chat_delivery_owner_steer``),
+    which is not responsive, so the answer reads ``steer_entries``.
+    """
     turn = turn_state(slot)
-    turn.steer_entries.pop(message, None)
-    return turn.steers.pop(message, None) is not None
+    turn.steers.pop(message, None)
+    return turn.steer_entries.pop(message, None) is not None
 
 
 def priority_entry(item: dict) -> bool:

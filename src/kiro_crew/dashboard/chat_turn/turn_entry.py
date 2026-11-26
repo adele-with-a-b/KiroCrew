@@ -260,6 +260,10 @@ async def _turn_open(turn: _ChatTurn) -> _Flow | None:
         # `_turn_owner_sent` is overwritten here. Adopted only for a turn the
         # person sent.
         slot._turn_owner_sent = turn._directive_owner_origin is True and slot._turn_user_sent
+        # This turn's owner mark is drawn when its prompt streams, never inherited.
+        from kiro_crew.dashboard.chat_delivery_owner_steer import clear_mark
+
+        clear_mark(slot)
         # The patrol mark comes from this turn's own call too, and only the loop
         # fire declares it. Never beside a person's or a channel's opener.
         slot._turn_patrol_wake = (

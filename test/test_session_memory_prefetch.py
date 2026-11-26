@@ -17,6 +17,7 @@ import threading
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from chat_test_helpers import without_turn_opening
 
 from kiro_crew import context_omissions
 from kiro_crew.context import ContextBuilder
@@ -571,7 +572,8 @@ async def test_a_cold_start_build_takes_its_prefetch_and_sends_the_same_context(
         sent[run] = (_CURRENT_DATE_LINE.sub("[CURRENT DATE] <now>", captured[0]), build_reads)
 
     assert "Answer in short sentences." in sent["without"][0]
-    assert sent["with"][0] == sent["without"][0]
+    # Each run's opening names its own turn mark; what follows it is the context.
+    assert without_turn_opening(sent["with"][0]) == without_turn_opening(sent["without"][0])
     assert sent["without"][1], "without the prefetch the build reads memory itself"
     assert sent["with"][1] == [], "the build read memory again instead of taking the prefetch"
 
