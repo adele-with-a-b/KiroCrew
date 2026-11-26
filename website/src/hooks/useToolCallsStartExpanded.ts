@@ -5,9 +5,11 @@ import { loadChatConfig } from '../pages/chat/ChatSettings'
 // expanded" chat settings. ToolCallLine and CollapsibleToolGroup read the
 // first, ThinkingBlock the second, as the initial disclosure of a row; they
 // stay live because the Settings row dispatches `mc-config-changed`.
+// "Show Thinking Inline" (collapseAllSteps off) opens reasoning rows too: a
+// person who asked to see the thinking should not find it behind a click.
 const sub = (cb: () => void) => { window.addEventListener('mc-config-changed', cb); return () => window.removeEventListener('mc-config-changed', cb) }
 const getTools = () => loadChatConfig().toolCallsStartExpanded
-const getReasoning = () => loadChatConfig().reasoningStartsExpanded
+const getReasoning = () => { const c = loadChatConfig(); return c.reasoningStartsExpanded || !c.collapseAllSteps }
 
 /** True inside a ChatPanel an app mounts with `expandSteps`: that panel's
  *  transcript opens its reasoning and tool rows as if both settings and "Show
