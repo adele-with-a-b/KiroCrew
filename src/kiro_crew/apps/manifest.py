@@ -146,6 +146,7 @@ from kiro_crew.apps.manifest_contributes import (  # noqa: F401
     _normalize_status_path,
     _session_control_width,
     _strict_int,
+    session_control_dock_errors,
     session_control_key_default_error,
 )
 from kiro_crew.apps.manifest_names import (  # noqa: F401
@@ -814,6 +815,7 @@ class AppManifest:
                     f"backend route (lowercase, no scheme, host or query): {ctl.statusPath!r}"
                 )
             errors.extend(_session_control_key_errors(ctl))
+            errors.extend(session_control_dock_errors(ctl))
 
         # Cron validation. The cron modules are imported only for a manifest
         # that declares crons: a manifest is also read by the stdio MCP servers

@@ -10153,7 +10153,8 @@
       "retry_loading": "{{label}} 다시 로드",
       "could_not_load": "{{label}}을(를) 로드할 수 없습니다",
       "loading": "{{label}} 로드 중…",
-      "dialog_label": "{{label}} — {{appName}}"
+      "dialog_label": "{{label}} — {{appName}}",
+      "close_named": "{{label}} 닫기"
     },
     "markdownCard": {
       "formatted": "서식",

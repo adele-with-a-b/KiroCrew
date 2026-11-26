@@ -93,6 +93,14 @@ describe('ChatInput — session control chips', () => {
     expect(cls).not.toContain('text-ok')
   })
 
+  it('tells a screen reader whether its box is open', () => {
+    const { unmount } = renderWithProviders(<ChatInput {...props({ sessionControls: [chip({ active: true })] })} />)
+    expect(screen.getByRole('button', { name: 'Scope' }).getAttribute('aria-expanded')).toBe('true')
+    unmount()
+    renderWithProviders(<ChatInput {...props({ sessionControls: [chip({ active: false })] })} />)
+    expect(screen.getByRole('button', { name: 'Scope' }).getAttribute('aria-expanded')).toBe('false')
+  })
+
   it("appends the app's tooltip to the label rather than replacing it", () => {
     renderWithProviders(
       <ChatInput

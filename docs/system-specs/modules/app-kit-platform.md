@@ -6586,6 +6586,131 @@ Writers: `website/src/hooks/useSessionControls.ts`,
 `website/src/pages/chat/page/busyTurnControls.ts` (`steer()`'s result), `website/src/pages/ChatPage.tsx`,
 `apps/app_sdk_level.py`, `website/src/app-sdk/sdkLevel.ts`.
 
+## 18r. A session control's box docks above the message box, and may stay open (seam level 16)
+
+A session control's box was a popover on its chip that closed on any outside
+press and was unmounted on close, so an app could not keep a box open while the
+person read and clicked the chat. Two manifest booleans change where the box is
+drawn and what closes it. Nothing in the host names an app, and a control that
+declares neither is drawn exactly as before.
+
+- **Install** (`manifest_session_controls.session_control_dock_errors`, called by
+  `AppManifest.validate`). `dock` and `stayOpen` are JSON booleans, absent meaning
+  `false`, and `to_dict` writes each only when `true`, so an app that names
+  neither keeps its manifest dict and its signing payload. Anything else is
+  refused, and so is `stayOpen` without `dock: true`: the popover floats over the
+  transcript (`fixed`, portaled), and the transcript's bottom padding measures the
+  dock only, so a popover that stayed open would sit over the reply being read.
+  The dashboard reads both the same way (`resolveSessionControls`: only the
+  literal `true`, and `stayOpen` only with `dock`), so a stale manifest gets no
+  popover that stays open.
+- **Wide form only.** The box docks on a wide screen; a phone keeps the popover.
+  `docked` is `dock && !useIsMobile()`, the dashboard's own wide/narrow switch
+  (`MOBILE_BREAKPOINT`, and a touch-first device's own form), so there is no
+  second breakpoint and no manifest field: one `app.json` serves both sizes. In
+  the narrow form the control is the popover, unchanged, and `stayOpen` does not
+  apply (it closes on an outside press).
+- **One host, two frames** (`ComposerDockView`, `SessionControlHost`). The view
+  renders the open control's host in one place whatever its form, and gives it the
+  status stack's `SessionControlDockSlot`. The host renders the app's module, once,
+  into an element it keeps for the box's life (`bodyEl`, a `createPortal`
+  target), and the drawn frame holds that element (`holdBody`): the dock frame,
+  portaled into the slot, or the popover, portaled into the overlay root. A resize
+  or rotation across the breakpoint while the box is open swaps the frame and
+  moves `bodyEl` into it, so the module is never remounted (its state, its fields'
+  contents and its focus are kept; `holdBody` puts focus back after the move), and
+  the dock frame leaves the slot, so the dock gives back its height and the
+  transcript its padding. A dock-capable box drawn as a popover before its chip
+  was measured (the window narrowed under a docked box) anchors on its chip as
+  drawn now; with no chip on screen nothing is drawn. A popover that never docks
+  waits for the measured chip, as before. The module's keys are isolated inside the portal
+  (`isolateKeys` on its wrapper), since React carries them up the host's tree, not
+  the frame's.
+- **Where** (`ComposerDockView`). The slot sits
+  inside the status stack (`composer-status-stack`), after Crew's bars and before
+  `QueueStack`, as a content-column child with its own layer (`relative z-[2]`,
+  pinned by `ChatPage.statusStackLayering.test.tsx`), empty and with no height while
+  no docked box is open. Crew's question, follow-up
+  and approval cards and the composer are in the input area below it, so the box
+  never sits between them and the message box, and never covers them. It is part
+  of the dock that `dockRef` measures, so the transcript's `padding-bottom` grows
+  with it (`docs/decisions/2026-10-02-chat-transcript-scrolls-under-the-composer-glass.md`)
+  and the newest reply can be scrolled into view above it. The status stack's
+  `50svh` cap bounds it with the bars, and while a box is docked the stack is a
+  flex column (`has-[[data-session-control-dock]]:flex …:flex-col`, so it is block
+  layout whenever no box is docked) in which only the slot (`min-h-0`) and its
+  frame (`min-h-0`) shrink: on a short window the box gives way, its module
+  scrolling inside it, and the stack does not scroll it out of view. Seen in real
+  frames by `website/scripts/capture-session-control-dock.mjs` (1200x700, a task
+  bar and three queued rows, a module taller than the cap: the stack does not
+  scroll).
+- **The box** (`SessionControlHost`, `docked`). Portaled into the dock slot, not
+  the overlay, and not anchored: it renders with no chip rect. A `Glass` panel at the `thick` step (the dock-surface
+  rule of #37481 and #40743), `max-h-[min(40svh,560px)]` (so with the stack's
+  `50svh` cap a bar or two still fit before the stack overflows), the column's width
+  (`--mc-content-width`; `width` does not apply). A host header, outside the app's
+  tree, names the box (`<label> — <app>`, the popover's dialog label), with a close
+  button (`close_named`). The app's module renders below it
+  in a scroll box, inside the same error boundary, `AppApiProvider`, file-open
+  root and request scope as the popover, keyed on the session. The region is
+  `role="region"` with that name. Every chip, docked or not, carries
+  `aria-expanded` for its box.
+- **Closing.** One box per chat is open (`openSessionControl` holds one key), so a
+  second control's open replaces it, a box that stays open too, with no prompt
+  (its module's unsaved state goes unless the module keeps it). The chip toggles it; the header's close
+  button, the module's `onClose` and an Escape close it and hand focus back to the
+  chip when focus was inside (`closeDocked`), and so does the key that opened it
+  (`useComposerSessionControls` focuses the chip when focus was in a
+  `[data-session-control-dock]` box; in a popover focus is left as before). Without `stayOpen` an outside press
+  and any Escape close a docked box, as they close a popover. With `stayOpen` the
+  host takes no outside `mousedown` at all, and an Escape whose target is outside
+  the box passes on to the composer or the chat. Leaving the chat, `navigateFn`,
+  the control's key again (§18p) and a second open all work as for a popover; an
+  open of the open box hands over its payload without a remount (§18n).
+- **One Escape, one owner.** The Escape consumers are the composer's stop key
+  (`stopKey.ts`) and dictation discard (`voice.ts`), which yield to any open
+  Escape owner (`chat-input/escapeOwners.ts`) and `preventDefault` the Escape
+  they take, and the host's own document listener. The popover is an owner as a
+  `role="dialog"`. The docked frame (a `role="region"`) carries
+  `[data-escape-owner]` exactly while it will answer Escape: always without
+  `stayOpen`, and with `stayOpen` only while focus is inside it (tracked with
+  `focusin`/`focusout`). And a docked box leaves alone an Escape already
+  `defaultPrevented`. So without `stayOpen` an Escape in the message box closes
+  the box and neither stops a running reply nor discards a dictation; with
+  `stayOpen` an Escape in the message box is the composer's and the box stays,
+  and one inside the box closes it and nothing else. Pinned by
+  `sessionControlDockEscape.test.tsx`, which drives the real stop key and
+  dictation hooks.
+- **What bounds an app's box.** The app's module runs in the dashboard document
+  (§18), so these are a contract the host keeps and review checks, not a
+  boundary (`docs/architecture/app-platform-trust-model.md`): the header is the
+  host's and names the app, Crew's own prompts stay below the box and uncovered,
+  its height is capped, it opens only on an open the person made (a chip, a key,
+  the app's own card or status row) and closes on a chat switch, and the
+  publishing checklist refuses a box that imitates a Crew card or asks for a
+  secret.
+
+Not covered: a phone sheet (a phone keeps the popover), a box that follows the person to another chat, and split-view panes and
+embeds, which draw no session controls. Since the box gives way, the stack
+overflows its cap only when Crew's own bars alone do, and then takes input across
+its width (`data-overflowing`) as it always has. The box's own scroll area takes no focus of its
+own; a box whose content has nothing focusable relies on the browser's own
+keyboard-scrollable scroll containers.
+
+Writers: `apps/manifest_session_controls.py`, `apps/manifest_contributes.py`,
+`apps/manifest.py`, `apps/app_sdk_level.py`, `website/src/app-sdk/sdkLevel.ts`,
+`website/src/hooks/useSessionControls.ts`, `website/src/components/SessionControlHost.tsx`,
+`website/src/pages/chat/page/ComposerDockView.tsx`,
+`website/src/pages/chat/page/sessionControls.ts`,
+`website/src/components/chat-input/ContextShelf.tsx`. Tests:
+`test/test_app_session_controls.py`, `website/src/test/SessionControlHostDock.test.tsx`,
+`website/src/test/useSessionControls.test.ts`,
+`website/src/pages/ChatPage.composerDock.test.tsx`,
+`website/src/test/ChatPage.statusStackLayering.test.tsx`,
+`website/src/test/appSessionKeys.test.tsx`,
+`website/src/test/ChatInput.sessionControls.test.tsx`. Example:
+`docs/app-kit/examples/docked-control-app/`.
+
 ## 19. Spec Builder's backend is composed by lifecycle owner
 
 Spec Builder's backend carries more orchestration than a typical app: agent turns

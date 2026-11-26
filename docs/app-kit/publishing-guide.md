@@ -679,6 +679,10 @@ installed one.
 - [ ] `onUninstall` cleans up everything created outside
       `~/.kiro/crew/apps/{name}/`, and nothing the gateway already manages
 - [ ] `README.md` explains what the app does and how to use it
+- [ ] A session control that docks or stays open (`dock`, `stayOpen`) shows only
+      the app's own content: nothing in it looks like one of Kiro Crew's own
+      cards (a tool approval, a question, a sign-in), and it asks for no
+      password or token
 - [ ] The app installs and enables cleanly from a local clone
 
 Reviewers check that the manifest is complete, the permissions are proportionate,

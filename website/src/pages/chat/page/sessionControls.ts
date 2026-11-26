@@ -4,7 +4,7 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import { useAnchoredTriggerRect } from '../../../hooks/useAnchoredTriggerRect'
 import { useFolderSortMode } from '../../../hooks/useFolderSortMode'
-import { dashboardSessionKey, pickAppReplyChips, SESSION_CONTROL_STATUS_KEY, useSessionControls, useSessionControlStatuses, type ResolvedSessionControl } from '../../../hooks/useSessionControls'
+import { dashboardSessionKey, pickAppReplyChips, SESSION_CONTROL_STATUS_KEY, sessionControlChip, useSessionControls, useSessionControlStatuses, type ResolvedSessionControl } from '../../../hooks/useSessionControls'
 import { useAppSessionKeys } from '../../../hooks/useAppSessionKeys'
 import { isTerminalTarget, shortcutPlatform, SHORTCUTS_ENABLED_KEY } from '../../../hooks/useKeyboardShortcuts'
 import { ariaKeys, matchAppKeyEvent, shownKeys, type ResolvedAppKey } from '../../../lib/appSessionKeys'
@@ -118,9 +118,13 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
       // but do nothing: one press, one open or close.
       if (e.repeat) return
       if (open?.key === hit.control.key && open.slot === slot && keyOpen.current?.keyId === hit.key.id) {
+        // A docked box closed by its key from inside hands focus back to its
+        // chip, as its close button does; focus in a popover is left as before.
+        const inDock = !!(document.activeElement as Element | null)?.closest?.('[data-session-control-dock]')
         keyOpen.current = null
         setOpenSessionControl(null)
         refresh()
+        if (inDock) chip.focus()
         return
       }
       keyOpen.current = { control: hit.control.key, keyId: hit.key.id }
@@ -186,14 +190,6 @@ export function useComposerSessionControls({ activeSlot, currentSlot, queryClien
     mobileNewSessionInFlightRef, mobileNewSessionBusy, setMobileNewSessionBusy,
     sessionControlKey, sessionControlStatuses, sessionControlStatusError,
   }
-}
-
-/** The drawn chip of control `key` (`<app>:<id>`), or null. */
-function sessionControlChip(key: string): HTMLElement | null {
-  for (const el of document.querySelectorAll<HTMLElement>('[data-session-control-key]')) {
-    if (el.dataset.sessionControlKey === key && el.isConnected) return el
-  }
-  return null
 }
 
 /** The composer bar's chip model for each control. */

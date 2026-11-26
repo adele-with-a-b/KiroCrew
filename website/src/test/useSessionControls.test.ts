@@ -101,6 +101,19 @@ describe('resolveSessionControls', () => {
     expect(out.map(c => c.key)).toEqual(['b:scope'])
   })
 
+  it('reads dock and stayOpen as the install check holds them: only true, stayOpen only with dock', () => {
+    const one = (over: Record<string, unknown>) => {
+      const [c] = resolveSessionControls([app({}, [ctl(over)])])
+      return { dock: c.dock, stayOpen: c.stayOpen }
+    }
+    expect(one({})).toEqual({ dock: false, stayOpen: false })
+    expect(one({ dock: true })).toEqual({ dock: true, stayOpen: false })
+    expect(one({ dock: true, stayOpen: true })).toEqual({ dock: true, stayOpen: true })
+    // A stale or hand-edited manifest never gets a popover that stays open.
+    expect(one({ stayOpen: true })).toEqual({ dock: false, stayOpen: false })
+    expect(one({ dock: 'true', stayOpen: 1 })).toEqual({ dock: false, stayOpen: false })
+  })
+
   it('handles a non-array input', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(resolveSessionControls(undefined as any)).toEqual([])

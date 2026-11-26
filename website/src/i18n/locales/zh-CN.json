@@ -10153,7 +10153,8 @@
       "retry_loading": "重试加载 {{label}}",
       "could_not_load": "无法加载 {{label}}",
       "loading": "正在加载 {{label}}…",
-      "dialog_label": "{{label}} — {{appName}}"
+      "dialog_label": "{{label}} — {{appName}}",
+      "close_named": "关闭 {{label}}"
     },
     "markdownCard": {
       "formatted": "格式化",

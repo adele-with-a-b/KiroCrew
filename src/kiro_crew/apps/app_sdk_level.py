@@ -13,7 +13,9 @@ messages, with the Back pill. Level 14 adds a session control's ``keys``: a key,
 changeable in Settings → Shortcuts → Apps, opens its box in the chat on screen, and
 the box reads the key's ``arg`` with ``via: 'key'``. Level 15 adds a session control
 status answer's ``replyChips``: an app supplies the strings of Crew's reply chips for
-one chat.
+one chat. Level 16 adds a session control's ``dock`` and ``stayOpen``: its box opens in
+the composer dock, between the chat and the message box, and may stay open while the
+person reads and clicks the chat.
 """
 
-APP_SDK_LEVEL = 15
+APP_SDK_LEVEL = 16

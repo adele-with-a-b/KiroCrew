@@ -10392,7 +10392,8 @@
       "retry_loading": "{{label}} লোড করার পুনরায় চেষ্টা করুন",
       "could_not_load": "{{label}} লোড করা যায়নি",
       "loading": "{{label}} লোড হচ্ছে…",
-      "dialog_label": "{{label}} — {{appName}}"
+      "dialog_label": "{{label}} — {{appName}}",
+      "close_named": "{{label}} বন্ধ করুন"
     },
     "markdownCard": {
       "formatted": "ফরম্যাট করা",

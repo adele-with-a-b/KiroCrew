@@ -151,6 +151,9 @@ export function SessionControlChips({ sessionControls, shelfCompact, onSessionCo
         : chipName}
       aria-label={chipName}
       aria-keyshortcuts={sc.shortcut?.aria}
+      // The chip toggles its box (a popover, or a box docked above the message
+      // box that may stay open while the person works in the chat).
+      aria-expanded={sc.active}
     >
       <AppIcon icon={sc.icon} size={13} />
       {!shelfCompact && <span className="truncate max-w-[140px]">{shown}</span>}

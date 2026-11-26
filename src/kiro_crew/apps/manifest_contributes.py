@@ -45,6 +45,7 @@ from kiro_crew.apps.manifest_session_controls import (  # noqa: F401
     SessionControlContribution,
     SessionControlKey,
     _session_control_width,
+    session_control_dock_errors,
     session_control_key_default_error,
 )
 from kiro_crew.apps.manifest_status_items import (

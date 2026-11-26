@@ -437,6 +437,8 @@ each replaced field with its old and new value (a WARNING line ending in
 | `contributes.sessionControls[].icon` | string | | Icon name. Only `Shield`, `Bot`, `Search`, `Tag`, `Users`, `Zap`, `Star`, `Package`, `Cat`, `AudioLines` and `Mic` are rendered; any other name falls back to `Package`. Use `AudioLines` for a control that starts a voice conversation and `Mic` only for voice input: the composer's own dictation button already draws `Mic`, so a conversation chip with that glyph reads as a second dictation button |
 | `contributes.sessionControls[].statusPath` | string | | Optional backend route reporting per-session chip state (see below) |
 | `contributes.sessionControls[].width` | integer | | Optional popover width in CSS px on a desktop window, from 340 (the default) to 396; any other value (`0` and `null` included) is refused at install. A window under 768 px wide keeps 340 |
+| `contributes.sessionControls[].dock` | boolean | `false` | Optional (level 16). `true` opens the box in the composer dock, between the chat and the message box and as wide as the message box, instead of as a popover on the chip; `width` does not apply. It docks on a wide screen; a phone keeps the popover. Anything but `true` or `false` is refused at install (see below) |
+| `contributes.sessionControls[].stayOpen` | boolean | `false` | Optional (level 16), with `dock: true` only; without it the install is refused. A press outside the docked box leaves it open, so the chat above can be read, scrolled and clicked; on a phone the popover closes on an outside press as before (see below) |
 | `contributes.statusItems[].id` | string | | Item id, kebab-case; addressed as `<appName>:<id>` |
 | `contributes.statusItems[].label` | string | | Accessible name and the detail card's row heading, at most 40 characters, with no control, format or separator character (the zero-width joiners are allowed); never drawn on the pill |
 | `contributes.statusItems[].icon` | string | | Icon name from the app icon set listed under `contributes.panelTabs`; any other name draws the generic panel glyph |
@@ -734,6 +736,67 @@ disturbing the chat.
 wide), so the popover anchored on its chip stays over the composer.
 A phone-width window (under 768 px) always draws 340, and any window draws no
 wider than itself less 16 px.
+
+**`dock` and `stayOpen` — a box above the message box that stays open.** A
+popover closes on any press outside it, and Kiro Crew unmounts it. For a box the
+person keeps open while reading the chat (an inbox, a checklist, a running
+log), declare both:
+
+```json
+{ "id": "inbox", "entryPoint": "dist/inbox.mjs", "label": "Inbox", "icon": "Tag",
+  "dock": true, "stayOpen": true }
+```
+
+- **Where.** The box docks on a wide screen; a phone keeps the popover. In the
+  dashboard's wide form, `dock: true` draws the box in the composer dock, between the chat and
+  the message box, under Kiro Crew's own progress bars and above your queued
+  messages, Crew's question and approval cards and the message box itself. It
+  never covers them, and it never covers the chat: the chat's bottom padding
+  grows with the box, so the newest reply scrolls into view above it.
+- **Size.** As wide as the message box (the chat column, at most 900 px; `width`
+  does not apply), and at most 40% of the window's height or 560 px, whichever is
+  less. Crew's bars and the queued messages above and below it share half the
+  window with it, and the box is the one that gives way: on a short window it is
+  shorter, never scrolled out of view. Your module scrolls inside it; give it
+  something focusable, or keep it short, so a keyboard can reach all of it.
+- **Header.** Crew draws a header over your module: your app's name, the
+  control's label and a close button. Do not draw a second title or close button.
+- **One per chat.** Only one session control box is open in a chat at a time.
+  Opening another one, yours or another app's, closes it, as a click on another
+  chip always has, even a box that stays open, and with no prompt: whatever the
+  person typed in it goes with it unless your module keeps it (a module-level
+  `Map` keyed by chat, as above).
+- **Closing.** The chip, the header's close button, your `onClose`, the key that
+  opened it (`keys`; a box opened another way stays open on a key, which hands it
+  the key's `arg`), and Escape while focus is inside the box. A docked box
+  without `stayOpen` also closes on any press outside it and on any Escape, as a
+  popover does. Switching to another chat closes it.
+- **One Escape, one owner.** An Escape is used once. Without `stayOpen`, the box
+  owns Escape while it is open, as a popover does: an Escape in the message box
+  closes the box and does not also stop a running reply or discard a dictation.
+  With `stayOpen`, the box owns Escape only while focus is inside it: there it
+  closes the box and nothing else; in the message box it is the message box's
+  (stop the reply, discard the dictation) and the box stays. An Escape your
+  module takes itself (`preventDefault`) leaves the box open.
+- **Keyboard and screen readers.** Nothing traps focus. The box is a region named
+  `<label> — <app>` in the page's tab order between the chat and the message box,
+  and the chip carries `aria-expanded` (every chip does, docked or not). Closing
+  it from inside, its key included, hands focus back to its chip.
+- **Narrow windows.** Below the width where the dashboard switches to its phone
+  form (the same switch the rest of the page uses), `dock` and `stayOpen` do not
+  apply: the control is the ordinary popover on its chip, and it closes on a press
+  outside it as any popover does. There is no field to choose otherwise; one
+  `app.json` serves both sizes. A window resized, or a phone rotated, across that
+  width while the box is open moves the box between the two forms without
+  remounting your module, so its state, its fields and its focus are kept, and
+  the dock gives back its height.
+- **Refused at install.** A value that is not `true` or `false`, and `stayOpen`
+  without `dock: true`: a popover that stayed open would float over the reply
+  being read.
+
+Needs `APP_SDK_LEVEL >= 16`; an older host ignores both and opens a popover that
+closes on an outside press, so say so in your box when `APP_SDK_LEVEL` is lower.
+See [`examples/docked-control-app`](examples/docked-control-app/).
 
 **Opened by the app, with a payload.** The app's own link-preview card
 (`link.card.openSessionControl`, under

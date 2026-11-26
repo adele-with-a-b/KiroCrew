@@ -15,5 +15,7 @@
  * Shortcuts → Apps, opens its box in the chat on screen with `via: 'key'`.
  * Level 15 adds a session control status answer's `replyChips`: an app supplies
  * the strings of Crew's reply chips for one chat.
+ * Level 16 adds a session control's `dock` and `stayOpen`: its box opens in the
+ * composer dock, above the message box, and may stay open while the chat is used.
  */
-export const APP_SDK_LEVEL = 15
+export const APP_SDK_LEVEL = 16
