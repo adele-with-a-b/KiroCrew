@@ -236,6 +236,21 @@ def test_labels_with_an_options_line_count_the_labels():
     assert value["first_words"] == "Q1a Merge now?"
 
 
+def test_a_parked_question_named_mid_line_asks_nothing_until_a_line_opens_with_it():
+    # The reply rule in context_assembly/output_contract.py relies on this: an
+    # agent names a question that waits on its own work in the middle of a sentence.
+    parked = _slot(
+        _person("go", NOW - 30),
+        _reply("The build still runs. The rename in [Q7a] waits on it.", NOW - 20),
+    )
+    assert parked.to_dict()["needs_you"] is None
+    asked = _slot(
+        _person("go", NOW - 30),
+        _reply("The build is green.\n[Q7a] Rename it now? I would.", NOW - 20),
+    )
+    assert asked.to_dict()["needs_you"]["kinds"] == ["labelled"]
+
+
 def test_a_plain_question_counts_nothing():
     slot = _slot(_person("Hi.", NOW - 30), _reply("Shall I go on?", NOW - 20))
     assert slot.to_dict()["needs_you"] is None
@@ -265,6 +280,23 @@ def test_gateway_input_rows_carry_the_persons_turn_on():
         _reply("Both passed.\n[OPTIONS: Merge | Hold]", NOW - 60),
     )
     assert slot.to_dict()["needs_you"]["kinds"] == ["options"]
+
+
+def test_an_open_ask_asked_again_after_a_wake_keeps_the_chat_waiting():
+    # Only the newest reply is read, so the reply rule in
+    # context_assembly/output_contract.py asks a question still waiting on the
+    # owner again, at a line's start, in every reply until the owner answers.
+    rows = [
+        _person("Check the PR.", NOW - 90),
+        _reply("Checks run.\n[Q1a] Merge if green?\n[OPTIONS: Merge | Hold]", NOW - 80, mid="m-a"),
+        {"role": "subagent", "content": "[Subagent completion event] done", "ts": _stamp(NOW - 70)},
+    ]
+    asked_again = _slot(*rows, _reply("Checks are green.\n[Q1a] Merge now? I would.", NOW - 60))
+    value = asked_again.to_dict()["needs_you"]
+    assert value["kinds"] == ["labelled"]
+    assert value["first_words"] == "Q1a Merge now? I would."
+    named_only = _slot(*rows, _reply("Checks are green. The merge waits on [Q1a].", NOW - 60))
+    assert named_only.to_dict()["needs_you"] is None
 
 
 def test_a_long_row_before_the_reply_keeps_the_summary_memoized():
