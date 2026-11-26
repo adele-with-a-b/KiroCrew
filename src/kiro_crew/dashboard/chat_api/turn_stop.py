@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     import time
 
     from kiro_crew.dashboard.chat_handlers import (
+        CONTAINED_CODE,
+        CONTAINED_ERROR,
         RESTORED_QUEUE_KEY,
         RESTORED_SEND_CHOSEN_KEY,
         DashboardState,
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
         compaction_in_flight,
         crew_steer_discarded,
         deny_app_slot_access,
+        drain_would_drop,
         effective_session_key,
         logger,
         read_bounded_json,
@@ -1045,6 +1048,29 @@ async def api_chat_slot_stop(request: web.Request) -> web.Response:
     )
 
 
+def _contained_card_refusal(
+    state: DashboardState, slot: _ChatSlot, queue_id: str
+) -> web.Response | None:
+    """409 when *queue_id* is a restored card the drain would drop if it ran now.
+
+    Asked before Send now stops, promotes or starts anything. The drain never
+    runs a restored card nobody sent, and holds one this press sends again when
+    its limits do not hold (a restore strips the admission snapshot, so a chat
+    linked or mirrored to a channel stops every one): the press would stop the
+    running turn for a card that cannot go. It stays held instead, and the turn
+    runs on. A card queued since the restart keeps
+    its snapshot and its own fate: the drain judges it at the turn's end whether
+    or not anyone presses. ``None`` when it may go, or when it is not queued (the
+    caller's own check answers that).
+    """
+    card = next((q for q in slot._queue if isinstance(q, dict) and q.get("id") == queue_id), None)
+    if card is None or not card.get(RESTORED_QUEUE_KEY):
+        return None
+    if not drain_would_drop(state, slot, [card]):
+        return None
+    return web.json_response({"error": CONTAINED_ERROR, "code": CONTAINED_CODE}, status=409)
+
+
 def _unchoose_restored_card(slot: _ChatSlot, queue_id: str) -> None:
     """Undo a "run this next" mark on the restored card *queue_id*, if still queued."""
     for item in getattr(slot, "_queue", None) or []:
@@ -1108,6 +1134,73 @@ async def _start_chosen_restored_card(
     if started:
         state.push_slots_update()
     return started
+
+
+async def start_queued_card(
+    state: DashboardState,
+    slot: _ChatSlot,
+    name: str,
+    request: web.Request,
+    queue_id: str | None,
+    *,
+    tool_name: str = "dashboard_interrupt",
+) -> web.Response:
+    """Start a queued card on the idle *slot*, with a card's Send now checks.
+
+    The idle half of :func:`api_chat_slot_interrupt`, which names its card
+    (*queue_id*): that card goes first and past the sub-agent hold. With no
+    *queue_id* (``queue_send_held``) the drain takes the queue in order and keeps
+    every hold, so the cards the person chose go where they stand. Answers 200
+    with ``outcome: started``, or the refusal: 404 when the slot was replaced,
+    409 ``slot_running``, ``slot_stopping`` or ``queue_item_unavailable`` (nothing
+    started: the card left the queue, its own check dropped it or held it again,
+    or a hold keeps it), or the app-scope denial. *tool_name* names the press in the audit log.
+    """
+    async with slot._lock:
+        # The request body and lock acquisition both yield. A close followed
+        # by same-name recreation during either await must not let this stale
+        # object dispatch work into the replacement's session namespace.
+        if _slot_replaced_while_queued(state, slot, name, request, "chat.slot_interrupt"):
+            return slot_not_found()
+        if slot.running:
+            return web.json_response(
+                {"error": "slot started running", "code": "slot_running"}, status=409
+            )
+        if slot._stopping or slot._stop_state != "idle":
+            return web.json_response(
+                {"error": "a stop is in progress", "code": "slot_stopping"}, status=409
+            )
+        # The body read above can race a cron/workflow rebind on this same
+        # live slot. Re-authorize the session the queued turn will use while
+        # holding the dispatch lock, immediately before starting it.
+        denied = _app_cancel_denied(request, slot, "chat_interrupt", effective_session_key(slot))
+        if denied is not None:
+            return denied
+        started = await _start_next_queued_turn(
+            state,
+            slot,
+            allow_user_during_subagents=queue_id is not None,
+            required_queue_id=queue_id,
+        )
+    if not started:
+        return web.json_response(
+            {
+                "error": "queued message is no longer available",
+                "code": "queue_item_unavailable",
+            },
+            status=409,
+        )
+    sel().log_tool_invocation(
+        session_key=_history_key_for(name),
+        agent=getattr(slot, "agent", "") or "kirocrew",
+        source="dashboard",
+        tool_name=tool_name,
+        tool_kind="command",
+        outcome="started",
+        metadata={"slot": name, "queue_id": queue_id},
+    )
+    state.push_slots_update()
+    return web.json_response({"ok": True, "outcome": "started"})
 
 
 async def api_chat_slot_interrupt(request: web.Request) -> web.Response:
@@ -1219,6 +1312,9 @@ async def api_chat_slot_interrupt(request: web.Request) -> web.Response:
                 },
                 status=409,
             )
+        contained = _contained_card_refusal(state, slot, queue_id)
+        if contained is not None:
+            return contained
         if linked_turn:
             # Validated: cancel the channel-path turn, then dispatch the selected
             # card below, which starts once the channel path releases the session.
@@ -1226,53 +1322,15 @@ async def api_chat_slot_interrupt(request: web.Request) -> web.Response:
                 await _cancel_linked_turn()
             except CronPauseNotSaved as exc:
                 return _pause_not_saved(exc)
-        async with slot._lock:
-            # The request body and lock acquisition both yield. A close followed
-            # by same-name recreation during either await must not let this stale
-            # object dispatch work into the replacement's session namespace.
-            if _slot_replaced_while_queued(state, slot, name, request, "chat.slot_interrupt"):
-                return slot_not_found()
-            if slot.running:
-                return web.json_response(
-                    {"error": "slot started running", "code": "slot_running"}, status=409
-                )
-            if slot._stopping or slot._stop_state != "idle":
-                return web.json_response(
-                    {"error": "a stop is in progress", "code": "slot_stopping"}, status=409
-                )
-            # The body read above can race a cron/workflow rebind on this same
-            # live slot. Re-authorize the session the queued turn will use while
-            # holding the dispatch lock, immediately before starting it.
-            denied = _app_cancel_denied(
-                request, slot, "chat_interrupt", effective_session_key(slot)
-            )
-            if denied is not None:
-                return denied
-            started = await _start_next_queued_turn(
-                state,
-                slot,
-                allow_user_during_subagents=True,
-                required_queue_id=queue_id,
-            )
-        if not started:
-            return web.json_response(
-                {
-                    "error": "queued message is no longer available",
-                    "code": "queue_item_unavailable",
-                },
-                status=409,
-            )
-        sel().log_tool_invocation(
-            session_key=_history_key_for(name),
-            agent=getattr(slot, "agent", "") or "kirocrew",
-            source="dashboard",
-            tool_name="dashboard_interrupt",
-            tool_kind="command",
-            outcome="started",
-            metadata={"slot": name, "queue_id": queue_id},
-        )
-        state.push_slots_update()
-        return web.json_response({"ok": True, "outcome": "started"})
+        from kiro_crew.dashboard.handlers.source_providers import is_owner_dashboard_request
+        from kiro_crew.dashboard.slot_queue_repository import RESTORED_HELD_AGAIN_KEY
+
+        # The person's send again of a card a limit held: the drain may judge it
+        # now. An app's press leaves it held, and the drain refuses it.
+        for item in slot._queue if is_owner_dashboard_request(request) else ():
+            if isinstance(item, dict) and item.get("id") == queue_id:
+                item.pop(RESTORED_HELD_AGAIN_KEY, None)
+        return await start_queued_card(state, slot, name, request, queue_id)
     # Idempotent guard: interrupt already in progress. State alone decides —
     # do NOT also require _stop_event_id: after the early soft_pending claim
     # below, a concurrent request can arrive before the stop card is created
@@ -1361,6 +1419,15 @@ async def api_chat_slot_interrupt(request: web.Request) -> web.Response:
         return body_err
     assert body is not None  # read_bounded_json returns (dict, None) on success
     queue_id = body.get("queue_id")
+    # Before the promotion and the stop: neither may happen for a card the drain
+    # would delete at its turn. The running turn goes on and the card stays.
+    contained = (
+        _contained_card_refusal(state, slot, queue_id) if isinstance(queue_id, str) else None
+    )
+    if contained is not None:
+        if slot._stop_state == "soft_pending" and slot._stop_generation == claim_generation:
+            slot._stop_state = "idle"
+        return contained
     chosen_restored = False
     promoted = False
     if queue_id and slot._stop_generation == claim_generation:
@@ -1385,7 +1452,13 @@ async def api_chat_slot_interrupt(request: web.Request) -> web.Response:
         # so mark it chosen; it keeps its restored provenance otherwise.
         promoted = slot.queue_promote_by_id(queue_id)
         if promoted and slot._queue[0].get(RESTORED_QUEUE_KEY):
+            from kiro_crew.dashboard.handlers.source_providers import is_owner_dashboard_request
+            from kiro_crew.dashboard.slot_queue_repository import RESTORED_HELD_AGAIN_KEY
+
             slot._queue[0][RESTORED_SEND_CHOSEN_KEY] = True
+            # The person's send again of a card a limit held; an app's press leaves it held.
+            if is_owner_dashboard_request(request):
+                slot._queue[0].pop(RESTORED_HELD_AGAIN_KEY, None)
             chosen_restored = True
 
     # A concurrent /stop can supersede our claim during the body await:

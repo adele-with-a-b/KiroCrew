@@ -64,6 +64,17 @@ async def test_a_run_now_during_the_done_read_starts_the_chosen_card(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_a_send_all_held_mark_behind_a_card_nobody_chose_still_starts(tmp_path):
+    """Send all held marks only the cards its box counted, so a held card nobody
+    chose can stand ahead of them; the start after the release passes over it."""
+    state, slot, _entry = _setup(tmp_path)
+    counted = {"id": "r2", "content": "counted card", RESTORED_QUEUE_KEY: True}
+    slot._queue.append(counted)
+    started = await _finish(state, slot, mark_during_read=counted)
+    assert started == ["r2"]
+
+
+@pytest.mark.asyncio
 async def test_without_a_run_now_a_restored_card_waits(tmp_path):
     state, slot, _entry = _setup(tmp_path)
     assert await _finish(state, slot) == []

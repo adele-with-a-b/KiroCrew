@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useAppDispatch } from '../store'
-import { cancelQueuedMessage, editQueuedMessage, queueEntryAttachments } from '../store/chatSlice'
+import { cancelQueuedMessage, editQueuedMessage, queueEntryAttachments, releaseHeldQueued } from '../store/chatSlice'
 import { restoreQueuedContent } from '../utils/fileTokens'
 import { quoteBlock, readMessageQuote, stripQuoteBlock, type MessageQuote } from '../chat-core/composer/messageQuote'
 import { markDictated } from '../chat-core/composer/dictationProvenance'
@@ -47,11 +47,28 @@ export interface QueuedSendRecord {
  *  three small strings bounded by queued sends per tab session. */
 export const queuedSendStash = new Map<string, QueuedSendRecord>()
 
+/** One held message of `onSendAllHeld` that stays held, and why: the gateway's
+ *  refusal `code` when it named one, and its message or the request's error. */
+export interface HeldSendFailure {
+  queueId: string
+  code?: string
+  reason: unknown
+}
+
 /** The queue-card callbacks `QueueStack` takes, plus the in-flight set it
  *  disables its controls from. */
 export interface QueuedMessageActions {
   onCancel: (queueId: string) => void
   onInterrupt: (queueId: string) => void
+  /** Send several held cards at once (`QueueStack`'s Send all held). One
+   *  request names them all; the server lets each one that is still held go
+   *  and the drain sends them in queue order, one turn each, after a running
+   *  turn ends (it is never stopped). Ids that are no longer a held, visible
+   *  card, or whose action is already in flight, are skipped. A card loses its
+   *  held mark once the server let it go, and stays queued until its turn.
+   *  Resolves to each card the server kept held, with its reason, or to every
+   *  card named when the request failed. */
+  onSendAllHeld: (queueIds: readonly string[]) => Promise<HeldSendFailure[]>
   /** `pastes`: the paste blocks the edit kept, when the card carried any
    *  (`QueueStack`'s `onEdit`); the optimistic row takes exactly that set. */
   onEdit: (queueId: string, content: string, pastes?: PasteBlock[]) => void
@@ -145,6 +162,8 @@ export function useQueuedMessageActions({
 }: QueuedMessageActionsOptions): QueuedMessageActions {
   const dispatch = useAppDispatch()
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set())
+  const pendingIdsRef = useRef(pendingIds)
+  pendingIdsRef.current = pendingIds
 
   // Reads happen inside callbacks that must NOT be re-created when the queue
   // changes: `QueueStack` is memo-compared on callback identity, so a new
@@ -312,6 +331,35 @@ export function useQueuedMessageActions({
     )
   }, [slot, markPending])
 
+  const onSendAllHeld = useCallback((queueIds: readonly string[]): Promise<HeldSendFailure[]> => {
+    if (!slot) return Promise.resolve([])
+    // Re-read now: the confirm box stayed open after the ids were read.
+    const held = new Set(visibleQueuedRef.current
+      .filter(m => m.meta?.held === true)
+      .map(queueIdOf)
+      .filter((id): id is string => !!id))
+    const pending = pendingIdsRef.current
+    const ids = [...new Set(queueIds)].filter(id => held.has(id) && !pending.has(id))
+    if (!ids.length) return Promise.resolve([])
+    // Latched for the request only: a card the server let go stays queued, and
+    // its own buttons work again while it waits for its turn.
+    for (const id of ids) markPending(id, true)
+    const release = () => { for (const id of ids) markPending(id, false) }
+    return api.sendHeldQueuedMessages(slot, ids).then(
+      receipt => {
+        release()
+        const sent = Array.isArray(receipt?.sent) ? receipt.sent : []
+        if (sent.length) dispatch(releaseHeldQueued({ slot, queue_ids: sent }))
+        const refused = Array.isArray(receipt?.refused) ? receipt.refused : []
+        return refused.map(r => ({ queueId: r.queue_id, code: r.code, reason: r.error || r.code }))
+      },
+      (err: unknown) => {
+        release()
+        return ids.map(queueId => ({ queueId, reason: err }))
+      },
+    )
+  }, [slot, dispatch, markPending])
+
   // One card's hold, save and release go out one after another: sent side by
   // side, a close could reach the server before its own open and leave a hold
   // that no editor owns.
@@ -373,7 +421,7 @@ export function useQueuedMessageActions({
   }, [slot])
 
   return useMemo(
-    () => ({ onCancel, onInterrupt, onEdit, onEditOpen, onReorder, pendingIds }),
-    [onCancel, onInterrupt, onEdit, onEditOpen, onReorder, pendingIds],
+    () => ({ onCancel, onInterrupt, onSendAllHeld, onEdit, onEditOpen, onReorder, pendingIds }),
+    [onCancel, onInterrupt, onSendAllHeld, onEdit, onEditOpen, onReorder, pendingIds],
   )
 }

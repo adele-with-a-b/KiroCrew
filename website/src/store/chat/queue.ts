@@ -309,6 +309,23 @@ export const queueReducers = {
     const next = [...ordered, ...remaining]
     queuedIdx.forEach((msgIdx, k) => { msgs[msgIdx] = next[k] })
   },
+  /** Held queued rows a person let go ("Send all held…": the send-held answer or
+   *  the `queue_release` frame) no longer wait for them: drop their `held` mark.
+   *  They stay queued, and the drain sends them in queue order. */
+  releaseHeldQueued(state: ChatState, action: PayloadAction<{ slot: string; queue_ids: readonly string[] }>) {
+    const { slot, queue_ids } = action.payload
+    if (isUnsafeKey(slot) || !Array.isArray(queue_ids)) return
+    const released = new Set(queue_ids)
+    const apply = (msgs: ChatMessage[] | undefined) => {
+      for (const m of msgs ?? []) {
+        if (m.role !== 'queued' || m.meta?.held !== true || !released.has(m.meta?.queueId as string)) continue
+        const { held: _h, ...rest } = m.meta
+        m.meta = rest
+      }
+    }
+    if (slot === state.activeSlot) apply(state.messages)
+    apply(state.slotMessages[safeKey(slot)])
+  },
   /** Add a queued message (from backend queue_push WS event). */
   appendQueuedMessage: {
     reducer(state: ChatState, action: PayloadAction<{ slot: string; content: string; ts: string; queueId: string; meta?: unknown }>) {

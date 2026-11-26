@@ -161,6 +161,12 @@ def test_running_and_turn_running_slot_readers_are_enumerated() -> None:
                 # The agent route's transaction; the in-turn /agent command shares it.
                 ("chat_api/agent_switch.py", "switch_slot_agent"),
                 ("chat_api/turn_stop.py", "api_chat_slot_interrupt"),
+                # Send now's idle start, shared with Send all held: it refuses a
+                # slot a turn has reserved under the dispatch lock.
+                ("chat_api/turn_stop.py", "start_queued_card"),
+                # Send all held starts the drain itself only on an unreserved
+                # slot; a reserved one sends the marked cards at the turn's end.
+                ("queue_send_held.py", "api_chat_slot_queue_send_held"),
                 # "Run this next" starts the chosen restored card itself only on
                 # an unreserved slot; a reserved one drains it at the turn's end.
                 ("chat_api/turn_stop.py", "_start_chosen_restored_card"),

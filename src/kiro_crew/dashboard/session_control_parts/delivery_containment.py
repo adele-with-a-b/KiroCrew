@@ -1034,6 +1034,16 @@ def audit_queued_drop(
     )
 
 
+def audit_queued_keep(slot: "_ChatSlot", queue_ids: list[str], constraints: list[str]) -> None:
+    """Record that restored cards a drain-time check stopped were held again, not run.
+
+    The kept side of :func:`audit_queued_drop`: the owner's restored cards are
+    not deleted (``steer_queue._keep_restored_held``). One row covers the cards
+    one pass keeps.
+    """
+    _audit_queue_drain(slot, outcome="held", queue_ids=queue_ids, newly_held=constraints)
+
+
 def audit_queued_allow(slot: "_ChatSlot", queue_ids: list[str]) -> None:
     """Record that re-validated queued entries were AUTHORIZED to become a turn.
 

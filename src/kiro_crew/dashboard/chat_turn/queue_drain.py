@@ -43,6 +43,7 @@ from kiro_crew.dashboard.session_directive_apply import (
     REFUSAL_WAKE_LOOP_ID_META_KEY,
 )
 from kiro_crew.dashboard.slot_queue_repository import (
+    RESTORED_HELD_AGAIN_KEY,
     RESTORED_QUEUE_KEY,
     RESTORED_SEND_CHOSEN_KEY,
     source_channels_of,
@@ -624,6 +625,8 @@ async def _start_next_queued_turn(
     # qualifying.
     # Everything below — the note flush peeking at queue[0], the user-intervention
     # purge, the dequeue itself — must see only entries that may still deliver.
+    # A restored card the sweep holds again stays queued with RESTORED_HELD_AGAIN_KEY:
+    # no pick below, nor any later drain, runs it until a person sends it again.
     _drop_stale_admissions(state, slot, selected_id=required_queue_id)
     # The sweep may have dropped that recovery, leaving a new turn at the head.
     if (
@@ -768,22 +771,30 @@ async def _start_next_queued_turn(
     if restored_ids is not None and not required_queue_id and not hold_users:
         # The opening sweep left every unsent restored card unjudged, and the
         # restore path stripped its containment snapshot. Judge the card picked
-        # here against this slot's current constraints before it runs: a card
-        # the sweep drops is gone, and the next eligible entry is picked.
+        # here against this slot's current constraints before it runs, with every
+        # accepted card beside it so one notice covers those a limit holds again:
+        # a card the sweep drops is gone, one it holds again is marked and is
+        # never picked by this chain again, and the next eligible entry is picked.
         while True:
             required_queue_id = next(
                 (
                     item["id"]
                     for item in slot._queue
-                    if not item.get(RESTORED_QUEUE_KEY) or item["id"] in restored_ids
+                    if (not item.get(RESTORED_QUEUE_KEY) or item["id"] in restored_ids)
+                    and not item.get(RESTORED_HELD_AGAIN_KEY)
                 ),
                 None,
             )
             if required_queue_id is None:
                 return False
-            _drop_stale_admissions(state, slot, selected_id=required_queue_id)
+            _drop_stale_admissions(
+                state, slot, selected_id=required_queue_id, selected_ids=restored_ids
+            )
             _forget_swept_replays(slot)
-            if any(item.get("id") == required_queue_id for item in slot._queue):
+            if any(
+                item.get("id") == required_queue_id and not item.get(RESTORED_HELD_AGAIN_KEY)
+                for item in slot._queue
+            ):
                 break
 
     if required_queue_id and hold_users:
@@ -802,7 +813,13 @@ async def _start_next_queued_turn(
             or not releases_past_subagent_hold(_required)
         ):
             return False
-    if required_queue_id and not slot.queue_promote_by_id(required_queue_id):
+    if required_queue_id and (
+        any(
+            item.get("id") == required_queue_id and item.get(RESTORED_HELD_AGAIN_KEY)
+            for item in slot._queue
+        )
+        or not slot.queue_promote_by_id(required_queue_id)
+    ):
         return False
     agent_run = False
     if hold_users:
@@ -832,13 +849,17 @@ async def _start_next_queued_turn(
         # queued in this process still drain, in order, past the waiting cards.
         # Judge the entry picked here against the slot's current constraints,
         # with no await between that check and the pop; an entry the check
-        # drops is gone and the next one is picked.
+        # drops is gone, a restored one it holds again is marked and loses its
+        # chosen mark, and the next one is picked.
         while True:
             live = next(
                 (
                     i
                     for i, item in enumerate(slot._queue)
-                    if not item.get(RESTORED_QUEUE_KEY) or item.get(RESTORED_SEND_CHOSEN_KEY)
+                    if not item.get(RESTORED_QUEUE_KEY)
+                    or (
+                        item.get(RESTORED_SEND_CHOSEN_KEY) and not item.get(RESTORED_HELD_AGAIN_KEY)
+                    )
                 ),
                 None,
             )
@@ -848,7 +869,12 @@ async def _start_next_queued_turn(
             _drop_stale_admissions(state, slot, selected_id=picked_id)
             _forget_swept_replays(slot)
             live = next(
-                (i for i, item in enumerate(slot._queue) if item.get("id") == picked_id), None
+                (
+                    i
+                    for i, item in enumerate(slot._queue)
+                    if item.get("id") == picked_id and not item.get(RESTORED_HELD_AGAIN_KEY)
+                ),
+                None,
             )
             if live is not None:
                 break

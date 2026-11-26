@@ -31,7 +31,7 @@ const SLOT_CHANGE_FRAMES: ReadonlySet<string> = new Set([
   'chat_chunk', 'chat_thinking', 'chat_status', 'chat_message', 'chat_done',
   'chat_segment', 'chat_append', 'chat_message_update', 'chat_variant_switch',
   'tool_call', 'tool_result',
-  'queue_push', 'queue_cancel', 'queue_edit', 'queue_pop', 'queue_reorder',
+  'queue_push', 'queue_cancel', 'queue_edit', 'queue_pop', 'queue_reorder', 'queue_release',
   'steer_push', 'slot_clear',
   'approval', 'approval_resolved', 'question_card',
   // Stamps the elicitation card row resolved in the transcript.

@@ -230,6 +230,8 @@ _SLOT_SCOPED_EVENTS = frozenset({
     # Tool / queue
     "tool_call", "tool_result",
     "queue_push", "queue_cancel", "queue_edit", "queue_pop", "queue_reorder",
+    # The held cards "Send all held…" let go (``queue_send_held``): slot and ids only.
+    "queue_release",
     "steer_push",
     # Slot metadata / lifecycle
     "slot_title", "slot_clear", "slot_agent_switch", "todo_update",

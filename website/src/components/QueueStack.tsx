@@ -1,9 +1,13 @@
 import { useState, useRef, useEffect, memo } from 'react'
 import { AnimatePresence, motion, useMotionValue, useSpring } from 'framer-motion'
-import { Hourglass, ChevronUp, X, Zap, Pencil, Check, Bot, Loader2, ArrowUp, ArrowDown, AppWindow, BookOpen } from 'lucide-react'
+import { Hourglass, ChevronUp, X, Zap, Pencil, Check, Bot, Loader2, ArrowUp, ArrowDown, AppWindow, BookOpen, ListChecks } from 'lucide-react'
 import type { ChatMessage } from '../types'
+import type { HeldSendFailure } from '../hooks/useQueuedMessageActions'
 import { useImeGuard } from '../hooks/useImeGuard'
 import { Glass } from './Glass'
+import { useConfirm } from './ConfirmDialog'
+import ErrorNotice from './ErrorNotice'
+import { errMessage } from '../utils/thunkError'
 
 import { i18nT } from '../i18n/t'
 import { parseRecoveryMessage } from '../pages/chat/RecoveryCard'
@@ -488,10 +492,23 @@ function EditInput({ initial, onCommit, onCancel, onDraftChange, pastes = [] }: 
   )
 }
 
-function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, onEditDraft, onReorder, fuseBelow = true, pendingIds }: {
+/** Why a held card stayed held, for the Send all held error line: the catalog's
+ *  words for a refusal the gateway names by code, else its own message. */
+function heldRefusalText(failure: HeldSendFailure): string {
+  if (failure.code === 'queue_item_editing') return i18nT('components.queueStack.send_all_held_editing')
+  if (failure.code === 'queue_item_contained') return i18nT('components.queueStack.send_all_held_contained')
+  return errMessage(failure.reason) || i18nT('components.errorBoundary.something_went_wrong')
+}
+
+function QueueStackInner({ messages, onCancel, onInterrupt, onSendAllHeld, onEdit, onEditOpen, onEditDraft, onReorder, fuseBelow = true, pendingIds }: {
   messages: ChatMessage[]
   onCancel?: (queueId: string) => void
   onInterrupt?: (queueId: string) => void
+  /** Send every listed held card at once. When set, the collapsed stack of two
+   *  or more cards with a held one offers Send all held, which asks first and
+   *  then hands over the ids of the held cards shown and not in flight.
+   *  Resolves to the cards that stay held. */
+  onSendAllHeld?: (queueIds: readonly string[]) => Promise<readonly HeldSendFailure[]>
   /** `pastes` is set when the entry carried paste blocks: the ones whose
    *  tokens the edit kept, in token order (empty when it kept none), for the
    *  row to carry on. Absent when the entry had none to begin with. */
@@ -526,7 +543,7 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, 
   // which has nothing to expand either -- drops the pointer cursor, so a reader
   // does not hesitate over a click that would do nothing (#19920). The
   // dashboard always passes callbacks, so its stack is unchanged.
-  const readOnly = !onCancel && !onInterrupt && !onEdit && !onReorder
+  const readOnly = !onCancel && !onInterrupt && !onSendAllHeld && !onEdit && !onReorder
   const clickable = messages.length > 1 || !readOnly
   const readOnlyHint = readOnly ? i18nT('components.queueStack.read_only_waiting_to_send') : undefined
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -589,6 +606,42 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, 
     openEditRef.current = null
     setEditingId(null)
     if (open) onEditOpen?.(open, false)
+  }
+
+  // Send all held: the ids are read on the press, so a card held while the box
+  // is open stays held. The count beside "N queued" is every held card shown.
+  const heldCount = messages.filter(m => m.meta?.held === true).length
+  const { confirm, confirmDialog } = useConfirm()
+  // The cards the server kept held. The line names those still shown and held,
+  // so it goes once each has gone or been let go another way.
+  const [sendFailure, setSendFailure] = useState<{ ids: readonly string[]; message: string } | null>(null)
+  const failedStillHeld = sendFailure
+    ? messages.filter(m => m.meta?.held === true && sendFailure.ids.includes(m.meta?.queueId as string)).length
+    : 0
+  const sendableHeldIds = () => messages
+    .filter(m => m.meta?.held === true)
+    .map(m => m.meta?.queueId as string | undefined)
+    .filter((id): id is string => !!id && !pendingIds?.has(id))
+  const sendAllHeld = async () => {
+    if (!onSendAllHeld) return
+    const ids = sendableHeldIds()
+    if (!ids.length) return
+    const confirmed = await confirm({
+      title: i18nT('components.queueStack.send_all_held_title', { count: ids.length }),
+      body: i18nT('components.queueStack.send_all_held_body'),
+      confirmLabel: i18nT('components.queueStack.send_all_held_confirm'),
+      danger: false,
+      primary: true,
+    })
+    if (!confirmed) return
+    setSendFailure(null)
+    const failed = await onSendAllHeld(ids)
+    if (failed.length) {
+      setSendFailure({
+        ids: failed.map(f => f.queueId),
+        message: [...new Set(failed.map(heldRefusalText))].join(' '),
+      })
+    }
   }
 
   // A held card (the server's `meta.held`: it waits for the person) says so on
@@ -675,6 +728,20 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, 
           once, as text BESIDE the stack: inside it they would join the
           expand button's accessible name once per card. */}
       {readOnlyHint && messages.length > 0 && <span className="sr-only" data-testid="queue-readonly-hint">{readOnlyHint}</span>}
+      {/* Above the stack: the collapsed card slides under the composer, and a
+          line below it would too. No hand-off: the composer below holds an
+          unsent draft. */}
+      {sendFailure && failedStillHeld > 0 && (
+        <div className="mb-1">
+          <ErrorNotice
+            variant="inline"
+            testId="queue-send-all-held-error"
+            title={i18nT('components.queueStack.send_all_held_failed', { count: failedStillHeld })}
+            message={sendFailure.message}
+            onDismiss={() => setSendFailure(null)}
+          />
+        </div>
+      )}
       <motion.div
         className={clickable ? 'relative cursor-pointer' : 'relative'}
         animate={{ height: targetHeight }}
@@ -940,9 +1007,36 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, 
                           <X size={13} />
                         </button>
                       )}
+                      {isFrontCollapsed && messages.length > 1 && heldCount > 0 && onSendAllHeld && (
+                        <button
+                          data-testid="queue-send-all-held"
+                          className="shrink-0 mr-1 inline-flex items-center gap-1 whitespace-nowrap px-1 py-0.5 text-[11px] rounded hover:bg-[var(--bg-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          // No aria-label: the visible "Send all held…" is the
+                          // button's name, so voice control can say the words
+                          // shown. The title adds the longer tooltip.
+                          title={i18nT('components.queueStack.send_all_held_tooltip')}
+                          disabled={!sendableHeldIds().length}
+                          // The stack's own Enter/Space toggles it open; this key
+                          // press belongs to the button.
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation() }}
+                          onClick={(e) => { e.stopPropagation(); void sendAllHeld() }}
+                        >
+                          <ListChecks size={13} aria-hidden="true" />
+                          {/* On a narrow card only the icon shows, like the
+                              knowledge chip's label, and the name stays. */}
+                          <span data-testid="queue-send-all-held-label" className="@max-[360px]/queuecard:sr-only">
+                            {i18nT('components.queueStack.send_all_held_open')}
+                          </span>
+                        </button>
+                      )}
                       {isFrontCollapsed && messages.length > 1 && (
                         <span className="shrink-0 flex items-center gap-1 text-[11px] opacity-70">
-                          {i18nT('components.queueStack.queued_count', { count: messages.length })}
+                          {heldCount > 0
+                            ? i18nT('components.queueStack.queued_held_count', {
+                              queued: i18nT('components.queueStack.queued_count', { count: messages.length }),
+                              held: i18nT('components.queueStack.held_count', { count: heldCount }),
+                            })
+                            : i18nT('components.queueStack.queued_count', { count: messages.length })}
                           <ChevronUp size={12} />
                         </span>
                       )}
@@ -964,6 +1058,9 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditOpen, 
           })}
         </AnimatePresence>
       </motion.div>
+      {/* Outside the stack's own box: the dialog portals out of the DOM, but
+          its clicks still bubble through React to the stack's toggle. */}
+      {confirmDialog}
     </div>
   )
 }
@@ -975,6 +1072,7 @@ export default memo(QueueStackInner, (prev, next) =>
   prev.messages.every((m, i) => m === next.messages[i]) &&
   prev.onCancel === next.onCancel &&
   prev.onInterrupt === next.onInterrupt &&
+  prev.onSendAllHeld === next.onSendAllHeld &&
   prev.onEdit === next.onEdit &&
   prev.onEditOpen === next.onEditOpen &&
   prev.onEditDraft === next.onEditDraft &&

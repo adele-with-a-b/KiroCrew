@@ -889,13 +889,16 @@ def _dequeue_next_system_message(slot, *, system_only: bool = False) -> tuple:
     # Local import: slot_queue_repository reaches this module at call time.
     from kiro_crew.dashboard.queue_edit_hold import edit_held
     from kiro_crew.dashboard.slot_queue_repository import (
+        RESTORED_HELD_AGAIN_KEY,
         RESTORED_QUEUE_KEY,
         RESTORED_SEND_CHOSEN_KEY,
     )
 
     release = is_system_injection_item if system_only else releases_past_subagent_hold
     for i, item in enumerate(slot._queue):
-        if item.get(RESTORED_QUEUE_KEY) and not item.get(RESTORED_SEND_CHOSEN_KEY):
+        if item.get(RESTORED_QUEUE_KEY) and (
+            not item.get(RESTORED_SEND_CHOSEN_KEY) or item.get(RESTORED_HELD_AGAIN_KEY)
+        ):
             continue
         # A steer that fell back to the queue passes the user hold, but not
         # while the person has its card's editor open.

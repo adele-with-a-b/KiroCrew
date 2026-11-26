@@ -126,6 +126,7 @@ GATEWAY_NOTICE_AGENT_NO_TOOLS = "agent_no_tools"
 # containment-change phrase, a message excerpt, a start error, a command name)
 # rides verbatim in ``notice_args``, so the card still shows its exact detail.
 GATEWAY_NOTICE_QUEUED_MESSAGE_DROPPED = "queued_message_dropped"
+GATEWAY_NOTICE_HELD_MESSAGE_KEPT = "held_message_kept"
 GATEWAY_NOTICE_SEND_DROPPED = "send_dropped"
 GATEWAY_NOTICE_SEND_DISCARDED = "send_discarded"
 GATEWAY_NOTICE_EAGER_SPAWN_STOPPED = "eager_spawn_stopped"

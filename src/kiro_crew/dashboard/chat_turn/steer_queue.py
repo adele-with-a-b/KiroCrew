@@ -40,11 +40,15 @@ from kiro_crew.dashboard.chat_utils_injected_rows import (
 )
 from kiro_crew.dashboard.session_deliver import WAKE_GENERATION
 from kiro_crew.dashboard.slot_queue_repository import (
+    RESTORED_BOOT_ACCEPTED_KEY,
+    RESTORED_HELD_AGAIN_KEY,
     RESTORED_QUEUE_KEY,
     RESTORED_SEND_CHOSEN_KEY,
     after_owner_front,
     broadcast_queue_order,
     is_owner_queue_entry,
+    restored_card_waits,
+    retire_held_parked_work,
 )
 
 if TYPE_CHECKING:
@@ -816,7 +820,8 @@ def _has_user_queued_followup(slot: "_ChatSlot") -> bool:
     A restored card the user has not sent is excluded too: no drain runs it, so
     it is not a follow-up that takes over from a retry, continuation or replay.
     Counting it would switch those off for as long as the card waits. A restored
-    card the user chose to run counts like any other entry.
+    card the user chose to run counts like any other entry, unless a limit held
+    it again (`restored_card_waits`).
 
     While a failed agent run's retry is queued or its turn has not yet read it
     (``AGENT_RUN_RETRY_KEY``, a process-local key only ``_requeue_agent_run`` sets;
@@ -829,21 +834,85 @@ def _has_user_queued_followup(slot: "_ChatSlot") -> bool:
     behind_run_retry = any(q.get(AGENT_RUN_RETRY_KEY) for q in [*queue, *(starting or ())])
     return any(
         not _queue_entry_is_orchestration(q)
-        and not (q.get(RESTORED_QUEUE_KEY) and not q.get(RESTORED_SEND_CHOSEN_KEY))
+        and not restored_card_waits(q)
         and not (behind_run_retry and _is_agent_row(q))
         for q in queue
     )
 
 
+def _entry_drop_constraints(now: dict[str, Any], q: dict[str, Any]) -> list[str]:
+    """The constraints for which :func:`_drop_stale_admissions` drops *q* under the
+    drain-time snapshot *now*; empty when it keeps the entry.
+
+    Exempt ONLY cron notifications and sub-agent completions: both are minted
+    fresh by trusted internal producers for THIS slot's own turn lifecycle, and
+    channel-born sessions receive them by design. A synthetic-recovery entry is
+    deliberately NOT exempt — it replays externally admitted content verbatim
+    under a fresh queue id, so an exemption would let the retry ride past a link
+    that appeared during the recovery window. Every recovery producer stamps
+    admission context at requeue (`_queue_recovery`, the manual continue), so a
+    recovery in a channel-born session still drains: its stamp records
+    linked=True.
+    """
+    if q.get("kind") in (CRON_NOTIFICATION_KIND, SUBAGENT_COMPLETION_KIND):
+        return []
+    # circular import: session_control imports this package's modules at module level.
+    from kiro_crew.dashboard import session_control as _sc
+
+    return _sc.newly_held_constraints(
+        now,
+        q.get("meta"),
+        directive_user_origin=q.get("_directive_user_origin") is True,
+    )
+
+
+#: What a send button answers for a card :func:`drain_would_drop` names: the card
+#: stays queued (a restored one stays held) and nothing is sent.
+CONTAINED_CODE = "queue_item_contained"
+CONTAINED_ERROR = "This chat's channel link or limits don't allow it. The words stay in the queue."
+
+
+def drain_would_drop(state: DashboardState, slot: _ChatSlot, entries: list[dict]) -> set[str]:
+    """The ids of *entries* (cards in *slot*'s queue) the drain would drop if it
+    sent them now: the drain's own containment test, asked before a send.
+
+    A send button asks it before it lets a card go (Send now, Send all held), so
+    a card the drain would stop at its turn is refused at the press: it stays
+    held, words and all, and no turn is stopped for it. A restored card carries
+    no admission snapshot, so in a chat linked or mirrored to a channel every one
+    of them is such a card.
+    """
+    if not entries:
+        return set()
+    from kiro_crew.dashboard import session_control as _sc
+
+    now = _sc.containment_snapshot(state, slot, on_probe_failure=True)
+    return {q["id"] for q in entries if _entry_drop_constraints(now, q)}
+
+
 def _drop_stale_admissions(
-    state: DashboardState, slot: _ChatSlot, *, selected_id: str | None = None
-) -> None:
+    state: DashboardState,
+    slot: _ChatSlot,
+    *,
+    selected_id: str | None = None,
+    selected_ids: frozenset[str] = frozenset(),
+) -> set[str]:
     """Drop queued entries whose admission-time containment has lapsed.
 
     A restored card the user has not sent is left out: no drain runs it, and
     the restore path strips its containment snapshot, so judging it here would
     delete a card the user is meant to send, edit or delete. It is judged when
     the user sends it: a card marked chosen, or the one ``selected_id`` names.
+    *selected_ids* are the startup drain's accepted cards, judged together so
+    one notice covers every card this pass holds again.
+
+    A restored card of the owner's this check stops is never removed, whenever
+    its limit came (after Send all or Send now, or a mirror-store read that
+    failed): it is the person's words and the restore kept no other copy. It
+    loses its "send" marks and gains ``RESTORED_HELD_AGAIN_KEY``, so no later
+    pass judges or picks it until a person sends it again; one notice and one
+    audit row cover the cards a pass keeps. Returns the ids so kept. A restored
+    peer's note (it carries its sender's address) is dropped like any entry.
 
     Authorization is decided when a prompt is ADMITTED (`authorize_target` for
     `session_send`, the authenticated composer for a human typing into a busy
@@ -897,7 +966,7 @@ def _drop_stale_admissions(
     transcript. A human-typed entry carries no stamp and is unaffected.
     """
     if not slot._queue:
-        return
+        return set()
     # circular import: session_control imports this package's modules at module level.
     from kiro_crew.dashboard import gateway_notice as gn
     from kiro_crew.dashboard import session_control as _sc
@@ -905,31 +974,26 @@ def _drop_stale_admissions(
     now = _sc.containment_snapshot(state, slot, on_probe_failure=True)
     _mirror_unverified = bool(now.get("mirror_unverified"))
     doomed: list[tuple[dict, list[str]]] = []
+    kept: list[tuple[dict, list[str]]] = []
     for q in slot._queue:
-        # Exempt ONLY cron notifications and sub-agent completions: both are
-        # minted fresh by trusted internal producers for THIS slot's own turn
-        # lifecycle, and channel-born sessions receive them by design. A
-        # synthetic-recovery entry is deliberately NOT exempt — it replays
-        # externally admitted content verbatim under a fresh queue id, so an
-        # exemption would let the retry ride past a link that appeared during
-        # the recovery window. Every recovery producer stamps admission context
-        # at requeue (`_queue_recovery`, the manual continue), so a recovery in
-        # a channel-born session still drains: its stamp records linked=True.
-        if q.get("kind") in (CRON_NOTIFICATION_KIND, SUBAGENT_COMPLETION_KIND):
+        # Judged once: a card held again waits for a person's send, whatever drain comes.
+        if q.get(RESTORED_HELD_AGAIN_KEY):
             continue
         if (
             q.get(RESTORED_QUEUE_KEY)
             and not q.get(RESTORED_SEND_CHOSEN_KEY)
             and (selected_id is None or q.get("id") != selected_id)
+            and q.get("id") not in selected_ids
         ):
             continue
-        changed = _sc.newly_held_constraints(
-            now,
-            q.get("meta"),
-            directive_user_origin=q.get("_directive_user_origin") is True,
-        )
+        changed = _entry_drop_constraints(now, q)
         if changed:
-            doomed.append((q, changed))
+            # A peer's note proven by its receipt carries its sender's address: it
+            # is dropped and its sender told, as any entry. The owner's card is kept.
+            owners = q.get(RESTORED_QUEUE_KEY) and not _sc.send_origin_slot(q.get("meta"))
+            (kept if owners else doomed).append((q, changed))
+    if kept:
+        _keep_restored_held(state, slot, kept, mirror_unverified=_mirror_unverified)
     for q, changed in doomed:
         slot.queue_remove_by_id(q["id"])
         # The broadcast is unconditional: the frontend's queue card was created
@@ -999,6 +1063,59 @@ def _drop_stale_admissions(
                 else ""
             ),
         )
+    return {q["id"] for q, _changed in kept}
+
+
+def _keep_restored_held(
+    state: DashboardState,
+    slot: _ChatSlot,
+    kept: list[tuple[dict, list[str]]],
+    *,
+    mirror_unverified: bool,
+) -> None:
+    """Hold each restored card in *kept* again, in its place, with one notice.
+
+    The sweep would delete them otherwise. A restored card has no admission
+    record, so a limit that comes after any send button (or a mirror store that
+    does not answer) stops it. It stays queued for the person to send, edit or
+    delete, and the notice names each reason once. One audit row records the
+    cards kept. Its parked work row, if any, is retired, so no later start sends
+    it on its own; the mark keeps this process's drains (the startup drain's
+    accepted ids among them) off it until the person sends it again.
+    """
+    # circular import: session_control imports this package's modules at module level.
+    from kiro_crew.dashboard import gateway_notice as gn
+    from kiro_crew.dashboard import session_control as _sc
+    from kiro_crew.dashboard.session_control_parts.delivery_containment import (
+        audit_queued_keep,
+    )
+
+    reasons: list[str] = []
+    for q, changed in kept:
+        q.pop(RESTORED_SEND_CHOSEN_KEY, None)
+        q.pop(RESTORED_BOOT_ACCEPTED_KEY, None)
+        q[RESTORED_HELD_AGAIN_KEY] = True
+        for reason in changed:
+            if reason not in reasons:
+                reasons.append(reason)
+    audit_queued_keep(slot, [q["id"] for q, _changed in kept], reasons)
+    retire_held_parked_work(state, [q for q, _changed in kept])
+    change = _sc.describe_containment_change(reasons, mirror_unverified=mirror_unverified)
+    slot.append(
+        "notice",
+        f"⚠️ Not sent, kept held: {change}. The words stay in the queue for you to "
+        "send, edit or delete.",
+        "msg msg-info",
+        meta=gn.gateway_notice_meta(gn.GATEWAY_NOTICE_HELD_MESSAGE_KEPT, change=change),
+    )
+    logger.info(
+        "Kept %d restored queued entr(ies) held for slot %s at drain re-validation (%s)",
+        len(kept),
+        slot.key,
+        ",".join(reasons),
+    )
+    # The held count moves, which tells open tabs to read the queue again.
+    state.push_slots_update()
 
 
 async def _on_steer_dropped(turn: _ChatTurn, event) -> None:

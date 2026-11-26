@@ -301,10 +301,12 @@ def test_unmarked_entry_in_unconstrained_slot_survives(tmp_path):
 def test_unsent_restored_cards_wait_and_a_sent_one_is_judged(tmp_path):
     """A restored card carries no snapshot (the restore strips it) and no drain
     runs it, so the sweep leaves it for the user. The card the user sends, named
-    or marked chosen, is judged like any unmarked entry and fails closed."""
+    or marked chosen, is judged like any unmarked entry and fails closed: it is
+    not run, and being the person's words it is held again, not deleted."""
     from kiro_crew.dashboard.slot_queue_repository import (
         RESTORED_QUEUE_KEY,
         RESTORED_SEND_CHOSEN_KEY,
+        is_held_queue_entry,
     )
 
     state = _make_state(tmp_path)
@@ -314,15 +316,18 @@ def test_unsent_restored_cards_wait_and_a_sent_one_is_judged(tmp_path):
         {"id": "r2", "content": "old two", RESTORED_QUEUE_KEY: True},
     ]
 
-    cr._drop_stale_admissions(state, slot)
+    assert cr._drop_stale_admissions(state, slot) == set()
     assert [q["id"] for q in slot._queue] == ["r1", "r2"]
 
-    cr._drop_stale_admissions(state, slot, selected_id="r2")
-    assert [q["id"] for q in slot._queue] == ["r1"]
+    assert cr._drop_stale_admissions(state, slot, selected_id="r2") == {"r2"}
+    assert [q["id"] for q in slot._queue] == ["r1", "r2"]
 
     slot._queue[0][RESTORED_SEND_CHOSEN_KEY] = True
-    cr._drop_stale_admissions(state, slot)
-    assert slot._queue == []
+    assert cr._drop_stale_admissions(state, slot) == {"r1"}
+    assert [q["content"] for q in slot._queue] == ["old one", "old two"]
+    assert all(is_held_queue_entry(q) for q in slot._queue)
+    notices = [m for m in slot.messages if m.get("role") == "notice"]
+    assert [m["meta"]["notice"] for m in notices] == ["held_message_kept"] * 2
 
 
 def test_cron_and_subagent_entries_are_exempt(tmp_path):
@@ -788,11 +793,12 @@ def _restored_cards():
 
 
 @pytest.mark.asyncio
-async def test_restored_parked_send_on_linked_slot_is_dropped_not_dispatched(tmp_path, monkeypatch):
+async def test_restored_parked_send_on_linked_slot_is_held_not_dispatched(tmp_path, monkeypatch):
     """The restore drain picks an accepted parked send AFTER the opening sweep,
     which left the unsent restored cards unjudged. The picked card has no
-    snapshot, so on a slot that is now linked it fails closed: dropped, never
-    dispatched. The card the drain did not pick keeps waiting for the user."""
+    snapshot, so on a slot that is now linked it fails closed: never dispatched,
+    and held again with its words rather than deleted. The card the drain did
+    not pick keeps waiting for the user."""
     state = _make_state(tmp_path)
     state.subagents = None
     slot = _link(state.get_or_create_slot("chat-1"))
@@ -815,7 +821,10 @@ async def test_restored_parked_send_on_linked_slot_is_dropped_not_dispatched(tmp
 
     assert started is False
     assert not spawned.called
-    assert [q["id"] for q in slot._queue] == ["r2"]
+    assert [q["id"] for q in slot._queue] == ["r1", "r2"]
+    from kiro_crew.dashboard.slot_queue_repository import is_held_queue_entry
+
+    assert is_held_queue_entry(slot._queue[0])
 
 
 @pytest.mark.asyncio
@@ -934,7 +943,7 @@ async def test_a_card_chosen_during_the_drains_await_is_judged_before_it_runs(
     """The drain waits in the Shared Crew cancelled-parked check while an unsent
     restored card is queued. A "run this next" click marks the card chosen
     during that wait. On a slot that is now linked the card is judged after
-    the wait, so it is dropped, not dispatched."""
+    the wait, so it is not dispatched: it is held again with its words."""
     from kiro_crew.dashboard.slot_queue_repository import (
         RESTORED_QUEUE_KEY,
         RESTORED_SEND_CHOSEN_KEY,
@@ -983,7 +992,8 @@ async def test_a_card_chosen_during_the_drains_await_is_judged_before_it_runs(
 
     assert started is False
     assert not spawned.called
-    assert [q["id"] for q in slot._queue] == []
+    assert [q["content"] for q in slot._queue] == ["restored card"]
+    assert RESTORED_SEND_CHOSEN_KEY not in slot._queue[0]
 
 
 @pytest.mark.asyncio

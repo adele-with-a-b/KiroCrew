@@ -8778,7 +8778,17 @@
         "not_owners_turn": "다음에 본인의 턴으로 실행됨: 실행 중인 턴은 본인이 시작하지 않았습니다"
       },
       "sub_agent_results_ready_other": "서브 에이전트 결과 {{count}}개 준비 완료 — 현재 턴이 끝난 뒤 처리합니다",
-      "queued_count_other": "{{count}}개 대기 중"
+      "queued_count_other": "{{count}}개 대기 중",
+      "held_count_other": "{{count}}개 보류 중",
+      "queued_held_count": "{{queued}} · {{held}}",
+      "send_all_held_open": "보류된 메시지 모두 보내기…",
+      "send_all_held_tooltip": "보류된 메시지를 순서대로 모두 보내기",
+      "send_all_held_title_other": "보류된 메시지 {{count}}개를 보낼까요?",
+      "send_all_held_body": "가장 오래된 것부터 하나씩 보내집니다. 각 메시지는 별도의 턴으로 실행됩니다. 대기열의 다른 항목은 움직이지 않습니다.",
+      "send_all_held_confirm": "모두 보내기",
+      "send_all_held_failed_other": "보류된 메시지 {{count}}개를 보내지 못했습니다",
+      "send_all_held_editing": "편집하려고 열려 있습니다.",
+      "send_all_held_contained": "이 채팅의 채널 연결이나 제한 때문에 보낼 수 없습니다. 내용은 대기열에 그대로 남습니다."
     },
     "readingWidthToggle": {
       "title_full": "전체 너비",
@@ -13123,6 +13133,7 @@
         "turn_timeout_hint_global": "더 긴 턴을 허용하려면 설정 → 채팅 → 고급에서 턴 시간 제한을 높이거나, 세션 메뉴에서 이 세션에 고유한 제한을 지정하세요.",
         "turn_timeout_hint_session": "이 세션에는 고유한 제한이 있습니다. 여기서 더 긴 턴을 허용하려면 이 카드의 턴 시간 제한 변경에서, 또는 세션 메뉴의 턴 시간 제한에서 더 긴 값을 고르세요.",
         "queued_message_dropped": "대기 중이던 메시지를 버렸습니다: {{change}} — 대기열에 들어간 뒤에 일어난 일이라, 그것을 허용했던 권한이 더 이상 유효하지 않습니다.",
+        "held_message_kept": "보내지 않고 보류해 두었습니다: {{change}}. 내용은 대기열에 남아 있어 보내거나 편집하거나 삭제할 수 있습니다.",
         "send_dropped": "{{target}}에 보낸 메시지가 실행되기 전에 버려졌습니다: {{change}} — 대기열에 들어간 뒤에 일어난 일이라, 그것을 허용했던 권한이 더 이상 유효하지 않습니다. 전달되지 않았고 실행되지도 않습니다.{{excerpt}}",
         "send_discarded": "{{target}}에 보낸 메시지가 실행되기 전에 폐기되었습니다: {{reason}}. 전달되지 않았고 실행되지도 않습니다.{{excerpt}}",
         "eager_spawn_stopped_other": "이 채팅의 에이전트가 연속으로 {{count}}번 시작에 실패하여 백그라운드에서 다시 시작하지 않습니다. 메시지를 보내 다시 시도하세요. 마지막 오류: {{detail}}",

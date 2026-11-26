@@ -8778,7 +8778,17 @@
         "not_owners_turn": "接下来将作为你自己的轮次运行：当前轮次不是由你发起的"
       },
       "sub_agent_results_ready_other": "{{count}} 个子代理结果已就绪，将在当前轮次结束后处理",
-      "queued_count_other": "{{count}} 条已排队"
+      "queued_count_other": "{{count}} 条已排队",
+      "held_count_other": "{{count}} 条已保留",
+      "queued_held_count": "{{queued}} · {{held}}",
+      "send_all_held_open": "发送所有保留的消息…",
+      "send_all_held_tooltip": "按顺序发送每条保留的消息",
+      "send_all_held_title_other": "发送 {{count}} 条保留的消息？",
+      "send_all_held_body": "它们会从最早的一条开始逐条发送。每条消息各占一个轮次。队列中的其他内容不会移动。",
+      "send_all_held_confirm": "全部发送",
+      "send_all_held_failed_other": "无法发送 {{count}} 条保留的消息",
+      "send_all_held_editing": "它正在编辑中。",
+      "send_all_held_contained": "此聊天的频道关联或限制不允许发送。内容仍保留在队列中。"
     },
     "readingWidthToggle": {
       "title_full": "全宽",
@@ -13123,6 +13133,7 @@
         "turn_timeout_hint_global": "要允许更长的轮次，请在 设置 → 聊天 → 高级 中提高单轮时间上限，或从会话菜单为此会话设置它自己的上限。",
         "turn_timeout_hint_session": "此会话有它自己的上限。要在这里允许更长的轮次，请在此卡片上通过“更改单轮时间上限”选一个更大的值，或在会话菜单中通过“单轮时间上限”选择。",
         "queued_message_dropped": "已丢弃排队的消息：{{change}}，这发生在它排队之后，因此当初准许它的授权已不再有效。",
+        "held_message_kept": "未发送，仍保留：{{change}}。内容留在队列中，可以发送、编辑或删除。",
         "send_dropped": "你发送给 {{target}} 的消息在运行前被丢弃：{{change}}，这发生在它排队之后，因此当初准许它的授权已不再有效。它未被送达，也不会运行。{{excerpt}}",
         "send_discarded": "你发送给 {{target}} 的消息在运行前被丢弃：{{reason}}。它未被送达，也不会运行。{{excerpt}}",
         "eager_spawn_stopped_other": "此聊天的代理连续 {{count}} 次启动失败，因此不会再在后台启动。发送一条消息以重试。上次错误：{{detail}}",

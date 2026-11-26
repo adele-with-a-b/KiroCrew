@@ -18,6 +18,7 @@ from kiro_crew.dashboard import (
     handlers,
     limit_continue,
     queue_edit_hold,
+    queue_send_held,
     session_export,
     session_transfer,
 )
@@ -172,6 +173,10 @@ def register(app: web.Application) -> None:
         limit_continue.api_chat_slot_limit_continue_cancel,
     )
     app.on_cleanup.append(limit_continue.cancel_all)
+    # Static segment before the {queue_id} routes below, as the order route is.
+    app.router.add_post(
+        "/api/chat/slots/{slot}/queue/send-held", queue_send_held.api_chat_slot_queue_send_held
+    )
     app.router.add_delete(
         "/api/chat/slots/{slot}/queue/{queue_id}", chat.api_chat_slot_queue_cancel
     )

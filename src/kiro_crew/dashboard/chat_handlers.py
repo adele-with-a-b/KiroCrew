@@ -414,6 +414,7 @@ from kiro_crew.dashboard.chat_api.turn_stop import (  # noqa: F401
     _cancel_preparing_runner,
     _cancel_target,
     _compaction_in_flight,
+    _contained_card_refusal,
     _make_stop_resolver,
     _may_cancel_cron_run,
     _open_stop_event_card,
@@ -426,6 +427,7 @@ from kiro_crew.dashboard.chat_api.turn_stop import (  # noqa: F401
     _unchoose_restored_card,
     api_chat_slot_interrupt,
     api_chat_slot_stop,
+    start_queued_card,
     stop_slot_turn,
 )
 from kiro_crew.dashboard.chat_auto_tag import maybe_auto_tag  # noqa: F401
@@ -485,6 +487,8 @@ from kiro_crew.dashboard.chat_persistence import (  # noqa: F401
     save_slot_off_loop,
 )
 from kiro_crew.dashboard.chat_runner import (  # noqa: F401
+    CONTAINED_CODE,
+    CONTAINED_ERROR,
     _arm_pending_reset_retry,
     _context_usage_payload,
     _forwards_harness_command,
@@ -493,6 +497,7 @@ from kiro_crew.dashboard.chat_runner import (  # noqa: F401
     _sync_served_model,
     _wake_pending_reset_retry,
     context_entry_expired,
+    drain_would_drop,
     schedule_eager_spawn,
     subagents_hold_user_messages,
 )
