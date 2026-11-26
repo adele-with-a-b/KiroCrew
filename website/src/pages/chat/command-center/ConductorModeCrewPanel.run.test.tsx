@@ -2,8 +2,8 @@
  * Conductor mode Board, the sprint line: one word says what the run is doing
  * (Working, Waiting for you, Paused, Done or Stopped), from what is live on this
  * screen first and then the board read's `run` verdict. A settled run says one
- * plain sentence with no numbers, and a rejected or abandoned story reads Not
- * done in the sprint, never with the done check.
+ * plain sentence with no numbers, and a rejected or abandoned story counts as
+ * Not done in Steps, never as merged.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -59,7 +59,7 @@ describe('Conductor mode run line', () => {
     expect(within(line).queryByRole('button')).toBeNull()
   })
 
-  it('says Done with milestones not done, and marks those rows Not done', async () => {
+  it('says Done with milestones not done, and Steps counts them Not done', async () => {
     const rejected = ITEM({ item_id: 'it_b', title: 'Port the gate', state: 'rejected', verdict: 'fail' })
     const dropped = ITEM({ item_id: 'it_c', title: 'Old idea', state: 'abandoned', verdict: null })
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({}), rejected, dropped], run: RUN({ not_done: 2 }) })
@@ -69,28 +69,20 @@ describe('Conductor mode run line', () => {
     // The check is muted, never the green of a run where everything landed.
     expect(line.querySelector('svg')?.getAttribute('class')).toContain('text-muted')
     expect(line.querySelector('svg')?.getAttribute('class')).not.toContain('crew-tone-ok')
-    const rows = screen.getAllByTestId('conductor-mode-milestone').filter(r => r.getAttribute('data-state') === 'not_done')
-    expect(rows.map(r => r.textContent)).toEqual([
-      expect.stringContaining('Not done · failed its check'),
-      expect.stringContaining('Not done · dropped'),
-    ])
-    // Only the accepted one counts as done; the two not done leave the sprint for
-    // their own fold at the foot, closed until clicked, each row still marked.
-    expect(screen.getByTestId('conductor-mode-milestones-done').querySelector('summary')).toHaveTextContent(/^1 done$/)
-    const fold = screen.getByTestId('conductor-mode-milestones-not-done') as HTMLDetailsElement
-    expect(fold.querySelector('summary')).toHaveTextContent(/^Not done \(2\)$/)
-    expect(fold.open).toBe(false)
-    expect(rows.every(r => fold.contains(r) && !r.closest('[data-testid="plan-sprint"]'))).toBe(true)
+    // Only the accepted one counts as merged; the two not done are their own count.
+    fireEvent.click(screen.getByTestId('conductor-mode-view-steps'))
+    expect(await screen.findByTestId('board-landed-merged')).toHaveTextContent(/^Merged1$/)
+    expect(screen.getByTestId('board-landed-not-done')).toHaveTextContent(/^Not done2$/)
+    expect(screen.queryByText('Port the gate')).toBeNull()
   })
 
-  it('keeps the sprint for open stories: a board with only closed ones says its sprint is empty', async () => {
+  it('keeps Moves for open stories: a board with only closed ones has every section empty', async () => {
     const rejected = ITEM({ item_id: 'it_b', title: 'Port the gate', state: 'rejected', verdict: 'fail' })
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [rejected], run: RUN({ accepted: 0, not_done: 1 }) })
     renderPanel()
-    const fold = await screen.findByTestId('conductor-mode-milestones-not-done')
-    expect(fold.querySelector('summary')).toHaveTextContent(/^Not done \(1\)$/)
-    expect(within(screen.getByTestId('plan-sprint')).queryAllByTestId('conductor-mode-milestone')).toEqual([])
-    expect(screen.getByTestId('plan-sprint')).toHaveTextContent('Nothing in this sprint yet.')
+    const moves = await screen.findByTestId('board-moves')
+    expect(within(moves).queryAllByTestId('conductor-mode-milestone')).toEqual([])
+    expect(moves.querySelectorAll('[data-empty="true"]')).toHaveLength(6)
   })
 
   it('says Stopped with open milestones, without saying who stopped it', async () => {
@@ -160,14 +152,14 @@ describe('Conductor mode run line', () => {
   it('draws no line for a chat with no goal and no milestone', async () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, conductor: { ...BOARD.conductor, goal: '' }, items: [], run: RUN({ settled: '', accepted: 0 }) })
     renderPanel()
-    await screen.findByText('Nothing in this sprint yet.')
+    await screen.findByTestId('board-moves')
     expect(screen.queryByTestId('conductor-mode-run')).toBeNull()
   })
 
   it('draws no Working for a new goal waiting on its first milestone with no patrol on', async () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})], run: RUN({ settled: '', patrol_on: false }) })
     renderPanel()
-    await screen.findAllByText('Ship the fix')
+    await screen.findByTestId('board-moves')
     expect(screen.queryByTestId('conductor-mode-run')).toBeNull()
   })
 })

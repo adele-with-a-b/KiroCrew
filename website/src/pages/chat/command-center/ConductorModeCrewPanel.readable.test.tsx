@@ -92,11 +92,11 @@ describe('Conductor mode Board on a long run', () => {
     }
   })
 
-  it('gives a running story its age, not "now", and the done fold only its count', async () => {
+  it('gives a running story its age, not "now", and the run line counts what merged', async () => {
     await renderPanel(GOAL)
     const row = screen.getAllByTestId('conductor-mode-milestone').find(r => r.getAttribute('data-state') === 'running')!
     expect(row.textContent).not.toMatch(/\bnow\b/)
-    expect(within(row.closest('[data-testid="plan-story"]') as HTMLElement).getByTestId('plan-story-age')).toHaveTextContent('29m')
-    expect(screen.getByTestId('conductor-mode-milestones-done').querySelector('summary')?.textContent).toBe('2 done')
+    expect(within(row.closest('[data-testid="board-story"]') as HTMLElement).getByTestId('board-row-age')).toHaveTextContent('29m')
+    expect(screen.getByTestId('plan-sprint-line')).toHaveTextContent(/stories merged: 2 of \d+/)
   })
 })

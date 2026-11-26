@@ -7,7 +7,8 @@ conductor holding for the person, or from a crew that has gone quiet. This is th
 ledger half of that answer, kept small: how many items are open, how many wait on a
 person (a ``blocked`` / ``question`` whose ``reason`` is ``approval`` or
 ``needs_human`` and that the conductor has not answered), and for every other open
-item its worker and the moment it goes stale if that worker stays idle. It also
+item its worker, the moment it goes stale if that worker stays idle, and since when
+its last report has waited on the conductor (``conductor_since_ms``). It also
 carries ``run``, the board's settled verdict (:mod:`kiro_crew.dashboard.conductor_mode_run`),
 which is why the closed items' counts are kept beside the open items.
 
@@ -30,7 +31,10 @@ import logging
 import threading
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timedelta
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from kiro_crew.work_ledger import WorkItem
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +70,11 @@ _followed: dict[str, list[Callable[[], None]]] = {}
 #: conductor's fold names its board by session key (``discord:...``), which no
 #: spelling rule turns back into the slot key, so the follow records it.
 _slot_of_board: dict[str, str] = {}
+#: Per board slot key, ``{item_id: running}`` for its open remote items, from the
+#: stored record each one's machine last sent (``work_ledger.remote_liveness``).
+#: Read on the fold worker, so the row's read on the loop never touches a file, and
+#: kept current by every write of that record (:func:`remote_record_moved`).
+_remote: dict[str, dict[str, bool]] = {}
 _listener: Callable[[str], None] | None = None
 
 
@@ -88,6 +97,7 @@ def summarize(
     closed: Callable[[str], bool],
     looping: Callable[[str], bool],
     held: Callable[[str], bool] = lambda _key: False,
+    remote_running: Callable[[str], bool] = lambda _item_id: False,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """The ``crew_work`` field for a board's open *items*.
@@ -95,7 +105,12 @@ def summarize(
     *closed*, *looping* and *held* answer for a worker's session key. Per listed item:
     ``worker`` (the bound session's slot key, ``""`` for a remote or unbound worker)
     and ``stale_at_ms`` (epoch ms it is stale from while its worker's turn is not
-    running; ``0`` for never). Both answers come from ``is_stale``. ``person_workers``
+    running; ``0`` for never). Both answers come from ``is_stale``. ``looping`` and
+    ``conductor_since_ms`` (:func:`conductor_wait_since_ms`) ride along. A remote
+    worker has no slot key a reader can look up, so its item also says
+    ``worker_running`` (*remote_running*, by item id): whether its own machine last
+    said its turn runs, which the browser's late count reads as a local worker's
+    running row (``crewWorkerRunning``). ``person_workers``
     names the worker each person-waiting item belongs to, the same way.
     """
     from kiro_crew.dashboard.handlers.work_ledger_board import awaits_person
@@ -151,12 +166,16 @@ def summarize(
                 now=at,
             )
 
+        events = list(raw.get("events") or [])
         if remote:
             # A peer's worker reports its own liveness to the stored record, which
             # this frame does not read: never flag it, rather than call a running
             # peer turn stalled. Its board's own badge still can.
             stale_at = 0
-        elif stale(moment):
+        elif stale(moment) or (gone and _handed_back(item, events)):
+            # A done report its conductor answered is the worker's move again, as the
+            # Board reads it (``reportAnswered``): with its worker gone nobody is on
+            # it, flagged at once as a closed worker's open report is.
             stale_at = int(moment.timestamp() * 1000)
         elif stale(moment + _FAR):
             since = parse_stamp(quiet_since(item, wake=not stuck))
@@ -168,14 +187,66 @@ def summarize(
         # move is the worker's, so the row reads it as running, not waiting. A report
         # the conductor still owes an answer stays a wait on the conductor.
         shown_looping = loops and _worker_owns_next_move(item)
-        listed.append(
-            {
-                "worker": "" if remote else ledger_key(key),
-                "stale_at_ms": stale_at,
-                "looping": shown_looping,
-            }
-        )
+        entry: dict[str, Any] = {
+            "worker": "" if remote else ledger_key(key),
+            "stale_at_ms": stale_at,
+            "looping": shown_looping,
+            "conductor_since_ms": conductor_wait_since_ms(item, events),
+        }
+        if remote:
+            entry["worker_running"] = bool(remote_running(item.item_id))
+        listed.append(entry)
     return {"open": open_count, "person": person, "person_workers": person_workers, "items": listed}
+
+
+def conductor_wait_since_ms(item: WorkItem, events: list[dict[str, Any]]) -> int:
+    """Epoch ms *item*'s last report has waited on its conductor since, else ``0``.
+
+    The Board's own rule (``conductorWaitMinutes`` in the website's conductor mode
+    panel): a ``done``, ``blocked`` or ``question`` report that no decision, person's
+    steer (:func:`answered_since_report`) or verdict came after. A wait on the person
+    is counted in ``person`` instead, so it never reaches here. The dashboard drops
+    it while the worker's turn runs, the one live fact it holds. Derived on read.
+    """
+    from kiro_crew.dashboard.handlers.work_ledger_board import answered_since_report
+    from kiro_crew.work_ledger import parse_stamp
+
+    if item.status not in ("done", "blocked", "question"):
+        return 0
+    if answered_since_report(item, events) or _judged_since_report(item, events):
+        return 0
+    reported = parse_stamp(item.last_report_at or "")
+    return int(reported.timestamp() * 1000) if reported is not None else 0
+
+
+def _handed_back(item: WorkItem, events: list[dict[str, Any]]) -> bool:
+    """A ``done`` report its conductor answered with a decision or a person's steer."""
+    from kiro_crew.dashboard.handlers.work_ledger_board import answered_since_report
+
+    return (
+        bool(item.last_report_at) and item.status == "done" and answered_since_report(item, events)
+    )
+
+
+def _judged_since_report(item: WorkItem, events: list[dict[str, Any]]) -> bool:
+    """A ``verdict`` after the newest report on the tail; with no report on the tail,
+    one stamped at or after the item's report time (``judgedSinceReport`` on the Board)."""
+    from kiro_crew.work_ledger import parse_stamp
+
+    kinds = [e.get("kind") if isinstance(e, dict) else None for e in events]
+    if "report" in kinds:
+        last = len(kinds) - 1 - kinds[::-1].index("report")
+        return "verdict" in kinds[last + 1 :]
+    reported = parse_stamp(item.last_report_at or "")
+    if reported is None:
+        return False
+    for event in events:
+        if isinstance(event, dict) and event.get("kind") == "verdict":
+            raw = event.get("ts")
+            stamp = parse_stamp(raw) if isinstance(raw, str) and raw else None
+            if stamp is not None and stamp >= reported:
+                return True
+    return False
 
 
 def summary_for_state(slot: str, state: Any) -> dict[str, Any] | None:
@@ -183,6 +254,7 @@ def summary_for_state(slot: str, state: Any) -> dict[str, Any] | None:
     with _lock:
         items = _items.get(slot)
         accepted, not_done = _closed.get(slot, (0, 0))
+        remote = dict(_remote.get(slot) or {})
     if items is None:
         return None
     from kiro_crew import ledger_wake
@@ -198,6 +270,7 @@ def summary_for_state(slot: str, state: Any) -> dict[str, Any] | None:
         closed=lambda key: ledger_wake.worker_closed(state, key),
         looping=lambda key: ledger_wake.worker_looping(nudge, key),
         held=lambda key: ledger_wake.worker_loop_held(nudge, key),
+        remote_running=lambda item_id: remote.get(item_id, False),
     )
     # The conductor's own live work-ledger patrol is what picks a stalled item up, so
     # the row keeps a stall out of sight while it holds one. Only that kind: a loop
@@ -249,16 +322,60 @@ def remember(board: str, value: Any, revision: int = 0) -> str | None:
     _open, accepted, not_done = item_counts(
         (raw.get("state") for raw in raw_items if isinstance(raw, dict)), value.get("forgotten")
     )
+    remote = _remote_running(board, items)
     with _lock:
         if revision and revision < _revisions.get(slot, 0):
             return None
         if revision:
             _revisions[slot] = revision
-        if _items.get(slot) == items and _closed.get(slot) == (accepted, not_done):
+        if (
+            _items.get(slot) == items
+            and _closed.get(slot) == (accepted, not_done)
+            and _remote.get(slot, {}) == remote
+        ):
             return None
         _items[slot] = items
         _closed[slot] = (accepted, not_done)
+        _remote[slot] = remote
     return slot
+
+
+def _remote_running(board: str, items: list[dict[str, Any]]) -> dict[str, bool]:
+    """``{item_id: running}`` for *items* bound to a remote worker. BLOCKING; never raises."""
+    from kiro_crew.work_ledger import WorkItem, remote_liveness
+
+    out: dict[str, bool] = {}
+    for raw in items:
+        try:
+            item = WorkItem.from_dict(dict(raw))
+        except Exception:  # noqa: BLE001 - one bad item must not drop the board's row
+            continue
+        answer = remote_liveness(board, item)
+        if answer is not None:
+            out[item.item_id] = answer[0]
+    return out
+
+
+def remote_record_moved(board: str, item_id: str, running: bool) -> None:
+    """*board*'s stored record for remote *item_id* was written: keep its answer current.
+
+    A pull from the worker's machine writes that record and moves no ledger fold, so
+    without this the row would keep the answer read when the ledger last moved: a
+    done report filed mid-turn would read running, and never late, after the turn
+    ended. Only an open remote item already kept is updated; the listener hears the
+    board's slot key when the answer changed. No I/O; any thread.
+    """
+    from kiro_crew.session_ledger_layout import ledger_key
+
+    with _lock:
+        slot = _slot_of_board.get(board) or ledger_key(board)
+        kept = _remote.get(slot)
+        if kept is None or item_id not in kept or kept[item_id] == running:
+            return
+        kept[item_id] = running
+    listener = _listener
+    if listener is not None:
+        listener(slot)
 
 
 def set_listener(listener: Callable[[str], None] | None) -> None:
@@ -369,6 +486,7 @@ def retain(live_roots: Iterable[str]) -> None:
         for slot in gone:
             _items.pop(slot, None)
             _closed.pop(slot, None)
+            _remote.pop(slot, None)
             _revisions.pop(slot, None)
             _primed.discard(slot)
         for board in [b for b, s in _slot_of_board.items() if s in gone]:
@@ -389,6 +507,7 @@ def forget_for_tests() -> None:
     with _lock:
         _items.clear()
         _closed.clear()
+        _remote.clear()
         _revisions.clear()
         _primed.clear()
         _slot_of_board.clear()

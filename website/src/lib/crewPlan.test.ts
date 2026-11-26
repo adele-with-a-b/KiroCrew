@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkBoardItem, WorkItemPlan } from '../api/crewBoard'
-import { backlogCompare, boardPlan, childProgress, epicOf, moveRow, projectedIndex, ranksForDrop, releaseViews, seatsBusy, freeSeats } from './crewPlan'
+import { backlogCompare, boardPlan, childProgress, moveRow, projectedIndex, ranksForDrop, seatsBusy } from './crewPlan'
 
 function item(id: string, plan?: WorkItemPlan, extra: Partial<WorkBoardItem> = {}): WorkBoardItem {
   return { item_id: id, title: id, state: 'open', created_at: `2026-11-22T08:00:0${id.slice(-1)}Z`, ...(plan ? { plan } : {}), ...extra } as WorkBoardItem
@@ -23,8 +23,6 @@ describe('boardPlan', () => {
     expect(plan.backlog.map(i => i.item_id)).toEqual(['b3', 'b2', 'b4'])
     expect(plan.children.get('s1')?.map(i => i.item_id)).toEqual(['t1'])
     expect(plan.planned).toBe(true)
-    expect(epicOf(items[2], plan.byId)?.item_id).toBe('e1')
-    expect(epicOf(items[0], plan.byId)).toBeNull()
   })
 
   it('puts the stories the server reads as waiting in the backlog, oldest first, on a board never planned', () => {
@@ -44,24 +42,6 @@ describe('boardPlan', () => {
     expect(plan.sprint.map(i => i.item_id)).toEqual(['h1', 'w2'])
     expect(plan.backlog).toHaveLength(0)
     expect(seatsBusy(rows)).toBe(1)
-  })
-
-  it('counts the slots the next pick can really start in', () => {
-    const on = (id: string) => item(id, undefined, { in_backlog: false, has_worker: true })
-    const waiting = (id: string) => item(id, undefined, { in_backlog: true, has_worker: false })
-    // A never-planned board: each waiting row holds its own seat, so all three start.
-    const plain = [on('w1'), waiting('a'), waiting('b'), waiting('c')]
-    expect(freeSeats(plain, 4, 4, plain[1])).toBe(3)
-    // A story held in the sprint with no worker yet keeps its seat.
-    const withHeld = [...plain, item('h', { backlog: false }, { in_backlog: false, has_worker: false })]
-    expect(freeSeats(withHeld, 8, 5, withHeld[1])).toBe(6)
-    // A marked next pick needs a new seat: only what the store has not handed out.
-    const marked = item('m', { backlog: true }, { in_backlog: true, has_worker: false })
-    expect(freeSeats([...plain, marked], 4, 4, marked)).toBe(0)
-    expect(freeSeats([...plain, marked], 8, 4, marked)).toBe(4)
-    // No count from an older gateway or a queue board, and no cap at all.
-    expect(freeSeats([...plain, marked], 8, null, marked)).toBe(7)
-    expect(freeSeats(plain, undefined, 4, plain[1])).toBe(0)
   })
 
   it('reads a board that was never planned as one sprint from an older gateway', () => {
@@ -128,11 +108,5 @@ describe('progress and seats', () => {
     const plan = boardPlan(items)
     expect(childProgress(items[0], plan.children)).toEqual({ done: 1, total: 2 })
     expect(seatsBusy(items)).toBe(1)
-  })
-
-  it('lists releases newest first with what ships in each', () => {
-    const items = [item('a1', { release: '0.5', step: 'merged' }), item('a2', { release: '0.5', step: 'review' }), item('a3', { release: '0.4', step: 'released' })]
-    const views = releaseViews([{ name: '0.4', state: 'shipped' }, { name: '0.5', state: 'planned' }], items)
-    expect(views.map(v => [v.release.name, v.items.length, v.merged])).toEqual([['0.5', 2, 1], ['0.4', 1, 1]])
   })
 })

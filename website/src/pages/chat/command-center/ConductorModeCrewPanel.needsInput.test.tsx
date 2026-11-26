@@ -52,13 +52,13 @@ describe('Conductor mode Needs your input', () => {
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
     const row = await screen.findByTestId('conductor-mode-person-ask')
     expect(row).toHaveTextContent('Pick a tea')
-    expect(within(row).getByTestId('conductor-mode-person-ask-text')).toHaveTextContent('Which tea goes on the menu: oolong or green?')
-    expect(screen.getByTestId('conductor-mode-needs-you')).toHaveTextContent('· 1')
-    expect(screen.queryByTestId('conductor-mode-needs-you-none')).toBeNull()
-    // Its sprint row says it waits on the person, quoting the ask, not the main chat.
-    const story = screen.getByTestId('plan-story')
-    expect(story).toHaveAttribute('data-needs-you', 'true')
-    expect(story).toHaveTextContent('Needs you: Which tea goes on the menu: oolong or green?')
+    expect(within(row).getByTestId('conductor-mode-person-ask-text')).toHaveTextContent('Asks: Which tea goes on the menu: oolong or green?')
+    // The ask is the story's own row, once, in Needs you, yellow.
+    const needsYou = screen.getByTestId('conductor-mode-needs-you')
+    expect(needsYou).toHaveAttribute('data-count', '1')
+    expect(within(needsYou).getByTestId('conductor-mode-person-ask')).toBe(row)
+    expect(row).toHaveAttribute('data-tone', 'warn')
+    expect(screen.queryByTestId('board-story')).toBeNull()
   })
 
   it("puts the conductor's offered answers in one menu beside Reply: two controls in the row", async () => {
@@ -97,9 +97,10 @@ describe('Conductor mode Needs your input', () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ status: 'progress', reason: null, outstanding: false, awaits_person: false })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
     expect(await screen.findByTestId('conductor-mode-milestone')).toBeInTheDocument()
-    expect(screen.getByTestId('conductor-mode-needs-you-none')).toBeInTheDocument()
+    // An empty section stays as one quiet line.
+    expect(within(screen.getByTestId('conductor-mode-needs-you')).getByTestId('board-section-none')).toHaveTextContent('none')
     expect(screen.queryByTestId('conductor-mode-person-ask')).toBeNull()
-    expect(screen.getByTestId('conductor-mode-needs-you')).toHaveTextContent('· 0')
+    expect(screen.getByTestId('conductor-mode-needs-you')).toHaveAttribute('data-count', '0')
   })
 
   it('an item leaves once answered', async () => {
@@ -109,7 +110,7 @@ describe('Conductor mode Needs your input', () => {
     // Answered (a decision, or the person's steer): the board read stops flagging it.
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ decided_at: '2026-10-30T00:06:00Z', outstanding: false, awaits_person: false })] })
     await qc.invalidateQueries()
-    expect(await screen.findByTestId('conductor-mode-needs-you-none')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('conductor-mode-needs-you')).toHaveAttribute('data-empty', 'true'))
     expect(screen.queryByTestId('conductor-mode-person-ask')).toBeNull()
   })
 
@@ -159,16 +160,18 @@ describe('Conductor mode Needs your input', () => {
     expect(screen.getByTestId('conductor-mode-person-ask-dismiss-note')).toHaveTextContent('It comes back only if it asks again.')
     fireEvent.click(close)
     await waitFor(() => expect(api.crewBoardAction).toHaveBeenCalledWith('root-1', 'it_q', 'dismiss', 'r1'))
-    expect(await screen.findByTestId('conductor-mode-needs-you-none')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('conductor-mode-needs-you')).toHaveAttribute('data-empty', 'true'))
     expect(screen.queryByTestId('conductor-mode-person-ask')).toBeNull()
-    expect(screen.getByTestId('conductor-mode-needs-you')).toHaveTextContent('· 0')
+    expect(screen.getByTestId('conductor-mode-needs-you')).toHaveAttribute('data-count', '0')
   })
 
   it('a worker running again is working, not waiting on you', async () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ alive: 'running', awaits_person: false })] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
-    expect(await screen.findByTestId('conductor-mode-milestone')).toHaveAttribute('data-state', 'running')
-    expect(screen.getByTestId('conductor-mode-needs-you')).toHaveTextContent('· 0')
+    const line = await screen.findByTestId('conductor-mode-milestone')
+    expect(line).toHaveAttribute('data-state', 'running')
+    expect(line.closest('[data-section]')).toHaveAttribute('data-section', 'working')
+    expect(screen.getByTestId('conductor-mode-needs-you')).toHaveAttribute('data-count', '0')
   })
 
   it('the Board tab hands its composer insert to the panel', async () => {

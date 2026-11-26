@@ -1,0 +1,173 @@
+{
+  "_comment": "The Board's 'waits on its Conductor' rule, read by BOTH copies: the browser's conductorWaitMinutes (website ConductorModeCrewPanel.test.ts) and the server's conductor_wait_since_ms (test/test_crew_work_summary.py), which the other projects' late count reads. Every item is open, its worker idle, its last report report_minutes_ago before now; an event or a decide is minutes_ago before now. waits: the report waits on its Conductor, since the report's time. late_minutes is the rule that turns a wait red.",
+  "now": "2026-11-25T12:00:00Z",
+  "late_minutes": 10,
+  "report_minutes_ago": 50,
+  "cases": [
+    {
+      "name": "a done report nobody judged waits since the report",
+      "status": "done",
+      "events": [
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        }
+      ],
+      "waits": true
+    },
+    {
+      "name": "a blocked report nobody answered waits",
+      "status": "blocked",
+      "events": [
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        }
+      ],
+      "waits": true
+    },
+    {
+      "name": "an open question waits",
+      "status": "question",
+      "outstanding": true,
+      "events": [
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        }
+      ],
+      "waits": true
+    },
+    {
+      "name": "a verdict after the report answers it",
+      "status": "done",
+      "events": [
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        },
+        {
+          "kind": "verdict",
+          "minutes_ago": 40
+        }
+      ],
+      "waits": false
+    },
+    {
+      "name": "a decision after a question answers it",
+      "status": "question",
+      "outstanding": false,
+      "decided_minutes_ago": 40,
+      "events": [
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        },
+        {
+          "kind": "decision",
+          "minutes_ago": 40
+        }
+      ],
+      "waits": false
+    },
+    {
+      "name": "the person's steer after a blocked report answers it",
+      "status": "blocked",
+      "events": [
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        },
+        {
+          "kind": "steer",
+          "minutes_ago": 40
+        }
+      ],
+      "waits": false
+    },
+    {
+      "name": "a verdict before the newest report judged an older one",
+      "status": "done",
+      "events": [
+        {
+          "kind": "verdict",
+          "minutes_ago": 60
+        },
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        }
+      ],
+      "waits": true
+    },
+    {
+      "name": "a decision before the newest report answered an older one",
+      "status": "done",
+      "decided_minutes_ago": 60,
+      "events": [
+        {
+          "kind": "decision",
+          "minutes_ago": 60
+        },
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        }
+      ],
+      "waits": true
+    },
+    {
+      "name": "with no report on the tail, a verdict after the report time answers it",
+      "status": "done",
+      "events": [
+        {
+          "kind": "verdict",
+          "minutes_ago": 40
+        }
+      ],
+      "waits": false
+    },
+    {
+      "name": "with no report on the tail, a verdict before the report time does not",
+      "status": "done",
+      "events": [
+        {
+          "kind": "verdict",
+          "minutes_ago": 70
+        }
+      ],
+      "waits": true
+    },
+    {
+      "name": "with no tail at all, a decide after the report answers it",
+      "status": "done",
+      "decided_minutes_ago": 40,
+      "events": [],
+      "waits": false
+    },
+    {
+      "name": "with no tail at all, a decide before the report does not",
+      "status": "done",
+      "decided_minutes_ago": 60,
+      "events": [],
+      "waits": true
+    },
+    {
+      "name": "progress is the worker's own move",
+      "status": "progress",
+      "events": [
+        {
+          "kind": "report",
+          "minutes_ago": 50
+        }
+      ],
+      "waits": false
+    },
+    {
+      "name": "no report yet waits on nobody",
+      "status": null,
+      "events": [],
+      "waits": false
+    }
+  ]
+}

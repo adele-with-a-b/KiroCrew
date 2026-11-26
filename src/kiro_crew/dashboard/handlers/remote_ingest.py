@@ -445,6 +445,11 @@ def _store(board: str, item_id: str, record: work_ledger.RemoteState) -> bool:
     except (work_ledger.WorkLedgerError, OSError):
         logger.warning("remote state write failed for %s", item_id, exc_info=True)
         return False
+    from kiro_crew.dashboard import crew_work
+
+    # The conductor's row reads the turn's running answer from this record, and a
+    # pull moves no ledger fold, so the row is told here.
+    crew_work.remote_record_moved(board, item_id, record.running)
     return True
 
 

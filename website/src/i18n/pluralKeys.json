@@ -568,5 +568,8 @@
   "components.grillCard.minutes",
   "components.notifications.systemNote.moved_to_history_startup_body",
   "components.notifications.systemNote.moved_to_history_idle_body",
-  "pages.chat.gatewayNotice.restart_receipt_waited"
+  "pages.chat.gatewayNotice.restart_receipt_waited",
+  "components.crewMode.board_more",
+  "components.crewMode.board_count_stuck",
+  "components.crewMode.board_count_late"
 ]
