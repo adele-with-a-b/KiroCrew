@@ -245,6 +245,15 @@ async def _fire_dashboard_nudge(
         if self._work_ledger_wake_loop(loop, wake_message)
         else ""
     )
+    # And this cycle's seat facts (``dashboard/patrol_seats.py``): tasks with no
+    # worker, room here and on each crew, finished workers still open. Last in the
+    # prompt, so the turn still opens with its own header, and empty when the board
+    # has nothing to say.
+    _seats = ""
+    if self._work_ledger_wake_loop(loop, wake_message) and self.dashboard_state is not None:
+        from kiro_crew.dashboard import patrol_seats
+
+        _seats = await patrol_seats.seats_text(self.dashboard_state, loop.slot_key)
     _terminal_line = ""
     _fixed_patrol = False
     if wake_message is None:
@@ -265,6 +274,8 @@ async def _fire_dashboard_nudge(
         _fixed_patrol = conductor_patrol.is_fixed_patrol_payload(loop)
         msg = await compose_nudge_body(_fired_message, _fired_sentinel, loop.slot_key)
         tagged = f"{nudge_cycle_header(loop)}\n{msg}"
+        if _seats:
+            tagged = f"{tagged}\n\n{_seats}"
         if _wake_text:
             # The news FIRST, then the standing patrol instruction. Without this
             # the delivered turn carried the cycle header and the loop's own
@@ -363,7 +374,9 @@ async def _fire_dashboard_nudge(
     # event-driven watch. Everything else still declines -- queueing a
     # multi-kilobyte instruction payload behind a turn would stack identical
     # copies and blow out the context window.
-    if _wake_text and await self._steer_work_ledger_wake(loop, slot, _wake_text):
+    # Only a wake with news is steered; its seat lines ride with it.
+    _steer_text = f"{_wake_text}\n\n{_seats}" if _seats else _wake_text
+    if _wake_text and await self._steer_work_ledger_wake(loop, slot, _steer_text):
         # DISPATCHED, because the news reached a model turn: that is what the
         # fire exists to do, and the loop must not re-owe a wake it has
         # delivered. It also charges the cycle, which is the honest direction

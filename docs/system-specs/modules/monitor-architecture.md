@@ -248,6 +248,28 @@ naming what moved (truncated at `MAX_WAKE_BRIEF_CHARS`, 4000) and then one
 `work_ledger_read(compact=true)` for the board. The conductor reads the ledger
 itself, through its own identity-gated, audited and containment-judged route.
 
+Every turn a work-ledger watch delivers on a dashboard slot, quiet cycle or
+wake, also ENDS with the `[seats]` lines (`dashboard/patrol_seats.py`), because
+conductors left worker seats empty while tasks waited and a prompt rule alone
+did not change that. The fact line names the open items no worker is bound to
+(an epic and a sub-task excepted: neither is ever bound), the room on this
+computer (`resource_status` posture) and, with `work_ledger.remote_dispatch`
+on, on each registered crew (`remote_placement.read_headroom` judged by
+`room_short`, the bar placement admits by), and the closed items whose worker
+session is still open (this gateway's slot table, or the hub's last stored pull
+for a crew-bound item; positive evidence only, read by
+`probes.work_ledger.seat_facts`). One fixed `SEATS_INSTRUCTION` line follows.
+Ids, counts, postures and fixed words only, never a title or a worker's summary,
+so no report can forge a line; ids are listed up to `MAX_LISTED_IDS` with the
+whole count. A board with no unstarted task and no finished worker open adds
+nothing, and its room is not read. A crew never delays the wake: the line shows
+its last reading within `ROOM_FRESH_SECS` (else `unknown`), a crew that is not
+connected reads `unreachable` at once, and one refresh bounded by
+`PROBE_TIMEOUT_S` runs in the background for the next wake. The lines come last,
+so the turn still opens with `[auto-nudge cycle N]` or `[work-ledger wake]`; a
+steered wake carries them after its briefs, and a cycle with no wake still steers
+nothing.
+
 The wake used to carry the compact board inline, built at delivery by
 `compact_wake_snapshot` and bounded by `WAKE_SNAPSHOT_BUDGET_CHARS` (24000). That
 made the cost of one item moving proportional to the whole goal -- on a twenty-item

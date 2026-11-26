@@ -549,6 +549,64 @@ def has_open_items(conductor_key: str) -> bool:
         return False
 
 
+def seat_facts(
+    conductor_key: str, *, slot_exists: Callable[[str], bool]
+) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    """``(unstarted, finished_open)`` item ids for the patrol's ``[seats]`` line.
+
+    *unstarted*: open items no worker is bound to, an epic and a sub-task excepted
+    because neither is ever bound (``work_ledger_plan.refuse_unbindable``).
+    *finished_open*: closed items whose worker session is still open, on this gateway
+    by *slot_exists*, or for a crew-bound item by the hub's last stored pull of that
+    crew. Positive evidence only: a slot read that fails, or a pull that did not read
+    the crew's slot list, is not "open".
+
+    ``None`` when *conductor_key* holds no readable ledger. Blocking file reads; call
+    it off the event loop. Never raises.
+    """
+    try:
+        if work_ledger.read_conductor(conductor_key) is None:
+            return None
+        items = work_ledger.list_work_items(conductor_key)
+        unstarted: list[str] = []
+        finished_open: list[str] = []
+        for item in items:
+            if not item.is_terminal:
+                if not item.worker_session_key and (item.plan or {}).get("level") not in (
+                    "epic",
+                    "task",
+                ):
+                    unstarted.append(item.item_id)
+            elif item.worker_session_key and _worker_still_open(conductor_key, item, slot_exists):
+                finished_open.append(item.item_id)
+        return tuple(unstarted), tuple(finished_open)
+    except Exception:  # noqa: BLE001 - a read fault leaves the wake without the line
+        logger.debug("work-ledger probe: seat read failed for %s", conductor_key)
+        return None
+
+
+def _worker_still_open(
+    conductor_key: str, item: work_ledger.WorkItem, slot_exists: Callable[[str], bool]
+) -> bool:
+    """Whether closed *item*'s worker session is positively known to be open."""
+    key = item.worker_session_key or ""
+    if item.worker_instance_id:
+        stored = work_ledger.read_remote_state(conductor_key, item.item_id)
+        return bool(
+            stored is not None
+            and stored.roster_read
+            and not stored.closed
+            and stored.binding in (None, work_ledger.binding_id(item))
+        )
+    for candidate in (key, f"dashboard_{key}"):
+        try:
+            if slot_exists(candidate):
+                return True
+        except Exception:  # noqa: BLE001 - an unreadable slot table proves nothing open
+            return False
+    return False
+
+
 def worker_report_revision(items: list[work_ledger.WorkItem]) -> str:
     """A digest of each item's newest WORKER report: the one rule both readers share.
 
