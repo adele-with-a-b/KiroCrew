@@ -544,8 +544,31 @@ The first entry that cannot go ends the carry; it and the ones behind it stay
 queued as they were. An entry does not go when a person has it open in the editor,
 its row is already written, a containment constraint holds now that its own
 admission never saw (the drain would drop it and tell the sender), or the cap has
-no room for it and the new text (`retained_steers(slot) + 2 > MAX_PENDING_STEERS`),
-so the oldest that fit go in and the new text still does. An entry is off the queue
+no room for it and the new text (`has_steer_room(slot, adding=2)` is false),
+so the oldest that fit go in and the new text still does.
+
+**The pending-steer cap counts what is not yet written.** `MAX_PENDING_STEERS`
+(32) bounds the steers a slot holds that its agent has not written into the turn:
+every retained steer record but the pending steers whose call returned and that
+the client no longer holds behind a tool call (`AcpClient.held_steer_count`). A
+harness that reports a steer read only when its turn ends (`_session/steering`,
+spoken for claude and codex) keeps each written steer pending until then, so a
+count of everything held refused a long turn's 33rd note though the turn had read
+the first 32. Only a client of a backend named in
+`steer_carry.WRITTEN_STEERS_STAY_PENDING` (claude, codex) leaves its written
+steers out. goose and pi report each read as it happens, so their pending steers
+are unread, and they, kiro-cli and a client that reports no `held_steer_count`
+count every pending steer, as before. The memory those records hold keeps its own bound: at most
+`MAX_RETAINED_STEERS` (256) records and `MAX_RETAINED_STEER_CHARS` of text (32
+full-size steers, what the old count allowed); one failed turn can therefore settle
+up to 256 notes unconfirmed, and `queue_age` keeps a record of each. The client
+splits its bound the same way: `MAX_STEERING_ANSWERS` (16) counts steers held or
+waiting for an answer, and every steer that is or can still become written
+(written, held, or waiting) is bounded together by `MAX_ACCEPTED_STEERS` (256
+records) and `MAX_ACCEPTED_STEER_CHARS` (16 full-size steers; a waiting request
+counts full size), checked when the steer is taken, so the written list never
+passes either.
+A steer past any bound takes the queue with `too_many`. An entry is off the queue
 only for one steer attempt, which registers the text before it can suspend (the
 wait for an in-flight clear is spent first, with the entry queued), so a turn that
 ends meanwhile cannot also drain it; a refused steer puts the same entry back

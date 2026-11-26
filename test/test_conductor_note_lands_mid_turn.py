@@ -559,6 +559,30 @@ def test_past_the_cap_the_oldest_unconfirmed_record_goes(tmp_path):
     assert sent == [float(n + 1) for n in range(1, queue_age._MAX_UNCONFIRMED + 1)]
 
 
+@pytest.mark.asyncio
+async def test_every_note_one_failed_turn_settles_is_counted(tmp_path, monkeypatch):
+    """A claude turn holds more than 32 written notes (``steer_carry``), so a failure
+    can settle more than 32: the wake counts every one its sender was told about."""
+    from kiro_crew import conductor_wake
+
+    monkeypatch.setattr(conductor_wake, "wake_for_unconfirmed_note", lambda *a: None)
+    state, conductor, worker = _pair(tmp_path)
+    agent = _Took()
+    agent.backend = "claude"
+    agent.held_steer_count = 0
+    _running(worker, agent)
+    notes = [f"note {n}" for n in range(40)]
+    for text in notes:
+        assert await _note(state, worker, conductor, text) == STEER_STEERED
+
+    await _teardown(state, worker, agent)
+
+    assert len(_notices(conductor)) == len(notes)
+    count, _secs, oldest_id = queue_age.sender_unread(state, worker.key, conductor.key)
+    assert ledger_wake.is_unconfirmed_wait(oldest_id)
+    assert count == len(notes)
+
+
 def test_the_push_reaches_only_the_conductor_the_worker_is_bound_to(monkeypatch):
     from kiro_crew import conductor_wake, work_ledger
 

@@ -194,6 +194,22 @@ def test_the_steer_cap_takes_the_oldest_that_fit_and_keeps_room_for_the_new_note
     assert [_body(text) for text in _queued(worker)] == ["third"]
 
 
+def test_steers_the_turn_already_has_leave_the_cap_for_the_carry(tmp_path):
+    """The same cap counts only what the client has not written yet, so pending
+    steers already in the turn leave room for every older note."""
+    state, caller, worker = _setup(tmp_path)
+    _queue_notes(state, caller, worker, "first", "second", "third")
+    worker._acp_client.backend = "claude"
+    worker._acp_client.held_steer_count = 0
+    worker._pending_steers.extend(f"pending {n}" for n in range(cd.MAX_PENDING_STEERS))
+
+    result = _send(state, caller, worker, "fourth", steer=True)
+
+    assert result["steered"] is True and result["carried"] == 3
+    assert [_body(text) for text in _handed(worker)] == ["first", "second", "third", "fourth"]
+    assert _queued(worker) == []
+
+
 @pytest.mark.parametrize("held", ["editor", "audience", "restored"])
 def test_a_note_that_may_not_go_stays_and_the_new_one_still_goes_in(tmp_path, monkeypatch, held):
     state, caller, worker = _setup(tmp_path)

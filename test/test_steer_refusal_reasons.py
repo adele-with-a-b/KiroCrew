@@ -24,6 +24,7 @@ from session_control_helpers import (  # noqa: F401 -- the autouse fixtures regi
 
 from kiro_crew import steer_refusal
 from kiro_crew.dashboard import chat_delivery as cd
+from kiro_crew.dashboard import steer_carry
 
 
 def _running(tmp_path, *, accepted: bool = True):
@@ -90,6 +91,56 @@ def test_the_same_text_is_already_pending(tmp_path):
 def test_too_many_pending_steers(tmp_path):
     state, slot = _running(tmp_path)
     slot._pending_steers.extend(f"earlier {i}" for i in range(cd.MAX_PENDING_STEERS))
+    _assert_fell_back(_steer(state, slot), steer_refusal.TOO_MANY)
+
+
+def _written(slot, count: int, *, held: int = 0, size: int = 8, backend: str = "claude") -> None:
+    """*count* steers the client took, *held* of them not written yet."""
+    slot._acp_client.backend = backend
+    slot._acp_client.held_steer_count = held
+    slot._pending_steers.extend(f"{i:0{size}d}" for i in range(count))
+
+
+@pytest.mark.parametrize("backend", sorted(steer_carry.WRITTEN_STEERS_STAY_PENDING))
+def test_written_steers_leave_room_for_the_next(tmp_path, backend):
+    """A harness that reports a steer read only at its turn's end keeps every
+    written steer pending: the turn's 33rd note still goes in."""
+    state, slot = _running(tmp_path)
+    _written(slot, cd.MAX_PENDING_STEERS, backend=backend)
+    assert _steer(state, slot) == cd.STEER_STEERED
+
+
+@pytest.mark.parametrize("backend", ["goose", "pi", ""])  # "" is kiro-cli
+def test_a_backend_outside_the_named_set_counts_every_pending_steer(tmp_path, backend):
+    """goose and pi report each read as it happens, so a pending steer there is
+    unread: 32 of them fill the cap even with a held count of 0."""
+    assert backend not in steer_carry.WRITTEN_STEERS_STAY_PENDING
+    state, slot = _running(tmp_path)
+    _written(slot, cd.MAX_PENDING_STEERS, backend=backend)
+    _assert_fell_back(_steer(state, slot), steer_refusal.TOO_MANY)
+
+
+def test_held_steers_still_fill_the_cap(tmp_path):
+    state, slot = _running(tmp_path)
+    _written(slot, cd.MAX_PENDING_STEERS, held=cd.MAX_PENDING_STEERS)
+    _assert_fell_back(_steer(state, slot), steer_refusal.TOO_MANY)
+
+
+def test_a_steer_call_still_in_flight_counts_as_not_written(tmp_path):
+    state, slot = _running(tmp_path)
+    _written(slot, cd.MAX_PENDING_STEERS)
+    slot._steer_rpc_in_flight.update(slot._pending_steers)
+    _assert_fell_back(_steer(state, slot), steer_refusal.TOO_MANY)
+
+
+@pytest.mark.parametrize("bound", ["count", "chars"])
+def test_written_steers_are_still_bounded_in_memory(tmp_path, bound):
+    state, slot = _running(tmp_path)
+    if bound == "count":
+        _written(slot, steer_carry.MAX_RETAINED_STEERS)
+    else:
+        size = steer_carry.MAX_RETAINED_STEER_CHARS // cd.MAX_PENDING_STEERS
+        _written(slot, cd.MAX_PENDING_STEERS, size=size)
     _assert_fell_back(_steer(state, slot), steer_refusal.TOO_MANY)
 
 

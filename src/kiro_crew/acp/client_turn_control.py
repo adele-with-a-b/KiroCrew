@@ -591,6 +591,15 @@ def _settle_steering_answer(self: AcpClient, msg: JsonRpcMessage) -> bool:
     return True
 
 
+#: Bounds on the steers a ``_session/steering`` turn has written and keeps until it
+#: ends (``_steers_accepted``), counted with every steer that can still be written.
+#: ``MAX_STEERING_ANSWERS`` counts only what is not yet written, so a long turn takes
+#: every note; these hold the memory: the text of the 16 full-size steers the old
+#: count allowed, and a count ceiling for many short ones.
+MAX_ACCEPTED_STEERS = 16 * MAX_STEERING_ANSWERS
+MAX_ACCEPTED_STEER_CHARS = MAX_STEERING_ANSWERS * MAX_STEERING_TEXT_CHARS
+
+
 async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
     """Deliver a user steer over the adapter's ``_session/steering`` request.
 
@@ -639,7 +648,16 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
     if len(text) > MAX_STEERING_TEXT_CHARS:
         self.steer_refusal = steer_refusal.TOO_LONG
         return False
-    if len(waiters) + len(accepted) + len(held) >= MAX_STEERING_ANSWERS:
+    # Every unanswered request and held steer can still become written, so each
+    # counts toward the written bounds now: they are the true bounds of the list.
+    # An unanswered request's text is not kept here, so it counts full size.
+    unwritten = len(waiters) + len(held)
+    unwritten_chars = len(waiters) * MAX_STEERING_TEXT_CHARS + sum(len(t) for _, t in held)
+    if (
+        unwritten >= MAX_STEERING_ANSWERS
+        or unwritten + len(accepted) >= MAX_ACCEPTED_STEERS
+        or sum(len(t) for _, t in accepted) + unwritten_chars + len(text) > MAX_ACCEPTED_STEER_CHARS
+    ):
         self.steer_refusal = steer_refusal.TOO_MANY
         return False
     if aimed_at == _AGENT_STARTED_REQUEST_ID:
@@ -777,6 +795,11 @@ def _held_steers(self: AcpClient) -> list[tuple[int, str]]:
         held = []
         self._steers_held = held
     return held
+
+
+def held_steer_count(self: AcpClient) -> int:
+    """How many accepted steers are held, not yet written (``has_steer_room``)."""
+    return len(getattr(self, "_steers_held", None) or ())
 
 
 def _held_steer_writes(self: AcpClient) -> set[str]:

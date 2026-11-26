@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from kiro_crew.dashboard.steer_carry import MAX_RETAINED_STEERS
 from kiro_crew.session_ledger import ledger_key
 
 #: The one clock both the stamp and every age read use, so a test freezes it here.
@@ -89,9 +90,10 @@ def note_steered(slot: Any, message: str, *, read_reported: bool = True) -> None
 
 
 #: Most unconfirmed notes one slot keeps a record of (:func:`note_unconfirmed`).
-#: Matches the slot's own cap on the steers it holds, which bounds how many one
-#: failed turn can settle; past it the oldest record goes.
-_MAX_UNCONFIRMED = 32
+#: The slot's own bound on the steers it holds a record of (``MAX_RETAINED_STEERS``),
+#: which bounds how many one failed turn can settle, so one failure never counts
+#: fewer than it settled. Past it, across failures, the oldest record goes.
+_MAX_UNCONFIRMED = MAX_RETAINED_STEERS
 
 #: Numbers each unconfirmed note's wait identity, so two settled at one clock
 #: reading stay two waits.
