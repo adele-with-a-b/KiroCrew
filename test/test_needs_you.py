@@ -114,11 +114,33 @@ def test_options_words_start_at_the_last_question_of_the_last_paragraph():
         "The old page has no links left. Drop the old page, or keep a redirect? "
         "I would drop it."
     )
-    assert needs_you.options_words(body) == (
+
+    def keep(text: str) -> str:
+        return text
+
+    assert needs_you.options_words(body, keep) == (
         "Drop the old page, or keep a redirect? I would drop it."
     )
-    assert needs_you.options_words("All done.\n\nPick one below.") == "Pick one below."
-    assert needs_you.options_words("") == ""
+    assert needs_you.options_words("All done.\n\nPick one below.", keep) == "Pick one below."
+    assert needs_you.options_words("", keep) == ""
+
+
+def test_options_words_mask_each_line_as_the_chat_masks_it():
+    # The redactor masks a ``key=value`` credential only at the start of a line, so
+    # a line under the question must be masked before the paragraph is joined.
+    from kiro_crew.dashboard.state import _redact
+    from kiro_crew.testing.synthetic_credentials import synth
+
+    secret = synth(24, seed=5)
+    line = f"api_key={secret}"
+    assert secret not in _redact(f"Use this one?\n{line}")
+    slot = _slot(
+        _person("Which key goes in the config?", NOW - 120),
+        _reply(f"Found one.\n\nUse this one?\n{line}\n[OPTIONS: Use it | Find another]", NOW - 60),
+    )
+    words = slot.to_dict()["needs_you"]["first_words"]
+    assert secret not in words
+    assert words.startswith("Use this one? ")
 
 
 def test_clean_words_strip_then_redact_then_cut():

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from kiro_crew.dashboard import chat_persistence as cp
-from kiro_crew.dashboard import slot_projection
+from kiro_crew.dashboard import needs_you, slot_projection
 from kiro_crew.dashboard.state import DashboardState, _ChatSlot
 from kiro_crew.history import ConversationLog
 from kiro_crew.history_schema import HUMAN_TURN_META_KEY
@@ -189,4 +189,66 @@ async def test_a_row_restored_without_its_window_keeps_what_it_asks_the_owner(
     slot = state._slots["asks"]
     assert slot.window_pending is True
     assert slot.to_dict()["needs_you"] == expected
+    assert slot.window_pending is True, "the row read its window to answer"
+
+
+#: Tool calls in the long turn below: a step line and a tool row each, so the
+#: person's message is older than the restored tail and inside the rows
+#: ``needs_you`` looks back over.
+_LONG_TURN_CALLS = 80
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("starter", "asks"),
+    [
+        ({"content": "Check every file, then ask me.", "meta": {HUMAN_TURN_META_KEY: True}}, True),
+        # Another session's send began the turn: the person's older message
+        # must not be the row kept in front.
+        ({"content": "[From chat-2] Check every file."}, False),
+    ],
+    ids=["a-person", "another-session"],
+)
+async def test_a_long_turn_restored_without_its_window_keeps_who_started_it(
+    home, monkeypatch, starter, asks
+):
+    ManualClock(_NOW).install(monkeypatch, slot_projection)
+    rows = [
+        {
+            "role": "user",
+            "content": "Earlier request.",
+            "ts": _stamp(_NOW - 1000),
+            "meta": {HUMAN_TURN_META_KEY: True},
+        },
+        {"role": "assistant", "content": "Done.", "ts": _stamp(_NOW - 990)},
+        {"role": "user", "ts": _stamp(_NOW - 900), **starter},
+    ]
+    for call in range(_LONG_TURN_CALLS):
+        at = _stamp(_NOW - 800 + call)
+        rows.append({"role": "assistant", "content": f"Reading file {call}.", "ts": at})
+        rows.append({"role": "tool", "content": "🔧 Read", "ts": at})
+    reply = "All files read.\n\n[Q1a] Fix the three that fail? I would."
+    rows.append(
+        {"role": "assistant", "content": reply, "ts": _stamp(_NOW - 60), "meta": {"mid": "m-a"}}
+    )
+    assert cp.LAZY_TAIL_ROWS < len(rows) - 3 < needs_you.STARTER_SCAN_ROWS
+    live = _ChatSlot("long-turn")
+    live.messages.extend(dict(row) for row in rows)
+    expected = live.to_dict()
+    assert (expected["needs_you"] is not None) is asks
+    head = {"_type": "metadata", "created_at": _stamp(_NOW - 2000), "title": "long-turn"}
+    (home / "dashboard_long-turn.jsonl").write_text(
+        "\n".join(json.dumps(line) for line in (head, *rows)) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    state = _make_state(home)
+
+    assert await cp.restore_recent_sessions_async(state, window_minutes=60) == 1
+
+    slot = state._slots["long-turn"]
+    assert slot.window_pending is True
+    restored = slot.to_dict()
+    for field in ("needs_you", "last_message", "interrupted", "waiting_for_input"):
+        assert restored[field] == expected[field], field
     assert slot.window_pending is True, "the row read its window to answer"

@@ -141,16 +141,18 @@ def question_labels(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def options_words(body: str) -> str:
+def options_words(body: str, redact: Callable[[str], str]) -> str:
     """The words an ``[OPTIONS:]`` ask is shown by: *body* is the reply without that line.
 
     Its last paragraph, from the last sentence there that asks a question, or
-    the whole paragraph when none does.
+    the whole paragraph when none does. Each line is redacted before the lines
+    are joined, as :func:`_tool_words` redacts each part.
     """
     paragraphs = [part for part in _PARAGRAPH_RE.split(body) if part.strip()]
     if not paragraphs:
         return ""
-    sentences = _SENTENCE_END_RE.split(" ".join(paragraphs[-1].split()))
+    lines = (redact(line) for line in paragraphs[-1].splitlines())
+    sentences = _SENTENCE_END_RE.split(" ".join(" ".join(lines).split()))
     asked = [index for index, sentence in enumerate(sentences) if sentence.endswith("?")]
     return " ".join(sentences[asked[-1] if asked else 0 :])
 
@@ -180,7 +182,7 @@ def reply_ask_of(
     # circular import: the state facade imports the row summary, which imports this.
     from kiro_crew.dashboard.state import row_mid
 
-    raw = labels[0][1] if labels else options_words(strip_options(text))
+    raw = labels[0][1] if labels else options_words(strip_options(text), redact)
     return ReplyAsk(
         ts=str(message.get("ts") or ""),
         labels=tuple(label for label, _ in labels),
