@@ -11121,6 +11121,7 @@
       "conductor_mode_ms_stuck_chat_closed": "Atascado · su chat se cerró, pide al chat principal que lo reinicie",
       "conductor_mode_ms_stuck_unread": "Atascado · el chat principal se cerró, vuelve a abrirlo para que se lean sus informes",
       "conductor_mode_ms_quiet": "Inactivo · nada está programado para despertarlo",
+      "conductor_mode_ms_standing_by": "En espera · despierta con el próximo trabajo de su Conductor",
       "conductor_mode_ms_waiting_pr": "Esperando el PR #{{n}}",
       "conductor_mode_ms_waiting_no_reason": "En pausa, sin motivo indicado",
       "conductor_mode_ms_pr": "PR #{{n}}",

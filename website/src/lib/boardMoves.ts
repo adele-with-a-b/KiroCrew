@@ -9,7 +9,7 @@ import { isMerged, levelOf, planOf, type BoardPlan } from './crewPlan'
 
 /** A story's state on the Board, from its reports and its session (the panel's
  *  `milestoneState`). */
-export type MilestoneState = 'done' | 'not_done' | 'needs_you' | 'running' | 'waiting' | 'quiet' | 'stuck' | 'next'
+export type MilestoneState = 'done' | 'not_done' | 'needs_you' | 'running' | 'waiting' | 'standing_by' | 'quiet' | 'stuck' | 'next'
 
 /** A wait on the Conductor this long is late, drawn red: a patrol looks far more often. */
 export const CONDUCTOR_WAIT_LOUD_MINUTES = 10
@@ -43,7 +43,8 @@ export function reportAnswered(item: WorkBoardItem): boolean {
  *  when its Conductor owes nothing).
  *  - needs you: the person must answer or approve;
  *  - stuck: nothing is left to move it (its chat closed, the board unread, or its
- *    worker went quiet with its own move unmade);
+ *    worker went quiet with its own move unmade); a standing manager idle between
+ *    jobs (`standing_by`) is its normal rest, never stuck, and reads working;
  *  - the Conductor's move: a report it has not answered or judged;
  *  - working, when its Conductor handed a done report back: the move follows the
  *    newest of report and decision (`reportAnswered`), so a decision after the
@@ -128,8 +129,21 @@ export function longestWaitingFirst(a: WorkBoardItem, b: WorkBoardItem): number 
 /** What a Board's rules read of a drawn story. */
 export interface MovedStory { item: WorkBoardItem; move: BoardMove }
 
-/** A crew-list row as this reads it: the worker and the ledger item it is bound to. */
-export interface BoundWorker { key: string; ledger_item?: string | null }
+/** A crew-list row as this reads it: the worker, the ledger item it is bound to, and
+ *  its chat's sidebar title. */
+export interface BoundWorker { key: string; ledger_item?: string | null; title?: string | null }
+
+/** The sidebar title mark of a Conductor's standing manager chat: one long task that
+ *  stays open, idle between jobs, woken by its Conductor's next note. */
+export const MANAGER_TITLE_MARK = 'Manager:'
+
+/** The item's bound worker chat is a standing manager (its title starts with
+ *  `MANAGER_TITLE_MARK`), as the crew list binds it (`ledger_item`). `milestoneState`
+ *  reads it, so every Board files the seat the same way. */
+export function standingManager(item: WorkBoardItem, workers: readonly BoundWorker[]): boolean {
+  const title = workers.find(w => w.ledger_item === item.item_id)?.title
+  return !!title && title.trimStart().startsWith(MANAGER_TITLE_MARK)
+}
 
 /** The items whose worker waits on a tool approval with its own card in Needs you:
  *  each live card (`cards`, `crewApprovalRequests` over the slot rows) joined to the

@@ -10611,6 +10611,7 @@
       "conductor_mode_ms_stuck_chat_closed": "行き詰まり · チャットが閉じています。メインチャットに再開を頼んでください",
       "conductor_mode_ms_stuck_unread": "行き詰まり · メインチャットが閉じています。開き直すと報告が読まれます",
       "conductor_mode_ms_quiet": "停止中 · 再開させる予定は何もありません",
+      "conductor_mode_ms_standing_by": "待機中 · Conductor の次の仕事で再開します",
       "conductor_mode_ms_waiting_pr": "PR #{{n}} を待機中",
       "conductor_mode_ms_waiting_no_reason": "一時停止中（理由の記載なし）",
       "conductor_mode_ms_pr": "PR #{{n}}",

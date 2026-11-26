@@ -7,7 +7,7 @@
  *  same word and count, on both. Pure: the page and its tests share one reading, and
  *  the clock is passed in. Nothing here is stored. */
 import type { WorkBoardItem, WorkBoardResponse } from '../api/crewBoard'
-import { CONDUCTOR_WAIT_LOUD_MINUTES, approvalCarded, boardMove, boardSteps, movesStories, needsYouCount, type BoardMove, type BoardSteps, type BoundWorker, type MilestoneState } from './boardMoves'
+import { CONDUCTOR_WAIT_LOUD_MINUTES, approvalCarded, boardMove, boardSteps, movesStories, needsYouCount, standingManager, type BoardMove, type BoardSteps, type BoundWorker, type MilestoneState } from './boardMoves'
 import { boardPlan, childProgress, isMerged, levelOf } from './crewPlan'
 import { conductorModeRunState, type ConductorModeRunState } from './conductorModeRun'
 import { conductorWaitMinutes, milestoneState, personAsks } from '../pages/chat/command-center/ConductorModeCrewPanel'
@@ -104,11 +104,11 @@ export function projectRoots(rows: readonly ProjectSlotRow[]): ProjectSlotRow[] 
 /** One project's open stories as the Board draws them (not the backlog). A story
  *  whose worker waits on a carded approval (`carded`, from `approvalCarded`) waits on
  *  the person, as in the right bar. */
-export function projectStories(root: string, project: string, items: readonly WorkBoardItem[], now: number, carded: ReadonlySet<string>): AllProjectsStory[] {
+export function projectStories(root: string, project: string, items: readonly WorkBoardItem[], now: number, carded: ReadonlySet<string>, workers: readonly BoundWorker[]): AllProjectsStory[] {
   const plan = boardPlan(items)
   const asks = new Set(personAsks(items, carded).map(i => i.item_id))
   return plan.sprint.map(item => {
-    const state = milestoneState(item, carded.has(item.item_id) || asks.has(item.item_id))
+    const state = milestoneState(item, carded.has(item.item_id) || asks.has(item.item_id), standingManager(item, workers))
     const wait = state === 'needs_you' ? null : conductorWaitMinutes(item, now)
     const move = boardMove(item, state, wait)
     const since = minutesSince(item.last_report_at || item.created_at, now)
@@ -142,7 +142,7 @@ export function allProjectsBoard(rows: readonly ProjectSlotRow[], boards: Readon
     const items = board?.items ?? []
     const lv = live.get(root.key) ?? NOTHING_LIVE
     const carded = approvalCarded(lv.approvals, lv.workers)
-    const all = projectStories(root.key, project, items, now, carded)
+    const all = projectStories(root.key, project, items, now, carded, lv.workers)
     // The stories Moves draws, which its counts read: one whose approval has its own
     // card is that card. Steps draws them all.
     const own = movesStories(all, carded)

@@ -10866,6 +10866,7 @@
       "conductor_mode_ms_stuck_chat_closed": "अटका · इसकी चैट बंद हो गई, मुख्य चैट से इसे फिर शुरू करने को कहो",
       "conductor_mode_ms_stuck_unread": "अटका · मुख्य चैट बंद है, रिपोर्ट पढ़वाने के लिए उसे फिर खोलो",
       "conductor_mode_ms_quiet": "शांत · इसे जगाने के लिए कुछ तय नहीं है",
+      "conductor_mode_ms_standing_by": "तैयार · अपने Conductor के अगले काम पर जागेगा",
       "conductor_mode_ms_waiting_pr": "PR #{{n}} का इंतज़ार",
       "conductor_mode_ms_waiting_no_reason": "रुका हुआ, कोई कारण नहीं बताया",
       "conductor_mode_ms_pr": "PR #{{n}}",
