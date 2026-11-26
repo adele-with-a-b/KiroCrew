@@ -530,17 +530,19 @@ function clip(text: string, n: number): string {
 }
 
 /** What a story that waits on the person offers under its row: one small Reply
- *  button, as in the Board mock. Reply FILLS the chat box (`onAct`) and unfolds
- *  the rest under it: when the conductor offered answers, one Suggested answers menu
- *  holding them, the line saying the person still presses send, and Skip question
- *  with what skipping does. Folded, not gone: every control is one click away. With
- *  a crew member on screen (`onAct` absent) it offers the way back to the main chat
- *  (`back`: "Back to main chat", or "Open main chat" reopening a closed one), the
- *  same as the panel's Back row, then Skip question. */
+ *  button, as in the Board mock. Reply only unfolds the rest under it and writes
+ *  nothing. Unfolded, the controls are the ones the Board always had: Write a reply
+ *  and, when the conductor offered answers, one Suggested answers menu holding them.
+ *  Each only FILLS the chat box (`onAct`) with one paragraph; the person still
+ *  presses send, and the line under the buttons says so. Then Skip question with
+ *  what skipping does; it leaves the chat box as it was. With a crew member on
+ *  screen (`onAct` absent) it offers the way back to the main chat (`back`: "Back to
+ *  main chat", or "Open main chat" reopening a closed one), the same as the panel's
+ *  Back row, then Skip question. */
 function PersonAskActions({ root, item, options, onAct, back }: { root: string; item: WorkBoardItem; options: readonly string[]; onAct?: (text: string) => void; back: CrewBack }) {
   const draft = (answer: string) => i18nT('components.crewMode.conductor_mode_reply_draft', { t: clip(item.title, 70), id: item.item_id, answer })
   const small = 'inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium border border-border hover:bg-bg-hover max-w-full'
-  // The rest unfolds on the first Reply and stays open for this row.
+  // Reply unfolds the rest and writes nothing; pressed again, it folds it.
   const [unfolded, setUnfolded] = useState(false)
   const shown = !onAct || unfolded
   // Dismiss: the server writes a person steer on the item, so every surface drops
@@ -558,10 +560,12 @@ function PersonAskActions({ root, item, options, onAct, back }: { root: string; 
     <>
       {onAct ? (
         <div className="space-y-1">
+          <button type="button" className={`${small} text-text`} aria-expanded={unfolded} data-testid="conductor-mode-person-ask-unfold"
+            onClick={() => setUnfolded(u => !u)}>{i18nT('components.crewMode.board_reply')}</button>
+          {unfolded && <>
           <div className="flex items-center gap-1.5" data-testid="conductor-mode-person-ask-actions">
-            <button type="button" className={`${small} text-text`} aria-expanded={unfolded} data-testid="conductor-mode-person-ask-reply"
-              onClick={() => { onAct(draft('')); setUnfolded(true) }}>{i18nT('components.crewMode.board_reply')}</button>
-            {unfolded && options.length > 0 && (
+            <button type="button" className={`${small} conductor-mode-accent`} onClick={() => onAct(draft(''))} data-testid="conductor-mode-person-ask-reply">{i18nT('components.crewMode.conductor_mode_reply')}</button>
+            {options.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button type="button" className={small} data-testid="conductor-mode-person-ask-answers">{i18nT('components.crewMode.conductor_mode_answers')}<ChevronDown size={12} aria-hidden="true" /></button>
@@ -576,7 +580,8 @@ function PersonAskActions({ root, item, options, onAct, back }: { root: string; 
               </DropdownMenu>
             )}
           </div>
-          {unfolded && <p className="text-[11px] text-muted" data-testid="conductor-mode-person-ask-hint">{i18nT('components.crewMode.conductor_mode_option_title')}</p>}
+          <p className="text-[11px] text-muted" data-testid="conductor-mode-person-ask-hint">{i18nT('components.crewMode.conductor_mode_option_title')}</p>
+          </>}
         </div>
       ) : (
         <div className="space-y-1">

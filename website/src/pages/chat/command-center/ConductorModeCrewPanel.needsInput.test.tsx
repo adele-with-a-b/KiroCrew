@@ -12,6 +12,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { createTestStore } from '../../../test/helpers'
 import { sseSlots } from '../../../store/dashboardSlice'
 import { crewBoardQueryKey, type WorkBoardResponse } from '../../../api/crewBoard'
+import { mergeReplyIntoDraft } from '../../../utils/chatDrafts'
 
 const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), resumeChatSlot: vi.fn(), crewBoard: vi.fn(), crewBoardAction: vi.fn(), sessionSummary: vi.fn(), sendMessage: vi.fn() }))
 vi.mock('../../../api/client', () => ({ api }))
@@ -68,42 +69,79 @@ describe('Conductor mode Needs your input', () => {
     const report = { id: 'r1', ts: '2026-10-30T00:05:00Z', item_id: 'it_q', kind: 'report', status: 'question', text: '' }
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ events: [report] as never })], asks: { it_q: ['Oolong', 'Green'] } })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
+    const onAct = vi.fn()
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={onAct} />)
     const row = await screen.findByTestId('conductor-mode-person-ask')
-    const actions = within(row).getByTestId('conductor-mode-person-ask-actions')
-    // Folded: one button, as in the mock.
-    expect(within(actions).getAllByRole('button')).toHaveLength(1)
-    const reply = within(row).getByTestId('conductor-mode-person-ask-reply')
+    // Folded: one Reply button, as in the mock.
+    expect(within(row).queryByTestId('conductor-mode-person-ask-actions')).toBeNull()
+    const reply = within(row).getByTestId('conductor-mode-person-ask-unfold')
     expect(reply).toHaveTextContent(/^Reply$/)
     expect(reply).toHaveAttribute('aria-expanded', 'false')
     expect(within(row).queryByTestId('conductor-mode-person-ask-answers')).toBeNull()
     expect(within(row).queryByTestId('conductor-mode-person-ask-hint')).toBeNull()
     expect(within(row).queryByTestId('conductor-mode-person-ask-dismiss')).toBeNull()
     fireEvent.click(reply)
-    // Unfolded: the answers menu, the line that says nothing is sent, and Skip.
+    // Unfolded, and nothing written: the Board's own controls, the line that says
+    // nothing is sent, and Skip.
+    expect(onAct).not.toHaveBeenCalled()
     expect(reply).toHaveAttribute('aria-expanded', 'true')
+    const actions = within(row).getByTestId('conductor-mode-person-ask-actions')
     expect(within(actions).getAllByRole('button')).toHaveLength(2)
+    expect(within(actions).getByTestId('conductor-mode-person-ask-reply')).toHaveTextContent('Write a reply')
     expect(within(row).getByTestId('conductor-mode-person-ask-hint')).toHaveTextContent('Puts this in your chat box to check and send')
     expect(within(row).getByTestId('conductor-mode-person-ask-dismiss')).toBeInTheDocument()
     openMenu(within(row).getByTestId('conductor-mode-person-ask-answers'))
     expect((await screen.findAllByTestId('conductor-mode-person-ask-option')).map(b => b.textContent)).toEqual(['Oolong', 'Green'])
+    // Pressed again, Reply folds it.
+    fireEvent.click(reply)
+    expect(reply).toHaveAttribute('aria-expanded', 'false')
+    expect(within(row).queryByTestId('conductor-mode-person-ask-actions')).toBeNull()
   })
 
   it('a button fills the chat box with the item reference and never sends', async () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})], asks: { it_q: ['Oolong'] } })
     const onAct = vi.fn()
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={onAct} />)
-    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
-    expect(onAct).toHaveBeenLastCalledWith('About "Pick a tea" (it_q): ')
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-unfold'))
     openMenu(await screen.findByTestId('conductor-mode-person-ask-answers'))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Oolong' }))
     expect(onAct).toHaveBeenLastCalledWith('About "Pick a tea" (it_q): Oolong')
+    fireEvent.click(screen.getByTestId('conductor-mode-person-ask-reply'))
+    expect(onAct).toHaveBeenLastCalledWith('About "Pick a tea" (it_q): ')
     expect(api.sendMessage).not.toHaveBeenCalled()
   })
 
-  it('no offered answers: Reply alone, no menu', async () => {
+  /** The chat box, filled exactly as the chat page fills it (`insertDashboardReply`). */
+  function mountWithChatBox() {
+    let box = ''
+    const report = { id: 'r1', ts: '2026-10-30T00:05:00Z', item_id: 'it_q', kind: 'report', status: 'question', text: '' }
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ events: [report] as never })], asks: { it_q: ['Oolong'] } })
+    api.crewBoardAction.mockResolvedValue({ ok: true, action: 'dismiss', item_id: 'it_q' })
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={text => { box = mergeReplyIntoDraft(box, text) }} />)
+    return () => box
+  }
+
+  it('Reply, then a suggested answer, puts one paragraph in the chat box', async () => {
+    const box = mountWithChatBox()
+    fireEvent.click(await screen.findByRole('button', { name: 'Reply' }))
+    openMenu(await screen.findByTestId('conductor-mode-person-ask-answers'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Oolong' }))
+    expect(box()).toBe('About "Pick a tea" (it_q): Oolong')
+  })
+
+  it('Reply, then Skip question, leaves the chat box empty', async () => {
+    const box = mountWithChatBox()
+    fireEvent.click(await screen.findByRole('button', { name: 'Reply' }))
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-dismiss'))
+    await waitFor(() => expect(api.crewBoardAction).toHaveBeenCalledWith('root-1', 'it_q', 'dismiss', 'r1'))
+    expect(box()).toBe('')
+  })
+
+  it('no offered answers: Write a reply alone, no menu', async () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})] })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-unfold'))
+    expect(screen.getByTestId('conductor-mode-person-ask-reply')).toBeInTheDocument()
     expect(screen.queryByTestId('conductor-mode-person-ask-answers')).toBeNull()
   })
 
@@ -154,7 +192,7 @@ describe('Conductor mode Needs your input', () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ events: [report] as never })] })
     api.crewBoardAction.mockRejectedValue(new Error('Nothing was skipped: this ask changed or was answered since the page loaded.'))
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-unfold'))
     fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-dismiss'))
     expect(await screen.findByRole('alert')).toHaveTextContent('Nothing was skipped: this ask changed or was answered since the page loaded.')
     expect(screen.getByTestId('conductor-mode-person-ask')).toBeInTheDocument()
@@ -169,7 +207,7 @@ describe('Conductor mode Needs your input', () => {
       return { ok: true, action: 'dismiss', item_id: 'it_q' }
     })
     renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} />)
-    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-unfold'))
     const close = await screen.findByRole('button', { name: 'Skip "Pick a tea" without replying' })
     expect(close).toHaveTextContent('Skip question')
     // What skipping does is on the card, not only in a tooltip.
@@ -296,7 +334,8 @@ describe('Conductor mode Needs your input', () => {
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})] })
     const onAct = vi.fn()
     renderWith(<CrewWorkersTab slot="root-1" active onAct={onAct} />, [{ key: 'root-1', title: 'Root' }])
-    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-reply'))
+    fireEvent.click(await screen.findByTestId('conductor-mode-person-ask-unfold'))
+    fireEvent.click(screen.getByTestId('conductor-mode-person-ask-reply'))
     expect(onAct).toHaveBeenCalledWith('About "Pick a tea" (it_q): ')
   })
 })

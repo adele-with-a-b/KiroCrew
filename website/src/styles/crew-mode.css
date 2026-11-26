@@ -153,34 +153,49 @@ html:root .liquid-glass.crew-chip[aria-pressed="true"]:not(:disabled):not([aria-
 }
 
 /* Status text on a card or row: the state's hue mixed toward the theme's
-   strongest text colour, so 12px labels stay at or above 4.5:1. The hue's share
-   is `--crew-tone-mix`: 45% by default, more on the Board (`.crew-board`). */
-.crew-tone-warn {
+   strongest text colour. The hue's share is `--crew-tone-mix`: 45% by default.
+   On the Board (`.crew-board`) words and numbers take 31%, which keeps them at
+   or above 4.5:1 on its card and page in every built-in palette
+   (`test/crewBoardToneContrast.test.ts`); its marks take more (below). */
+.crew-tone-warn,
+.crew-board .crew-tone-warn > :is(svg, .bg-current) {
   color: color-mix(in srgb, var(--warn) var(--crew-tone-mix, 45%), var(--text-strong, var(--text)));
 }
 
-.crew-tone-ok {
+.crew-tone-ok,
+.crew-board .crew-tone-ok > :is(svg, .bg-current) {
   color: color-mix(in srgb, var(--ok) var(--crew-tone-mix, 45%), var(--text-strong, var(--text)));
 }
 
-.crew-tone-danger {
+.crew-tone-danger,
+.crew-board .crew-tone-danger > :is(svg, .bg-current) {
   color: color-mix(in srgb, var(--danger) var(--crew-tone-mix, 45%), var(--text-strong, var(--text)));
 }
 
 /* The Board (the chat's Board tab and the all-projects page) has its own
    surfaces, so it never reads as a grey list on the page. Both tones come from
    the theme: the page is `--bg` with a little of `--aim` in it, a card is
-   `--bg-elevated` with a little more, so a card is one step lighter than the page
-   it sits on in dark and light alike. Every background is set with its text
-   colour. On the Board each state reads as its colour at a glance: the status
-   words carry 78% of their hue, still mixed toward the strongest text colour (a
-   dark theme lightens it, a light one darkens it). */
+   `--bg-elevated` with a little more, so a card stands one step off the page it
+   sits on (lighter in most palettes, darker in a few light ones). Every
+   background is set with its text colour. Status words and numbers carry 31% of
+   their hue, mixed toward the strongest text colour (a dark theme lightens it, a
+   light one darkens it); everforest-light's yellow sets that share. */
 .crew-board {
-  --crew-tone-mix: 78%;
+  --crew-tone-mix: 31%;
   --crew-board-page: color-mix(in srgb, var(--aim) 6%, var(--bg));
   --crew-board-card: color-mix(in srgb, var(--aim) 8%, var(--bg-elevated));
   background-color: var(--crew-board-page);
   color: var(--text);
+}
+
+/* A state's mark on the Board (an icon, or a bar or dot drawn in the current
+   colour) needs 3:1, not text's 4.5:1, so it keeps 78% of its hue: on the mark
+   that wears the tone, and on an icon or dot inside a toned span (above). That
+   holds 3:1 on the card and page in every built-in palette but five cases: the
+   yellow in everforest-, intellij- and rosepine-light, the red in nord- and
+   solarized-dark. */
+.crew-board :is(svg, .bg-current) {
+  --crew-tone-mix: 78%;
 }
 
 .crew-board-card {
@@ -204,13 +219,13 @@ html:root .liquid-glass.crew-chip[aria-pressed="true"]:not(:disabled):not([aria-
 }
 
 /* The merged ring (`components/board/MergedRing.tsx`): a quiet track and the
-   merged share in the theme's green. */
+   merged share in the theme's green, at a mark's share so it holds 3:1. */
 .crew-board-ring-track {
   stroke: color-mix(in srgb, var(--muted) 35%, transparent);
 }
 
 .crew-board-ring-done {
-  stroke: var(--ok);
+  stroke: color-mix(in srgb, var(--ok) var(--crew-tone-mix, 78%), var(--text-strong, var(--text)));
 }
 
 .crew-tone-aim {
