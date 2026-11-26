@@ -195,7 +195,13 @@ restored after a restart. If an older one cannot go in, it and the ones behind i
 stay queued, and when the reason is the turn itself the new message queues behind
 them. This works the same for a session on another crew. A worker's reply into
 the turn of the session that asked it goes in alone: its earlier queued reports
-wait for their own turn.
+wait in the queue.
+
+**Queued messages from sessions run together.** When the current turn ends, the
+messages other sessions queued for it, with any work-ledger wakes it did not get
+to, run as one turn in the order they arrived. Each still shows as its own message,
+tagged with the session that sent it. A message the person typed, a cron or app
+message, or a sub-agent result is not part of that turn: it runs on its own.
 
 A queued message is checked again just before it runs. If the target gained a
 channel link or mirror in the meantime, the message is dropped instead of run,

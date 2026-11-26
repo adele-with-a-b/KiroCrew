@@ -161,18 +161,23 @@ def is_owner_queue_entry(item: Any) -> bool:
 def _front_parts(queue: list[dict[str, Any]]) -> tuple[int, Callable[[Any], bool]]:
     """The runner's leading retries, and a test for a sub-agent completion.
 
-    A retry finishes a turn that already ran, so nothing goes ahead of it. A
-    child's result and a person's message drain in arrival order (the sub-agent
-    hold, ``queue_drain.hold_users``), so a completion that came before the
-    owner's first entry stays ahead of his entries."""
+    A retry finishes a turn that already ran, so nothing goes ahead of it: a
+    recovery entry, or a failed agent run's entries put back as its retry
+    (``AGENT_RUN_RETRY_KEY``). A child's result and a person's message drain in
+    arrival order (the sub-agent hold, ``queue_drain.hold_users``), so a
+    completion that came before the owner's first entry stays ahead of the owner's
+    entries."""
     # Local: chat_utils_injected_rows imports this module at load.
     from kiro_crew.dashboard.chat_utils_injected_rows import (
+        AGENT_RUN_RETRY_KEY,
         SUBAGENT_COMPLETION_KIND,
         is_synthetic_recovery_item,
     )
 
     lead = 0
-    while lead < len(queue) and is_synthetic_recovery_item(queue[lead]):
+    while lead < len(queue) and (
+        is_synthetic_recovery_item(queue[lead]) or queue[lead].get(AGENT_RUN_RETRY_KEY)
+    ):
         lead += 1
     return (
         lead,

@@ -319,10 +319,12 @@ loop's `nudge_meta` (`{"cycle", "loop_id"}`) and persists the steer as a `nudge`
 with `meta.steer`, so it draws as the nudge chip and never as a bubble the person
 typed; the sender names the origin, the role follows from it. A steer the turn ends
 before taking is requeued with `AUTOMATION_STEER_META` on its entry: the drain
-writes it as a `nudge` row too, and the entry drains alone, never merged into the
-person's own queued text (#22747). It goes back behind the owner's own waiting
-messages at the front of the queue, never ahead of them
-([instances](instances.md), "never granted by a steer").
+writes it as a `nudge` row too, never merged into the person's own queued text
+(#22747). It goes back behind the owner's own waiting messages at the front of the
+queue, never ahead of them ([instances](instances.md), "never granted by a steer").
+Beside other agents' queued rows it drains in their one turn, still as its own
+`nudge` row; only a turn of one loop's wakes alone charges that loop (see
+[session](session.md#agents-rows-drain-as-one-turn)).
 
 The steered wake of the fixed work-ledger patrol also names itself
 (`session_deliver.automation(patrol_news=)`), and only while the stored row still

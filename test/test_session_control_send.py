@@ -1303,9 +1303,9 @@ def test_a_drained_peer_send_carries_meta_relay_on_its_queue_pop(tmp_path):
     assert pops[-1]["content"].startswith(envelope)
 
 
-def _merged_drain_row(tmp_path, monkeypatch, sends):
-    """Queue *sends* ``(caller, via)`` on a busy ``chat-2``, drain them merged,
-    and return the one user row the drain writes."""
+def _drained_rows(tmp_path, monkeypatch, sends):
+    """Queue *sends* ``(caller, via)`` on a busy ``chat-2``, drain them with merging
+    on, and return the user rows the drain writes: one turn, one row per send."""
     from test_queue_drain_preserve_attachments import _drain_once
 
     state = _make_state(tmp_path)
@@ -1337,44 +1337,37 @@ def _merged_drain_row(tmp_path, monkeypatch, sends):
         for m in target.messages
         if m.get("role") == "user" and "merged part" in m.get("content", "")
     ]
-    assert rows and "queued messages merged" in rows[-1]["content"]
-    return rows[-1]
+    assert target._queue == [], "the sends drain as one turn"
+    assert len(rows) == len(sends)
+    assert all(row["content"].endswith(f"merged part {n}") for n, row in enumerate(rows))
+    return rows
 
 
-def test_a_merged_drain_of_one_sender_keeps_its_sender_across_delivery_verbs(tmp_path, monkeypatch):
-    """One session's ``session_send`` and its ``session_broadcast`` merge into one
-    row: the sender is the same, so the row keeps ``relay`` although the two
-    records differ in their verb.
-
-    Mutation guard: compare the whole ``relay`` record in the drain's address
-    loop and the merged row loses its sender.
-    """
+def test_a_drain_of_one_sender_keeps_its_sender_across_delivery_verbs(tmp_path, monkeypatch):
+    """One session's ``session_send`` and its ``session_broadcast`` drain as one
+    turn, and each keeps its own row and ``relay``: one span over its own
+    provenance line, whichever verb sent it."""
     from kiro_crew.dashboard.session_control_parts.session_messaging import BROADCAST_VIA
 
-    row = _merged_drain_row(
+    rows = _drained_rows(
         tmp_path, monkeypatch, [("chat-1", "session_send"), ("chat-1", BROADCAST_VIA)]
     )
-    relay = (row.get("meta") or {}).get("relay")
-    assert relay and relay["senderKey"] == "chat-1"
-    # One span per send, each covering exactly that send's provenance line.
-    content = row["content"]
-    assert [content[a:b] for a, b in relay["envelope"]] == [
-        "[sent by session chat-1 via session_send]\n\n",
-        f"[sent by session chat-1 via {BROADCAST_VIA}]\n\n",
-    ]
-    kept = content[: relay["envelope"][0][0]]
-    for (_, end), (start, _) in zip(relay["envelope"], relay["envelope"][1:] + [[len(content), 0]]):
-        kept += content[end:start]
-    assert kept == "[2 queued messages merged]\n\nmerged part 0\n\nmerged part 1"
+    for row, via in zip(rows, ("session_send", BROADCAST_VIA)):
+        relay = (row.get("meta") or {}).get("relay")
+        assert relay and relay["senderKey"] == "chat-1"
+        content = row["content"]
+        assert [content[a:b] for a, b in relay["envelope"]] == [
+            f"[sent by session chat-1 via {via}]\n\n"
+        ]
 
 
-def test_a_merged_drain_of_two_senders_drops_the_sender(tmp_path, monkeypatch):
-    """Two sessions' queued sends merge into one row of both their words: no one
-    sender is true of it, so the row carries no ``relay``."""
-    row = _merged_drain_row(
+def test_a_drain_of_two_senders_keeps_each_sender_on_its_own_row(tmp_path, monkeypatch):
+    """Two sessions' queued sends drain as one turn of two rows, each wearing its
+    own sender: one merged row of both their words could wear neither."""
+    rows = _drained_rows(
         tmp_path, monkeypatch, [("chat-1", "session_send"), ("chat-3", "session_send")]
     )
-    assert "relay" not in (row.get("meta") or {})
+    assert [row["meta"]["relay"]["senderKey"] for row in rows] == ["chat-1", "chat-3"]
 
 
 def test_a_queue_pop_carries_no_relay_for_an_entry_without_a_sender(tmp_path):

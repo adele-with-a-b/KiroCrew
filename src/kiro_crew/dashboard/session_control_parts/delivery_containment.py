@@ -281,6 +281,20 @@ SEND_DISCARD_HARD_STOP_STEER = "hard_stop_steer"
 SEND_DISCARD_UNCONFIRMED_STEER = "unconfirmed_steer"
 
 
+# A note an agent run took into that session's turn, which then ended before the
+# model started to answer it, and which is not queued again: it was put back once
+# already, the turn was refused (by the model or at admission), or it failed on its
+# own, which a retry would repeat.
+SEND_DISCARD_UNREAD_RUN = "unread_run"
+
+
+# A note an agent run took into that session's turn, cut off before the model
+# answered it and continued on a reset session: the model may have read it or not
+# (the continuation's interrupted-turn preamble can carry the run's last row), and
+# it is not queued again.
+SEND_DISCARD_CUT_OFF_RUN = "cut_off_run"
+
+
 # Sender-notice phrasing per discard cause, after "Message you sent to <target> ".
 # No discard changes a constraint, so the drain's containment wording would
 # describe nothing here.
@@ -301,6 +315,12 @@ _SEND_DISCARD_REASONS = {
     SEND_DISCARD_UNCONFIRMED_STEER: "as a steer went into that session's running turn, "
     "which then ended with an error before its harness confirmed it, so it may not have "
     "run. It will not be queued to run later.",
+    SEND_DISCARD_UNREAD_RUN: "was not delivered: the turn of that session it was taken "
+    "into ended before the model started to answer it. It will not be "
+    "queued to run later.",
+    SEND_DISCARD_CUT_OFF_RUN: "was taken into a turn of that session that was cut off "
+    "before the model answered it, so the model may or may not have read it. It is not "
+    "queued again: send it again if it still matters.",
 }
 
 # The bare cause for the rows the frontend words through the localized

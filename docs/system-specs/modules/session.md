@@ -4841,6 +4841,119 @@ to the queue. Cancellation can leave an original shell or external side effect
 running: there is no automatic replay, rollback, operation transfer or completion
 claim. Background worker results retain their existing delivery ownership.
 
+### Agents' rows drain as one turn
+
+While a turn runs, a conductor's queue fills with rows no person sent: other
+sessions' `session_send` notes (queued, or steered and then requeued because the
+turn ended before reading them) and requeued work-ledger wakes. When the next row
+the drain may run is one of these, `_dequeue_agent_run` (`chat_utils_injected_rows`)
+takes the whole leading run of them as ONE turn, in queue order, whatever
+`dashboard.merge_queued_messages` says. An agent row has no `kind`, no person's or
+channel's origin mark, and carries either a peer's gateway-stamped sender
+(`meta.relay`) or a requeued wake's `AUTOMATION_STEER_META`; an edit drops both.
+The run stops at the first other entry the drain may run: a person's row (the
+owner's words never share a turn with an agent's), a cron, app or sub-agent row, a
+card a person chose to send after a restart, an entry carrying attachments, a quote
+or a banner, a possibly-delivered steer, a decision's receipt or a source channel.
+It also stops where the stamped turn actor, the Shared Crew author
+(`turn_gate.queued_initiator`) or the channel challenge mark changes, as a merge
+does, so the turn has one actor and one budget; at a second loop's wake; and at
+`MAX_LIVE_QUEUE_ENTRIES` (50) rows. A restored card no person sent neither joins
+nor stops the run: it keeps its place, and the live rows behind it still drain
+together. A run of one drains as before.
+
+The model reads the run as one prompt (`agent_run_prompt`): a header, then each
+text between `[message N/M <id>]` and `[end N/M <id>]`, with an id drawn fresh for
+the run, so a text cannot close its own message early or pass a line of its own
+(a forged `[work-ledger wake]` line; a forged sender line is already defused at
+send) off as another message. The transcript keeps one row per entry: the drain
+writes each entry's `queue_pop` frame and row in order
+(`drained_rows._write_drained_row`), so every note keeps its `[sent by session …]`
+line, its sender card (`meta.relay`) and its drop-notice address
+(`SEND_ORIGIN_META_KEY`), and every wake its `nudge` row. Each row carries the run's
+id (`meta.agentRun`). A requeued steer's old row is superseded by its own new row,
+and the turn opens on the last row. One merged row would keep none of a mixed run's
+per-sender addresses. The rows go to disk at once (`start_queue_persist`), so a
+restart mid-turn keeps all of them where the in-flight marker copies only the last.
+
+The drain's opening containment sweep (`_drop_stale_admissions`) judges every live
+entry; between it and the run the drain awaits only
+`_purge_superseded_continuations` and `_drop_revoked_replays`, which never suspend,
+so a note whose admission lapsed is dropped with its notice and the rest still join.
+
+A run turn that fails before it lands puts its own entries back on the queue, in
+order, each with its own text, meta and origin flags (`turn_ledgers._requeue_agent_run`,
+from the entries the drain handed the turn as `_agent_run_entries`), where any other
+turn's verbatim retry is one recovery entry. So every note keeps its sender card and
+its drop-notice address, each is judged by the containment sweep again, and a restart
+before the retry keeps each one: a note steered in comes back as its requeued steer
+(its receipt is written again on the insert), one `session_send` queued as a card for
+a person (`peer_note_receipts.note_requeued` gives it none, since the failed turn may
+have read it). The entries name one retry id
+(`AGENT_RUN_RETRY_KEY`), so they re-form that run alone: a note sent since waits for
+the next turn, and the owner's message queued since goes behind them, as behind any
+retry of a turn that already ran (`slot_queue_repository._front_parts`). The drain runs the run as the turn's recovery (`_synthetic_recovery_turn`,
+so the budget is unchanged). A replay family armed on the retry (a lost session or
+credential reload, a thinking-binding rebuild, the content-filter fallback, the
+model-access swap) names the whole run: the retry id is the queue id its record
+holds, so every entry of the run answers to it (`recovery._replay_ids`). The record
+stays while any of them is queued and the drain claims it for the run. While the
+retry is queued or its turn has not read it, no agent's row is a newer message
+(`steer_queue._has_user_queued_followup`): the run's own entries are that retry, and
+another session's note or a wake sent since waits behind it for the next turn. A
+Stop, a rebind or the owner's message that does revoke it cancels the retry, with
+one cancellation notice, but never the notes (`recovery._drop_queued_replay`): they
+lose the retry's mark and stay queued as agents' rows, behind the owner's entries,
+so the owner's message runs first and they run right after it. Each entry names the row it
+already has (`AGENT_RUN_ROW_KEY`), and while that row is still in the window the
+drain that runs it opens on it again (`responsive_chat.reusable_row`) instead of
+writing a second one.
+
+A run is delivered once the model starts to answer it: a text chunk, a tool call or
+a permission request (a thought alone is not). Until then the turn's exit record
+holds it (`_TurnExit.unread_run`), marked by the exit guard before Shared Crew
+admission, and every exit settles it once, at the tail
+(`turn_ledgers._settle_unread_run`), by one rule: a run whose turn ends before the
+model starts to answer goes back on the queue at most once, and every other ending
+tells each sender and consumes the notes. The put-back count rides in each entry's
+meta (`AGENT_RUN_PUT_BACKS_META`), so the durable queue copy keeps it; the one
+put-back owner, `_requeue_agent_run`, ends an entry already put back instead. The
+entries go back, each with its own meta and row, behind the owner's entries, when
+the turn never reached its `try`, a Stop was pressed, or a person's message, a
+pending steer or another session's note waits; a retry an arm queues is the same
+put-back. The run ends, through its one owner `turn_ledgers._end_agent_run`
+(`SEND_DISCARD_UNREAD_RUN` to each sender), on its second such ending, on a refusal
+(the content-filter refusal an arm declines to retry), on an admission that refused
+or expired or any exit while admission waited, and on a failure with nothing
+waiting, which a retry would repeat. A hard Stop ends the unread run with the queue
+it clears, through the same owner with its own notice (`turn_stop`). An ended run is
+never queued again: an arm's verbatim retry (`_queue_recovery`) takes the run path
+only while the run is unread, so the killed stream's empty-response replay or
+"Connection lost" retry queues nothing for it, not even one entry of every text. A
+turn that queues a continuation before the model answers ends its run there, and the
+tail puts nothing back. On the session that holds the run (the empty-response
+"continue" rung) the continuation may answer it, so no sender is told. On a reset
+session (an ambiguous process death, a stalled turn's recovery) the reload lacks the
+prompt (`_native_session_lacks_the_prompt`), so each sender is told the model may or
+may not have read its note and it is not queued again, so it may send it again
+(`SEND_DISCARD_CUT_OFF_RUN`): the notice does not say the model cannot see it, as the
+continuation's interrupted-turn preamble can still carry the run's last row. A
+retry that puts nothing back resets the
+empty-response and lost-session rungs, since no retry turn lands to reset them.
+
+Only a run of one loop's wakes alone is that loop's cycle
+(`_recovered_wake`, the newest wake's): a run that also holds notes is not the
+loop's own turn, so its fault is not charged to the loop. Regenerate on a run's
+reply re-runs the whole run, read back from its rows (`chat_regenerate._agent_run_span`),
+and replaces only what follows the run's last row. It holds no queue entries to put
+back, so a Regenerate turn that fails before it lands retries as one recovery entry
+of the run's whole prompt.
+
+With `dashboard.merge_queued_messages` on, a person's row queued behind agents' rows
+no longer goes first inside a merge run: the agents' run drains first, as it does
+with the setting off. The Shared Crew startup drain of accepted parked cards still
+picks one entry per turn.
+
 ### Queued prompt durability
 
 A prompt admitted while the slot is busy is answered `{"ok": true, "queued":

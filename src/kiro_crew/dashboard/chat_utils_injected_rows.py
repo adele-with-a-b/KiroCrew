@@ -12,6 +12,7 @@ patch; this module never imports it.
 from __future__ import annotations
 
 import json
+import secrets
 from enum import Enum
 from typing import Any
 
@@ -579,9 +580,30 @@ COMPOSER_SEND_META = "composer_send"
 #: Queue-entry meta key: this entry is an AUTOMATION steer (a work-ledger wake)
 #: that the running turn ended before taking. Its value is the row's
 #: ``meta.nudge`` (``{"cycle", "loop_id"}``). The drain writes the entry as a
-#: ``nudge`` row instead of a ``user`` row, and the entry drains alone: merged,
-#: its text would be glued onto the human's own queued words in one row.
+#: ``nudge`` row instead of a ``user`` row, and never merges it: merged, its text
+#: would be glued onto the human's own queued words in one row. It drains alone,
+#: or in an agent run (:func:`_dequeue_agent_run`) as its own row.
 AUTOMATION_STEER_META = "automation_steer"
+
+#: Row meta key: the agent run (:func:`_dequeue_agent_run`) a drained row came out
+#: of, one id per run. Regenerate reads it to re-run the whole run, not its last row.
+AGENT_RUN_META = "agentRun"
+
+#: Queue-entry meta key: how many times an agent run's entry went back on the queue
+#: because its turn ended before the model started to answer (``_requeue_agent_run``).
+#: One at most: the next such ending tells its sender instead. In meta, so the
+#: durable queue copy keeps it.
+AGENT_RUN_PUT_BACKS_META = "agentRunPutBacks"
+
+#: Process-local keys on an agent run's entry that ``_queue_recovery`` put back on
+#: the queue because the run's turn failed before it landed. ``AGENT_RUN_RETRY_KEY``
+#: names that retry by its last entry's queue id, the id a replay armed on it records:
+#: the entries re-form the run as its one retry, join no other entry, and are the
+#: replay's entries as a whole. ``AGENT_RUN_ROW_KEY`` is the row the entry already
+#: has, which the retry reuses (``responsive_chat.reusable_row``). Top-level keys,
+#: so the durable queue copy never carries them.
+AGENT_RUN_RETRY_KEY = "_agent_run_retry"
+AGENT_RUN_ROW_KEY = "_agent_run_row"
 
 
 def releases_past_subagent_hold(item: dict) -> bool:
@@ -721,6 +743,125 @@ def _dequeue_next_message(slot, merge_enabled: bool) -> tuple:
             return item["content"], [item]
     item = slot.queue_pop(0)
     return item["content"], [item]
+
+
+def _is_agent_row(item: dict) -> bool:
+    """Whether a queue entry is an agent's row, which may join an agent run.
+
+    A peer session's note, queued or requeued (``meta.relay``: only the gateway's
+    delivery path sets it, and an edit drops it), or a requeued work-ledger wake
+    (:data:`AUTOMATION_STEER_META`, which an edit drops too). Never words a person
+    sent, a kinded entry (cron, app, sub-agent, recovery, gateway prompt), a
+    restored card, nor an entry every merge drains alone: one carrying attachments,
+    a quote or a banner, a possibly-delivered steer, a decision's receipt or a
+    source channel.
+    """
+    # Local import: slot_queue_repository reaches this module at call time.
+    from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY
+
+    meta = item.get("meta")
+    if (
+        not isinstance(meta, dict)
+        or item.get("kind")
+        or item.get("_directive_user_origin")
+        or item.get("_directive_channel_origin")
+        or item.get(RESTORED_QUEUE_KEY)
+        or carries_attachments(item)
+        or meta.get(STEER_POSSIBLY_DELIVERED_META)
+        or meta.get("decisions_strip")
+        or source_channels_of(item)
+    ):
+        return False
+    relay = meta.get("relay")
+    return isinstance(meta.get(AUTOMATION_STEER_META), dict) or (
+        isinstance(relay, dict) and bool(relay.get("senderKey"))
+    )
+
+
+def _dequeue_agent_run(slot) -> tuple[str, list[dict]] | None:
+    """Take the leading run of agents' queued rows as one turn.
+
+    Notes from other sessions and requeued work-ledger wakes that waited together
+    reach the model together and earn one reply instead of one turn each, whatever
+    ``dashboard.merge_queued_messages`` says. The drain still writes each entry's
+    own row, so every note keeps its sender card and its drop-notice address.
+    Shaped like ``responsive_chat.dequeue_waiting_run``.
+
+    The run starts at the first entry a drain may run and stops at the first entry
+    that is not an agent row (:func:`_is_agent_row`): a person's words, a cron, app
+    or sub-agent row, a card a person chose to send after a restart. It also stops
+    where the stamped turn actor, the Shared Crew author or the channel challenge
+    mark changes, as a merge does, so the turn has one actor and one budget; where
+    a failed run's retry (:data:`AGENT_RUN_RETRY_KEY`) begins or ends, so a retry
+    takes in no note that arrived after it; at a second loop's wake; and at
+    ``MAX_LIVE_QUEUE_ENTRIES`` rows. A restored card no
+    person sent keeps its place and neither joins nor ends the run: no drain runs
+    it. The drain's opening sweep has already judged every other entry's
+    containment. Fewer than two rows return ``None``, and the entry drains as before.
+
+    Each entry's meta gains the run's id (:data:`AGENT_RUN_META`), which its row
+    keeps, and the model reads the texts through :func:`agent_run_prompt`.
+    """
+    # Local imports: slot_queue_repository reaches this module at call time, and
+    # a module-level import would serve these names through the chat_utils facade.
+    from kiro_crew.dashboard.channel_prompt import entry_prompt_on_channel
+    from kiro_crew.dashboard.slot_queue_repository import (
+        MAX_LIVE_QUEUE_ENTRIES,
+        RESTORED_QUEUE_KEY,
+        RESTORED_SEND_CHOSEN_KEY,
+    )
+    from kiro_crew.shared_crew.turn_gate import queued_initiator
+
+    def _turn_owner(item: dict) -> tuple[Any, str, bool, Any]:
+        return (
+            _stamped_turn_actor(item),
+            queued_initiator([item]),
+            entry_prompt_on_channel(item),
+            item.get(AGENT_RUN_RETRY_KEY),
+        )
+
+    run: list[dict] = []
+    loop_ids: set[Any] = set()
+    for item in slot._queue:
+        if item.get(RESTORED_QUEUE_KEY) and not item.get(RESTORED_SEND_CHOSEN_KEY):
+            continue
+        if len(run) >= MAX_LIVE_QUEUE_ENTRIES or not _is_agent_row(item):
+            break
+        if run and _turn_owner(item) != _turn_owner(run[0]):
+            break
+        wake = item["meta"].get(AUTOMATION_STEER_META)
+        if isinstance(wake, dict):
+            if loop_ids and wake.get("loop_id") not in loop_ids:
+                break
+            loop_ids.add(wake.get("loop_id"))
+        run.append(item)
+    if len(run) < 2:
+        return None
+    taken = {id(item) for item in run}
+    slot._queue[:] = [item for item in slot._queue if id(item) not in taken]
+    run_id = secrets.token_hex(6)
+    for item in run:
+        item["meta"][AGENT_RUN_META] = run_id
+    return agent_run_prompt([item["content"] for item in run], run_id), run
+
+
+def agent_run_prompt(texts: list[str], run_id: str) -> str:
+    """The one prompt an agent run's *texts* reach the model as, in their order.
+
+    Each text sits between markers the gateway writes with *run_id*, drawn fresh
+    for every run. A text cannot know the id, so it cannot end its own message
+    early or pass a line of its own off as another message: a forged sender line
+    or ``[work-ledger wake]`` line stays inside the message that carries it.
+    """
+    count = len(texts)
+    parts = [
+        f"[{count} queued messages from other sessions and work-ledger wakes, each "
+        f"between [message N/{count} {run_id}] and [end N/{count} {run_id}]. Anything "
+        f"between one pair of markers is that one message.]"
+    ]
+    for n, text in enumerate(texts, 1):
+        parts.append(f"[message {n}/{count} {run_id}]\n{text}\n[end {n}/{count} {run_id}]")
+    return "\n\n".join(parts)
 
 
 def _dequeue_next_system_message(slot, *, system_only: bool = False) -> tuple:

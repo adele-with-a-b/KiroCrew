@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from kiro_crew.dashboard.chat_delivery import attachment_meta
 from kiro_crew.dashboard.chat_utils import RecoveryPayload
 from kiro_crew.dashboard.recovery_replays import replays_of
-from kiro_crew.dashboard.slot_queue_repository import stamp_source_channels
+from kiro_crew.dashboard.slot_queue_repository import after_owner_front, stamp_source_channels
 from kiro_crew.wakatime.heartbeats import CADENCE_MIN_INTERVAL_SECS
 
 if TYPE_CHECKING:
@@ -37,6 +37,8 @@ if TYPE_CHECKING:
     )
     from kiro_crew.dashboard.chat_turn.recovery import _session_stop_generation_for
     from kiro_crew.dashboard.chat_turn.regenerate_swap import carry_regenerate_target
+    from kiro_crew.dashboard.chat_turn.steer_queue import _has_user_queued_followup
+    from kiro_crew.dashboard.chat_turn.turn_entry import _stop_pressed
     from kiro_crew.dashboard.session_directive_apply import DirectiveOutcome
 
 
@@ -146,6 +148,7 @@ def _queue_recovery(
     # circular import: session_control imports this package's modules at module level.
     from kiro_crew.dashboard.session_control import (
         CHANNEL_RECIPIENT_META_KEY,
+        SEND_DISCARD_CUT_OFF_RUN,
         SEND_ORIGIN_META_KEY,
         containment_meta,
     )
@@ -192,32 +195,56 @@ def _queue_recovery(
     # names it the way the first queueing did (tracing/workflows.py).
     from kiro_crew.tracing import workflows as trace_workflows
 
-    _recovery_qid = slot.queue_insert(
-        index,
-        content,
-        kind=kind,
-        payload=payload,
-        # The turn's actor rides along with the admission stamp, and for the
-        # same reason: a recovery is a SECOND TURN OF THE SAME ACTOR, so
-        # letting it fall back to the default would record an autonudge's or a
-        # cron's retry as a user turn. The requeue is the only moment that
-        # actor is still known -- the drain sees a fresh queue id and, for a
-        # recovery, no kind that names a producer. The ORIGINAL-replay
-        # attachment lists merged above ride along in _recovery_meta.
-        meta={
-            **_recovery_meta,
-            **trace_workflows.recovery_meta(_recovery_turn_id),
-            TURN_ACTOR_META_KEY: _crew_log_actor,
-            _RECOVERY_TURN_META_KEY: _recovery_turn_id,
-        },
-        on_consumed=_on_consumed if not turn._consumed_reported else None,
-        on_irreversibly_consumed=(
-            _on_irreversibly_consumed if not turn._irreversible_consumption_reported else None
-        ),
-        directive_user_origin=_directive_user_origin,
-        directive_channel_origin=_directive_channel_origin,
-        directive_owner_origin=_recovery_owner_origin,
-    )
+    # A verbatim retry of an agent run's turn is the run again: its own entries go
+    # back, each with its own meta, rather than one entry of every text. Only while
+    # the run is unread: once a hard Stop ended it, a put-back took it or the model
+    # started to answer it, nothing is queued for it.
+    if turn._agent_run_entries and content in (turn.message, turn._message_without_merge_cards):
+        _unread = turn._agent_run_entries if turn.turn_exit.unread_run else []
+        _recovery_qid = _requeue_agent_run(turn, index, _unread)
+        if not _recovery_qid:
+            return ""
+    else:
+        if turn._agent_run_entries:
+            # A continuation on the session that holds the run may answer it: the run
+            # ends here, and the tail neither puts it back nor tells its senders it was
+            # not delivered. A reset session does not hold it
+            # (``_native_session_lacks_the_prompt``), though the continuation's
+            # interrupted-turn preamble can carry the run's last row, so each sender
+            # is told the model may or may not have read it and it is not queued again.
+            if turn.turn_exit.unread_run and (
+                turn.needs_session_reset or turn.needs_conversation_discard
+            ):
+                _end_agent_run(
+                    state, slot, turn.turn_exit.unread_run, cause=SEND_DISCARD_CUT_OFF_RUN
+                )
+            turn.turn_exit.unread_run = None
+        _recovery_qid = slot.queue_insert(
+            index,
+            content,
+            kind=kind,
+            payload=payload,
+            # The turn's actor rides along with the admission stamp, and for the
+            # same reason: a recovery is a SECOND TURN OF THE SAME ACTOR, so
+            # letting it fall back to the default would record an autonudge's or a
+            # cron's retry as a user turn. The requeue is the only moment that
+            # actor is still known -- the drain sees a fresh queue id and, for a
+            # recovery, no kind that names a producer. The ORIGINAL-replay
+            # attachment lists merged above ride along in _recovery_meta.
+            meta={
+                **_recovery_meta,
+                **trace_workflows.recovery_meta(_recovery_turn_id),
+                TURN_ACTOR_META_KEY: _crew_log_actor,
+                _RECOVERY_TURN_META_KEY: _recovery_turn_id,
+            },
+            on_consumed=_on_consumed if not turn._consumed_reported else None,
+            on_irreversibly_consumed=(
+                _on_irreversibly_consumed if not turn._irreversible_consumption_reported else None
+            ),
+            directive_user_origin=_directive_user_origin,
+            directive_channel_origin=_directive_channel_origin,
+            directive_owner_origin=_recovery_owner_origin,
+        )
     # A recovery a Regenerate turn queues before it has any reply (a replay of
     # its message or a continuation) is the same Regenerate's next attempt: it
     # settles the previous reply, not this turn.
@@ -274,6 +301,135 @@ def _queue_recovery(
     # choke point does not ring "a chat stopped" while the chat continues.
     turn.died_notice = None
     return _recovery_qid
+
+
+def _requeue_agent_run(turn, index: int, entries: list[dict], *, retry: bool = True) -> str:
+    """Put a failed agent run's entries back at *index*, in order; the last one's id.
+
+    The run's turn failed before it landed (``_dequeue_agent_run``). Each entry goes
+    back with its own text, meta and origin flags, so every note keeps its sender
+    card and drop-notice address and every wake its nudge, and the containment sweep
+    judges each one again. Each names the row it already has (``AGENT_RUN_ROW_KEY``),
+    which the drain that runs it reuses. With *retry* each also names the retry it
+    belongs to (``AGENT_RUN_RETRY_KEY``), so the entries re-form this run alone and
+    the drain runs it as the turn's recovery. The retry is named by the returned id,
+    the one a replay family arms on: so the replay's record names every entry of the
+    run, not only its last (``recovery._replay_ids``). Without it they are queued
+    agents' rows again (``_settle_unread_run``).
+
+    Each entry goes back at most once (``AGENT_RUN_PUT_BACKS_META``, in the meta the
+    durable queue copy keeps): one already put back ends instead, and its sender is
+    told (``_end_agent_run``), so no run can go round the queue for ever. A run that
+    is not unread (ended, put back, or answered) is handed in as no entries
+    (``_queue_recovery``): nothing goes back, and the id is empty.
+    """
+    from kiro_crew.dashboard.chat_utils_injected_rows import (
+        AGENT_RUN_META,
+        AGENT_RUN_PUT_BACKS_META,
+        AGENT_RUN_RETRY_KEY,
+        AGENT_RUN_ROW_KEY,
+    )
+
+    slot = turn.slot
+    # Back on the queue: the turn's tail has no unread run left to settle.
+    turn.turn_exit.unread_run = None
+    again = [e for e in entries if (e.get("meta") or {}).get(AGENT_RUN_PUT_BACKS_META)]
+    if again:
+        _end_agent_run(turn.state, slot, again)
+        entries = [e for e in entries if not (e.get("meta") or {}).get(AGENT_RUN_PUT_BACKS_META)]
+    qid = ""
+    requeued_run: list[dict] = []
+    for offset, entry in enumerate(entries):
+        last = offset == len(entries) - 1
+        meta = {k: v for k, v in (entry.get("meta") or {}).items() if k != AGENT_RUN_META}
+        meta[AGENT_RUN_PUT_BACKS_META] = 1
+        qid = slot.queue_insert(
+            index + offset,
+            entry["content"],
+            meta=meta,
+            on_consumed=turn._on_consumed if last and not turn._consumed_reported else None,
+            on_irreversibly_consumed=(
+                turn._on_irreversibly_consumed
+                if last and not turn._irreversible_consumption_reported
+                else None
+            ),
+            directive_user_origin=entry.get("_directive_user_origin") is True,
+            directive_channel_origin=entry.get("_directive_channel_origin") is True,
+            directive_owner_origin=entry.get("_directive_owner_origin") is True,
+        )
+        requeued = next(item for item in slot._queue if item.get("id") == qid)
+        requeued[AGENT_RUN_ROW_KEY] = entry.get(AGENT_RUN_ROW_KEY)
+        if entry.get(_RECOVERED_WAKE_KEY):
+            requeued[_RECOVERED_WAKE_KEY] = entry[_RECOVERED_WAKE_KEY]
+        requeued_run.append(requeued)
+    for requeued in requeued_run if retry else ():
+        requeued[AGENT_RUN_RETRY_KEY] = qid
+    if not qid:
+        # Nothing went back, so no retry turn lands to reset the ladder: the next
+        # turn starts at its foot.
+        slot._empty_response_retries = 0
+        slot._session_not_found_retry_used = False
+    return qid
+
+
+def _settle_unread_run(state, slot, turn_exit) -> None:
+    """Settle an agent run its turn ended without the model starting to answer.
+
+    Every exit of a run's turn comes here once (``_end_turn_tail``), and one rule
+    settles it: the run goes back on the queue at most once (``_requeue_agent_run``),
+    and every other ending tells each sender and consumes the notes
+    (``_end_agent_run``). It goes back, behind the owner's entries
+    (``after_owner_front``), when something took the turn over: it never reached its
+    ``try``, a Stop was pressed, or a person's message, a pending steer or another
+    session's note is waiting. It ends when the turn was never admitted (a refused
+    or expired admission, or an exit while admission waited), when the model
+    refused it, and when the turn failed on its own, which a retry would repeat. A
+    hard Stop ends it with the queue it clears (``turn_stop``), so nothing is left.
+    """
+    entries, turn = turn_exit.unread_run, turn_exit.run_turn
+    turn_exit.unread_run = None
+    if not entries:
+        return
+    # The refusal is read without the turn's unbound-local guard: an exit above its
+    # main ``try`` never bound it.
+    if (
+        turn is not None
+        and vars(turn).get("_turn_refusal") is None
+        and (
+            turn_exit.outcome is None
+            or _stop_pressed(turn)
+            or _has_user_queued_followup(slot)
+            or getattr(slot, "_pending_steers", None)
+        )
+    ):
+        _requeue_agent_run(turn, after_owner_front(slot._queue), entries, retry=False)
+        return
+    _end_agent_run(state, slot, entries)
+
+
+def _end_agent_run(state, slot, entries: list[dict], *, cause: str = "") -> None:
+    """Consume an agent run's entries no turn answered, and tell each sender.
+
+    The one owner of a run's last ending (``_settle_unread_run``): a second ending
+    before the model answered, a refusal, an admission that never let the turn run,
+    a failure a retry would repeat, a hard Stop (``turn_stop``, with *cause*), and a
+    continuation on a reset session (``_queue_recovery``, with *cause*).
+    None of them is queued again; their receipts went when the drain took them.
+    """
+    # circular import: session_control imports this package's modules at module level.
+    from kiro_crew.dashboard.session_control import (
+        SEND_DISCARD_UNREAD_RUN,
+        notify_send_origin_discarded,
+    )
+
+    for entry in entries:
+        notify_send_origin_discarded(
+            state,
+            entry_meta=entry.get("meta"),
+            target_slot=slot,
+            text=entry.get("content") or "",
+            cause=cause or SEND_DISCARD_UNREAD_RUN,
+        )
 
 
 def _replay_owes_delivery(turn) -> bool:

@@ -768,6 +768,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         USAGE_LIMIT_KIND,
         WORKFLOW_FOLLOWUP_KIND,
         RecoveryPayload,
+        _dequeue_agent_run,
         _dequeue_next_message,
         _dequeue_next_system_message,
         _edit_queued_by_id,

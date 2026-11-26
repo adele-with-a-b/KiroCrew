@@ -597,12 +597,19 @@ async def stop_slot_turn(
         # acknowledged as queued; a clear after the await would discard it with
         # nothing settled and nothing said. The kill discards what was queued
         # when it was pressed, and a later send stays queued for the next turn.
+        # The running turn's agent run the model has not started to answer is
+        # queued work too (``_TurnExit.unread_run``): it ends with the queue below,
+        # so its tail has nothing to put back.
+        _preparing = getattr(slot, "_preparing_turn", None)
+        _unread_run = list(getattr(_preparing, "unread_run", None) or [])
+        if _preparing is not None and _unread_run:
+            _preparing.unread_run = None
         discarded = list(slot._queue)
         # A discarded peer note must not be provable after a restart: its receipt
         # goes before the queue is emptied.
         from kiro_crew.dashboard import peer_note_receipts
 
-        peer_note_receipts.forget_entries(discarded)
+        peer_note_receipts.forget_entries([*discarded, *_unread_run])
         slot._queue.clear()
         # A drop reported while the settle below suspends must find no take-back,
         # or Queue instead would queue text this kill already discarded.
@@ -628,10 +635,13 @@ async def stop_slot_turn(
                 text=_entry.get("content") or "",
                 cause=SEND_DISCARD_HARD_STOP,
             )
+        from kiro_crew.dashboard.chat_runner import _end_agent_run
+
+        _end_agent_run(state, slot, _unread_run, cause=SEND_DISCARD_HARD_STOP)
         await _settle_discarded_stage_deliveries(
             state,
             slot,
-            [str(entry.get("content", "")) for entry in discarded],
+            [str(entry.get("content", "")) for entry in [*discarded, *_unread_run]],
         )
         # Hard kill = "discard everything": drop unconsumed steers too, so the
         # end-of-turn requeue (`_hand_off_queue` in chat_turn/queue_cycle.py) has
