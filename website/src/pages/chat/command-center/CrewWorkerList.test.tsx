@@ -497,13 +497,17 @@ describe('Conductor mode Crew tab', () => {
     expect(row).not.toHaveTextContent(/\bnow\b/)
   })
 
-  it('Board: a blocked milestone opens its crew member, and shows no "moving" pulse', async () => {
+  it('Board: a blocked milestone opens its story view, its crew member one press away, and shows no "moving" pulse', async () => {
     api.crewWorkers.mockResolvedValue({ ...WORKERS, workers: [{ ...W('w-sup', 'Supplies', 'idle', 'waiting'), ledger_item: 'b1' }] })
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'b1', title: 'Supplies list', status: 'blocked' })] })
+    api.crewBoardTimeline.mockResolvedValue({ read_at: '2026-10-30T12:00:00Z', since: '2026-10-30T00:00:00Z', hours: 12, events: {} })
     const store = renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
     const open = within(await screen.findByTestId('board-story')).getByRole('button', { name: 'Supplies list' })
     expect(screen.queryByTestId('conductor-mode-pulse')).toBeNull()
     fireEvent.click(open)
+    expect(await screen.findByTestId('board-story-view')).toHaveAttribute('data-item', 'b1')
+    expect(store.getState().chat.activeSlot).not.toBe('w-sup')
+    fireEvent.click(screen.getByRole('button', { name: 'Open the chat' }))
     expect(store.getState().chat.activeSlot).toBe('w-sup')
   })
 
