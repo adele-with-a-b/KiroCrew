@@ -26,6 +26,7 @@ import { setActiveSlot, clearMessages, resolveQuestionCard } from '../store/chat
 import { markSlotRead, remoteSlotRead, sseSlots } from '../store/dashboardSlice'
 import { _resetSlotReadRelayForTest, emitSlotRead } from '../lib/slotReadRelay'
 import {
+  TEXT_AFTER_QUIET_END_NOTICE,
   UNREAD_ON_ATTENTION_KEY, _resetMemberThreadTurnsForTest, chatMessageMarksUnread, isMemberThreadSlot,
   loadUnreadOnAttention, memberThreadRowMarksUnread, noteMemberThreadRow, takeMemberThreadSpoke, unreadWatermarkTs,
 } from '../hooks/unreadOnAttention'
@@ -212,6 +213,23 @@ describe('unread badge over the dashboard socket', () => {
     expect(unread()).not.toContain(BACKGROUND)
   })
 
+  // The folded row that keeps text a turn wrote after its quiet end
+  // (`dashboard/chat_turn/stream_chunks.py`), as the gateway sends it.
+  const lateText = (slot: string) => ({ type: 'chat_message', data: {
+    slot, role: 'notice', ts: '2026-09-28T00:00:00Z', cls: 'msg msg-info',
+    content: 'CI is green again.', meta: { notice: TEXT_AFTER_QUIET_END_NOTICE, mid: 'm-late' },
+  } })
+
+  it.each([false, true])('text kept after a quiet end leaves a background session unbadged (opt-in %s)', (optIn) => {
+    if (optIn) localStorage.setItem(UNREAD_ON_ATTENTION_KEY, '1')
+    const ws = mount()
+    send(ws, lateText(BACKGROUND))
+    expect(unread()).not.toContain(BACKGROUND)
+    // Any other notice badges by the ordinary rule.
+    send(ws, { ...lateText(BACKGROUND), data: { ...lateText(BACKGROUND).data, meta: { mid: 'm-other' } } })
+    expect(unread().includes(BACKGROUND)).toBe(!optIn)
+  })
+
   it('off: a question card and an approval add no badge of their own', () => {
     const ws = mount()
     send(ws, { type: 'question_card', data: { slot: BACKGROUND, ask_id: 'a1', questions: [{ question: 'Ship?', options: [{ label: 'Yes' }] }] } })
@@ -314,6 +332,16 @@ describe('unread badge over the dashboard socket', () => {
     } })
     expect(unread()).not.toContain(MEMBER)
     send(ws, row('tool_call', MEMBER))
+    send(ws, memberDone)
+    expect(unread()).not.toContain(MEMBER)
+  })
+
+  it('member thread: text kept after a quiet end badges nothing, nor does the quiet chat_done', () => {
+    const ws = mount()
+    globalStore.dispatch(sseSlots([{ key: MEMBER, messages: 1, running: true, mode: 'member', agent: 'ada' }]))
+    send(ws, row('tool_call', MEMBER))
+    send(ws, lateText(MEMBER))
+    expect(unread()).not.toContain(MEMBER)
     send(ws, memberDone)
     expect(unread()).not.toContain(MEMBER)
   })

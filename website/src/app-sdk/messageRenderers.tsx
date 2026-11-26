@@ -63,6 +63,7 @@ import { turnHadPolicyBlock } from './turnPolicyBlock'
 import { useLanguageGeneration } from '../i18n/useLanguageGeneration'
 import { isRejectedDecision } from '../utils/approvalDecision'
 import { useReportRowActive } from '../pages/chat/rowActivity'
+import { TEXT_AFTER_QUIET_END_NOTICE } from '../hooks/unreadOnAttention'
 
 // Lazy: only a KAS session with a folder agent's hooks ever draws this row, so it
 // stays out of the App chunk (Bundle Size Gate).
@@ -875,6 +876,28 @@ export const defaultMessageRenderers: readonly MessageRenderer[] = [
         </Suspense>,
       )
     },
+  },
+  {
+    // Text a turn wrote after it ended quietly (`nothing_to_do`): one line, and the
+    // text in a closed fold, so it is kept without reading as the turn's reply.
+    // Plain text, never rendered markdown: nothing in it runs or loads.
+    id: 'text_after_quiet_end',
+    roles: ['notice'],
+    match: m => m.meta?.notice === TEXT_AFTER_QUIET_END_NOTICE,
+    render: (m, ctx) => ctx.row(
+      <NoticeCard
+        content=""
+        tone="info"
+        body={
+          <details data-testid="text-after-quiet-end">
+            <summary className="cursor-pointer underline underline-offset-2 hover:text-text">
+              {i18nT('pages.chat.noticeCard.text_after_quiet_end')}
+            </summary>
+            <div className="mt-1 text-text">{m.content}</div>
+          </details>
+        }
+      />,
+    ),
   },
   {
     id: 'notice',

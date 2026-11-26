@@ -13353,6 +13353,7 @@
       },
       "noticeCard": {
         "blocked": "Bloqueado",
+        "text_after_quiet_end": "O que o agente escreveu depois de terminar em silêncio",
         "warning": "Aviso"
       },
       "crewDispatchNotice": {

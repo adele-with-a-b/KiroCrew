@@ -7374,6 +7374,7 @@
       },
       "noticeCard": {
         "blocked": "Blocked",
+        "text_after_quiet_end": "What the agent wrote after ending quietly",
         "warning": "Warning"
       },
       "crewDispatchNotice": {

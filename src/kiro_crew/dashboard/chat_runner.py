@@ -267,6 +267,7 @@ from kiro_crew.dashboard.chat_turn.stop_recovery import (
     _turn_stop_recovery,
 )
 from kiro_crew.dashboard.chat_turn.stream_chunks import (
+    _keep_text_after_quiet_end,
     _on_reply_end,
     _on_text_chunk,
     _on_thinking_chunk,
@@ -1514,6 +1515,8 @@ async def _run_chat(
         await _turn_record_outcome(turn)
         # A notice still held here is one an early exit left behind.
         _finish_harness_notices(turn)
+        # So is text held after a quiet end: an early exit keeps it too.
+        _keep_text_after_quiet_end(turn)
         # The engine's fallback walk, said once whatever path ended the turn.
         _engine_fallback.finish_engine_fallback(
             slot,

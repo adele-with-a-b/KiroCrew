@@ -1774,28 +1774,47 @@ against sweep completeness, and are torn down at `close_all`.
   privacy-safe WARNING (`Turn-end contract violation`, counts and the directive
   kind only); it does not fail the turn and does not re-arm recovery, because
   re-arming would turn the quiet end the model asked for into a notice card.
-  Late TEXT is dropped at arrival: not accumulated, not streamed as a
-  `chat_chunk`, not persisted as an assistant row, so a quiet end renders no
-  assistant bubble whatever the model goes on to say. The field source of such
-  text is not the model's own words: a quiet end leaves the backend's history
-  ending on a tool result, the backend's alternation repair fabricates a
-  self-describing assistant placeholder (`(No assistant response was
-  recorded...)`) to fill that gap on the next request, and the model reads it
-  back as its own prior reply and repeats it after each later quiet end — one
-  grey bubble per patrol cycle. The drop keys on the structured `ends_turn`
-  signal, never on the placeholder's wording. Late text that arrives while a
-  person's steer is still pending (`slot._pending_steers`) may be their answer,
-  so it is held instead: the backend's consumption echo releases it as the
-  reply, and every later chunk is kept (codex echoes only at the terminal, so
-  there the reply appears at the turn's end instead of streaming); a turn that
-  ends without that echo requeues the steer as its own turn, which answers it,
-  so the held text stays dropped and counted. Tool calls are never held: the
-  text held so far goes out just before the next tool call renders
-  (`_release_held_text(before_tool=True)`), so the transcript keeps the model's
-  order. Text written before a tool call is the model's work, not the
-  placeholder, so it is kept even when the echo never comes; only text with no
-  tool call after it is dropped. That is a known trade-off: a turn whose steer
-  is requeued keeps the text it wrote before a tool call.
+  Late TEXT is held at arrival (`turn._held_after_terminal`): not accumulated,
+  not streamed as a `chat_chunk`, never an assistant row, so a quiet end
+  renders no assistant bubble whatever the model goes on to say. The common
+  field source of such text is not the model's own words: a quiet end leaves
+  the backend's history ending on a tool result, the backend's alternation
+  repair fabricates a self-describing assistant placeholder (`(No assistant
+  response was recorded...)`) to fill that gap on the next request, and the
+  model reads it back as its own prior reply and repeats it after each later
+  quiet end. But it can also be a real answer the person would otherwise never
+  see, so it is not dropped. Text no person's steer was pending for is saved
+  as ONE `notice` row (`stream_chunks._keep_text_after_quiet_end`,
+  `meta.notice = "text_after_quiet_end"`, a marker like the compaction cards',
+  not a gateway-notice token) where its run ends: the next tool call, a
+  person's steer becoming pending, that steer's echo, or the turn's end, an
+  early exit included. Its `content` is the held chunks joined and redacted as
+  one text by the segment's credential pass (`_redact_segment_text`), so a
+  credential cut across two chunks is whole when the redactor reads it. The
+  dashboard draws it as one line with the text in a closed fold that one click
+  opens (`messageRenderers` `text_after_quiet_end`: plain text, never rendered
+  markdown), a collapsed turn keeps it in view as the turn's outcome, and the
+  unread rule never badges it (`unreadOnAttention.TEXT_AFTER_QUIET_END_NOTICE`).
+  It is not the turn's reply: `quiet_end` stays True, so a Bot's worker files no
+  report and nothing wakes, no mirror posts it, the empty-response ladder stays
+  off, and the turn-end WARNING still counts the chunks. The Bot chat draws no
+  notice row, this one included; the chat's Sessions view does. The hold keys
+  on the structured `ends_turn` signal, never on the placeholder's wording.
+  Late text that arrives while a person's steer is still pending
+  (`slot._pending_steers`) may be their answer, so it is held for that steer
+  instead (`turn._held_for_steer`): the text held before the steer went
+  pending is kept as its notice first, the backend's consumption echo
+  releases the rest as the reply, and every later chunk is kept (codex echoes
+  only at the terminal, so there the reply appears at the turn's end instead of
+  streaming); a turn that ends without that echo requeues the steer as its own
+  turn, which answers it, so the text held for it stays dropped and counted.
+  Tool calls are never held: the text held so far goes out just before the
+  next tool call renders (`_release_held_text(before_tool=True)`), streamed when
+  held for a steer and as its notice otherwise, so the transcript keeps the
+  model's order. Text written before a tool call is the model's work, not the
+  placeholder, so it is kept even when the echo never comes; only text held for
+  a steer with no tool call after it is dropped. That is a known trade-off: a
+  turn whose steer is requeued keeps the text it wrote before a tool call.
   **Who may end quietly.** The applier's one gate is who opened the turn: a
   monitor wake (`_directive_self_wake`) or a headless producer (cron, crew, app,
   task runner — `_directive_user_origin` False) may; a turn a person opened

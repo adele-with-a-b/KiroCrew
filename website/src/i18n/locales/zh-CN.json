@@ -12771,6 +12771,7 @@
       },
       "noticeCard": {
         "blocked": "已拦截",
+        "text_after_quiet_end": "代理静默结束后写下的内容",
         "warning": "警告"
       },
       "crewDispatchNotice": {

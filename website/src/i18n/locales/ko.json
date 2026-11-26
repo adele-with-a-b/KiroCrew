@@ -12771,6 +12771,7 @@
       },
       "noticeCard": {
         "blocked": "차단됨",
+        "text_after_quiet_end": "조용히 끝낸 뒤 에이전트가 쓴 내용",
         "warning": "경고"
       },
       "crewDispatchNotice": {
