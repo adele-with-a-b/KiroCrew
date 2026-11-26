@@ -1,13 +1,22 @@
-"""Resume the chats a planned in-app restart cut off.
+"""Resume the chats a restart or a stop from outside cut off.
 
 Every planned restart (the dashboard's ``_restart_gateway`` for Restart and
 update apply, the gateway's update restart, the Slack ``/kirocrew restart``)
 records the chats with a running turn (:func:`record_running_slots`) just
-before its ``close_all()`` cuts them. The next dashboard boot takes that record once, deleting it before
-it acts (:func:`take_intent`), and resumes those chats through the Resume-all
-run (``chat_resume_all.start_resume_all``), so its bound on concurrent turns
-and every refusal it makes still apply. A crash writes no record: its chats
-keep the Resume button and wait for the owner.
+before its ``close_all()`` cuts them. So does the gateway's graceful
+``_shutdown`` (``slack/gateway_runtime/exit_path.py``), which every stop from
+outside reaches: a SIGTERM from an install's ``launchctl kickstart -k`` or a
+service manager, ``kirocrew stop``, Ctrl-C. The next dashboard boot takes that
+record once, deleting it before it acts (:func:`take_intent`), and resumes those
+chats through the Resume-all run (``chat_resume_all.start_resume_all``), so its
+bound on concurrent turns and every refusal it makes still apply. An explicit
+stop (``kirocrew stop``, the desktop app's Quit, Ctrl-C) is the owner ending Kiro
+Crew, the stop ``kept_trust`` marks: its ``_shutdown`` sees the mark (without
+taking it) and writes no record, removing an older one, so even a boot that dies
+before it takes the record cannot resume those chats; and a boot that finds a
+record after one still drops it and resumes nothing. A crash (a hard kill, a power loss, an exception that never
+reaches ``_shutdown``) writes no record: its chats keep the Resume button and
+wait for the owner.
 """
 
 from __future__ import annotations
@@ -49,7 +58,7 @@ def write_intent(names: list[str]) -> None:
 
 
 async def record_running_slots(state: DashboardState | None) -> None:
-    """Record the chats a planned restart is about to cut. Call right before ``close_all()``.
+    """Record the chats a restart or stop is about to cut. Call before ``close_all()``.
 
     A slot counts when it carries the turn-in-flight marker, which is what the
     next boot's reconcile turns into the interruption row this record resumes.
@@ -90,6 +99,16 @@ async def resume_after_restart(state: DashboardState) -> None:
     try:
         names = await asyncio.to_thread(take_intent)
         if not names:
+            return
+        from kiro_crew import kept_trust
+
+        # An explicit stop is the owner ending Kiro Crew: its chats stay as they
+        # are, with the Resume button. The record is already deleted above.
+        if await asyncio.to_thread(kept_trust.take_owner_stop):
+            logger.info(
+                "Resume after restart: %d chat(s) recorded, none resumed (an owner stop)",
+                len(names),
+            )
             return
         from kiro_crew.dashboard.chat_resume_all import start_resume_all
 
