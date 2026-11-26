@@ -2245,7 +2245,13 @@ The owners, lowest layer first:
   the tail bound and is recomputed every pass. Each pass logs its hit and miss
   counts per memo at debug level. `test_slot_row_memo.py` pins byte-identical
   frames across a sequence of mutations, the tail and text bounds, and that a
-  warm pass recomputes no summary, link row or redaction.
+  warm pass recomputes no summary, link row or redaction. The summary also holds
+  what the newest reply asks (`reply_ask`, for `needs_you`) and how many rows
+  follow it; who started that reply's turn is read outside the memo, only while
+  the ask is open, so the scan still stops at the reply.
+- `dashboard/needs_you.py` — each row's `needs_you` summary of what waits on the
+  owner, and `settle_crew_rows`, the Crew Mode step `serialize_slots` runs after
+  the crew stamps (the rule: [session](session.md#needs-you-what-a-chat-waits-on-its-owner-for)).
 - `state_parts/chat_slot.py` — the `_ChatSlot` class itself (see above).
 - `state_parts/dashboard_services.py` — the services `DashboardState` hosts: the lazy
   coordinator accessors, the background-turn budget, approvals and questions,

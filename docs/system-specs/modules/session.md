@@ -155,6 +155,62 @@ history-cache owners are listed in
 sub-agent and MCP App state in [side](side.md), [subagent](subagent.md) and
 [mcp-apps](mcp-apps.md).
 
+## Needs you: what a chat waits on its owner for
+
+Every `slots` row carries `needs_you`, projected by `SlotProjection.to_dict`
+beside `pending_approval`, `needs_input` and `has_options`, so it rides the same
+frames and `slots_diff` deltas the sidebar already applies; no route or poll is
+added, and the client counts the waiting chats from the list. The value is
+`null` when nothing in the chat waits on the owner, else
+`{count, oldest_ts, first_words, row_id, kinds}`: the number of open asks, the
+epoch seconds at which the oldest began, that ask's first words (markdown
+stripped, then redacted with the display battery, then cut to 80 characters
+with `…`; `""` when the ask has none), the `meta.mid` of the transcript row
+holding it (`null` for a question card, a coordinator approval, or an approval
+shown on another chat's row), and the open kinds in the order `approval`,
+`question`, `options`, `labelled`. `dashboard/needs_you.py` owns the rule:
+
+| Kind | Counts while | Clears when |
+|---|---|---|
+| `approval` | a tool approval is pending: one per live slot future (matched to its permission row for time, words and row) and per live coordinator record | it is decided, expires or is withdrawn |
+| `question` | a question card is open (`_question_pending`, the record `needs_input` reads); the words are its first question, which a blocking ask's record now carries too | it is answered, dismissed or withdrawn |
+| `options` | the newest finished reply ends in an `[OPTIONS: ...]` line | the owner's next message, or any newer reply |
+| `labelled` | the newest finished reply has lines that open (after list, heading or emphasis marks) with a question label: `Q`, digits and one lower-case letter in square brackets, such as `[Q7a]`; each distinct label is one ask | the owner's next message, or any newer reply |
+
+The two reply kinds follow the newest-reply-only decision
+([2026-09-13](../../decisions/2026-09-13-options-are-read-from-the-newest-reply-only.md)):
+only the newest assistant reply is read, never tool output, a user row, a quote
+or a fenced code block (found by the control-tag strip's walker,
+`constants._FenceWalk`, which also reads everything after a fence it cannot
+parse as code); a plain `?` counts nothing. A reply with labels and an
+options line counts its labels, since the choices answer them. They count only
+while no turn runs, the last turn was not interrupted, no goal-loop cycle ran
+past the reply, and the reply is inside `OPTIONS_WAITING_MAX_AGE_SECS`.
+
+**Asked of the owner.** A reply ask counts only when a person started the turn
+that wrote it: walking back from the reply, the first `user` row must carry
+`meta.human` (`history.HUMAN_TURN_META_KEY`, the allowlist marker the send
+paths a person reaches stamp). Rows the gateway writes itself (a nudge, an
+inject, a sub-agent event) carry that person's turn on; any other `user` row,
+such as another session's `session_send` relay, an app's send or a gateway
+wake, means the reply asked someone else. A person's row further back than
+`STARTER_SCAN_ROWS` rows reads as no person. A Crew Mode worker (a row with
+`crew_root`) never asks the person, since its questions go to its conductor:
+`needs_you.settle_crew_rows`, run in `serialize_slots` after
+`crew_mode.stamp_rows`, keeps only a worker's approvals and question cards, and
+while the worker's conductor is a row of the list it moves the approvals onto
+the conductor's row, the one card they are decided on. With its conductor
+closed, the worker's own row keeps them.
+
+`needs_you` is derived, never stored. A reply's labels and words are read
+inside the row summary (`slot_row_memo.summarize_rows`), memoized on the
+transcript tail, so an unchanged chat costs a compare; who started its turn is
+read only while its ask is open, outside the memo, so a long row before the
+reply does not push the summary past its bound. The rest reads the in-memory
+approval and question records the row already reads. After a gateway restart the value is
+what the restored transcript and state still ask; approvals and question cards
+that died with the old process are gone from it, as they are from the chat.
+
 ## Return-triggered warm task brief
 
 The owner-only `slot_focused` WebSocket frame also drives the warm task brief.
