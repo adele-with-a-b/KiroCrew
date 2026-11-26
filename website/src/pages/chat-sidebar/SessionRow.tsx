@@ -2,7 +2,7 @@
  *  ordered state resolver, the slot-scoped live state it subscribes to, its
  *  menus and its drag and keyboard gestures. The shell builds the row's `view`
  *  (./rows) and its one `actions` object; the row's memo compares both. */
-import { useRef, useEffect, memo, useMemo, useContext } from 'react'
+import { useRef, useEffect, useState, memo, useMemo, useContext } from 'react'
 import { motion } from 'framer-motion'
 import { X, Pin, VolumeX, EyeOff, VenetianMask, MoreVertical, CornerDownRight, Split, Loader, Loader2, Bot, ExternalLink, Workflow, TriangleAlert, Goal, MessageCircleQuestionMark, ShieldCheck, Hourglass, GripVertical, Moon, Zap } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -385,6 +385,8 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
     ? openedSessionRunning(st.dashboard.slots, s.key) : false)
   // Whether this chat waits on the person: the one rule every Needs-you surface reads.
   const needs = needsYouOf(s, crewWaiting)
+  // A Crew Mode root's open asks are what its crew summary line counts (CrewRootSummaryLine).
+  const [crewAsks, setCrewAsks] = useState(0)
   // This session's open ledger work, counted against the live rows: still moving,
   // gone quiet, or waiting on a person. Only rows that conduct a ledger scan.
   const crewWork = useAppSelector(st => s.crew_work && !s.running
@@ -1121,6 +1123,8 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
         role="img" aria-label={i18nT('pages.chatSidebar.agent_finished_your_turn')}
         title={i18nT('pages.chatSidebar.agent_finished_your_turn')} />
       : null
+    // What a waiting chat waits on, said where its status goes (a crew root's when its summary has nothing to say).
+    const needsLine = needs ? <NeedsYouLine needs={needs} lastMessage={s.last_message} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} /> : null
     // The row's tail line when no state claims it: the last message, led by the
     // unread dot. A crew card shows it too until its workers summary has an answer.
     const lastMessageLine = (s.last_message || unreadDot) ? (
@@ -1846,14 +1850,15 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
                 is unread with nothing said yet still renders the line, because the
                 dot IS the content then. A crew card's workers summary takes the
                 tail's place (ONE line); a search's snippet stands in for the tail. */}
-            {crewRoot && !needs
+            {crewRoot
               // A conductor mode row shows only what needs attention (counts in the tooltip), else the usual tail.
-              ? <CrewRootSummaryLine root={s.key} fallback={<SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={rowState ?? lastMessageLine} />} own={crewOwnState} work={s.crew_work} dot={unreadDot} lineCls={ROW_STATUS_LINE_CLS}
+              // Waiting too: its line counts every ask under it, the crew list's included.
+              ? <CrewRootSummaryLine root={s.key} fallback={<SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={needsLine ?? rowState ?? lastMessageLine} />} own={crewOwnState} work={s.crew_work} dot={unreadDot} lineCls={ROW_STATUS_LINE_CLS} onNeedsYou={setCrewAsks}
                   // What the main chat itself holds for the person: an approval, a question, a
                   // spawn approval, or an armed loop asking (a ledger item on the person is counted from `crew_work`).
                   rootOwes={s.pending_approval || s.needs_input || subagentAwaiting > 0 || (loopWaiting && !(crewWork?.person ?? 0)) ? 1 : 0} />
               // A chat that waits on the person says what for, above any other state.
-              : <SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={needs ? <NeedsYouLine needs={needs} lastMessage={s.last_message} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} /> : rowState ?? lastMessageLine} />}
+              : <SearchHitTail slot={s} preview={lastMessageLine} dot={unreadDot} tail={needsLine ?? rowState ?? lastMessageLine} />}
             {s.source_links && s.source_links.length > 0 && (
               <SessionSourceChips
                 slotKey={s.key}
@@ -1868,7 +1873,7 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
             {/* No tag chips here: every tag renders in the meta line above as
              *  tinted `· name` text. A chip row would print each tag twice. */}
           </div>
-          {needs && <NeedsYouSide needs={needs} />}
+          {needs && <NeedsYouSide needs={crewRoot && crewAsks > 0 ? { ...needs, count: crewAsks } : needs} />}
           {needs && <NeedsYouPulse needs={needs} />}
           {/* Under Manual an unpinned row wears a drag handle in its LEFT PAD,
            *  out of flow, so the agent name, title and status line stay on the

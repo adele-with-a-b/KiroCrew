@@ -226,4 +226,41 @@ describe('a code-channel crew', () => {
     expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('1')
     expect(selectChatsWaitingOnYou(makeStore(crew).getState())).toBe(1)
   })
+
+  it('draws the waiting worker of a sleeping conductor once, in the group', async () => {
+    // Quiet for eight days, the conductor sits in the shut dormant section, where the
+    // fold hides no worker: the waiting worker would be drawn loose in the list too.
+    const sleeping = crew.map(s => (s.key === 'lead' ? { ...s, last_ts: at(8 * 24 * 60) } : s)) as ChatSlot[]
+    const { container } = renderSidebar(sleeping)
+    await waitFor(() => expect(container.querySelector('[data-testid="needs-you-group-header"]')).toBeTruthy())
+    expect(rowOf(container, 'lead')).toHaveLength(0)
+    expect(rowOf(container, 'worker')).toHaveLength(1)
+    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key="worker"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="needs-you-group-header"]')?.getAttribute('aria-label')).toBe('Needs you: 1 chat waits on you')
+    expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('1')
+    expect(selectChatsWaitingOnYou(makeStore(sleeping).getState())).toBe(1)
+  })
+})
+
+describe('a Crew Mode root with two waits', () => {
+  // The root asks a question of its own while one of its crew members waits on a
+  // tool approval. The member is no row in the person's list; the root speaks for it.
+  const crew = [
+    { key: 'root', title: 'Release crew', running: false, messages: 4, agent: 'kirocrew-conductor', last_ts: at(6), crew_mode_root: true, needs_input: true },
+    { key: 'member', title: 'Release member', running: false, messages: 4, agent: 'kirocrew', last_ts: at(4), crew_root: 'root', created_by: 'root', pending_approval: true },
+    { key: 'trip', title: 'Trip planner', running: false, messages: 4, agent: 'kirocrew', last_message: 'Saved the plan', last_ts: at(8) },
+  ] as unknown as ChatSlot[]
+
+  it('counts both asks on the row, and one waiting chat in the group, the badge and the tab title', async () => {
+    const { container } = renderSidebar(crew)
+    await waitFor(() => expect(rowOf(container, 'root')).toHaveLength(1))
+    const root = rowOf(container, 'root')[0]
+    expect(within(root).getByTestId('crew-root-attention').textContent).toBe('2 need you')
+    await waitFor(() => expect(within(root).getByTestId('session-needs-you-count').getAttribute('aria-label')).toBe('2 open asks'))
+    expect(rowOf(container, 'member')).toHaveLength(0)
+    expect([...container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['root'])
+    expect(container.querySelector('[data-testid="needs-you-group-header"]')?.getAttribute('aria-label')).toBe('Needs you: 1 chat waits on you')
+    expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('1')
+    expect(selectChatsWaitingOnYou(makeStore(crew).getState())).toBe(1)
+  })
 })

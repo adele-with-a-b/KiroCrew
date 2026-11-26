@@ -82,11 +82,11 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
     subagentApprovalCounts, unfiledAboveFolders, ungroupedSlots: ungroupedAll, unreadSet, visibleRootFolders, pinnedBandCaption } = shell
   // The "Needs you" group draws on top of every list lane; an unfiled waiting chat is
   // drawn there instead of in the root bucket, a filed one in its folder as well, and a
-  // code-channel worker the root bucket folds stays folded under its conductor too.
+  // code-channel worker the root bucket's fold hides stays folded under its conductor too.
   const { renderNeedsGroup, withoutGroup } = createNeedsGroup(shell)
   const rootFoldsCrews = !(listNarrowed || slotFilter.trim() !== '')
   const keepShownWorker = (w: Slot) => isActiveRow(w) || pinned.has(w.key)
-  const ungroupedSlots = withoutGroup(ungroupedAll, rootFoldsCrews ? keepShownWorker : undefined)
+  const ungroupedSlots = withoutGroup(ungroupedAll)
   const flatRest = withoutGroup(flatSlots)
   // True while actively dragging a session that currently lives in a folder.
   // Used to reveal the empty-state drop placeholder inside the "No folder"
@@ -117,8 +117,10 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
   const renderRootBucketRows = (): React.ReactNode => {
     const rootSplit = splitStale(ungroupedSlots)
     // Slack code channel crews among the ungrouped rows fold
-    // under their conductor, as they do inside a folder.
-    const rootFold = foldCodeChannelCrews(ungroupedSlots, rootSplit.fresh, rootSplit.stale, {
+    // under their conductor, as they do inside a folder. The fold reads the whole
+    // membership, waiting workers included, so it alone decides which of them hide
+    // under a conductor; the rest are drawn in the "Needs you" group only.
+    const rootFold = foldCodeChannelCrews(ungroupedAll, rootSplit.fresh, rootSplit.stale, {
       narrowed: !rootFoldsCrews, expanded: conductorExpanded,
       keepShown: keepShownWorker,
       signals: crewSignalsFrom({ isRunning: sidebarRows.isRunning, subagentApprovalCounts, unreadSet }),

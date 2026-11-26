@@ -14,7 +14,6 @@ import { sessionRowIdentity } from './rowIdentity'
 import type { LaneRows } from './laneRows'
 import type { SidebarScope } from './scope'
 import { ListSectionHeading } from './kindSections'
-import { codeChannelCrews } from './codeChannelCrew'
 
 /** The group a lane draws on top, as the shell resolved it this render. */
 export interface NeedsGroup {
@@ -107,21 +106,10 @@ export function createNeedsGroup(shell: SidebarScope & LaneRows) {
     )
   }
   /** A lane's rows without the waiting ones, for the lanes that draw each chat once.
-   *  With `keepShown` (the list's fold rule, `foldCodeChannelCrews`), a waiting
-   *  code-channel worker whose conductor stays in the list stays in it too: the
-   *  fold hides it under that conductor, whose line speaks for it, while the group
-   *  draws it on top. A worker the fold keeps shown leaves, as any row does. */
-  const withoutGroup = (list: Slot[], keepShown?: (worker: Slot) => boolean): Slot[] => {
-    if (needsGroup.ids.size === 0) return list
-    const folded = new Set<string>()
-    if (keepShown) {
-      for (const [conductor, workers] of codeChannelCrews(list)) {
-        if (needsGroup.ids.has(conductor)) continue
-        for (const w of workers) if (!keepShown(w)) folded.add(sessionRowIdentity(w))
-      }
-    }
-    return list.filter(s => { const id = sessionRowIdentity(s); return !needsGroup.ids.has(id) || folded.has(id) })
-  }
+   *  Whether a waiting code-channel worker also hides under its conductor is the
+   *  fold's own call (`foldCodeChannelCrews`, handed the whole membership). */
+  const withoutGroup = (list: Slot[]): Slot[] =>
+    needsGroup.ids.size === 0 ? list : list.filter(s => !needsGroup.ids.has(sessionRowIdentity(s)))
   return { renderNeedsGroup, withoutGroup }
 }
 

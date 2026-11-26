@@ -260,7 +260,7 @@ describe('chat sidebar — conductor lane', () => {
       { key: 'k-w2', title: 'W2', messages: 0, running: false, pending_approval: true, modified: 2000, created_by: 'k-root', crew_root: 'k-root' },
       { key: 'k-plain', title: 'Plain chat', agent: 'kirocrew', messages: 1, running: false, modified: 1000 },
     ]
-    const { container, getAllByTestId } = renderSidebar(slots, [], null, {}, [], slots)
+    const { container, getByTestId, getAllByTestId } = renderSidebar(slots, [], null, {}, [], slots)
     const card = container.querySelector('[data-crew-root="true"]') as HTMLElement
     expect(card).toBeTruthy()
     // A plain session row: no tinted card frame.
@@ -278,17 +278,16 @@ describe('chat sidebar — conductor lane', () => {
     expect(bolt.getAttribute('width')).toBe('12')
     // The conductor's name is not shown: Crew Mode chooses it.
     expect(within(card).queryByText('kirocrew-conductor')).toBeNull()
-    // W2 waits on a tool approval, rolled onto the root: the root waits on the person,
-    // so its status line is the Needs-you line, which names the ask, in place of the
-    // crew summary. The session total is gone from the row.
+    // The server's groups, not a guess from the rows: W2 waits on an approval.
+    // Only what needs attention is drawn; the session total is gone from the row.
+    await waitFor(() => expect(getByTestId('crew-root-attention')).toHaveTextContent(/^1 needs you$/))
     const live = container.querySelector('[data-crew-root="true"]') as HTMLElement
-    expect(within(live).getByTestId('session-needs-you')).toHaveTextContent(/^Needs approval$/)
-    expect(within(live).getByTestId('session-needs-you-count')).toHaveTextContent(/^1$/)
-    expect(within(live).queryByTestId('crew-root-summary')).toBeNull()
     expect(within(live).queryByTestId('crew-root-counts')).toBeNull()
     expect(live.querySelector('.lucide-message-square')).toBeNull()
     expect(within(live).queryByTestId('crew-root-state')).toBeNull()
     expect(within(live).queryByTestId('crew-worker-stack')).toBeNull()
+    // The full counts stay in the tooltip.
+    expect(getByTestId('crew-root-attention')).toHaveAttribute('title', '2 sessions, 1 needs you, and 1 waiting')
     // Only the root wears the eyebrow.
     expect(getAllByTestId('crew-eyebrow')).toHaveLength(1)
     // An idle crew's tag stays still: motion on the list means work is running.
@@ -380,14 +379,15 @@ describe('chat sidebar — conductor lane', () => {
       { key: 'k-w4', title: 'W4', messages: 2, running: false, pending_approval: true, modified: 2700, created_by: 'k-root', crew_root: 'k-root' },
     ]
     const { getByTestId, queryByTestId } = renderSidebar(slots, [], null, {}, [], slots)
-    // W4's approval makes the root wait on the person: the Needs-you line outranks the
-    // running work, alone on the status line, with the approval's own glyph and one ask.
-    const line = getByTestId('session-needs-you')
-    expect(line).toHaveTextContent(/^Needs approval$/)
-    expect(line.querySelector('svg')?.getAttribute('class')).toContain('lucide-shield-check')
-    expect(line.className).toContain('text-needs')
-    expect(getByTestId('session-needs-you-count')).toHaveTextContent(/^1$/)
-    expect(queryByTestId('crew-root-attention')).toBeNull()
+    await waitFor(() => expect(getByTestId('crew-root-attention')).toHaveAttribute('title', '4 sessions, 1 needs you, 1 working, and 2 waiting'))
+    // Needs you first, then running; idle work is not drawn. Each glyph has its own shape.
+    const parts = within(getByTestId('crew-root-attention')).getAllByTestId('crew-root-count')
+    expect(parts.map(p => [p.getAttribute('data-bucket'), p.textContent, p.querySelector('svg')?.getAttribute('class')?.match(/lucide-(hand|circle|pause)\b/)?.[1]])).toEqual([
+      ['needs_you', '1 needs you', 'hand'], ['running', '1 running', 'circle'],
+    ])
+    expect(parts.map(p => p.querySelector('svg')?.getAttribute('width'))).toEqual(['11', '11'])
+    expect(parts[0].className).toContain('crew-tone-warn')
+    expect(parts[1].className).toContain('text-[var(--ok)]')
     expect(queryByTestId('crew-root-counts')).toBeNull()
   })
 
@@ -411,12 +411,10 @@ describe('chat sidebar — conductor lane', () => {
       return this.getAttribute('data-bucket') === 'running' ? 16 : 0
     })
     try {
-      // The needs-you part comes from a ledger item on the person: a crew member's tool
-      // approval would make the root wait, and its Needs-you line replaces the crew line.
       const slots = [
-        { key: 'k-root', title: 'Crew root', agent: 'kirocrew-conductor', messages: 1, running: false, modified: 4000, crew_mode_root: true,
-          crew_work: { open: 1, person: 1, items: [] } },
+        { key: 'k-root', title: 'Crew root', agent: 'kirocrew-conductor', messages: 1, running: false, modified: 4000, crew_mode_root: true },
         { key: 'k-w1', title: 'W1', messages: 2, running: true, modified: 3000, created_by: 'k-root', crew_root: 'k-root' },
+        { key: 'k-w2', title: 'W2', messages: 2, running: false, pending_approval: true, modified: 2900, created_by: 'k-root', crew_root: 'k-root' },
       ]
       const { findByTestId } = renderSidebar(slots, [], null, {}, [], slots)
       expect(await findByTestId('crew-root-hidden')).toHaveTextContent(/^…$/)
@@ -615,44 +613,37 @@ describe('chat sidebar — conductor lane', () => {
     // is built from the live rows alone and says nothing is wrong; the route is
     // not asked again.
     mocks.crewWorkersNotServed = true
-    // A running crew member, not one on an approval: that would make the root wait, and
-    // a waiting root draws its Needs-you line instead of the crew summary.
     const slots = [
       { key: 'k-root', title: 'Crew root', agent: 'kirocrew-conductor', messages: 1, running: false, modified: 4000, crew_mode_root: true, last_message: 'Dispatched two workers' },
-      { key: 'k-w1', title: 'W1', messages: 2, running: true, modified: 3000, created_by: 'k-root', crew_root: 'k-root' },
+      { key: 'k-w1', title: 'W1', messages: 2, running: false, modified: 3000, created_by: 'k-root', crew_root: 'k-root', pending_approval: true },
     ]
     const { qc } = renderSidebar(slots, [], null, {}, [], slots)
     await waitFor(() => expect(qc.getQueryState(['crew-workers', 'k-root'])?.status).toBe('error'))
     const summary = screen.getByTestId('crew-root-summary')
-    expect(summary).toHaveTextContent('1 running')
+    expect(summary).toHaveTextContent('1 needs you')
     expect(summary).not.toHaveTextContent('Could not load the crew.')
     expect(summary.querySelector('[role="alert"]')).toBeNull()
   })
 
-  it('a failed crew read never hides the row\'s own Needs you', async () => {
+  it('a failed crew read keeps the row\'s own Needs you beside the failure', async () => {
     mocks.crewWorkersFail = true
     const slots = [
       { key: 'k-root', title: 'Crew root', agent: 'kirocrew-conductor', messages: 1, running: false, needs_input: true, modified: 4000, crew_mode_root: true },
       { key: 'k-w1', title: 'W1', messages: 2, running: false, modified: 3000, created_by: 'k-root', crew_root: 'k-root' },
     ]
     renderSidebar(slots, [], null, {}, [], slots)
-    // The root's own question makes it wait: its Needs-you line names the ask, and no
-    // crew summary is drawn whose read could fail in front of it.
-    expect(screen.getByTestId('session-needs-you')).toHaveTextContent(/^Needs your answer$/)
-    await act(async () => { await new Promise(r => setTimeout(r, 0)) })
-    expect(screen.getByTestId('session-needs-you')).toHaveTextContent(/^Needs your answer$/)
-    expect(screen.queryByTestId('crew-root-summary')).toBeNull()
-    expect(screen.queryByText('Could not load the crew.')).toBeNull()
+    // The read settles on its failure; both are said together then.
+    await waitFor(() => {
+      expect(screen.getByTestId('crew-root-summary')).toHaveTextContent('Could not load the crew.')
+      expect(screen.getByTestId('crew-root-state')).toHaveTextContent(/^Needs you$/)
+    })
   })
 
   it('keeps a conductor mode row compact before it has any crew member', async () => {
     mocks.crewWorkersNotServed = true
     const slots = [{ key: 'k-root', title: 'Crew root', agent: 'kirocrew-conductor', messages: 1, running: false, needs_input: true, modified: 4000, crew_mode_root: true }]
     renderSidebar(slots, [], null, {}, [], slots)
-    // Its own question: one Needs-you line and one ask, with no crew counts.
-    expect(screen.getByTestId('session-needs-you')).toHaveTextContent(/^Needs your answer$/)
-    expect(screen.getByTestId('session-needs-you-count')).toHaveTextContent(/^1$/)
-    expect(screen.queryByTestId('session-needs-you-more')).toBeNull()
+    await waitFor(() => expect(screen.getByTestId('crew-root-attention')).toHaveTextContent(/^1 needs you$/))
     expect(screen.queryByTestId('crew-root-counts')).toBeNull()
   })
 
@@ -1438,20 +1429,18 @@ describe('chat sidebar — conductor lane', () => {
 
   it("carries a conductor mode worker's tool approval on its conductor's own summary once the worker leaves the lane", async () => {
     // With the list rule on, a worker is no row in the lane, so the collapsed
-    // root's needs-you badge cannot count it; the root itself waits on the
-    // approval (rolled onto it from the live rows this gateway stamps), so its
-    // Needs-you line says the ask. Red if the roll-up drops live rows.
+    // root's needs-you badge cannot count it; the root's crew summary does
+    // ("Approval needed · 1"), from the live rows this gateway stamps, so the ask
+    // is still said on the root. Red if the summary drops live rows.
     localStorage.setItem('mc-sidebar-lane', 'conductor')
     openAllBut('k-root')
-    const { container, queryByText } = renderSidebar([
+    const { getByTestId, queryByText } = renderSidebar([
       { key: 'k-root', title: 'Crew root', messages: 1, running: false, modified: 4000, crew_mode_root: true },
       { key: 'k-w1', title: 'W1', messages: 2, running: false, modified: 3000, parent: { slot: 'k-root', key: 'k-root' }, crew_root: 'k-root', pending_approval: true },
       { key: 'k-w2', title: 'W2', messages: 2, running: false, modified: 2000, parent: { slot: 'k-root', key: 'k-root' }, crew_root: 'k-root' },
     ])
     expect(queryByText('W1')).toBeNull()
-    const root = container.querySelector('[data-slot-key="k-root"]') as HTMLElement
-    expect(within(root).getByTestId('session-needs-you')).toHaveTextContent(/^Needs approval$/)
-    expect(within(root).getByTestId('session-needs-you-count')).toHaveTextContent(/^1$/)
+    await waitFor(() => expect(getByTestId('crew-root-summary')).toHaveTextContent('1 needs you'))
   })
 
   it('pairs each aggregate count with the glyph its children show, not a tint alone', () => {

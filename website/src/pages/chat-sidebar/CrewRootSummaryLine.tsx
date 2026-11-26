@@ -15,7 +15,7 @@ import { CrewStateWord, type CrewRowOwnState } from './CrewRowState'
 /** A conductor mode root's status line: "N needs you", "N stalled" (plus who
  *  stalled longest), "N running", or "Done" -- only what applies. With no crew
  *  and nothing owed it shows *fallback*, the row's usual line. */
-export function CrewRootSummaryLine({ root, fallback, own = null, work, rootOwes = 0, dot = null, lineCls }: {
+export function CrewRootSummaryLine({ root, fallback, own = null, work, rootOwes = 0, dot = null, lineCls, onNeedsYou }: {
   root: string; fallback: ReactNode; own?: CrewRowOwnState | null; /** The row's unread dot, kept in front of the status. */ dot?: ReactNode
   /** The root's ledger in brief (`crew_work`): what waits on a person, what stalled. */
   work?: CrewWorkFacts | null
@@ -23,6 +23,8 @@ export function CrewRootSummaryLine({ root, fallback, own = null, work, rootOwes
   rootOwes?: number
   /** The row's status-line classes, so this line sits on the row's type scale. */
   lineCls: string
+  /** Told this line's "needs you" count, so the row's open-asks count says the same number. */
+  onNeedsYou?: (count: number) => void
 }) {
   // The server's groups (the worker list API), so the row, the panel and the
   // breadcrumb agree. Only what needs attention is drawn (CrewRowAttention); the
@@ -56,6 +58,7 @@ export function CrewRootSummaryLine({ root, fallback, own = null, work, rootOwes
   })
   const longestSlot = useAppSelector(st => (longest?.worker ? st.dashboard.slots.find(x => x.key === longest.worker)?.title ?? '' : ''))
   const needsYou = crewNeedsYou(lastWorkers, stall.live ? stall.live.split(' ') : [], stall.person, work?.person_workers) + rootOwes
+  useEffect(() => { onNeedsYou?.(needsYou) }, [onNeedsYou, needsYou])
   const member = longest ? lastWorkers?.find(w => w.key === longest.worker) : undefined
   const stalledForMs = longest ? Date.now() - longest.since : 0
   const stalledName = member?.title || member?.agent || longestSlot || i18nT('commandCenter.worker_untitled')
