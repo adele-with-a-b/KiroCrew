@@ -934,6 +934,12 @@ export default [
               // is protocol the model reads, not copy. Its open marker already
               // matches the em-dash shape above.
               '^\\[END KNOWLEDGE CONTEXT\\]$',
+              // The standing-manager title mark (`MANAGER_TITLE_MARK` in
+              // `lib/boardMoves.ts`), enumerated for the same closed-set reason.
+              // It is matched with `startsWith` against a chat's sidebar title,
+              // which a Conductor writes, and the code never renders it. A
+              // translated mark would stop matching those titles in that locale.
+              '^Manager:$',
               // NOTE ON SHAPE: the plugin wraps every pattern as `^<pattern>$`
               // (`generateFullMatchRegExp`), so a pattern must describe the WHOLE
               // string. A prefix-only pattern like `^data:` becomes `^^data:$` and can
