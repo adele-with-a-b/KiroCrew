@@ -24,6 +24,12 @@ the only thing that ever covered a worker whose process died with its slot still
 A close carried no statement either, so it went with the turn end rather than keeping a
 second gate that would have to stay in step with this one.
 
+THE ONE TURN-END PUSH THAT STAYS (:func:`wake_for_idle_worker`) is not a turn end
+waking anyone. A run that ends with no waking report arms its conductor's tick one idle
+threshold later, and that tick's probe wakes only if ``work_ledger.idle_spell`` still
+reads the worker idle with nothing to wake it (``reason=worker_idle``). The patrol tick
+alone found such a worker minutes late, and only once per report; the owner had to nudge.
+
 A FURTHER TRIGGER IS STILL LIKELY (an item's acceptance promoted by a human, say), and
 this module is where it goes: finding the conductor's loop, checking it is the right kind
 and still active, and firing it is the part no trigger should own a copy of.
@@ -938,8 +944,14 @@ def work_ledger_loop_id(svc: Any, conductor_slot_key: str) -> str:
     return str(getattr(loop, "id", "") or "")
 
 
-async def _fire(svc: Any, conductor_slot_key: str, item_id: str = "") -> str:
+async def _fire(
+    svc: Any, conductor_slot_key: str, item_id: str = "", *, budget_key: str = ""
+) -> str:
     """Fire *conductor_slot_key*'s work-ledger loop for *item_id*. The loop id, or ``""``.
+
+    *budget_key* names the hourly budget the push spends, *item_id* by default: the
+    idle push spends its own (``idle:<item>``), so a worker with many short turns
+    cannot spend the budget its ``done`` report's push needs.
 
     THE BATCH. The first report arms a tick one window ahead (:func:`wake_batch_secs`)
     rather than at once; a report that arrives while that window is still open rides the
@@ -961,7 +973,7 @@ async def _fire(svc: Any, conductor_slot_key: str, item_id: str = "") -> str:
     loop_id = work_ledger_loop_id(svc, conductor_slot_key)
     if not loop_id:
         return ""
-    if not _admit(svc, loop_id, item_id, time.time()):
+    if not _admit(svc, loop_id, budget_key or item_id, time.time()):
         return ""
     window = wake_batch_secs()
     if _registry.reports_alone(conductor_slot_key, item_id):
@@ -1065,6 +1077,83 @@ def wake_for_unconfirmed_note(worker_slot_key: str, sender_slot_key: str) -> "An
     except Exception:  # noqa: BLE001 - a push must never reach the worker's teardown
         logger.debug("conductor wake: could not schedule an unconfirmed-note push")
         return None
+
+
+#: Seconds past ``work_ledger.IDLE_WAKE_SECS`` the idle push waits, so the tick it arms
+#: reads a spell that has crossed the threshold rather than one a moment short of it.
+_IDLE_PUSH_SLACK_SECS = 5.0
+
+#: The wait the idle push takes; a test replaces it so no test sleeps.
+_idle_wait = asyncio.sleep
+
+
+def wake_for_idle_worker(worker_slot_key: str, *, now: "float | None" = None) -> "Any | None":
+    """Pull the conductor's tick forward one idle threshold after its worker's run ended
+    without a report that wakes it. The scheduled future, or ``None``.
+
+    The fourth trigger, and the one the turn-end paragraph above leaves room for: it
+    wakes nobody by itself. It only moves the tick that reads the ledger to just past
+    ``work_ledger.IDLE_WAKE_SECS``, and that tick's probe decides from
+    ``work_ledger.idle_spell`` -- the same rule the Board's Quiet reads -- whether the
+    worker is still idle with nothing to wake it. Without the push, the patrol cadence
+    (minutes) is the latency. Nothing is armed when the item would not read idle a
+    threshold from now even if nothing changed (closed, a ``done``/``question``/
+    ``blocked`` report, unbound, remote): those have their own push or none is owed.
+    It spends its own hourly budget (``idle:<item>``), never the item's report budget.
+
+    Blocking file reads (the binding and the item): call it off the event loop. Never
+    raises.
+    """
+    try:
+        from kiro_crew import autonudge, work_ledger
+        from kiro_crew.session_ledger import ledger_key
+
+        binding = work_ledger.read_binding(ledger_key(worker_slot_key))
+        if binding is None:
+            return None
+        conductor_slot_key, item_id = binding
+        item = work_ledger.read_work_item(conductor_slot_key, item_id)
+        if item is None or ledger_key(item.worker_session_key or "") != ledger_key(worker_slot_key):
+            return None
+        from datetime import datetime, timezone
+
+        ended = time.time() if now is None else float(now)
+        delay = work_ledger.IDLE_WAKE_SECS + _IDLE_PUSH_SLACK_SECS
+        then = datetime.fromtimestamp(ended + delay, tz=timezone.utc)
+        if (
+            work_ledger.idle_spell(item, worker_running=False, worker_idle_since=ended, now=then)
+            is None
+        ):
+            return None
+        svc = autonudge.get_instance()
+        if svc is None:
+            return None
+        running = _service_loop(svc)
+        if running is None:
+            return None
+        return asyncio.run_coroutine_threadsafe(
+            _fire_when_idle(svc, worker_slot_key, conductor_slot_key, item_id, delay), running
+        )
+    except Exception:  # noqa: BLE001 - a push must never reach the worker's turn end
+        logger.debug("conductor wake: could not schedule an idle-worker push")
+        return None
+
+
+async def _fire_when_idle(
+    svc: Any, worker_slot_key: str, conductor_slot_key: str, item_id: str, delay: float
+) -> str:
+    """Wait *delay*, then fire the conductor's loop if its worker is still idle.
+
+    A worker that started a turn again in the wait reads as not idle and costs no tick:
+    that turn's own end arms the next push.
+    """
+    from kiro_crew import work_ledger
+
+    await _idle_wait(delay)
+    idle_since = svc._worker_idle_since(worker_slot_key)
+    if idle_since is None or time.time() - idle_since < work_ledger.IDLE_WAKE_SECS:
+        return ""
+    return await _fire(svc, conductor_slot_key, item_id, budget_key=f"idle:{item_id}")
 
 
 def _service_loop(svc: Any) -> "asyncio.AbstractEventLoop | None":

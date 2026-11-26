@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Callable, NamedTuple
 
 from kiro_crew import irq, ledger_wake, work_ledger, work_preview
@@ -73,6 +74,10 @@ _REPORT_KEY = "report"
 
 #: Prefix for a silence wake's dedupe key.
 _STALL_KEY = "stall"
+
+#: Prefix for an idle-worker wake's dedupe key. The rest is the idle spell's start,
+#: so one spell wakes once and a worker that runs a turn again can wake again.
+_IDLE_KEY = "idle"
 
 #: Prefix for an undelivered-report wake's dedupe key
 #: (:mod:`kiro_crew.work_ledger_undelivered`).
@@ -156,6 +161,11 @@ def _never_looping(_session_key: str) -> bool:
     return False
 
 
+def _idle_unknown(_session_key: str) -> None:
+    """Default idle resolver: no chat is known idle, so only the stall window flags."""
+    return None
+
+
 def _nothing_unread(_worker_key: str, _sender: str) -> None:
     """Default unread resolver: no queue to read, so no unread-message wake.
 
@@ -185,6 +195,9 @@ class WorkLedgerProbe(irq.Probe):
             turn: the conductor's in its worker's queue or turn, and, from *queued*
             alone, the worker's in its conductor's queue. Defaults to
             :func:`_nothing_unread`.
+        worker_idle_since: ``session_key -> when its chat went idle with nothing of
+            its own to wake it | None`` (``slot_retention.worker_idle_since``), read for
+            the ``reason=worker_idle`` wake. Defaults to :func:`_idle_unknown`.
     """
 
     def __init__(
@@ -195,12 +208,14 @@ class WorkLedgerProbe(irq.Probe):
         worker_looping: Callable[[str], bool] | None = None,
         worker_loop_held: Callable[[str], bool] | None = None,
         worker_unread: UnreadResolver | None = None,
+        worker_idle_since: Callable[[str], float | None] | None = None,
     ) -> None:
         self._worker_running = worker_running or _always_idle
         self._worker_closed = worker_closed or _always_open
         self._worker_looping = worker_looping or _never_looping
         self._worker_loop_held = worker_loop_held or _never_looping
         self._worker_unread: UnreadResolver = worker_unread or _nothing_unread
+        self._worker_idle_since = worker_idle_since or _idle_unknown
         self._conductor = ""
         #: The polling driver's identity, read off the ctx each tick. The seen set
         #: is kept per driver; see ``ledger_wake._MAX_WATCHERS_PER_ITEM``.
@@ -447,7 +462,35 @@ class WorkLedgerProbe(irq.Probe):
             looping=self._worker_looping,
             held=self._worker_loop_held,
         )
-        if work_ledger.is_stale(
+        idle_since = None
+        if not running and not item.worker_instance_id and item.worker_session_key:
+            idle_since = self._worker_idle_since(item.worker_session_key)
+        spell = work_ledger.idle_spell(
+            item,
+            worker_running=running,
+            worker_closed=closed,
+            worker_looping=looping,
+            worker_idle_since=idle_since,
+        )
+        if spell is not None:
+            # Open, idle and owing the next move, with nothing of its own to wake it:
+            # one wake per spell (``work_ledger.idle_spell``). While the spell lasts it
+            # stands for the stall wake below too, so the two never both fire for it.
+            token = f"{_IDLE_KEY}:{spell:.3f}"
+            if self._spend(conductor_key, item.item_id, token, replaces=f"{_IDLE_KEY}:"):
+                found.append(
+                    irq.Observation(
+                        f"{_IDLE_KEY}:{item.item_id}:{spell:.3f}",
+                        irq.Severity.WAKE,
+                        ledger_wake.idle_wake_brief(
+                            item_id=item.item_id,
+                            status=item.status,
+                            idle_secs=time.time() - spell,
+                        ),
+                        irq.ResetsOn.NEVER,
+                    )
+                )
+        elif work_ledger.is_stale(
             item,
             worker_running=running,
             worker_closed=closed,
@@ -652,6 +695,9 @@ class SeatFacts(NamedTuple):
     cap: int | None
     #: One closed item per finished worker session still open: the newest one.
     finished_open: tuple[str, ...]
+    #: The crews a finished worker session was on, whatever their liveness: the
+    #: crews whose slot lists the next read must take for *crew_slot_open* to answer.
+    finished_crews: tuple[str, ...] = ()
 
 
 def seat_facts(
@@ -659,6 +705,7 @@ def seat_facts(
     *,
     slot_present: Callable[[str], bool],
     crew_reachable: Callable[[str], bool],
+    crew_slot_open: Callable[[str, str], bool] | None = None,
 ) -> SeatFacts | None:
     """The patrol's ``[seats]`` facts for *conductor_key*, or ``None`` with no ledger.
 
@@ -671,10 +718,15 @@ def seat_facts(
     that item's worker and never a finished one, and a session several closed items
     shared is one worker, read from the newest of them (:func:`_session`).
     Such a worker is open only on positive evidence: *slot_present* answers for a
-    slot that is really there now, or, for a crew-bound item, the hub's stored
-    record of that crew's slot list says so (a ``session_close(crew=)`` marks it
-    closed) and *crew_reachable* says a ``session_close(crew=)`` can reach that crew
-    now, since a worker no close can reach would stay on the line for good.
+    slot that is really there now, or, for a crew-bound item, *crew_slot_open* says
+    a FRESH read of that crew's slot list named it, no stored record says a
+    ``session_close(crew=)`` closed it, and *crew_reachable* says such a close can
+    reach that crew now, since a worker no close can reach would stay on the line
+    for good. The hub's stored record alone is no evidence it is open: the puller
+    stops reading an item once it closes, so that record is what the slot list said
+    while the item was still open, and a chat closed on the crew afterwards would be
+    counted for good. No *crew_slot_open*, or a crew whose list was not read, counts
+    none.
 
     Blocking file reads; call it off the event loop. Never raises.
     """
@@ -702,8 +754,9 @@ def seat_facts(
         finished_open = [
             item.item_id
             for item in finished.values()
-            if _worker_still_open(conductor_key, item, slot_present, crew_reachable)
+            if _worker_still_open(conductor_key, item, slot_present, crew_reachable, crew_slot_open)
         ]
+        finished_crews = sorted({crew for crew, _slot in finished if crew})
         capped = record.goal_version > 0
         cap = int(record.concurrency_cap) if capped else None
         return SeatFacts(
@@ -712,6 +765,7 @@ def seat_facts(
             seats_free=max(cap - work_ledger.count_seated(items), 0) if cap is not None else None,
             cap=cap,
             finished_open=tuple(sorted(finished_open)),
+            finished_crews=tuple(finished_crews),
         )
     except Exception:  # noqa: BLE001 - a read fault leaves the wake without the line
         logger.debug("work-ledger probe: seat read failed for %s", conductor_key)
@@ -739,21 +793,26 @@ def _worker_still_open(
     item: work_ledger.WorkItem,
     slot_present: Callable[[str], bool],
     crew_reachable: Callable[[str], bool],
+    crew_slot_open: Callable[[str, str], bool] | None = None,
 ) -> bool:
     """Whether closed *item*'s worker session is positively known to be open."""
     key = item.worker_session_key or ""
     if item.worker_instance_id:
+        if crew_slot_open is None:
+            return False
         stored = work_ledger.read_remote_state(conductor_key, item.item_id)
-        if not (
+        if (
             stored is not None
-            and stored.roster_read
-            and not stored.closed
+            and stored.closed
             and stored.binding in (None, work_ledger.binding_id(item))
         ):
+            # ``session_close(crew=)`` marked it: gone now, before the next list read.
             return False
         try:
-            return crew_reachable(item.worker_instance_id)
-        except Exception:  # noqa: BLE001 - an unreadable registry reaches no crew
+            return crew_slot_open(item.worker_instance_id, key) and crew_reachable(
+                item.worker_instance_id
+            )
+        except Exception:  # noqa: BLE001 - an unreadable list or registry proves nothing
             return False
     for candidate in (key, f"dashboard_{key}"):
         try:

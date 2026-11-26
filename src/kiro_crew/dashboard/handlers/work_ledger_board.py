@@ -48,6 +48,7 @@ from kiro_crew.dashboard.handlers.work_ledger import (
     _audit,
     _board_lock,
     _find_slot,
+    _item_idle_since,
     _own_ledger,
     _refuse_if_dirty,
     _slot_closed,
@@ -645,6 +646,7 @@ def with_worker_facts(value: Any, state: Any, conductor: str = "") -> Any:
             worker_closed=closed,
             worker_looping=looping,
             worker_loop_held=held,
+            worker_idle_since=_item_idle_since(state, item),
         )
         # Idle, and its worker's own loop will wake it (waiting on CI): the page reads
         # it as working, not waiting. A running turn keeps its own live reading.
@@ -810,6 +812,7 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
             worker_closed=closed,
             worker_looping=looping,
             worker_loop_held=held,
+            worker_idle_since=_item_idle_since(state, item),
         )
         # Idle, and its worker's own loop will wake it (waiting on CI): the Crew panel
         # reads it as running, not waiting. A running turn keeps its own reading.

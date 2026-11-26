@@ -1123,6 +1123,7 @@ from kiro_crew.work_ledger_remote import (  # noqa: E402, F401
 )
 from kiro_crew.work_ledger_rules import (  # noqa: E402, F401
     _WARNED_DEPTH_FALLBACKS,
+    IDLE_WAKE_SECS,
     _decided_after_report,
     _is_placeholder,
     _parse_iso,
@@ -1138,6 +1139,7 @@ from kiro_crew.work_ledger_rules import (  # noqa: E402, F401
     _worker_owns_next_move,
     child_depth,
     depth_cap_hint,
+    idle_spell,
     is_acceptance_concrete,
     is_orphaned,
     is_pending_overdue,

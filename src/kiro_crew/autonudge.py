@@ -463,6 +463,7 @@ class AutoNudgeService:
             ]
             | None
         ) = None,
+        worker_idle_since: Callable[[str], float | None] | None = None,
     ) -> None:
         self._base_dir = base_dir or config_dir()
         # The durable store's state and file protocol (see autonudge_service.store).
@@ -500,6 +501,10 @@ class AutoNudgeService:
         #: messages that asked for the running turn and are still unread. Read by the
         #: same probe, for its unread-message wakes.
         self._worker_unread_resolver = worker_unread
+        #: ``session_key -> when its chat went idle with nothing of its own to wake it,
+        #: or None`` (``slot_retention.worker_idle_since``). Read by the same probe, for
+        #: its ``reason=worker_idle`` wakes; absent means unknown, which keeps the window.
+        self._worker_idle_since_resolver = worker_idle_since
         self._loops: dict[str, NudgeLoop] = {}
         self._timers: dict[str, asyncio.Task] = {}
         # Loop ids whose re-arm was requested while their fire window was open.
@@ -1331,6 +1336,21 @@ class AutoNudgeService:
             return resolver(worker_key, sender_key)
         except Exception:  # pragma: no cover - a queue read must not fail a tick
             logger.debug("AutoNudge: unread read failed for %s", worker_key)
+            return None
+
+    def _worker_idle_since(self, session_key: str) -> float | None:
+        """When *session_key*'s chat went idle with nothing to wake it; ``None`` if unknown.
+
+        ``None`` with no resolver or one that raises: an unknown idle keeps the stall
+        window, so it can delay an idle wake and never invent one.
+        """
+        resolver = self._worker_idle_since_resolver
+        if resolver is None or not session_key:
+            return None
+        try:
+            return resolver(session_key)
+        except Exception:  # pragma: no cover - a slot read must not fail a tick
+            logger.debug("AutoNudge: idle read failed for %s", session_key)
             return None
 
     def _observes_work_ledger(self, loop: NudgeLoop) -> bool:

@@ -266,6 +266,43 @@ def subagents_attached_now(state: "DashboardState", slot: "_ChatSlot") -> bool:
     return _attached_verdict(running, 0, slot)
 
 
+#: A standing manager chat's sidebar title starts with this (the crew-lead rule): idle
+#: between jobs is its rest state, not a stop.
+STANDING_MANAGER_TITLE_PREFIX = "Manager:"
+
+
+def worker_idle_since(state: "DashboardState | None", session_key: str) -> float | None:
+    """When *session_key*'s chat went idle with nothing of its own to wake it, or ``None``.
+
+    The slot half of ``work_ledger.idle_spell``, read by the work-ledger wake and the
+    board's ``stale`` flag alike. The moment is :func:`slot_last_activity`: no turn
+    runs, so the newest row is where the last one ended. ``None`` -- unknown, which never
+    flags -- for a slot that is absent or still being built, has a turn in flight, waits
+    on the person's answer to a question card, on an approval or on sub-agent work that
+    will report back
+    (:func:`has_pending_approval`, :func:`subagents_attached_now`), or is a standing
+    manager between jobs (:data:`STANDING_MANAGER_TITLE_PREFIX`). Never raises.
+    """
+    if state is None or not session_key:
+        return None
+    try:
+        for candidate in (session_key, f"dashboard_{session_key}"):
+            slot = state.get_slot(candidate)
+            if slot is None:
+                continue
+            if slot.turn_running or str(slot.title or "").startswith(STANDING_MANAGER_TITLE_PREFIX):
+                return None
+            # A question card open to the person (``needs_input``): waiting on them.
+            if getattr(slot, "_question_pending", None):
+                return None
+            if has_pending_approval(state, slot) or subagents_attached_now(state, slot):
+                return None
+            return slot_last_activity(slot) or None
+    except Exception:  # noqa: BLE001 - an unreadable slot is unknown, never idle
+        logger.debug("idle read failed for %s", session_key, exc_info=True)
+    return None
+
+
 def select_idle_slot_keys(
     state: "DashboardState",
     *,
