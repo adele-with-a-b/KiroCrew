@@ -34,16 +34,16 @@ import { useIsMobile } from '../../../hooks/useIsMobile'
 import { i18nT } from '../../../i18n/t'
 import { CrewStatusDot } from '../../../components/crew/CrewModeMarks'
 import CrewApprovalCards, { crewApprovalRequests } from '../../../components/crew/CrewApprovalCards'
-import { crewRouteNotServed, crewSubDispatcher, crewWorkerCrewChat, crewWorkerGroup, mergeCrewWorkers, searchCrewWorkers } from '../../../lib/crewWorkers'
-import { openCrewWindow } from '../crew-window/crewWindowStore'
+import { crewRouteNotServed, crewSubDispatcher, crewWorkerGroup, mergeCrewWorkers, searchCrewWorkers } from '../../../lib/crewWorkers'
 import { fmtRelativeTime } from '../sessionOrder'
-import { CREW_FINISHED_OPEN_KEY, CREW_WORKER_SEARCH_MIN, CrewPanelBack, CrewWorkerSearch, openCrewSession, reopenCrewWorker, useCrewWorkerQuery, useCrewWorkers, useLiveCrewWorkers } from './CrewWorkerList'
+import { CREW_FINISHED_OPEN_KEY, CREW_WORKER_SEARCH_MIN, CrewPanelBack, CrewWorkerSearch, openCrewSession, useCrewWorkerQuery, useCrewWorkers, useLiveCrewWorkers } from './CrewWorkerList'
+import { canOpenCrewWorker, itemOpener, useOpenCrewWorker } from './openCrewWorker'
 import { usePersistedBool } from '../../../hooks/usePersistedBool'
 import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
 import { conductorModeRunState, type ConductorModeRunState } from '../../../lib/conductorModeRun'
 import { boardPlan, childProgress, estimateMinutes, isMerged, isOpen as itemOpen, levelOf, planOf, seatsBusy } from '../../../lib/crewPlan'
-import { boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, reportAnswered, type MilestoneState } from '../../../lib/boardMoves'
+import { approvalCarded, boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, movesStories, needsYouCount, reportAnswered, type MilestoneState } from '../../../lib/boardMoves'
 import BoardViewSwitch, { type BoardView } from '../../../components/board/BoardViewSwitch'
 import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/BoardRow'
 import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
@@ -412,7 +412,8 @@ const RUN_ICON: Record<ConductorModeRunState, JSX.Element> = {
   stopped: <CircleStop size={12} aria-hidden="true" className="shrink-0 text-muted" />,
 }
 
-const RUN_WORD: Record<ConductorModeRunState, string> = {
+/** The run's word per state, as every Board says it. */
+export const RUN_WORD: Record<ConductorModeRunState, string> = {
   paused: 'components.crewMode.conductor_mode_paused',
   waiting: 'components.crewMode.conductor_mode_run_waiting',
   working: 'components.crewMode.conductor_mode_run_working',
@@ -595,8 +596,8 @@ function PersonAskActions({ root, item, options, onAct, back }: { root: string; 
 
 /** The time, moved on every half minute: an unchanged board poll keeps its data's
  *  reference and re-renders nothing, so a row's age (and the Waits on its
- *  Conductor line's turn to loud) would otherwise freeze. */
-function useMinuteClock(): number {
+ *  Conductor line's turn to loud) would otherwise freeze. The all-projects page reads it too. */
+export function useMinuteClock(): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000)
@@ -629,7 +630,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   const pendingQuestion = useAppSelector(st => pendingQuestionFor(st.chat.pendingQuestions, root))
   const questionCount = pendingQuestion?.questions?.length ? 1 : 0
   const c = conductorModeCounts(workers, approvals.length, questionCount)
-  const [reopenFailed, setReopenFailed] = useState(false)
+  const { open, reopenFailed } = useOpenCrewWorker()
   // The main chat's own question is answered on its card in the chat: bring
   // the main chat on screen if a crew member is, then scroll to that card.
   const answerInChat = useCallback(() => {
@@ -647,21 +648,6 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     }
     reach()
   }, [dispatch, store, root, isMobile])
-  const open = useCallback((w: CrewWorker) => {
-    setReopenFailed(false)
-    const crewChat = crewWorkerCrewChat(w)
-    if (crewChat) {
-      // A chat on another crew opens in the crew window over the pane, the one
-      // viewer for a crew's chat; on a phone the panel's sheet steps aside for it.
-      openCrewWindow(crewChat)
-      if (isMobile) dispatch(closeActivityPanel())
-      return
-    }
-    if (w.status !== 'closed') { openCrewSession(dispatch, w.key, !isMobile); return }
-    void reopenCrewWorker(dispatch, store.getState, w.key, w.title, !isMobile).then(ok => { if (!ok) setReopenFailed(true) })
-  }, [dispatch, store, isMobile])
-  // A remote row opens only when it names its chat on the crew.
-  const canOpen = (w: CrewWorker) => !w.remote_crew || !!crewWorkerCrewChat(w)
   // The List's search (from CREW_WORKER_SEARCH_MIN members up) filters live and
   // finished members alike; while it is on, finished matches show unfolded.
   const [query, setQuery] = useCrewWorkerQuery(root)
@@ -693,7 +679,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   const finished = visibleCrewRows(finishedTops, isOpen)
   const memberRow = (n: CrewTreeNode) => (
     <MemberRow key={n.w.key} node={n} open={isOpen(n)} gutter={gutter} current={n.w.key === viewing}
-      onToggle={searching ? undefined : () => toggleRow(n, pathToViewing.has(n.w.key))} onOpen={canOpen(n.w) ? () => open(n.w) : undefined}
+      onToggle={searching ? undefined : () => toggleRow(n, pathToViewing.has(n.w.key))} onOpen={canOpenCrewWorker(n.w) ? () => open(n.w) : undefined}
       pausedIn={pause?.stopped.includes(n.w.key) ? root : undefined} />
   )
   // Moves opens first; the per-tab choice is not kept, as before.
@@ -712,14 +698,15 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // The raw goal: its Changed entries may be one per line, which collapsing would lose.
   const changed = latestChange(board.data?.conductor?.goal || '')
   const now = useMinuteClock()
-  // Which ledger item each pending approval belongs to (the crew list's own join),
-  // with the worker it waits in. Its approval card is in Needs you.
+  // The stories whose worker waits on a tool approval with its own card in Needs you:
+  // the live cards joined through the crew list. The one rule every Board reads.
+  const carded = approvalCarded(approvals, workers)
+  // The worker each card waits in, by ledger item (the crew list's join), for its line.
   const approvalWorker = new Map<string, string>()
   for (const a of approvals) {
     const w = workers.find(x => x.key === a.worker)
     if (w?.ledger_item) approvalWorker.set(w.ledger_item, w.title || w.agent || i18nT('commandCenter.worker_untitled'))
   }
-  const carded = new Set(approvalWorker.keys())
   // The ledger items a worker said wait on the person, with the conductor's offered answers.
   const forYou = personAsks(items, carded)
   const asks = new Set(forYou.map(i => i.item_id))
@@ -745,10 +732,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // "moving" only while a milestone runs; with nothing running, stuck or quiet
   // (waiting or next only) there is no pulse.
   const moving = openMs.some(m => m.state === 'running')
-  const openItem = (item: WorkBoardItem) => {
-    const w = workers.find(x => x.ledger_item === item.item_id)
-    return w && canOpen(w) ? () => open(w) : undefined
-  }
+  const openItem = itemOpener(workers, open)
   const plan = useMemo(() => boardPlan(items), [items])
   // The closed stories, as the sprint held them while open (no epic, no sub-task that
   // shows inside its story): the Timeline keeps a lane for one closed in its window.
@@ -788,11 +772,11 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   })
   const storyById = new Map(stories.map(s => [s.item.item_id, s]))
   // In Moves a story whose tool approval has its own card is that card, not a second row.
-  const moveStories = stories.filter(s => !(s.move === 'needs_you' && carded.has(s.item.item_id)))
+  const moveStories = movesStories(stories, carded)
   // Needs you, first in Moves: the main chat's own question and the crew's approval
   // cards, then the stories that wait on the person.
   const needsYouLeadCount = c.questions + c.approvals
-  const needCount = needsYouLeadCount + moveStories.filter(s => s.move === 'needs_you').length
+  const needCount = needsYouCount(c.questions, c.approvals, moveStories)
   // The run's one state: what is live here first, then the gateway's verdict.
   // The main chat's own tool approval waits on the person too, though its turn still runs.
   const rootSlot = slots.find(s => s.key === root)
@@ -913,6 +897,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
               </ul>
             </details>
           )}
+          {/* The same line as under the Board's views, so All projects is one click away here too. */}
+          <div className="pt-1.5"><OtherProjectsLine root={root} now={now} /></div>
         </div>
         </div>
       )}

@@ -5,9 +5,10 @@
  *  costs no read of another board. Needs you is the sidebar's own count; stuck is
  *  its stalled count; late is a report its Conductor has not picked up for 10
  *  minutes (`conductor_since_ms`). Only counts above zero are said, and with none
- *  the line is not drawn. The link to an all-projects page is left out until that
- *  page exists. */
+ *  the sentence is not drawn. The "All projects" link (`AllProjectsLink`) ends the
+ *  line, and stands alone when nothing is counted. */
 import { useAppSelector } from '../../../store'
+import AllProjectsLink from './AllProjectsLink'
 import { crewRootOf } from '../../../lib/crewMode'
 import { crewNeedsYou, crewWorkCounts, crewWorkLate } from '../../../lib/crewWork'
 import type { CrewWorkFacts } from '../../../types'
@@ -50,13 +51,17 @@ export default function OtherProjectsLine({ root, now }: { root: string; now: nu
     stuck > 0 ? i18nT('components.crewMode.board_count_stuck', { count: stuck }) : '',
     late > 0 ? i18nT('components.crewMode.board_count_late', { count: late }) : '',
   ].filter(Boolean)
-  if (parts.length === 0) return null
   return (
-    <p className="text-[12px] text-muted [overflow-wrap:anywhere]" data-testid="board-other-projects">
-      {/* One whole sentence with the list as its placeholder, so a language can put
-          the list where its own word order wants it. */}
-      <Trans i18nKey="components.crewMode.board_other_projects" values={{ list: fmtList(parts) }}
-        components={{ list: <span className="font-medium text-text" /> }} />
-    </p>
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+      {parts.length > 0 && (
+        <p className="min-w-0 text-[12px] text-muted [overflow-wrap:anywhere]" data-testid="board-other-projects">
+          {/* One whole sentence with the list as its placeholder, so a language can put
+              the list where its own word order wants it. */}
+          <Trans i18nKey="components.crewMode.board_other_projects" values={{ list: fmtList(parts) }}
+            components={{ list: <span className="font-medium text-text" /> }} />
+        </p>
+      )}
+      <span className="ml-auto"><AllProjectsLink /></span>
+    </div>
   )
 }

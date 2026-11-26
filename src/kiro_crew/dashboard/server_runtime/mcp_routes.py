@@ -236,6 +236,12 @@ def _register_mcp_routes(app: web.Application) -> None:
         "/api/crew-board/timeline",
         _deferred("crew_board_timeline", "api_crew_board_timeline"),
     )
+    # The all-projects Board's capacity line: this computer's memory room. Cookie
+    # and owner gate, like the read above.
+    app.router.add_get(
+        "/api/crew-board/capacity",
+        _deferred("crew_board_capacity", "api_crew_board_capacity"),
+    )
     # The write half of the agent panel surface -- MCP-only, like the ledger
     # above. The READ, "/api/members/{slug}/panel", is registered here too and
     # stays on cookie auth because a browser is its only caller.

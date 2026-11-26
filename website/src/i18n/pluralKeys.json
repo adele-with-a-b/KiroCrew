@@ -571,5 +571,8 @@
   "pages.chat.gatewayNotice.restart_receipt_waited",
   "components.crewMode.board_more",
   "components.crewMode.board_count_stuck",
-  "components.crewMode.board_count_late"
+  "components.crewMode.board_count_late",
+  "pages.allProjectsBoard.approvals_wait",
+  "pages.allProjectsBoard.worker_chats",
+  "pages.allProjectsBoard.running"
 ]

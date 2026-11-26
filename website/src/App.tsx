@@ -48,9 +48,9 @@ const MessageActionLayer = lazy(() => import('./messageActions/MessageActionLaye
 // app's module loads when the user chooses to open a link in it.
 const LinkOpenLayer = lazy(() => import('./linkOpen/LinkOpenLayer'))
 const SelectionActionLayer = lazy(() => import('./selectionActions/SelectionActionLayer'))
-// Lazy for the same reason: the crew work-item board is opened from a conductor
-// session or the Crew page, never at startup.
-const CrewBoardPage = lazy(() => import('./pages/CrewBoardPage'))
+// Lazy for the same reason: the Crew board (all projects, or one conductor's with
+// `?conductor=`) is opened from a conductor session or the Crew page, never at startup.
+const CrewBoardPage = lazy(() => import('./pages/AllProjectsBoardPage'))
 const SessionDashboardsPage = lazy(() => import('./pages/chat/command-center/SessionDashboardsPage'))
 import ArtifactDetailPage from './pages/ArtifactDetailPage'
 import { ChangelogModal, UpdateErrorDialogFrame } from './shell/updates/updateFlow'

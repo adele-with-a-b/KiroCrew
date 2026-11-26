@@ -53,6 +53,8 @@ GET /api/crew-board api_work_ledger_board
 POST /api/crew-board/action api_work_ledger_board_action
 HEAD /api/crew-board/timeline api_crew_board_timeline
 GET /api/crew-board/timeline api_crew_board_timeline
+HEAD /api/crew-board/capacity api_crew_board_capacity
+GET /api/crew-board/capacity api_crew_board_capacity
 HEAD /api/agent-panel/templates api_agent_panel_templates
 GET /api/agent-panel/templates api_agent_panel_templates
 POST /api/agent-panel/publish api_agent_panel_publish

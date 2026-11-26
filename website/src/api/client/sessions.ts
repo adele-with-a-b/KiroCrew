@@ -8,6 +8,7 @@ import type { ClientTransport } from './transport'
 import { CONFIRM_IRREVERSIBLE_HEADER } from '../sharedCrewInvites'
 import type { CrewBoardAction, CrewBoardActionResult, WorkBoardResponse } from '../crewBoard'
 import type { TimelineResponse } from '../boardTimeline'
+import type { CrewBoardCapacity } from '../crewBoardCapacity'
 
 export const SEARCH_MIN_CHARS = 2  // backend session search threshold (must match kiro_crew.history.SEARCH_MIN_CHARS)
 
@@ -192,6 +193,8 @@ export function createSessionsEndpoints({ get, post, del, j, jfetch: fetch, send
     crewBoardTimeline: (conductor: string, hours: number) =>
       get(`/api/crew-board/timeline?conductor=${encodeURIComponent(conductor)}&hours=${encodeURIComponent(String(hours))}`)
         .then(jCrewBoard) as Promise<TimelineResponse>,
+    /** This computer's room for the all-projects Board's capacity line (owner only). */
+    crewBoardCapacity: () => get('/api/crew-board/capacity').then(j) as Promise<CrewBoardCapacity>,
   }
 
   return { runtimes, history, historyDetail, crewBoard }
