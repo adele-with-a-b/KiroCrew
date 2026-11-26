@@ -836,7 +836,13 @@ def _ledger_has_open_items(conductor_key: str) -> bool:
 def _ledger_person_wait_fp(
     conductor_key: str,
     worker_closed: Callable[[str], bool] | None = None,
-    worker_unread: Callable[[str, str], tuple[int, float | None, str] | None] | None = None,
+    worker_unread: (
+        Callable[
+            [str, str],
+            tuple[int, float | None, str, int, tuple[int, float | None, str] | None] | None,
+        ]
+        | None
+    ) = None,
 ) -> str | None:
     """The ledger's fingerprint while every open item waits on a person. Blocking."""
     from kiro_crew.probes.work_ledger import person_wait_fingerprint

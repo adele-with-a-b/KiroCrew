@@ -61,7 +61,7 @@ def _live(slot):
     return slot
 
 
-def _send(state, caller, target, **kwargs):
+def _send(state, caller, target, message="ORANGE", **kwargs):
     """A send the way the session_send route makes it when ``steer`` is omitted."""
     kwargs.setdefault("steer", None)
     return asyncio.run(
@@ -69,7 +69,7 @@ def _send(state, caller, target, **kwargs):
             state,
             caller_session_key=_key(caller),
             target=target.key,
-            message="ORANGE",
+            message=message,
             creator_message=True,
             **kwargs,
         )
@@ -562,9 +562,232 @@ def test_a_default_steer_left_unread_wakes_the_conductor(tmp_path, monkeypatch, 
 
     clock.now += ledger_wake.UNREAD_WAKE_SECS
     assert any(
-        b.startswith(f"[work-ledger wake] item={item_id} reason=message_unread count=1")
+        b.startswith(
+            f"[work-ledger wake] item={item_id} reason=message_unread "
+            f"count=1 target={worker.key}"
+        )
         for b in _wake_briefs(state, board)
     )
+
+
+def _harness_client(monkeypatch, harness: str) -> MagicMock:
+    """A running client of *harness*: ``kiro`` reports a steer read when the model
+    takes it; ``claude`` reports it only when its turn ends cleanly
+    (``steer_needs_loss_recovery``), and takes a peer's steer only with
+    ``agent.peer_steer_loss_recovery`` on, as an install that opted in has it."""
+    from types import SimpleNamespace
+
+    from kiro_crew.acp.client_class import AcpClient
+    from kiro_crew.agent_sdk.backends import ACP_BACKEND_CLAUDE, ACP_BACKEND_KIRO
+    from kiro_crew.dashboard import chat_delivery
+
+    backend = {"kiro": ACP_BACKEND_KIRO, "claude": ACP_BACKEND_CLAUDE}[harness]
+    client = _steerable(accepted=True)
+    # The real property, read for this backend, so the test follows the named sets.
+    client.steer_needs_loss_recovery = AcpClient.steer_needs_loss_recovery.fget(
+        SimpleNamespace(backend=backend)
+    )
+    monkeypatch.setattr(
+        chat_delivery.live,
+        "snapshot",
+        lambda: SimpleNamespace(agent=SimpleNamespace(peer_steer_loss_recovery=True)),
+    )
+    return client
+
+
+@pytest.mark.parametrize(
+    ("harness", "reason"),
+    [("kiro", "message_unread"), ("claude", "message_unconfirmed")],
+)
+def test_a_steer_the_turn_took_wakes_its_sender_once_and_says_only_what_is_proven(
+    tmp_path, monkeypatch, harness, reason
+):
+    """Both harnesses wake the conductor once its note has sat 600 s. On kiro a
+    steer still pending is proven unread (its read is reported when the model takes
+    it). On claude it is reported read only when the turn ends cleanly, so the wake
+    calls it unconfirmed, never unread. One wake per message: the next tick says
+    nothing. A second stuck steer wakes once more on kiro, whose read of the first
+    took it off the pending list. A claude turn keeps every steer pending until it
+    ends, so a second one in the same turn waits behind the first's spent wake: its
+    steers wake their sender once per worker turn, and the next turn's wakes again."""
+    from kiro_crew import ledger_wake
+    from kiro_crew.dashboard import queue_age
+
+    clock = _Clock()
+    monkeypatch.setattr(queue_age, "_clock", clock)
+    state = _make_state(tmp_path)
+    conductor, worker, _, _ = _team(state)
+    _busy(worker)
+    worker._acp_client = _harness_client(monkeypatch, harness)
+    board, item_id = _bind(conductor, worker)
+
+    assert _send(state, conductor, worker)["steered"] is True
+    assert not any("reason=message_" in b for b in _wake_briefs(state, board))
+
+    clock.now += ledger_wake.UNREAD_WAKE_SECS
+    first = [b for b in _wake_briefs(state, board) if "reason=message_" in b]
+    assert first == [
+        f"[work-ledger wake] item={item_id} reason={reason} count=1 target={worker.key} "
+        f"oldest_waited_secs={int(ledger_wake.UNREAD_WAKE_SECS)}"
+    ]
+    assert not any("reason=message_" in b for b in _wake_briefs(state, board))
+
+    clock.now += 30
+    if harness == "kiro":
+        # The model took the first steer at its next step, and kiro reports that
+        # read at once, which takes it off the pending list.
+        (orange,) = worker._pending_steers
+        worker._pending_steers.remove(orange)
+    assert _send(state, conductor, worker, message="LEMON")["steered"] is True
+    clock.now += ledger_wake.UNREAD_WAKE_SECS
+    again = [b for b in _wake_briefs(state, board) if "reason=message_" in b]
+    if harness == "claude":
+        assert again == [], "a claude turn's steers wake their sender once per worker turn"
+        # The turn ends cleanly, which reports both steers read, and the next turn
+        # takes a new one.
+        worker._pending_steers.clear()
+        _busy(worker)
+        assert _send(state, conductor, worker, message="LIME")["steered"] is True
+        clock.now += ledger_wake.UNREAD_WAKE_SECS
+        again = [b for b in _wake_briefs(state, board) if "reason=message_" in b]
+    assert len(again) == 1 and f"reason={reason} count=1 target={worker.key}" in again[0]
+
+
+def test_an_unread_queued_note_beside_an_unconfirmed_steer_counts_each_apart(tmp_path, monkeypatch):
+    """claude: one note the person's turn kept in the queue (proven unread) and one
+    steer the turn took (unconfirmed). The wake is ``message_unread`` for the one it
+    can prove and names the other apart."""
+    from kiro_crew import ledger_wake
+    from kiro_crew.dashboard import queue_age
+
+    clock = _Clock()
+    monkeypatch.setattr(queue_age, "_clock", clock)
+    state = _make_state(tmp_path)
+    conductor, worker, _, _ = _team(state)
+    _busy(worker)
+    worker._acp_client = _harness_client(monkeypatch, "claude")
+    board, item_id = _bind(conductor, worker)
+
+    assert _send(state, conductor, worker)["steered"] is True
+    worker._turn_owner_sent = True  # a person now drives the turn: the next one queues
+    assert _send(state, conductor, worker, message="LEMON").get("steered") is not True
+    clock.now += ledger_wake.UNREAD_WAKE_SECS
+
+    briefs = [b for b in _wake_briefs(state, board) if "reason=message_" in b]
+    assert briefs == [
+        f"[work-ledger wake] item={item_id} reason=message_unread count=1 unconfirmed=1 "
+        f"target={worker.key} oldest_waited_secs={int(ledger_wake.UNREAD_WAKE_SECS)}"
+    ]
+
+
+def test_a_note_queued_after_an_unconfirmed_steer_wakes_on_its_own_wait(tmp_path, monkeypatch):
+    """claude: the turn took a steer, and it stays pending until that turn ends. Its
+    wake comes at 600 s. A note the person's turn queues later in the same turn is
+    aged and keyed on its own stamp, not the steer's spent one: it wakes nothing
+    while young and once when it has sat 600 s."""
+    from kiro_crew import ledger_wake
+    from kiro_crew.dashboard import queue_age
+
+    clock = _Clock()
+    monkeypatch.setattr(queue_age, "_clock", clock)
+    state = _make_state(tmp_path)
+    conductor, worker, _, _ = _team(state)
+    _busy(worker)
+    worker._acp_client = _harness_client(monkeypatch, "claude")
+    board, item_id = _bind(conductor, worker)
+    secs = int(ledger_wake.UNREAD_WAKE_SECS)
+
+    assert _send(state, conductor, worker)["steered"] is True
+    clock.now += ledger_wake.UNREAD_WAKE_SECS
+    assert [b for b in _wake_briefs(state, board) if "reason=message_" in b] == [
+        f"[work-ledger wake] item={item_id} reason=message_unconfirmed count=1 "
+        f"target={worker.key} oldest_waited_secs={secs}"
+    ]
+
+    clock.now += 100
+    worker._turn_owner_sent = True  # a person now drives the turn: the next one queues
+    assert _send(state, conductor, worker, message="LEMON").get("steered") is not True
+    assert not any("reason=message_" in b for b in _wake_briefs(state, board))
+    clock.now += ledger_wake.UNREAD_WAKE_SECS
+    assert [b for b in _wake_briefs(state, board) if "reason=message_" in b] == [
+        f"[work-ledger wake] item={item_id} reason=message_unread count=1 unconfirmed=1 "
+        f"target={worker.key} oldest_waited_secs={secs}"
+    ]
+
+
+@pytest.mark.parametrize("harness", ["kiro", "claude"])
+def test_a_worker_reply_in_its_conductors_turn_never_stands_for_a_queued_note(
+    tmp_path, monkeypatch, harness
+):
+    """``report_unread`` counts, ages and keys on the conductor's queue alone. The
+    worker's reply steers into the conductor's asking turn and stays pending there
+    (kiro: unread behind one long tool call; claude: unconfirmed until the turn
+    ends). It is in the turn the wake would go to, so it wakes nothing however long
+    it waits. A plain note the worker queues 700 s later is aged and keyed on its
+    own stamp: nothing while young, one wake once it has sat 600 s."""
+    from kiro_crew import ledger_wake
+    from kiro_crew.dashboard import queue_age
+
+    clock = _Clock()
+    monkeypatch.setattr(queue_age, "_clock", clock)
+    state = _make_state(tmp_path)
+    conductor, worker, _, _ = _team(state)
+    _busy(conductor)
+    conductor._acp_client = _harness_client(monkeypatch, harness)
+    _live(worker)
+    board, item_id = _bind(conductor, worker)
+    _send(state, conductor, worker)  # the conductor's turn asks its worker
+
+    reply = _send(state, worker, conductor)
+    assert reply["steered"] is True and reply["steerDefault"] == "reply"
+    clock.now += 700
+    assert not any("reason=report_unread" in b for b in _wake_briefs(state, board))
+
+    note = _send(state, worker, conductor, message="LEMON")
+    assert note["steered"] is False and note.get("toCreator") is True
+    assert not any("reason=report_unread" in b for b in _wake_briefs(state, board))
+    clock.now += ledger_wake.UNREAD_WAKE_SECS
+    assert [b for b in _wake_briefs(state, board) if "reason=report_unread" in b] == [
+        f"[work-ledger wake] item={item_id} reason=report_unread count=1 "
+        f"from={worker.key} oldest_waited_secs={int(ledger_wake.UNREAD_WAKE_SECS)}"
+    ]
+
+
+@pytest.mark.parametrize("steer, wakes", [(None, True), (False, False)], ids=["default", "by-name"])
+def test_a_worker_note_unread_behind_its_conductors_turn_wakes_the_conductor(
+    tmp_path, monkeypatch, steer, wakes
+):
+    """A worker's note to its creator that is no reply into the turn that asked
+    queues. One that names no delivery
+    wanted the conductor's running turn, so once it has sat 600 s the conductor's
+    own work-ledger watch wakes it, naming the worker and the age, once. A note
+    queued by name chose to wait and wakes nobody."""
+    from kiro_crew import ledger_wake
+    from kiro_crew.dashboard import queue_age
+
+    clock = _Clock()
+    monkeypatch.setattr(queue_age, "_clock", clock)
+    state = _make_state(tmp_path)
+    conductor, worker, _, _ = _team(state)
+    _live(conductor)
+    board, item_id = _bind(conductor, worker)
+
+    out = _send(state, worker, conductor, steer=steer)
+
+    assert out["steered"] is False and out.get("toCreator") is True and _queued(conductor)
+    assert not any("reason=report_unread" in b for b in _wake_briefs(state, board))
+    clock.now += ledger_wake.UNREAD_WAKE_SECS
+    briefs = [b for b in _wake_briefs(state, board) if "reason=report_unread" in b]
+    assert briefs == (
+        [
+            f"[work-ledger wake] item={item_id} reason=report_unread count=1 "
+            f"from={worker.key} oldest_waited_secs={int(ledger_wake.UNREAD_WAKE_SECS)}"
+        ]
+        if wakes
+        else []
+    )
+    assert not any("reason=report_unread" in b for b in _wake_briefs(state, board))
+    assert not any("reason=message_" in b for b in _wake_briefs(state, board))
 
 
 # ── the route ───────────────────────────────────────────────────────────────

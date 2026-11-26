@@ -36,14 +36,22 @@ STEER_WANTED_META = "steer_wanted"
 class QueueWait:
     """The waiting entries a read selected: how many, and the oldest one's wait."""
 
+    #: Messages proven unread: queued entries, and steers on a harness that reports
+    #: a steer read when the model takes it.
     count: int
-    #: Seconds the oldest stamped entry has waited, or ``None`` when none carries a
-    #: stamp (every one was restored after a restart).
+    #: Seconds the oldest stamped message counted in ``count`` has waited, or, with
+    #: none counted there, the oldest :attr:`unconfirmed` one's, so a message that is
+    #: proven unread is never aged or keyed by one that is not. ``None`` when none
+    #: carries a stamp (every one was restored after a restart).
     oldest_secs: float | None
     #: The identity of that oldest stamped wait, or ``""``: the entry's id, or, for
     #: an entry that took over older entries' wait (:func:`carry_wait`), the id of
     #: the first entry that wait began on.
     oldest_id: str
+    #: Steers the running turn took on a harness that reports a steer read only when
+    #: its turn ends cleanly: the model may have read them, so they are neither read
+    #: nor unread, only unconfirmed. Counted only by ``waits(unconfirmed=True)``.
+    unconfirmed: int = 0
 
 
 def note_queued(slot: Any, queue_id: str) -> None:
@@ -259,7 +267,12 @@ def _sent_at(stamp: Any, *, counted_only: bool = False) -> float | None:
 
 
 def waits(
-    slot: Any, *, sender: str = "", steer_wanted: bool = False, steers: bool = False
+    slot: Any,
+    *,
+    sender: str = "",
+    steer_wanted: bool = False,
+    steers: bool = False,
+    unconfirmed: bool = False,
 ) -> QueueWait | None:
     """The entries waiting in *slot*'s queue, or ``None`` when none is selected.
 
@@ -270,7 +283,10 @@ def waits(
     running turn accepted and has not read (the ``_pending_steers`` whose
     :func:`note_steered` stamp counts, attributed by their admission's send
     origin) and the steers a failed turn took in unconfirmed
-    (:func:`note_unconfirmed`); each of those wanted the turn.
+    (:func:`note_unconfirmed`); each of those wanted the turn. *unconfirmed* also
+    counts, apart, the pending steers of the running turn whose stamp does not
+    count (:attr:`QueueWait.unconfirmed`); their age is the oldest wait only when
+    nothing else is counted.
     """
     if slot is None:
         return None
@@ -298,16 +314,23 @@ def waits(
         at = stamps.get(entry_id)
         if isinstance(at, (int, float)) and (oldest_at is None or at < oldest_at):
             oldest_at, oldest_id = float(at), str(origins.get(entry_id) or entry_id)
+    taken = 0
+    taken_at: float | None = None
     if steers:
         admissions = getattr(slot, "_steer_admissions", None)
         admissions = admissions if isinstance(admissions, dict) else {}
         steered = getattr(slot, "_steered_at", None)
         steered = steered if isinstance(steered, dict) else {}
         for message in list(getattr(slot, "_pending_steers", None) or ()):
-            sent = _sent_at(steered.get(message), counted_only=True)
+            stamp = steered.get(message)
+            sent = _sent_at(stamp, counted_only=not unconfirmed)
             if sent is None:
                 continue
             if want and ledger_key(send_origin_slot(admissions.get(message))) != want:
+                continue
+            if _sent_at(stamp, counted_only=True) is None:
+                taken += 1
+                taken_at = sent if taken_at is None else min(taken_at, sent)
                 continue
             count += 1
             if oldest_at is None or sent < oldest_at:
@@ -322,21 +345,33 @@ def waits(
                 oldest_at = sent
         if lost:
             oldest_id = lost[-1][0]
-    if not count:
+    if not count and not taken:
         return None
-    return QueueWait(count, None if oldest_at is None else max(0.0, now - oldest_at), oldest_id)
+    if not count:
+        # Only unconfirmed steers wait, so the oldest of them is the wait. With any
+        # message counted, they never set it: a claude turn holds them until it
+        # ends, so one would key every later message of that turn on its spent wake.
+        oldest_at, oldest_id = taken_at, f"steer@{taken_at!r}"
+    return QueueWait(
+        count, None if oldest_at is None else max(0.0, now - oldest_at), oldest_id, taken
+    )
 
 
 def sender_unread(
     slot_table: Any, worker_key: str, sender: str
-) -> tuple[int, float | None, str] | None:
+) -> tuple[int, float | None, str, int, tuple[int, float | None, str] | None] | None:
     """What *sender* asked to have read now and *worker_key* has not read yet.
 
     The work-ledger wake's resolver, bound by the gateway to its slot table: the
     entries *sender* queued wanting the running turn (:data:`STEER_WANTED_META`) and
     its steers the running turn accepted but has not read, as
-    ``(count, oldest_secs, oldest_id)``, or ``None`` for none or an unreadable table.
-    Both slot spellings are tried, as ``ledger_wake.worker_running`` tries them.
+    ``(count, oldest_secs, oldest_id, unconfirmed, queued)``, or ``None`` for none or
+    an unreadable table. *unconfirmed* counts its steers the turn took on a harness
+    that reports a read only at turn end (:attr:`QueueWait.unconfirmed`), so the
+    wake never calls one of those unread. *queued* is ``(count, oldest_secs,
+    oldest_id)`` over the queue entries alone, or ``None`` for none: what runs only
+    once the reader's turn ends, with no steer or failed turn's record in it. Both
+    slot spellings are tried, as ``ledger_wake.worker_running`` tries them.
     """
     if slot_table is None or not worker_key or not sender:
         return None
@@ -349,8 +384,17 @@ def sender_unread(
         except Exception:  # noqa: BLE001 - a slot read must not fail a tick
             continue
         if slot is not None:
-            found = waits(slot, sender=sender, steer_wanted=True, steers=True)
-            return None if found is None else (found.count, found.oldest_secs, found.oldest_id)
+            found = waits(slot, sender=sender, steer_wanted=True, steers=True, unconfirmed=True)
+            if found is None:
+                return None
+            queued = waits(slot, sender=sender, steer_wanted=True)
+            return (
+                found.count,
+                found.oldest_secs,
+                found.oldest_id,
+                found.unconfirmed,
+                None if queued is None else (queued.count, queued.oldest_secs, queued.oldest_id),
+            )
     return None
 
 

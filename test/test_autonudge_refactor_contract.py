@@ -165,7 +165,9 @@ _BASE_REACHED_IMPORTS = frozenset(
 #: twelve hex digits of the SHA-256 of ``_signature_text`` -- every parameter, ``self``/``cls``
 #: included, with its kind, default and annotation, and the return annotation.
 _BASE_SERVICE_MEMBERS: dict[str, tuple[str, str]] = {
-    "__init__": ("method", "e7553c1b794c"),
+    # ``worker_unread`` answers a fourth field, the unconfirmed steers, and a fifth,
+    # the queued part alone.
+    "__init__": ("method", "2bac700b12bd"),
     "_acquire_mutation_lock": ("method+async", "34bd8c98b4d6"),
     "_add_locked": ("method+async", "71d798975d9e"),
     "_add_monitor_locked": ("method+async", "243682becc96"),
@@ -252,8 +254,9 @@ _BASE_SERVICE_MEMBERS: dict[str, tuple[str, str]] = {
     "_worker_loop_held": ("method", "490393185551"),
     "_worker_looping": ("method", "490393185551"),
     # A bound worker's queued messages from its conductor, injected like the two
-    # liveness reads, for the probe's unread-message wake.
-    "_worker_unread": ("method", "f5d8d9ee4b8c"),
+    # liveness reads, for the probe's unread-message wake; its answer carries the
+    # unconfirmed steers as a fourth field and the queued part alone as a fifth.
+    "_worker_unread": ("method", "c472020693c6"),
     # Reads one loop's monitor kind: the startup resume treats a work-ledger
     # watch differently, because its news arrives by a push a restart loses.
     "_observes_work_ledger": ("method", "3a33d55b099b"),

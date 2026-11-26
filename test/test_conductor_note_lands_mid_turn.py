@@ -448,7 +448,9 @@ async def test_a_settled_note_wakes_its_conductor_at_once(tmp_path, monkeypatch)
 
     assert worker._queue == []
     assert pushed == [(worker.key, conductor.key)] * 2
-    count, oldest_secs, oldest_id = queue_age.sender_unread(state, worker.key, conductor.key)
+    count, oldest_secs, oldest_id, _unconfirmed, _queued = queue_age.sender_unread(
+        state, worker.key, conductor.key
+    )
     assert count == 2
     assert ledger_wake.is_unconfirmed_wait(oldest_id)
     # Overdue at once, whatever the age: a fresh note wakes too.
@@ -578,7 +580,9 @@ async def test_every_note_one_failed_turn_settles_is_counted(tmp_path, monkeypat
     await _teardown(state, worker, agent)
 
     assert len(_notices(conductor)) == len(notes)
-    count, _secs, oldest_id = queue_age.sender_unread(state, worker.key, conductor.key)
+    count, _secs, oldest_id, _unconfirmed, _queued = queue_age.sender_unread(
+        state, worker.key, conductor.key
+    )
     assert ledger_wake.is_unconfirmed_wait(oldest_id)
     assert count == len(notes)
 

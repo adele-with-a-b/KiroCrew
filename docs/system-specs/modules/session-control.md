@@ -2886,20 +2886,57 @@ every steer consumed only at a clean turn end, so its pending list holds steers
 already read. The delivery reads that flag once, where it already gates the
 peer steer, and stamps such a steer as not counted
 (`note_steered(read_reported=False)`): it keeps its send instant for a requeue
-but never counts as unread. Together these are the work-ledger probe's
+but never counts as unread. It counts as unconfirmed instead
+(`QueueWait.unconfirmed`, read with `waits(unconfirmed=True)`): the harness took
+it and has not said whether the model read it. Together these are the work-ledger probe's
 unread-message wake: `queue_age.sender_unread`, bound to the slot table by the
 gateway (`nudge_wiring._worker_unread` → `AutoNudgeService(worker_unread=…)` →
 `probes.build` → `WorkLedgerProbe`), answers a bound worker's wanted entries and
-unread steers from its conductor, and once the oldest has waited
-`ledger_wake.UNREAD_WAKE_SECS` the probe wakes the conductor once per oldest id
-(`unread:<id>`, `reason=message_unread`). A note the worker's failed turn took in
-unconfirmed (`queue_age.note_unconfirmed`) is counted too, under an id that starts
-`ledger_wake.UNCONFIRMED_WAIT_PREFIX`; that wait is overdue at once and wakes with
-`reason=message_unconfirmed`, spending its own key (`unconfirmed:<id>`) so an older
-note's spent `unread:<id>` wake is never re-armed, and the settle pulls the conductor's tick forward
-(`conductor_wake.wake_for_unconfirmed_note`). The same overdue answer is folded into
+unread steers from its conductor as `(count, oldest_secs, oldest_id,
+unconfirmed, queued)`, and once the oldest proven-unread one has waited
+`ledger_wake.UNREAD_WAKE_SECS` (with none proven unread, the oldest unconfirmed
+one) the probe wakes the conductor once per oldest id (`unread:<id>`). An
+unconfirmed steer never ages or keys the wait while anything is proven unread:
+that harness holds its steers until the turn ends, so a message queued later in
+the same turn wakes on its own, and the turn's steers wake their sender once per
+worker turn. The wake names the worker (`target=<key>`) and the age; its
+reason is `message_unread` with `count` the proven-unread messages (and
+`unconfirmed=<n>` beside it when some are only unconfirmed), or
+`message_unconfirmed` when none is proven unread, so on a harness that reports a
+read only at turn end the wake never calls a steer the turn took unread. The
+ledger row's `messages_unread` still counts proven-unread messages only. A note
+the worker's failed turn took in unconfirmed (`queue_age.note_unconfirmed`) is
+counted too, under an id that starts `ledger_wake.UNCONFIRMED_WAIT_PREFIX`; that
+wait is overdue at once and wakes with `reason=message_unconfirmed`, spending its
+own key (`unconfirmed:<id>`) so an older note's spent `unread:<id>` wake is never
+re-armed, and the settle pulls the conductor's tick forward
+(`conductor_wake.wake_for_unconfirmed_note`). Both cases write that reason through
+one brief, `ledger_wake.unconfirmed_wake_brief`.
+
+The same resolver reads the other way, with the keys swapped: what the item's
+worker sent its conductor that sits unread in the conductor's own queue. A
+worker's note to the session that created it queues behind the conductor's
+running turn (a steer it asks for is refused `not_creator`), except a reply into
+the turn that asked and a note from a worker a handoff made the conductor's
+manager, which steer in. One that names no delivery wanted the conductor's
+running turn, so when it queues it is marked `STEER_WANTED_META` like a held
+default; one queued by name (`steer=false`) chose to wait and is not. This
+direction reads only the answer's `queued` part, `(count, oldest_secs,
+oldest_id)` over the queue entries alone: a steer of the worker's, unread,
+unconfirmed or settled unconfirmed by a failed turn, is already in the
+conductor's turn, where the wake would go, so it neither counts, ages nor keys
+this wake. Once a queued one has waited
+`ledger_wake.UNREAD_WAKE_SECS`, the conductor's own work-ledger watch wakes it once
+per oldest id (`report_unread:<id>`, its own prefix, so neither direction's record
+replaces the other's) with `reason=report_unread count=<n> from=<worker key>
+oldest_waited_secs=<s>`. The wake rides the delivery every
+work-ledger wake takes: it is steered into the conductor's running turn, except
+a turn the owner sent, which takes no wake, so there it lands when that turn
+ends. The note itself runs only after the turn ends; the wake says it waits.
+
+Both overdue answers are folded into
 `person_wait_fingerprint` (`firing._ledger_person_wait_fp` passes the resolver),
-so a patrol held because every item waits on a person releases for that wake.
+so a patrol held because every item waits on a person releases for either wake.
 `work_ledger_read` shows every entry the conductor queued for its worker, wanted
 or not, plus its unread steers, as the row's `messages_unread: {count,
 oldest_secs}` (`queue_age.unread_row`).
