@@ -5,7 +5,9 @@
  *  story who must act (`boardMove`), how long it has waited, and its line, what its
  *  worker last said or what it waits on. Needs you also holds the main chat's
  *  question as one row pointing at its card and the approval cards compact. Steps
- *  (`BoardStepsView`) regroups the same rows by step. Workers = the crew as one
+ *  (`BoardStepsView`) regroups the same rows by step; Timeline
+ *  (`BoardTimelineView`) draws them as lanes over the last hours, on its own
+ *  read. Workers = the crew as one
  *  indented tree, each lead foldable, trees finished all through folded away; a
  *  click opens the member in the main pane. Every number comes from reads the
  *  dashboard already makes: the crew list route, the work-ledger board, the live
@@ -40,13 +42,14 @@ import { usePersistedBool } from '../../../hooks/usePersistedBool'
 import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
 import { conductorModeRunState, type ConductorModeRunState } from '../../../lib/conductorModeRun'
-import { boardPlan, childProgress, estimateMinutes, isMerged, levelOf, seatsBusy } from '../../../lib/crewPlan'
+import { boardPlan, childProgress, estimateMinutes, isMerged, isOpen as itemOpen, levelOf, planOf, seatsBusy } from '../../../lib/crewPlan'
 import { boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, reportAnswered, type MilestoneState } from '../../../lib/boardMoves'
 import BoardViewSwitch, { type BoardView } from '../../../components/board/BoardViewSwitch'
 import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/BoardRow'
 import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
 import BoardMovesView from './BoardMovesView'
 import BoardStepsView from './BoardStepsView'
+import BoardTimelineView from './BoardTimelineView'
 import BoardUpNext, { fmtEstimate } from './BoardUpNext'
 import OtherProjectsLine from './OtherProjectsLine'
 
@@ -747,6 +750,13 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     return w && canOpen(w) ? () => open(w) : undefined
   }
   const plan = useMemo(() => boardPlan(items), [items])
+  // The closed stories, as the sprint held them while open (no epic, no sub-task that
+  // shows inside its story): the Timeline keeps a lane for one closed in its window.
+  const closedStories = useMemo(() => items.filter(item => {
+    if (itemOpen(item) || !item.closed_at || levelOf(item) === 'epic') return false
+    const parent = planOf(item).parent
+    return !(levelOf(item) === 'task' && parent && plan.byId.has(parent))
+  }), [items, plan])
   const byId = new Map(milestones.map(m => [m.item.item_id, m]))
   // Every open story the Conductor is working (not Up next), as one Board row: who
   // must act, how long it has waited, why, and its quiet facts. Moves and Steps draw
@@ -876,7 +886,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
             ? <BoardMovesView stories={moveStories} needsYouLead={needsYouLead} needsYouLeadCount={needsYouLeadCount} upNext={upNext} />
             : view === 'steps'
               ? <BoardStepsView steps={boardSteps(items, plan)} stories={storyById} upNext={upNext} />
-              : <p className="text-[12px] text-muted" data-testid="board-timeline-coming">{i18nT('components.crewMode.board_timeline_coming')}</p>)}
+              : <BoardTimelineView root={root} stories={stories} closed={closedStories} active={active} />)}
           <OtherProjectsLine root={root} now={now} />
         </div>
       ) : (

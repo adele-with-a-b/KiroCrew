@@ -230,6 +230,12 @@ def _register_mcp_routes(app: web.Application) -> None:
         "/api/crew-board/action",
         _deferred("work_ledger_board", "api_work_ledger_board_action"),
     )
+    # The board's Timeline: each item's events over the last hours, no event text.
+    # Cookie-authed and owner-gated like the read above.
+    app.router.add_get(
+        "/api/crew-board/timeline",
+        _deferred("crew_board_timeline", "api_crew_board_timeline"),
+    )
     # The write half of the agent panel surface -- MCP-only, like the ledger
     # above. The READ, "/api/members/{slug}/panel", is registered here too and
     # stays on cookie auth because a browser is its only caller.

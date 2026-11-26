@@ -7,6 +7,7 @@
 import type { ClientTransport } from './transport'
 import { CONFIRM_IRREVERSIBLE_HEADER } from '../sharedCrewInvites'
 import type { CrewBoardAction, CrewBoardActionResult, WorkBoardResponse } from '../crewBoard'
+import type { TimelineResponse } from '../boardTimeline'
 
 export const SEARCH_MIN_CHARS = 2  // backend session search threshold (must match kiro_crew.history.SEARCH_MIN_CHARS)
 
@@ -176,6 +177,21 @@ export function createSessionsEndpoints({ get, post, del, j, jfetch: fetch, send
     crewBoardAction: (conductor: string, itemId: string, action: CrewBoardAction, reportId?: string, rank?: number) =>
       post('/api/crew-board/action', { conductor, item_id: itemId, action, ...(reportId ? { report_id: reportId } : {}), ...(rank !== undefined ? { rank } : {}) })
         .then(j) as Promise<CrewBoardActionResult>,
+    /**
+     * The Timeline's own read: every ledger line of the last `hours` per item, with
+     * the time and kind of each and NOTHING else.
+     *
+     * A second read rather than more of the board's: the board sends each item's
+     * newest 20 events, too few for a 24-hour picture, and it sends their text,
+     * which on a `bind` line is a worker session key. This one sends no text at
+     * all, so a wider window stays as safe as the narrow one. `hours` is one of
+     * `TIMELINE_WINDOWS`; anything else is refused `invalid_hours`. It shares
+     * `jCrewBoard`, so a conductor with no ledger yet (404 `no_ledger`) is the
+     * empty state and not a journalled error.
+     */
+    crewBoardTimeline: (conductor: string, hours: number) =>
+      get(`/api/crew-board/timeline?conductor=${encodeURIComponent(conductor)}&hours=${encodeURIComponent(String(hours))}`)
+        .then(jCrewBoard) as Promise<TimelineResponse>,
   }
 
   return { runtimes, history, historyDetail, crewBoard }

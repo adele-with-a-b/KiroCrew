@@ -555,6 +555,38 @@ which cancels the worker's running turn and keeps its session, branch and
 reports. There is no take-over. To ask where a goal stands, you can still ask the
 conductor session — it answers from the record.
 
+### The board's Timeline
+
+The board's **Timeline** view draws what happened to each item over the last 6, 12
+or 24 hours. It reads `GET /api/crew-board/timeline?conductor=<session key>&hours=12`,
+deliberately narrower than the board read: it answers with each line's time, kind
+and report status — and a verdict's value on a verdict line — and nothing else. No
+line's text leaves the gateway, because a `bind` line's text is a worker's session
+key and a report's is the summary the board read already sends, redacted, on the
+row. That is what lets this read send EVERY line of the window instead of the board
+read's newest twenty per item. The window also carries the newest line from BEFORE
+it that opens a stretch (a `plan` write never does), so an item already running
+when the window opened is drawn from its left edge; an item closed before the
+window is left out. A `plan` line the person wrote (a rank drag on Up next,
+`apply_person_rank`) carries `by: "person"`: the writer owns its text
+(`work_ledger_plan.PERSON_RANK_TEXT`), the route reads it with
+`is_person_rank_text`, and no text is sent. No schema field records the writer. Only 6, 12 and 24 hours are served,
+and anything else is refused with `invalid_hours`.
+
+The ledger records what a conductor WRITES, never what it reads. So the Timeline's
+Conductor lane ticks on its own writes (`create`, `bind`, `decision`, `verdict`,
+`plan`, `ask`, `close`; never a `plan` line marked `by: "person"`) and names the
+longest stretch of the window it wrote nothing in, from its newest write before the
+window when the read carries one, so a window with no tick at all is one gap; no surface claims a conductor "looked" at a time, because nothing
+stores that. Nothing on the Timeline is a forecast or a share of "done" either:
+the ledger holds no such number, and the view draws only the lines it wrote.
+
+A worker's report is a diamond on its item's lane. Consecutive `progress`
+reports are coalesced by the store, which keeps only the newest, so a long run
+with no status change in it leaves ONE progress line and draws ONE diamond,
+however many times its worker reported. The stretch itself is unbroken: the
+`bind` or `decision` before it is what opened it.
+
 ### When a run is done
 
 A conductor ends its run by sending you one final report and then stopping its

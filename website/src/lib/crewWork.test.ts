@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { crewNeedsYou, crewWorkCounts, longestStalledWork, nextCrewWorkDeadline, stalledWorkKeys, useCrewWorkClock } from './crewWork'
+import { crewNeedsYou, crewWorkCounts, fmtMinutes, longestStalledWork, nextCrewWorkDeadline, stalledWorkKeys, useCrewWorkClock } from './crewWork'
 import type { CrewWorkItemFacts } from '../types'
 
 const NOW = 1_800_000_000_000
@@ -112,5 +112,14 @@ describe('the crew-work clock — a quiet board still turns Waiting into Stalled
     expect(result.current).toBe(0)
     act(() => { vi.advanceTimersByTime(1_100) })
     expect(result.current).toBe(1)
+  })
+})
+
+describe('fmtMinutes — an age is the whole minutes that have passed', () => {
+  it('says a fraction of a minute as the whole minutes before it, at any length', () => {
+    expect(fmtMinutes(540.43)).toBe(fmtMinutes(540))
+    expect(fmtMinutes(59.9)).toBe(fmtMinutes(59))
+    expect(fmtMinutes(0.4)).toBe(fmtMinutes(1))
+    expect(fmtMinutes(540.43)).not.toMatch(/\d\.\d/)
   })
 })

@@ -171,9 +171,11 @@ export function useCrewWorkClock(facts: readonly (CrewWorkFacts | undefined | nu
 
 /** A quiet or elapsed time in whole minutes, short: "32m", "1h 5m". The one form
  *  the Board's Milestones and the Sessions row's stalled line both use; '' when
- *  `mins` is not a number. */
+ *  `mins` is not a number. A fraction is said as the whole minutes that have
+ *  passed, so a time measured between two stamps never prints "11.433m". */
 export function fmtMinutes(mins: number): string {
   if (!Number.isFinite(mins)) return ''
-  if (mins < 60) return fmtDuration([[Math.max(1, mins), 'minute']], { unitDisplay: 'narrow' } as never)
-  return fmtDuration([[Math.floor(mins / 60), 'hour'], [mins % 60, 'minute']], { dropZero: true, unitDisplay: 'narrow' } as never)
+  const whole = Math.floor(mins)
+  if (whole < 60) return fmtDuration([[Math.max(1, whole), 'minute']], { unitDisplay: 'narrow' } as never)
+  return fmtDuration([[Math.floor(whole / 60), 'hour'], [whole % 60, 'minute']], { dropZero: true, unitDisplay: 'narrow' } as never)
 }
