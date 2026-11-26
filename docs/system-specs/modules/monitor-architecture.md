@@ -251,18 +251,31 @@ itself, through its own identity-gated, audited and containment-judged route.
 Every turn a work-ledger watch delivers on a dashboard slot, quiet cycle or
 wake, also ENDS with the `[seats]` lines (`dashboard/patrol_seats.py`), because
 conductors left worker seats empty while tasks waited and a prompt rule alone
-did not change that. The fact line names the open items no worker is bound to
-(an epic and a sub-task excepted: neither is ever bound), the room on this
-computer (`resource_status` posture) and, with `work_ledger.remote_dispatch`
-on, on each registered crew (`remote_placement.read_headroom` judged by
-`room_short`, the bar placement admits by), and the closed items whose worker
-session is still open (this gateway's slot table, or the hub's last stored pull
-for a crew-bound item; positive evidence only, read by
-`probes.work_ledger.seat_facts`). One fixed `SEATS_INSTRUCTION` line follows.
-Ids, counts, postures and fixed words only, never a title or a worker's summary,
-so no report can forge a line; ids are listed up to `MAX_LISTED_IDS` with the
-whole count. A board with no unstarted task and no finished worker open adds
-nothing, and its room is not read. A crew never delays the wake: the line shows
+did not change that. A seat is a `concurrency_cap` slot, counted as the store
+refuses on (`work_ledger.count_seated`, read by `probes.work_ledger.seat_facts`).
+The fact line names the open stories holding a seat with no worker, in
+`next_pick` order (`work_plan_vocab.pick_key`); then, only while a seat is free
+(cap minus seats held, or no goal recorded), the marked backlog's count, the
+free seats and its next pick; the room on this computer (`resource_status`
+posture) and, with `work_ledger.remote_dispatch` on, on each registered crew
+(`remote_placement.read_headroom` judged by `room_short`, the bar placement
+admits by); and the finished worker sessions still open. That last part counts
+sessions, not items: a Conductor may bind a new item to the session a closed one
+used, so a session any open item names is never a finished worker, and a session
+several closed items shared is one worker, named by its newest closed item and
+read from that item alone. It takes positive evidence only: a slot present in the
+registry (`has_slot`, never `slot_exists`, which answers open for every name
+while a restore runs), or for a crew-bound item the hub's stored record of that
+crew's slot list, which `session_close(crew=)` marks closed for every item on that
+slot, open or closed (`remote_ingest.mark_slot_closed`), because no pull reads a
+finished item again. A crew-bound worker is named only while that close can reach
+its crew: the preview on and the crew registered and connected
+(`patrol_seats.crew_reachable`); otherwise no close could take it off the line.
+Epics and sub-tasks are never named. One fixed `SEATS_INSTRUCTION`
+line follows. Ids, counts, postures and fixed words only, never a title or a
+worker's summary, so no report can forge a line; ids are listed up to
+`MAX_LISTED_IDS` with the whole count. A board with nothing to start or close
+adds nothing, a full board's backlog included, and its room is not read. A crew never delays the wake: the line shows
 its last reading within `ROOM_FRESH_SECS` (else `unknown`), a crew that is not
 connected reads `unreachable` at once, and one refresh bounded by
 `PROBE_TIMEOUT_S` runs in the background for the next wake. The lines come last,

@@ -388,6 +388,29 @@ async def holds_finished_slot(board: str, instance_id: str, slot: str) -> bool:
     )
 
 
+async def mark_slot_closed(board: str, instance_id: str, slot: str) -> None:
+    """Record every item's crew worker on *slot* as closed, once its crew closed it.
+
+    The pull reads open items only, so nothing else ever updates a finished item's
+    record, and the patrol's ``[seats]`` line would name its worker as still open
+    for good. An item still open is marked too: when its session closes first and
+    no pull reads it before the item closes, its record would keep the last open
+    answer a pull read; a later pull reads the same answer from the slot list.
+    Under the board lock, as every record write is. Never raises.
+    """
+    try:
+        async with _board_lock(board):
+            items = await asyncio.to_thread(work_ledger.list_work_items, board)
+            for item in items:
+                if not (item.worker_instance_id == instance_id and item.worker_session_key == slot):
+                    continue
+                record = await asyncio.to_thread(_stored, board, item.item_id)
+                record.closed, record.running = True, False
+                await asyncio.to_thread(_store, board, item.item_id, record)
+    except Exception:  # noqa: BLE001 - the close itself already happened
+        logger.warning("could not mark %s on %s closed", slot, instance_id, exc_info=True)
+
+
 def open_remote_bindings() -> dict[str, int]:
     """Open remote bindings per crew across every ledger here: wave 5's reservations.
 

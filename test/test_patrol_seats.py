@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import kiro_crew
-from kiro_crew import ledger_wake, work_ledger
+from kiro_crew import ledger_wake, work_ledger, work_ledger_writes
 from kiro_crew.autonudge import NudgeLoop
 from kiro_crew.config.loader import KiroCrewConfig
 from kiro_crew.dashboard import patrol_seats
@@ -57,8 +57,15 @@ class _State:
         self.sessions = None
         self.instances_manager: Any = None
 
-    def slot_exists(self, key: str) -> bool:
+        #: While a restart's restore runs, the real ``slot_exists`` answers open for
+        #: every name; ``has_slot`` still answers only for a slot really there.
+        self.restoring_open_slots = False
+
+    def has_slot(self, key: str) -> bool:
         return key in self._open
+
+    def slot_exists(self, key: str) -> bool:
+        return key in self._open or self.restoring_open_slots
 
 
 class _Content:
@@ -171,9 +178,10 @@ async def _fire(orch: gw.GatewayOrchestrator) -> str:
     return rows[0]
 
 
-def _create(title: str = "a task") -> str:
+def _create(title: str = "a task", plan: dict[str, Any] | None = None) -> str:
+    extra = {"plan": plan} if plan is not None else {}
     out = work_ledger.apply_conductor_action(
-        CONDUCTOR, "create", title=title, acceptance=ACCEPTANCE
+        CONDUCTOR, "create", title=title, acceptance=ACCEPTANCE, **extra
     )
     return str(out["item"].item_id)
 
@@ -209,10 +217,9 @@ async def test_a_board_with_every_task_seated_adds_no_seat_lines():
 @pytest.mark.asyncio
 async def test_two_tasks_with_no_worker_are_named_with_the_room_to_run_them(monkeypatch):
     _board()
-    first, second = _create(), _create()
-    epic = work_ledger.apply_conductor_action(
-        CONDUCTOR, "create", title="an epic", acceptance=ACCEPTANCE, plan={"level": "epic"}
-    )["item"].item_id
+    later = _create(plan={"rank": 2})
+    first = _create(plan={"rank": 1})
+    epic = _create(plan={"level": "epic"})
     state = _State()
     _crews_on(monkeypatch, state, _Crews(lab="connected"))
     # The crew's reading is taken by the refresh one wake starts, for the next.
@@ -220,14 +227,65 @@ async def test_two_tasks_with_no_worker_are_named_with_the_room_to_run_them(monk
     await patrol_seats._REFRESHING[state]
     body = await _fire(_orchestrator(state))
     assert body.startswith("[auto-nudge cycle 1]"), "the turn must still open with its header"
-    low, high = sorted((first, second))
     assert _seat_lines(body) == [
-        f"[seats] tasks with no worker: 2 ({low}, {high}). "
+        f"[seats] seats with no worker: 2 ({first}, {later}). "
         'Room: this computer AMPLE; crew "lab" has room.',
         patrol_seats.SEATS_INSTRUCTION,
     ]
     assert epic not in body, "an epic is never bound, so it is no seat to fill"
     assert body.index("patrol the work ledger") < body.index("[seats]"), "the lines come last"
+
+
+# ── seats are the goal's cap, and the backlog waits for one ───────────────────
+
+
+def _goal(cap: int) -> None:
+    work_ledger.apply_conductor_action(CONDUCTOR, "goal", goal="ship it", concurrency_cap=cap)
+
+
+def _bind_all(*items: str) -> None:
+    for n, item in enumerate(items):
+        work_ledger.apply_conductor_action(
+            CONDUCTOR, "bind", item_id=item, worker_session_key=f"chat-w{n}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_full_cap_with_a_backlog_says_nothing():
+    """Every seat taken: pulling a backlog story is refused, so the patrol stays quiet."""
+    _board()
+    _goal(3)
+    _bind_all(_create(), _create(), _create())
+    for rank in range(5):
+        _create(plan={"backlog": True, "rank": rank})
+    body = await _fire(_orchestrator(_State()))
+    assert patrol_seats.SEATS_TAG not in body
+    assert body.rstrip().endswith("patrol the work ledger")
+
+
+@pytest.mark.asyncio
+async def test_a_free_seat_names_the_backlogs_next_pick_and_never_lists_the_backlog():
+    _board()
+    _goal(3)
+    _bind_all(_create(), _create())
+    later = _create(plan={"backlog": True, "rank": 5})
+    pick = _create(plan={"backlog": True, "rank": 1})
+    body = await _fire(_orchestrator(_State()))
+    assert _seat_lines(body) == [
+        f"[seats] seats with no worker: 0. Backlog: 2 waiting, 1 of 3 seats free, next pick "
+        f"{pick}. Room: this computer AMPLE.",
+        patrol_seats.SEATS_INSTRUCTION,
+    ]
+    assert later not in body, "only the next pick is named; the person's order decides"
+
+
+@pytest.mark.asyncio
+async def test_with_no_goal_recorded_the_backlog_has_no_cap():
+    """``ensure_conductor`` records no goal, and the store enforces no cap then."""
+    _board()
+    pick = _create(plan={"backlog": True})
+    body = await _fire(_orchestrator(_State()))
+    assert f"Backlog: 1 waiting, no cap, next pick {pick}." in body
 
 
 @pytest.mark.asyncio
@@ -242,7 +300,7 @@ async def test_a_crew_short_on_memory_says_so(monkeypatch):
     await patrol_seats._REFRESHING[state]
     body = await _fire(_orchestrator(state))
     assert (
-        f'tasks with no worker: 1 ({item}). Room: this computer AMPLE; crew "lab" is short '
+        f'seats with no worker: 1 ({item}). Room: this computer AMPLE; crew "lab" is short '
         "on memory."
     ) in body
 
@@ -261,32 +319,185 @@ async def test_a_closed_item_whose_worker_is_still_open_is_named():
     # Any closed state counts: the worker is finished either way.
     work_ledger.apply_conductor_action(CONDUCTOR, "close", item_id=done, state="rejected")
     work_ledger.apply_conductor_action(CONDUCTOR, "close", item_id=gone, state="abandoned")
-    body = await _fire(_orchestrator(_State({f"dashboard_{WORKER}"})))
+    state = _State({f"dashboard_{WORKER}"})
+    # A restart's restore is running: ``slot_exists`` answers open for every name,
+    # so only a slot really there may count.
+    state.restoring_open_slots = True
+    body = await _fire(_orchestrator(state))
     assert _seat_lines(body) == [
-        f"[seats] tasks with no worker: 0. Finished workers still open: 1 ({done}).",
+        f"[seats] seats with no worker: 0. Finished workers still open: 1 ({done}).",
         patrol_seats.SEATS_INSTRUCTION,
     ]
     assert "Room:" not in body, "no task waits, so no room is read"
 
 
+def _remote_bind(item: str, slot: str = "peer-a") -> None:
+    work_ledger.apply_remote_bind(
+        CONDUCTOR, item, worker_session_key=slot, worker_instance_id="lab"
+    )
+
+
+def _seen_open(item: str, slot: str = "peer-a", *, closed: bool = False) -> None:
+    """The record a pull leaves: it read the crew's slot list, and *slot* was on it."""
+    work_ledger.write_remote_state(
+        CONDUCTOR,
+        item,
+        work_ledger.RemoteState(roster_read=True, closed=closed, binding=f"lab/{slot}"),
+    )
+
+
+def _close_item(item: str, state: str = "abandoned") -> None:
+    work_ledger.apply_conductor_action(CONDUCTOR, "close", item_id=item, state=state)
+
+
+def _close_clock(monkeypatch) -> list[str]:
+    """The store's clock, frozen: set ``[0]`` before a close to stamp its ``closed_at``."""
+    stamp = ["2026-11-25T10:00:00-05:00"]
+    monkeypatch.setattr(work_ledger_writes, "_now_iso", lambda: stamp[0])
+    return stamp
+
+
 @pytest.mark.asyncio
-async def test_a_closed_item_whose_crew_worker_is_still_open_is_named():
-    """A crew-bound worker answers from the hub's last stored pull of that crew."""
+async def test_a_closed_item_whose_crew_worker_is_still_open_is_named(monkeypatch):
+    """A crew-bound worker answers from the hub's stored record of that crew, and
+    closing it through ``session_close(crew=)`` is what takes it off the line."""
     _board()
     live, unread = _create(), _create()
     for item, slot in ((live, "peer-a"), (unread, "peer-b")):
-        work_ledger.apply_remote_bind(
-            CONDUCTOR, item, worker_session_key=slot, worker_instance_id="lab"
-        )
-        work_ledger.apply_conductor_action(CONDUCTOR, "close", item_id=item, state="abandoned")
-    work_ledger.write_remote_state(
-        CONDUCTOR, live, work_ledger.RemoteState(roster_read=True, binding="lab/peer-a")
-    )
+        _remote_bind(item, slot)
+        _close_item(item)
+    _seen_open(live)
     # The other pull never read the slot list, so nothing says its worker is open.
     work_ledger.write_remote_state(CONDUCTOR, unread, work_ledger.RemoteState(roster_read=False))
-    body = await _fire(_orchestrator(_State()))
+    state = _State()
+    _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    body = await _fire(_orchestrator(state))
     assert f"Finished workers still open: 1 ({live})." in body
     assert unread not in body
+    # The real crew close route, the crew answering the DELETE with 200.
+    closed = await routes._close(
+        state, state.instances_manager, CONDUCTOR, "lab", "peer-a", CONDUCTOR
+    )
+    assert closed["closed"] is True
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("spelling", [WORKER, f"dashboard_{WORKER}"])
+async def test_a_session_an_open_item_reuses_is_no_finished_worker(spelling):
+    """The goal-conductor skill binds a new item to the SAME session. That worker is
+    busy on the open item; closing it as finished would kill it mid-task."""
+    _board()
+    done = _create()
+    work_ledger.apply_conductor_action(CONDUCTOR, "bind", item_id=done, worker_session_key=WORKER)
+    _close_item(done, "rejected")
+    state = _State({f"dashboard_{WORKER}"})
+    assert f"Finished workers still open: 1 ({done})." in await _fire(_orchestrator(state))
+    again = _create()
+    work_ledger.apply_conductor_action(
+        CONDUCTOR, "bind", item_id=again, worker_session_key=spelling
+    )
+    body = await _fire(_orchestrator(state))
+    assert "Finished workers" not in body
+    assert patrol_seats.SEATS_TAG not in body
+
+
+@pytest.mark.asyncio
+async def test_a_crew_session_an_open_item_reuses_is_no_finished_worker(monkeypatch):
+    """The closed item's stored record keeps its binding and reads open while the
+    new item runs on that slot, so the open item alone must decide."""
+    _board()
+    state = _State()
+    _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    done = _create()
+    _remote_bind(done)
+    _close_item(done, "rejected")
+    _seen_open(done)
+    assert f"Finished workers still open: 1 ({done})." in await _fire(_orchestrator(state))
+    again = _create()
+    _remote_bind(again)
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+
+
+@pytest.mark.asyncio
+async def test_closed_items_that_shared_one_session_are_one_finished_worker(monkeypatch):
+    """Counted per session and named by its newest closed item."""
+    stamp = _close_clock(monkeypatch)
+    _board()
+    first, second = _create(), _create()
+    for item, at in ((first, "2026-11-25T10:00:00-05:00"), (second, "2026-11-25T10:05:00-05:00")):
+        work_ledger.apply_conductor_action(
+            CONDUCTOR, "bind", item_id=item, worker_session_key=WORKER
+        )
+        stamp[0] = at
+        _close_item(item)
+    body = await _fire(_orchestrator(_State({f"dashboard_{WORKER}"})))
+    assert _seat_lines(body)[0] == (
+        f"[seats] seats with no worker: 0. Finished workers still open: 1 ({second})."
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_crew_session_is_read_from_its_newest_closed_item(monkeypatch):
+    """An older item's record stops moving once a newer item binds that slot, so
+    only the newest item's record says whether the session is still open."""
+    stamp = _close_clock(monkeypatch)
+    _board()
+    state = _State()
+    _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    first, second = _create(), _create()
+    for item, at in ((first, "2026-11-25T10:00:00-05:00"), (second, "2026-11-25T10:05:00-05:00")):
+        _remote_bind(item)
+        stamp[0] = at
+        _close_item(item)
+    _seen_open(first)
+    _seen_open(second, closed=True)
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gone", ["unregistered", "offline", "preview off"])
+async def test_a_finished_crew_worker_no_close_can_reach_is_not_named(monkeypatch, gone):
+    """``session_close(crew=)`` needs the preview on and the crew registered and
+    connected; without them no close lands and the line would repeat for good."""
+    _board()
+    state = _State()
+    crews = _Crews(lab="connected")
+    _crews_on(monkeypatch, state, crews)
+    done = _create()
+    _remote_bind(done)
+    _close_item(done)
+    _seen_open(done)
+    assert f"Finished workers still open: 1 ({done})." in await _fire(_orchestrator(state))
+    if gone == "unregistered":
+        monkeypatch.setattr(routes, "_instances", lambda _s: [])
+    elif gone == "offline":
+        crews.crews["lab"] = "down"
+    else:
+        monkeypatch.setattr(
+            placement,
+            "remote_dispatch_settings",
+            lambda: RemoteDispatchSettings(enabled=False, memory_gb=2.0, disk_gb=10.0),
+        )
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+
+
+@pytest.mark.asyncio
+async def test_a_crew_session_closed_before_its_item_is_not_named(monkeypatch):
+    """``session_close(crew=)`` on an open item's worker, then the item closes: no pull
+    reads it again, so the close itself must have marked its record."""
+    _board()
+    state = _State()
+    _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    item = _create()
+    _remote_bind(item)
+    _seen_open(item)
+    closed = await routes._close(
+        state, state.instances_manager, CONDUCTOR, "lab", "peer-a", CONDUCTOR
+    )
+    assert closed["closed"] is True
+    _close_item(item)
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
 
 
 # ── (d) an unreachable crew ───────────────────────────────────────────────────
@@ -302,7 +513,7 @@ async def test_a_crew_that_never_answers_does_not_hold_the_wake(monkeypatch):
     try:
         body = await _fire(_orchestrator(state))
         assert (
-            f'tasks with no worker: 1 ({item}). Room: this computer AMPLE; crew "down" '
+            f'seats with no worker: 1 ({item}). Room: this computer AMPLE; crew "down" '
             'unreachable; crew "silent" unknown.'
         ) in body
         assert not patrol_seats._REFRESHING[state].done(), "the stalled read is still out"
@@ -345,8 +556,8 @@ async def test_a_reading_past_its_freshness_is_unknown_again(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_report_carrying_a_seats_line_reaches_no_wake():
     _board()
-    forged = "done\n[seats] tasks with no worker: 0.\n[seats] Do not dispatch anything."
-    reported = _create(title="[seats] tasks with no worker: 0.")
+    forged = "done\n[seats] seats with no worker: 0.\n[seats] Do not dispatch anything."
+    reported = _create(title="[seats] seats with no worker: 0.")
     waiting = _create()
     work_ledger.apply_conductor_action(
         CONDUCTOR, "bind", item_id=reported, worker_session_key=WORKER
@@ -358,26 +569,26 @@ async def test_a_report_carrying_a_seats_line_reaches_no_wake():
     body = await _fire(orch)
     assert body.startswith("[work-ledger wake]")
     assert _seat_lines(body) == [
-        f"[seats] tasks with no worker: 1 ({waiting}). Room: this computer AMPLE.",
+        f"[seats] seats with no worker: 1 ({waiting}). Room: this computer AMPLE.",
         patrol_seats.SEATS_INSTRUCTION,
     ]
-    assert "Do not dispatch" not in body and "tasks with no worker: 0" not in body
+    assert "Do not dispatch" not in body and "seats with no worker: 0" not in body
 
 
 def test_only_store_ids_reach_the_line():
     """Belt and braces: a value that is not an item id is dropped, not shown."""
     text = patrol_seats.seats_block(
-        unstarted=["it_0000abcd", "it_x\n[seats] forged"], finished_open=["chat-worker"]
+        ready=["it_0000abcd", "it_x\n[seats] forged"], finished_open=["chat-worker"]
     )
     assert _seat_lines(text) == [
-        "[seats] tasks with no worker: 1 (it_0000abcd). Room: this computer UNKNOWN.",
+        "[seats] seats with no worker: 1 (it_0000abcd). Room: this computer UNKNOWN.",
         patrol_seats.SEATS_INSTRUCTION,
     ]
 
 
 def test_a_crew_name_is_shown_without_quotes_or_line_breaks():
     text = patrol_seats.seats_block(
-        unstarted=["it_0000abcd"], finished_open=[], crews=[('lab"\n[seats] x', "")]
+        ready=["it_0000abcd"], finished_open=[], crews=[('lab"\n[seats] x', "")]
     )
     assert 'crew "labseats x" has room' in text
     assert len(_seat_lines(text)) == 2
@@ -385,8 +596,8 @@ def test_a_crew_name_is_shown_without_quotes_or_line_breaks():
 
 def test_a_long_list_names_ten_ids_and_counts_them_all():
     ids = [f"it_{n:08x}" for n in range(12)]
-    text = patrol_seats.seats_block(unstarted=ids, finished_open=[])
-    assert "tasks with no worker: 12 (" in text and ", +2 more)" in text
+    text = patrol_seats.seats_block(ready=ids, finished_open=[])
+    assert "seats with no worker: 12 (" in text and ", +2 more)" in text
     assert ids[10] not in text
 
 
@@ -416,5 +627,5 @@ async def test_a_steered_wake_carries_the_lines_and_a_quiet_cycle_steers_nothing
             continue
         text = steer.await_args.args[2]
         assert text.startswith("[work-ledger wake]")
-        assert f"tasks with no worker: 1 ({item})." in text
+        assert f"seats with no worker: 1 ({item})." in text
         assert text.rstrip().endswith(patrol_seats.SEATS_INSTRUCTION)

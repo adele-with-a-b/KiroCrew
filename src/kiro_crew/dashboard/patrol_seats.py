@@ -6,11 +6,14 @@ itself states the facts, computed here at delivery, on every turn a work-ledger
 watch delivers (``nudge_dashboard_fire``) and on a ``[work-ledger wake]`` steered
 into a running turn:
 
-* the open tasks no worker is on, as ``it_`` ids and a count;
+* the stories holding a seat in the goal's ``concurrency_cap`` with no worker, and,
+  while a seat is free, the marked backlog and its next pick, in the store's own
+  seat count and pick order (``probes.work_ledger.seat_facts``);
 * the room on this computer, ``resource_status``'s posture, and, with the
   remote-dispatch preview on, on each registered crew, read and judged the way
   placement does (``remote_placement.read_headroom`` and ``room_short``);
-* the closed items whose worker session is still open, here or on its crew.
+* the finished worker sessions still open, here or on a crew a close can reach,
+  one closed item named per session, and none for a session an open item uses.
 
 Then one fixed instruction line. A board with nothing to say adds nothing, so a
 quiet patrol costs no extra text, and its room is not even read.
@@ -41,8 +44,9 @@ logger = logging.getLogger(__name__)
 SEATS_TAG = "[seats]"
 
 SEATS_INSTRUCTION = (
-    f"{SEATS_TAG} Dispatch every ready, independent task with no worker now, on whichever "
-    "computer has room, and close finished workers; say which you did not start and why."
+    f"{SEATS_TAG} Dispatch every ready, independent task in a seat with no worker now, and "
+    "pull the next pick into each free seat, on whichever computer has room; close finished "
+    "workers; say which you did not start and why."
 )
 
 #: Ids named per list; the count before them is always the whole number.
@@ -90,25 +94,42 @@ def _room_phrase(word: str) -> str:
     return f"is short on {word}"
 
 
+def _pullable(backlog: Sequence[str], seats_free: int | None) -> bool:
+    """Whether a backlog story can be pulled now: one waits and a seat is free."""
+    return bool(backlog) and (seats_free is None or seats_free > 0)
+
+
 def seats_block(
     *,
-    unstarted: Sequence[str],
-    finished_open: Sequence[str],
+    ready: Sequence[str] = (),
+    backlog: Sequence[str] = (),
+    seats_free: int | None = None,
+    cap: int | None = None,
+    finished_open: Sequence[str] = (),
     local_room: str = "",
     crews: Sequence[tuple[str, str]] = (),
 ) -> str:
     """The ``[seats]`` fact line and the instruction line, or ``""`` with nothing to say.
 
-    *crews* is ``(name, room word)`` pairs: ``""`` for room, a short resource, or
-    :data:`UNREACHABLE` / :data:`UNKNOWN`. Room is stated only when a task waits.
-    Ids are listed sorted, and anything that is not an item id is dropped.
+    *ready* are stories holding a seat with no worker, *backlog* the marked backlog,
+    both in pick order (``probes.work_ledger.SeatFacts``); *seats_free* of *cap* is
+    the goal's free seats, ``None`` with no cap. A backlog with no free seat is
+    nothing to do, so it is not mentioned. *crews* is ``(name, room word)`` pairs:
+    ``""`` for room, a short resource, or :data:`UNREACHABLE` / :data:`UNKNOWN`.
+    Room is stated only when something can start. Anything that is not an item id
+    is dropped.
     """
-    unstarted = sorted(i for i in unstarted if _ITEM_ID.fullmatch(i))
-    finished_open = sorted(i for i in finished_open if _ITEM_ID.fullmatch(i))
-    if not unstarted and not finished_open:
+    ready = [i for i in ready if _ITEM_ID.fullmatch(i)]
+    backlog = [i for i in backlog if _ITEM_ID.fullmatch(i)]
+    finished_open = [i for i in finished_open if _ITEM_ID.fullmatch(i)]
+    pullable = _pullable(backlog, seats_free)
+    if not ready and not pullable and not finished_open:
         return ""
-    parts = [f"{SEATS_TAG} tasks with no worker: {_listed(unstarted)}."]
-    if unstarted:
+    parts = [f"{SEATS_TAG} seats with no worker: {_listed(ready)}."]
+    if pullable:
+        free = "no cap" if seats_free is None else f"{seats_free} of {cap} seats free"
+        parts.append(f"Backlog: {len(backlog)} waiting, {free}, next pick {backlog[0]}.")
+    if ready or pullable:
         rooms = [f"this computer {(local_room or UNKNOWN).upper()}"]
         rooms += [f'crew "{_crew_name(name)}" {_room_phrase(word)}' for name, word in crews]
         parts.append(f"Room: {'; '.join(rooms)}.")
@@ -201,19 +222,30 @@ async def seats_text(state: Any, conductor_key: str) -> str:
     from kiro_crew.probes.work_ledger import seat_facts
 
     try:
-        exists = getattr(state, "slot_exists", None)
+        # ``has_slot``, not ``slot_exists``: the latter answers open for every name
+        # while a restore runs, and only a slot really present is a worker still open.
+        present = getattr(state, "has_slot", None)
         facts = await asyncio.to_thread(
-            seat_facts, conductor_key, slot_exists=exists if callable(exists) else _no_slot
+            seat_facts,
+            conductor_key,
+            slot_present=present if callable(present) else _no_slot,
+            crew_reachable=lambda instance_id: crew_reachable(state, instance_id),
         )
         if facts is None:
             return ""
-        unstarted, finished_open = facts
-        if not unstarted:
-            return seats_block(unstarted=(), finished_open=finished_open)
-        room = await asyncio.to_thread(local_room)
-        crews = await crew_rooms(state)
+        room = ""
+        crews: list[tuple[str, str]] = []
+        if facts.ready or _pullable(facts.backlog, facts.seats_free):
+            room = await asyncio.to_thread(local_room)
+            crews = await crew_rooms(state)
         return seats_block(
-            unstarted=unstarted, finished_open=finished_open, local_room=room, crews=crews
+            ready=facts.ready,
+            backlog=facts.backlog,
+            seats_free=facts.seats_free,
+            cap=facts.cap,
+            finished_open=facts.finished_open,
+            local_room=room,
+            crews=crews,
         )
     except Exception:  # noqa: BLE001 - the wake goes out without the line
         logger.warning("seats: line not built for %s", conductor_key, exc_info=True)
@@ -222,3 +254,22 @@ async def seats_text(state: Any, conductor_key: str) -> str:
 
 def _no_slot(_key: str) -> bool:
     return False
+
+
+def crew_reachable(state: Any, instance_id: str) -> bool:
+    """Whether a ``session_close(crew=)`` can reach *instance_id* now. Blocking.
+
+    That verb needs the remote-dispatch preview on and the crew registered
+    (``resolve_crew``) and connected, judged as the room part judges it
+    (``remote_placement._connected``). A finished worker on a crew it cannot
+    reach is not named: no close could take it off the line.
+    """
+    from kiro_crew.dashboard.handlers import remote_dispatch_routes as routes
+    from kiro_crew.dashboard.handlers import remote_placement as placement
+
+    mgr = getattr(state, "instances_manager", None)
+    if mgr is None or not placement.remote_dispatch_settings().enabled:
+        return False
+    rows = routes._instances(state)
+    registered = any(str(getattr(row, "id", "") or "") == instance_id for row in rows)
+    return registered and placement._connected(mgr, instance_id)

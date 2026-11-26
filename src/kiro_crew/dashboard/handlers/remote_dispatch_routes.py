@@ -1103,6 +1103,9 @@ async def _close(
         await _forget_locked(state, caller, instance_id, slot)
         destroyed = await remote_ingest.mark_destroyed(state, board, instance_id, slot)
         return {"target": slot, "crew": instance_id, "closed": True, "destroyed": destroyed}
+    if board and (200 <= status < 300 or remote_ingest.slot_gone(status, payload)):
+        # No pull reads a finished item again, so this write is what records the close.
+        await remote_ingest.mark_slot_closed(board, instance_id, slot)
     if status == 404:
         # Already gone on the crew: nothing left to drive, so the record goes too.
         await _forget_locked(state, caller, instance_id, slot)

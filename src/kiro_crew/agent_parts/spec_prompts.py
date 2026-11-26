@@ -193,10 +193,11 @@ Confirm activation from the gateway arm notice or `monitor_inspect` on a later t
     "dependent_calls": _DEPENDENT_CALLS_RULE,
     "act_by_status": """Read the ledger first, every cycle. A cycle a worker's report woke you for
 arrives with a `[work-ledger wake]` line naming each item that moved and a
-`[work-ledger]` line telling you what to call. A cycle whose board has a task no
-worker is on, or a finished worker still open, ends with `[seats]` lines the
-gateway computed (those ids, the room on this computer and each crew): do what
-their last line says in that same cycle. The wake is a notification, not the
+`[work-ledger]` line telling you what to call. A cycle whose board has a seat
+with no worker, a free seat and a backlog, or a finished worker still open ends
+with `[seats]` lines the gateway computed (those ids, the next pick, the room on
+this computer and each crew): do what their last line says in that same cycle.
+The wake is a notification, not the
 state — it names the item that moved and says nothing about the rest of the
 board — so read before acting: `work_ledger_read` with `item_id=<id>` for an
 item a wake named, or with `compact=true` for the whole board. A wake naming a
