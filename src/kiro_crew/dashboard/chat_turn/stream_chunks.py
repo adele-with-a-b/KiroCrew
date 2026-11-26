@@ -300,8 +300,11 @@ TEXT_AFTER_QUIET_END_NOTICE = "text_after_quiet_end"
 #: The backend's alternation placeholder, as the model repeats it after a quiet end
 #: (see :func:`_on_text_chunk`): ``(No assistant response was recorded...)``, in its
 #: long and short forms. No one wrote it, so it is taken out of the kept text; kept,
-#: it would be one folded line per patrol wake that says nothing.
-_ALTERNATION_PLACEHOLDER = re.compile(r"\(No assistant response was recorded[^)]*\)")
+#: it would be one folded line per patrol wake that says nothing. It is matched only
+#: where the run starts, where the model repeats it, and never past a newline, so
+#: words the agent wrote that quote it, or follow a copy with no ``)``, are kept. The
+#: one accepted loss: an answer that starts with its exact words, in brackets.
+_ALTERNATION_PLACEHOLDER = re.compile(r"\A(?:\s*\(No assistant response was recorded[^)\n]*\))+")
 
 
 def _keep_text_after_quiet_end(turn: _ChatTurn) -> None:
@@ -320,7 +323,7 @@ def _keep_text_after_quiet_end(turn: _ChatTurn) -> None:
     held = turn._held_after_terminal
     if not held or turn._held_for_steer:
         return
-    text = _ALTERNATION_PLACEHOLDER.sub("", "".join(ev.text or "" for ev in held)).strip()
+    text = _ALTERNATION_PLACEHOLDER.sub("", "".join(ev.text or "" for ev in held), count=1).strip()
     held.clear()
     if not text:
         return

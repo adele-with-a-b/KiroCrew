@@ -639,6 +639,28 @@ async def _pending_reports(state, mate) -> dict:
     return dict(wakes._pending(state).get(mate.key) or {})
 
 
+async def _notices_after_quiet_ends(tmp_path, monkeypatch, *runs: tuple[str, ...]) -> list[str]:
+    """Drive one patrol wake per run of late chunks after a quiet end, in one chat, and
+    return every folded late-text notice it saved. None of them is an assistant row."""
+    state = _stub_state(tmp_path)
+    slot = state.get_or_create_slot("patrol-late-text")
+    slot._titled = True
+    quiet_end = [
+        _core_call("nothing_to_do", "tc-quiet"),
+        _result(session_directive.encode("nothing_to_do", {}, "Quiet end requested."), "tc-quiet"),
+    ]
+    end = AcpEvent(kind=EVENT_COMPLETE, stop_reason="end_turn")
+    for chunks in runs:
+        late = [AcpEvent(kind=EVENT_TEXT_CHUNK, text=t) for t in chunks]
+        await _drive_turn(state, slot, quiet_end + late + [end], monkeypatch)
+    assert not [m for m in slot.messages if m.get("role") == "assistant"], slot.messages
+    return [
+        m["content"]
+        for m in slot.messages
+        if (m.get("meta") or {}).get("notice") == TEXT_AFTER_QUIET_END_NOTICE
+    ]
+
+
 class TestDashboardRunnerHonoursTheSignal:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("self_wake", [True, False])
@@ -1003,8 +1025,9 @@ class TestDashboardRunnerHonoursTheSignal:
         the next request, and the model repeats it after every later quiet end. Kept,
         that is one folded line per patrol wake that says nothing. It is no one's
         words, so it is stripped and leaves no row, whole or cut across chunks, in
-        the short form too; real text after a quiet end still lands as one row, with
-        the placeholder taken out of it."""
+        the short form too, two in a row, or with blank lines around it; real text
+        after a quiet end still lands as one row, with the placeholder taken out of
+        it."""
         state = _stub_state(tmp_path)
         slot = state.get_or_create_slot("patrol-placeholder")
         slot._titled = True
@@ -1035,6 +1058,8 @@ class TestDashboardRunnerHonoursTheSignal:
             _late(placeholder[:40], placeholder[40:]),
             _late(placeholder),
             _late("(No assistant response was recorded.)"),
+            _late(placeholder, "\n\n" + placeholder),
+            _late("\n\n", "(No assistant response was recorded.)", "\n\n"),
         ):
             await _drive_turn(state, slot, quiet_end + late + [end], monkeypatch)
         assert _notices() == [], slot.messages
@@ -1046,6 +1071,40 @@ class TestDashboardRunnerHonoursTheSignal:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
+        "late",
+        [
+            ('The backend wrote "(No assistant response was recorded.)" into', " the history."),
+            (
+                "(No assistant response was recorded for the preceding turn",
+                "\n\nCI is green (5 jobs). Merged.",
+            ),
+        ],
+        ids=["quoted_in_a_sentence", "no_closing_bracket_then_a_paragraph"],
+    )
+    async def test_real_words_with_the_placeholder_s_wording_are_kept_whole(
+        self, tmp_path, monkeypatch, late
+    ):
+        """The placeholder is matched only where the run starts and never past a
+        newline, so the agent's own words are never cut: a sentence that quotes it
+        keeps every word, and a copy with no ``)`` keeps the paragraph after it
+        rather than eating it up to the next bracket."""
+        notices = await _notices_after_quiet_ends(tmp_path, monkeypatch, late)
+        assert notices == ["".join(late)]
+
+    @pytest.mark.asyncio
+    async def test_a_look_alike_is_kept_unless_the_answer_opens_with_its_exact_words(
+        self, tmp_path, monkeypatch
+    ):
+        """A bracketed note of the agent's own that opens with the placeholder's words
+        is kept whole when anything comes before it. The one accepted loss: an answer
+        that STARTS with those exact words, in brackets, reads as the placeholder."""
+        own = "(No assistant response was recorded by the old build, so I re-ran it.)"
+        kept = "I checked the log. " + own + " CI is green."
+        notices = await _notices_after_quiet_ends(tmp_path, monkeypatch, (kept,), (own,))
+        assert notices == [kept]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
         "order", ["echo_before_reply", "echo_at_terminal", "echo_before_quiet_end"]
     )
     async def test_a_person_s_steer_keeps_the_reply_through_a_quiet_end(
@@ -1053,7 +1112,7 @@ class TestDashboardRunnerHonoursTheSignal:
     ):
         """A person can steer into a turn that ends (or has ended) on
         ``nothing_to_do`` while its stream is still open. Their answer must not
-        be dropped with the filler, in every order a backend produces: kiro-cli
+        be dropped with the text before it, in every order a backend produces: kiro-cli
         echoes consumption before the reply streams; codex echoes it only at the
         terminal, so the steer is still pending when the text arrives; and a
         steer the model read BEFORE calling the directive still owns the text
@@ -1069,18 +1128,18 @@ class TestDashboardRunnerHonoursTheSignal:
                 session_directive.encode("nothing_to_do", {}, "Quiet end requested."), "tc-quiet"
             ),
         ]
-        filler = AcpEvent(kind=EVENT_TEXT_CHUNK, text="(No assistant response was recorded.)")
+        early = AcpEvent(kind=EVENT_TEXT_CHUNK, text="Checked CI, all green.")
         reply = AcpEvent(kind=EVENT_TEXT_CHUNK, text="Yes, still here.")
         # The admission ``steer_into_running_turn`` records for a live steer,
         # placed in the stream where the person pressed send.
         admit = object()
         if order == "echo_before_reply":
-            # The filler lands before any person spoke: it answers no one and is
-            # no one's words, so it is neither their reply nor a folded notice.
-            events = quiet_end + [filler, admit, consumed, reply]
+            # Text written before any person spoke answers no one, so it is kept
+            # as the folded notice, never as their reply.
+            events = quiet_end + [early, admit, consumed, reply]
             unsteered = 1
         elif order == "echo_at_terminal":
-            events = quiet_end + [filler, admit, reply, consumed]
+            events = quiet_end + [early, admit, reply, consumed]
             unsteered = 1
         else:
             # Once a person's steer was read, nothing after the quiet end can be
@@ -1100,14 +1159,18 @@ class TestDashboardRunnerHonoursTheSignal:
             await _drive_turn(state, slot, _stream(), monkeypatch)
         assistant = [m for m in slot.messages if m.get("role") == "assistant"]
         assert [m["content"] for m in assistant] == ["Yes, still here."], slot.messages
-        # The filler, when the model wrote it, leaves no folded notice either.
+        # The text before the steer, when the model wrote it, is only ever the
+        # folded notice, and it lands before the reply it preceded.
         late = [
             (m["role"], m["content"])
             for m in slot.messages
             if m.get("role") == "assistant"
             or (m.get("meta") or {}).get("notice") == TEXT_AFTER_QUIET_END_NOTICE
         ]
-        assert late == [("assistant", "Yes, still here.")], slot.messages
+        assert late == [
+            *([("notice", early.text)] if unsteered else []),
+            ("assistant", "Yes, still here."),
+        ], slot.messages
         wire = [
             c.args[1]["content"]
             for c in state.broadcast_ws.call_args_list
