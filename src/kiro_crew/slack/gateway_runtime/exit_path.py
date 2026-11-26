@@ -154,23 +154,43 @@ async def _shutdown(self: GatewayOrchestrator) -> None:
     if self.dashboard_state:
         from kiro_crew.dashboard.chat import save_all_slots_to_history
 
-        # save_all_slots_to_history does synchronous per-slot file I/O that
-        # takes the per-session cross-process lock; on the event loop a
-        # contended session would raise HistoryLockTimeout (and a wedged
-        # disk would block the loop). Offload to the bounded
-        # subprocess_executor with a deadline so a slot's final save is
-        # attempted off-loop and cannot stall the shutdown path.
-        try:
-            await asyncio.wait_for(
-                asyncio.get_running_loop().run_in_executor(
-                    subprocess_executor(),
-                    save_all_slots_to_history,
-                    self.dashboard_state,
-                ),
-                timeout=5.0,
-            )
-        except Exception:
-            logger.debug("Dashboard slot save before shutdown failed", exc_info=True)
+        dashboard_state = self.dashboard_state
+
+        async def _save_slots() -> None:
+            # save_all_slots_to_history does synchronous per-slot file I/O that
+            # takes the per-session cross-process lock; on the event loop a
+            # contended session would raise HistoryLockTimeout (and a wedged
+            # disk would block the loop). Offload to the bounded
+            # subprocess_executor with a deadline so a slot's final save is
+            # attempted off-loop and cannot stall the shutdown path.
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(
+                        subprocess_executor(),
+                        save_all_slots_to_history,
+                        dashboard_state,
+                    ),
+                    timeout=5.0,
+                )
+            except Exception:
+                logger.debug("Dashboard slot save before shutdown failed", exc_info=True)
+
+        async def _record_running_chats() -> None:
+            # A stop from outside (an install's ``launchctl kickstart -k``, a
+            # service manager, ``kirocrew stop``) ends the turns close_all() cuts
+            # below exactly as a planned restart does, so it records them the same
+            # way and the next boot resumes them (``restart_resume``). Beside the
+            # slot save, so its own 5 s bound adds no time to this shutdown; the
+            # names are read before either awaits, while every turn still runs.
+            # Never raises: a stop goes on without the record.
+            try:
+                from kiro_crew.dashboard import restart_resume
+
+                await restart_resume.record_running_slots(dashboard_state)
+            except Exception:
+                logger.warning("Resume-after-stop record skipped", exc_info=True)
+
+        await asyncio.gather(_record_running_chats(), _save_slots())
         self.dashboard_state.file_indexes.stop_all()
 
     if installer_tasks:

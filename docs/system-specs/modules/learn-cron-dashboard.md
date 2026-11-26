@@ -316,6 +316,25 @@ restart that never ran and resumes nothing. Otherwise the boot resumes only thos
 and one `resume_all_done` frame. A crash writes no file, so its chats keep the
 interruption row and the manual Resume, as before. Errors are logged, never raised.
 
+**A stop from outside records the same way** (`slack/gateway_runtime/exit_path._shutdown`).
+An install that restarts the gateway with `launchctl kickstart -k` and a service
+manager's stop send SIGTERM, `kirocrew stop` sends SIGTERM or the authenticated
+shutdown request, and Ctrl-C sends SIGINT; each sets the shutdown event, and the
+gateway's graceful `_shutdown` runs, not a planned restart's exec. Its first step
+on the dashboard state calls `record_running_slots` beside the slot save
+(`asyncio.gather`), before the teardown's `close_all()` cuts any turn, so its 5 s
+bound adds no time to `GRACEFUL_SHUTDOWN_SECS`; the import and the write are
+best-effort, and the stop goes on without the record. A stop with no chat mid-turn
+removes an earlier file. The next boot resumes these chats as after a planned
+restart, with one exception: after an explicit stop by the owner (`kirocrew stop`,
+the desktop app's Quit, Ctrl-C), the stops that leave `kept_trust`'s owner-stop
+mark, `resume_after_restart` still deletes the file but resumes nothing
+(`kept_trust.take_owner_stop`, read once per process), so a gateway the owner
+stopped starts with its chats as they were left. A watchdog's own exit (stale
+assets, a lost listener or data home) reaches `_shutdown` too, leaves no mark, and
+its relaunch resumes. A hard kill, a power loss or an exception that never reaches
+`_shutdown` writes nothing.
+
 **A planned restart stops the cron service first** (`cron.stop_cron_before_restart`).
 The planned restarts end in an exec or a hard exit, so the gateway's
 `_shutdown`, where `CronService.stop()` runs on a SIGTERM, never runs for them.

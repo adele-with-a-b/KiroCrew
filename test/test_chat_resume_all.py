@@ -1396,3 +1396,159 @@ def test_the_dashboard_boot_schedules_the_resume_once_ready_and_never_awaits_it(
     assert len(calls) == 1 and ready
     assert calls[0].lineno > max(ready)
     assert id(calls[0]) not in awaited
+
+
+# ── the boot after a stop from outside (an install, ``kirocrew stop``, SIGTERM) ──
+
+
+def _mid_turn(slot) -> None:
+    """The turn-in-flight marker a running turn carries until it ends."""
+    slot._turn_in_flight_generation = 1
+
+
+def _stop_from_outside(state, monkeypatch) -> MagicMock:
+    """Run the gateway's graceful ``_shutdown`` over *state*: what a SIGTERM reaches.
+
+    An install's ``launchctl kickstart -k``, a service manager and ``kirocrew stop``
+    all end in this teardown. Every service but the dashboard state is absent and
+    the slot save is replaced; returns the MCP-broker stop, the teardown's next step.
+    """
+    from slack_gateway_coverage_helpers import _make_orchestrator
+
+    orch = _make_orchestrator()
+    orch._test_mode = True
+    orch.cron_svc = None
+    orch.heartbeat_svc = None
+    orch.subagent_mgr = None
+    orch.sessions = None
+    orch._dashboard_runner = None
+    orch._stop_mcp_broker = AsyncMock()
+    orch.dashboard_state = state
+    monkeypatch.setattr("kiro_crew.dashboard.chat.save_all_slots_to_history", lambda _s: None)
+    asyncio.run(orch._shutdown())
+    return orch._stop_mcp_broker
+
+
+def _boot_reconciles(*slots) -> None:
+    """The next boot turns each cut turn's marker into the interruption row."""
+    for slot in slots:
+        slot._turn_in_flight_generation = 0
+        _interrupted(slot)
+
+
+def test_a_stop_from_outside_records_the_chats_mid_turn_and_the_boot_resumes_them(
+    tmp_path, dispatched, monkeypatch
+):
+    """The owner's install: two chats mid-turn when the gateway is SIGTERMed come back
+    running on the next start, with no Resume press. An idle chat and one a crash
+    cut earlier are not in the record and are left alone."""
+    state = _make_state(tmp_path)
+    first = state.get_or_create_slot("first")
+    second = state.get_or_create_slot("second")
+    state.get_or_create_slot("idle")
+    crashed = state.get_or_create_slot("crashed-earlier")
+    _interrupted(crashed)
+    _mid_turn(first)
+    _mid_turn(second)
+    path = _record(monkeypatch, tmp_path, None)
+
+    _stop_from_outside(state, monkeypatch)
+
+    assert json.loads(path.read_text()) == ["first", "second"]
+    _boot_reconciles(first, second)
+    ((event, outcome),) = [c.args for c in _boot(state).call_args_list]
+    assert event == mod.RESUME_ALL_DONE_FRAME
+    assert sorted(outcome["resumed"]) == ["first", "second"]
+    assert dispatched.started.await_count == 2
+    assert [(m["role"], m["content"]) for m in crashed.messages] == [
+        ("user", "refactor the parser")
+    ]
+    assert not path.exists()
+
+
+def test_a_hard_kill_leaves_no_record_and_its_chats_keep_resume(tmp_path, dispatched, monkeypatch):
+    """A SIGKILL or a power loss runs no teardown: the turn markers alone resume
+    nothing, and each cut chat waits on the owner's Resume."""
+    state = _make_state(tmp_path)
+    cut = state.get_or_create_slot("cut")
+    _mid_turn(cut)
+    path = _record(monkeypatch, tmp_path, None)
+
+    # Nothing runs between the kill and the next boot.
+    _boot_reconciles(cut)
+    assert _boot(state).call_args_list == []
+    dispatched.started.assert_not_awaited()
+    assert [(m["role"], m["content"]) for m in cut.messages] == [("user", "refactor the parser")]
+    assert not path.exists()
+
+
+def test_a_stop_record_older_than_thirty_minutes_resumes_nothing(tmp_path, dispatched, monkeypatch):
+    """A gateway left stopped past the age limit starts with its chats as they were."""
+    from kiro_crew.dashboard import restart_resume
+
+    state = _make_state(tmp_path)
+    cut = state.get_or_create_slot("cut")
+    _mid_turn(cut)
+    path = _record(monkeypatch, tmp_path, None)
+    _stop_from_outside(state, monkeypatch)
+    assert json.loads(path.read_text()) == ["cut"]
+
+    stopped_at = path.stat().st_mtime
+    later = stopped_at + restart_resume._INTENT_MAX_AGE_SECS + 1
+    monkeypatch.setattr(restart_resume, "time", SimpleNamespace(time=lambda: later))
+    _boot_reconciles(cut)
+
+    assert _boot(state).call_args_list == []
+    dispatched.started.assert_not_awaited()
+    assert not path.exists()
+
+
+def test_a_stop_with_no_chat_mid_turn_removes_an_older_record(tmp_path, monkeypatch):
+    """A record a planned restart left must not outlive a later stop."""
+    state = _make_state(tmp_path)
+    state.get_or_create_slot("idle")
+    path = _record(monkeypatch, tmp_path, ["left-over"])
+
+    _stop_from_outside(state, monkeypatch)
+
+    assert not path.exists()
+
+
+def test_an_explicit_stop_keeps_its_chats_stopped(tmp_path, dispatched, monkeypatch):
+    """``kirocrew stop``, the desktop app's Quit and Ctrl-C are the owner ending Kiro
+    Crew (``kept_trust``'s owner-stop mark): the next start resumes nothing, drops
+    the record, and each chat keeps its Resume button."""
+    from kiro_crew import kept_trust
+
+    state = _make_state(tmp_path)
+    cut = state.get_or_create_slot("cut")
+    _mid_turn(cut)
+    path = _record(monkeypatch, tmp_path, None)
+    assert kept_trust.mark_owner_stop("kirocrew stop")
+    _stop_from_outside(state, monkeypatch)
+    assert path.exists()
+
+    _boot_reconciles(cut)
+    assert _boot(state).call_args_list == []
+    dispatched.started.assert_not_awaited()
+    assert [(m["role"], m["content"]) for m in cut.messages] == [("user", "refactor the parser")]
+    assert not path.exists()
+
+
+def test_a_failed_record_never_holds_the_stop(tmp_path, monkeypatch):
+    """The record is best-effort: a write that raises is logged and the teardown goes on."""
+
+    from kiro_crew.dashboard import restart_resume
+
+    def _wedged(_names):
+        raise OSError("read-only data home")
+
+    state = _make_state(tmp_path)
+    _mid_turn(state.get_or_create_slot("cut"))
+    path = _record(monkeypatch, tmp_path, None)
+    monkeypatch.setattr(restart_resume, "write_intent", _wedged)
+
+    broker_stop = _stop_from_outside(state, monkeypatch)
+
+    broker_stop.assert_awaited_once()
+    assert not path.exists()
