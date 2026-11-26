@@ -19,5 +19,8 @@
  * composer dock, above the message box, and may stay open while the chat is used.
  * Level 17 adds `useSessionControlGo`: on a click in its box, a session control
  * opens its own box in another chat, read there with `via: 'control'`.
+ * Level 18 adds a session control's `composerInsert` and `useInsertIntoComposer`:
+ * a docked box puts text in its chat's message box at the caret, and reads
+ * nothing back but whether it went in.
  */
-export const APP_SDK_LEVEL = 17
+export const APP_SDK_LEVEL = 18

@@ -5,6 +5,8 @@ import type { SendMode } from '../../pages/chat/ChatSettings'
 import type { AutomationRecord } from '../../monitoring/automation'
 import type { PasteBlock } from '../../utils/pasteTokens'
 import type { ComposerActionItem } from '../../composerActions/composerActionRegistry'
+import type { MutableRefObject } from 'react'
+import type { AppTextInsert } from './composerActions'
 import type { FileKind } from '../FilePickerMenu'
 import type { PromptHistoryItem } from '../composerPromptHistory'
 import type { ApprovalModeRemote } from '../ApprovalModePicker'
@@ -296,7 +298,8 @@ export interface ChatInputProps {
     /** The control's first live key, for the hover: shown keys (`⌥⇧Q`) and the ARIA form (`Alt+Shift+Q`). */
     shortcut?: { shown: string; aria: string }
   }[]
-  onSessionControlClick?: (key: string, rect: DOMRect, trigger?: HTMLElement) => void
+  /** A chip clicked; `byPerson` when the click was the person's own (`isTrusted`), not a script's. */
+  onSessionControlClick?: (key: string, rect: DOMRect, trigger?: HTMLElement, byPerson?: boolean) => void
   contextPct?: number
   /** The slot has no context reading yet: the meter says so instead of 0%. */
   contextUnknown?: boolean
@@ -387,6 +390,9 @@ export interface ChatInputProps {
   /** The host's clamp for a drop offset (out of mentions and pasted chips),
    *  so the drop caret previews where `onTreeEntryDrop` will insert. */
   clampDropOffset?: (text: string, at: number) => number
+  /** Filled with this composer's insert at the caret while it is mounted, for
+   *  the host's docked session control box (`insertIntoComposer`). */
+  appInsertRef?: MutableRefObject<AppTextInsert | null>
   /** Backspace/Delete on or next to a STAGED file mention: the host returns
    *  the atomic-delete result (new text + caret) that removes the whole
    *  `@mention` as one unit, or null to let the key do its default edit.

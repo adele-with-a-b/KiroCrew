@@ -148,6 +148,10 @@ class SessionControlContribution:
     dock: Any = False
     # Optional, with ``dock`` only: a press outside the docked box leaves it open.
     stayOpen: Any = False  # noqa: N815
+    # Optional, with ``dock`` only: the docked box may put text in its chat's
+    # message box (``useInsertIntoComposer``). A grant the owner approves
+    # (``session_control_insert_grants``); it reads nothing from the box.
+    composerInsert: Any = False  # noqa: N815
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"id": self.id, "entryPoint": self.entryPoint}
@@ -157,6 +161,8 @@ class SessionControlContribution:
             d["dock"] = True
         if self.stayOpen is True:
             d["stayOpen"] = True
+        if self.composerInsert is True:
+            d["composerInsert"] = True
         if self.keys:
             d["keys"] = [k.to_dict() for k in self.keys]
         if self.label:
@@ -185,23 +191,33 @@ class SessionControlContribution:
             bad_keys=not isinstance(raw_keys, list),
             dock=data.get("dock", False),
             stayOpen=data.get("stayOpen", False),  # noqa: N815
+            composerInsert=data.get("composerInsert", False),  # noqa: N815
         )
 
 
 def session_control_dock_errors(ctl: SessionControlContribution) -> list[str]:
-    """Why a control's ``dock`` / ``stayOpen`` would be refused at install, one line each.
+    """Why a control's ``dock`` / ``stayOpen`` / ``composerInsert`` would be refused at
+    install, one line each.
 
     ``stayOpen`` needs ``dock``: a popover that stayed open would float over the
     reply being read, since the transcript's bottom padding measures the dock only.
+    ``composerInsert`` needs ``dock``: only a docked box, open beside the message
+    box, may put text in it.
     """
     name = f"session control contribution {ctl.id or '<unnamed>'}"
     errors = [
         f"{name} {field_name} must be true or false"
-        for field_name, value in (("dock", ctl.dock), ("stayOpen", ctl.stayOpen))
+        for field_name, value in (
+            ("dock", ctl.dock),
+            ("stayOpen", ctl.stayOpen),
+            ("composerInsert", ctl.composerInsert),
+        )
         if not isinstance(value, bool)
     ]
     if ctl.stayOpen is True and ctl.dock is not True:
         errors.append(f"{name} stayOpen needs dock: true")
+    if ctl.composerInsert is True and ctl.dock is not True:
+        errors.append(f"{name} composerInsert needs dock: true")
     return errors
 
 

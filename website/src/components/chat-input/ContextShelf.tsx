@@ -18,6 +18,7 @@ const HarnessLogo = lazy(() => import('../HarnessLogo').then(m => ({ default: m.
 import { fmtPercent } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 import type { ComposerControl } from '../composerControl'
+import { isTrustedClick } from '../trustedClick'
 import { usePressActivation } from '../../hooks/usePressActivation'
 import { useActionShortcutHint } from '../../hooks/useActionShortcutHint'
 import { IS_MAC } from '../../hooks/useKeyboardShortcuts'
@@ -138,7 +139,7 @@ export function SessionControlChips({ sessionControls, shelfCompact, onSessionCo
               ? 'text-warn'
               : 'text-muted hover:text-text'
       }`}
-      onClick={e => onSessionControlClick?.(sc.key, e.currentTarget.getBoundingClientRect(), e.currentTarget)}
+      onClick={e => onSessionControlClick?.(sc.key, e.currentTarget.getBoundingClientRect(), e.currentTarget, isTrustedClick(e))}
       // Marks the chip as part of its own popover for dismissal
       // purposes: mousedown fires before click, so without this the
       // host's outside-click closes the popover and the chip's toggle

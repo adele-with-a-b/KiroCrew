@@ -105,6 +105,9 @@ export interface ResolvedSessionControl {
   dock?: boolean
   /** `stayOpen: true` with `dock`: a press outside the docked box leaves it open. */
   stayOpen?: boolean
+  /** `composerInsert: true` with `dock`, and approved by the owner (the row's
+   *  `sessionControlInsertGrant`): the docked box may put text in the message box. */
+  composerInsert?: boolean
   /** The app's install time (ISO), '' when unknown: the earlier app keeps a key two default to. */
   installedAt: string
 }
@@ -180,6 +183,8 @@ interface AppLike {
   enabled?: boolean
   installedAt?: string
   openFilesGrant?: { approved?: boolean }
+  /** The controls whose `composerInsert` the owner approved, by id. */
+  sessionControlInsertGrant?: { approved?: unknown }
   manifest?: {
     version?: string
     displayName?: string
@@ -194,6 +199,7 @@ interface AppLike {
         keys?: unknown
         dock?: unknown
         stayOpen?: unknown
+        composerInsert?: unknown
       }[]
     }
     permissions?: { api?: string[]; events?: string[] }
@@ -236,6 +242,8 @@ export function resolveSessionControls(apps: AppLike[]): ResolvedSessionControl[
     const declared = app.manifest?.contributes?.sessionControls
     if (!Array.isArray(declared)) continue
     const perms = app.manifest?.permissions || {}
+    const granted = app.sessionControlInsertGrant?.approved
+    const insertApproved = Array.isArray(granted) ? granted.filter((g): g is string => typeof g === 'string') : []
     for (const ctl of declared) {
       if (!ctl || typeof ctl !== 'object') continue
       const id = typeof ctl.id === 'string' ? ctl.id : ''
@@ -269,6 +277,8 @@ export function resolveSessionControls(apps: AppLike[]): ResolvedSessionControl[
         // check holds them: a stale manifest never gets a popover that stays open.
         dock: ctl.dock === true,
         stayOpen: ctl.dock === true && ctl.stayOpen === true,
+        // Declared with `dock`, as the install check holds it, and approved.
+        composerInsert: ctl.dock === true && ctl.composerInsert === true && insertApproved.includes(id),
       })
     }
   }

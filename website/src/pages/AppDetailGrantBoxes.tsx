@@ -45,6 +45,19 @@ export function OpenFilesStaged() {
   return <div className="text-[13px]" data-testid="staged-open-files">{i18nT('pages.appDetailPage.grants_reconsent_open_files')}</div>
 }
 
+/** The reconsent lines for held-back session control inserts (`composerInsert`), by control id. */
+export function SessionControlInsertsStaged({ staged }: { staged: readonly string[] }) {
+  if (!staged.length) return null
+  return (
+    <div data-testid="staged-session-control-inserts">
+      <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_session_control_inserts')}</div>
+      <div className="flex flex-wrap gap-1 mt-1">
+        {staged.map(id => <code key={id} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text">{id}</code>)}
+      </div>
+    </div>
+  )
+}
+
 /** `permissions.chatSlots`: the app opens and drives chat sessions of its own. */
 export function ChatSlotsBox() {
   return (

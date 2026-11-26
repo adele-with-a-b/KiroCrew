@@ -5420,6 +5420,7 @@
         "installed_needs_newer_host": "The installed version of {{name}} needs a newer {{productName}}. Update {{productName}}; your data is unchanged."
       },
       "grants_reconsent_composer_actions": "Composer buttons: lets the app add these buttons to the composer's + menu. A click inserts the app's text into your draft; the app can't see the draft or send it.",
+      "grants_reconsent_session_control_inserts": "Message box text: lets these docked boxes put text into your message box at the cursor, right after you open them or act in them, keeping what you typed. The app can't read your draft or send it. When its text does not go in, it can learn one thing about your message box at that moment: that it could not take text then, or that the characters next to the cursor would have joined its text into something that resolves. That is at most one bit about your draft per try, and only while you act.",
       "grants_reconsent_selection_actions": "Selected-text actions: lets the app's items be handed text you select in chat replies, and offer it back for Copy or Open.",
       "open_files_desc": "After you click in it, it can open a file it picks in that file's default app on this computer. A script or an app runs when it opens. Files {{productName}} keeps private are refused.",
       "grants_reconsent_open_files": "Opening a file it picks in its default app after you click in it. A script or an app runs when it opens."

@@ -243,6 +243,7 @@ function ChatInput({
   onFileSelect: onFileSelectProp,
   onTreeEntryDrop,
   clampDropOffset,
+  appInsertRef,
   onMentionKey,
   optimizerMentionGuard,
   mentionEditRange,
@@ -507,7 +508,6 @@ function ChatInput({
   const bindProjectPress = usePressActivation()
   const plus = usePlusMenu({ pickers, value, onChange, composerControl, fileInputRef, isTouchInput: () => touchInput })
   const { setPlusOpen, sketchOpen, setSketchOpen } = plus
-  const appActions = useComposerActionMenu({ items: terminal.active ? undefined : composerActions, value, onChange, pasteBlocks, composerControl, scopeKey: slotId, locked: typingLocked, plusBtnRef: plus.plusBtnRef, composerBoxRef: composerAnchorRef, closeMenu: () => setPlusOpen(false) })
   // The More menu's Sketch item opens a dialog. The dialog hands focus to the
   // composer itself on close (`returnFocusRef`), so only the menu half of the
   // hand-off is used here: defer the open, and skip the trigger restore.
@@ -672,6 +672,9 @@ function ChatInput({
     composerDisabled: disabled || typingLocked,
   })
   useEffect(() => { onOptimizingChange?.(optimizing) }, [optimizing, onOptimizingChange])
+  // App text: the "+" menu's composer actions, and a docked session control's insert at the caret.
+  const appActions = useComposerActionMenu({ items: terminal.active ? undefined : composerActions, value, onChange, pasteBlocks, composerControl, scopeKey: slotId, locked: typingLocked, plusBtnRef: plus.plusBtnRef, composerBoxRef: composerAnchorRef, closeMenu: () => setPlusOpen(false),
+    insertRef: appInsertRef, caretRef: voiceCaretRef, clampOffset: clampDropOffset, insertPaused: terminal.active || disabled || optimizing })
   // A locked composer (a memory-mode switch is moving its draft) must not
   // start an optimize: the rewrite would land in the slot being deleted.
   // Every optimize entry, Send included, goes through here.

@@ -36,10 +36,11 @@ import Glass from './Glass'
 import { Btn } from './ui'
 import { useDocumentImeLatch } from '../hooks/useImeGuard'
 import { AppApiProvider } from '../app-sdk'
-import { SessionControlRequestScope, sessionControlRequestSeq } from '../app-sdk/sessionControlRequest'
+import { SessionControlRequestScope, sessionControlRequestSeq, type ScopeComposerInsert } from '../app-sdk/sessionControlRequest'
 import { CLICK_GRANT_MS } from '../linkPreview/linkPreviewFrames'
 import { clickOpenTimeLeft } from '../linkPreview/linkPreviewNav'
 import { AppFileOpenRoot } from './appFileOpen'
+import { useDockedBoxInsert } from './sessionControlInsert'
 import { i18nT } from '../i18n/t'
 import { SESSION_CONTROL_WIDTH, sessionControlChip, type ResolvedSessionControl } from '../hooks/useSessionControls'
 import { MOBILE_BREAKPOINT, useIsMobile } from '../hooks/useIsMobile'
@@ -77,6 +78,9 @@ export interface SessionControlHostProps {
   onClose: () => void
   /** Where a docked box is drawn: the composer dock's `SessionControlDockSlot`. */
   dockSlot?: HTMLElement | null
+  /** The composer's insert into this chat's message box (`ComposerDockView`),
+   *  handed to a box that may insert while it is open docked. */
+  insertIntoComposer?: ScopeComposerInsert
 }
 
 /**
@@ -159,6 +163,7 @@ export default function SessionControlHost({
   anchorRect,
   onClose,
   dockSlot = null,
+  insertIntoComposer,
 }: SessionControlHostProps) {
   const [resetKey, setResetKey] = useState(0)
   const popRef = useRef<HTMLDivElement | null>(null)
@@ -280,6 +285,9 @@ export default function SessionControlHost({
     }
   }, [stays])
   const ownsEscape = docked && (!stays || focusInBox)
+  // A control that may insert gets the composer's insert, answered only while this
+  // box is open, docked and its Crew in front (`sessionControlInsert`).
+  const scopeInsert = useDockedBoxInsert({ composerInsert: control.composerInsert === true, docked, crewHidden, insertIntoComposer })
   useEffect(() => {
     if (crewHidden) return
     const onDown = (e: MouseEvent) => {
@@ -418,7 +426,7 @@ export default function SessionControlHost({
               click in the control itself: the error boundary's retry stays
               outside it, and a chat switch drops its click. */}
           <AppFileOpenRoot key={session.sessionKey} granted={control.openFiles}>
-            <SessionControlRequestScope sessionKey={session.sessionKey} control={control.key}>
+            <SessionControlRequestScope sessionKey={session.sessionKey} control={control.key} insert={scopeInsert}>
               <LazyControl key={session.sessionKey} session={session} onClose={docked ? closeDocked : onClose} />
             </SessionControlRequestScope>
           </AppFileOpenRoot>

@@ -54,6 +54,12 @@ vi.mock('./chat/TaskProgressBar', () => ({ default: () => null }))
 vi.mock('./chat/WorkflowProgressBar', () => ({ default: () => null }))
 vi.mock('./chat/KnowledgePicker', () => ({ KnowledgePicker: (p: Captured) => { seen.knowledge = p; return null } }))
 vi.mock('../app-sdk/ChatScrollChrome', async (orig) => ({ ...(await orig<typeof import('../app-sdk/ChatScrollChrome')>()), JumpToBottomButton: () => null }))
+// Which acts of the person the dock notes for a box's insert window.
+const acts = vi.hoisted(() => ({ noted: [] as [string, string][] }))
+vi.mock('../app-sdk/sessionControlRequest', async (orig) => ({
+  ...(await orig<typeof import('../app-sdk/sessionControlRequest')>()),
+  noteSessionControlAct: (sessionKey: string, control: string) => { acts.noted.push([sessionKey, control]) },
+}))
 // The dock reads where the chat runs (a react-query read); here it runs on this machine.
 const runsHere = vi.hoisted(() => ({ value: true as boolean | undefined }))
 vi.mock('../components/sessionEnvironmentHooks', async (orig) => ({
@@ -82,7 +88,7 @@ function dockProps(over: Partial<DockProps> = {}): DockProps {
   } as DockProps
 }
 
-beforeEach(() => { for (const k of Object.keys(seen)) seen[k] = null; runsHere.value = true; realModelPicker.on = false })
+beforeEach(() => { for (const k of Object.keys(seen)) seen[k] = null; runsHere.value = true; realModelPicker.on = false; acts.noted.length = 0 })
 
 describe('ComposerDockView', () => {
   it.each([
@@ -212,6 +218,40 @@ describe('ComposerDockView', () => {
       openSessionControl: { key: 'c1', slot: 'slot-a' }, sessionControls: [{ key: 'c1', dock: !dock }] as never,
     })} />)
     expect(screen.getByTestId('session-control-host')).toBe(host)
+  })
+
+  it("hands the box an insert bound to the chat it was opened in, through the composer's own ref", () => {
+    render(<ComposerDockView {...dockProps({
+      openSessionControl: { key: 'c1', slot: 'slot-a' }, sessionControls: [{ key: 'c1', dock: true, composerInsert: true }] as never,
+    })} />)
+    const insert = seen.sessionControl!.insertIntoComposer as (text: unknown) => unknown
+    const ref = seen.chatInput!.appInsertRef as { current: ((slot: string | null, text: unknown) => unknown) | null }
+    // No composer mounted behind the ref yet: nothing goes in.
+    expect(insert('Q4a')).toBe('stale')
+    const composerInsert = vi.fn(() => undefined)
+    ref.current = composerInsert
+    expect(insert('Q4a')).toBeUndefined()
+    expect(composerInsert).toHaveBeenCalledWith('slot-a', 'Q4a')
+  })
+
+  it("starts a box's insert window only for the person's own click on its chip, and only when the click opens it", () => {
+    const setOpenSessionControl = vi.fn()
+    const props = { sessionControls: [{ key: 'c1' }] as never, setOpenSessionControl, sessionControlKey: 'dashboard:slot-a', anchorSessionControl: vi.fn() }
+    const { rerender } = render(<ComposerDockView {...dockProps(props)} />)
+    const click = (byPerson: boolean) => act(() => {
+      (seen.chatInput!.onSessionControlClick as (key: string, rect: DOMRect, trigger?: HTMLElement, byPerson?: boolean) => void)('c1', {} as DOMRect, undefined, byPerson)
+    })
+    // A script's click opens the box and starts nothing.
+    click(false)
+    expect(setOpenSessionControl).toHaveBeenLastCalledWith({ key: 'c1', slot: 'slot-a' })
+    expect(acts.noted).toEqual([])
+    click(true)
+    expect(acts.noted).toEqual([['dashboard:slot-a', 'c1']])
+    // The person's click that closes the open box starts nothing either.
+    rerender(<ComposerDockView {...dockProps({ ...props, openSessionControl: { key: 'c1', slot: 'slot-a' }, refreshSessionControlStatuses: vi.fn() })} />)
+    click(true)
+    expect(setOpenSessionControl).toHaveBeenLastCalledWith(null)
+    expect(acts.noted).toHaveLength(1)
   })
 
   it("draws no box for a control opened in another chat, docked or not", () => {

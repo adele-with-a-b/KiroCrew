@@ -55,21 +55,19 @@ import { isBuiltinServerRow, mergeBuiltinRow } from '../components/appstore/merg
 import { installedArt, installedArtList, installedArtListAligned, installedIcon, installedPageIcon } from '../components/appstore/useHeroArt'
 import { fmtDateNumeric, fmtCompact, fmtNumber, fmtList } from '../i18n/format'
 import { HeroBanner, ScreenshotGallery } from './AppDetailPageArt'
-import { messageActionGrantLabel } from '../messageActions/messageActionRegistry'
 import AppDetailAdoptionNotice from './AppDetailAdoptionNotice'
 import AppDetailLinks from './AppDetailLinks'
 import AppDetailPageLocalOnlyNotice from './AppDetailPageLocalOnlyNotice'
 import AppDetailPageMcpServers from './AppDetailPageMcpServers'
 import { openLocalSourceSwitch } from './appDetailPageLocalSwitch'
-import AppDetailBotGrants, { StagedBotScopes, stagedBotScopes } from './AppDetailBotGrants'
-import { selectionActionGrantLabel } from '../selectionActions/selectionActionRegistry'
+import AppDetailBotGrants, { stagedBotScopes } from './AppDetailBotGrants'
+import AppDetailStagedNotice from './AppDetailStagedNotice'
 import type { AppInfo, NormalizedRegistryEntry, RegistryEntry } from './appDetailPageTypes'
-import { actionGrant } from '../composerActions/composerActionRegistry'
 import { memoryAccessLabel, memoryRequested } from '../components/appstore/memoryAccessLabel'
 import { managerLabel, originLabel } from './appDetailPageLabels'
-import { ChatSlotsBox, DesktopCapabilitiesBox, DesktopCapabilitiesStaged, HiddenSessionsBox, OpenFilesBox, OpenFilesStaged, UserSessionReachBox, UserSessionReachStaged, WebhookSourceBox, WorkerAutoApproveBox, WorkerAutoApproveStaged, knownDesktopCapabilities, reachVerbs } from './AppDetailGrantBoxes'
+import { ChatSlotsBox, DesktopCapabilitiesBox, HiddenSessionsBox, OpenFilesBox, UserSessionReachBox, WebhookSourceBox, WorkerAutoApproveBox, knownDesktopCapabilities, reachVerbs } from './AppDetailGrantBoxes'
 import { trustGrants } from '../components/appstore/trustGrants'
-import { SESSION_KEY_GRANT, stagedGrantsOf } from './appDetailPageStagedGrants'
+import { stagedGrantsOf } from './appDetailPageStagedGrants'
 // The page's parts live in sibling owners that never import this module:
 // `AppDetailPageArt.tsx` (the hero banner and the screenshot gallery, each with
 // its local-art second chance), `appDetailPageTypes.ts` (the page's view
@@ -111,12 +109,12 @@ export default function AppDetailPage() {
   const reconsentMsg = app?.sessionApprovalConsentPending
     ? i18nT('pages.appDetailPage.session_approval_reconsent_notice', { name: appDisplayName(app) })
     : ''
+  // What an update holds back; the notice that approves it is `AppDetailStagedNotice`.
+  const staged = stagedGrantsOf(app)
   const {
-    stagedApi, stagedEvents, stagedLinkHosts, stagedLinkPatterns, stagedFullUrl, stagedSessionKey,
-    stagedMessageActions, declaredMessageActions, stagedOpenHosts, stagedOpenFullUrl,
-    stagedComposerActions, stagedSelection, declaredSelectionActions, stagedWorkerAutoApprove,
-    stagedUserSessionReach, stagedDesktopCapabilities, stagedFrameSources, stagedOpenFiles, hasStagedGrants: hasOtherStagedGrants,
-  } = stagedGrantsOf(app)
+    stagedApi, stagedEvents, stagedWorkerAutoApprove, stagedUserSessionReach, stagedDesktopCapabilities, stagedOpenFiles,
+    hasStagedGrants: hasOtherStagedGrants,
+  } = staged
   // Bot scopes the owner has not approved wait the same way (`AppDetailBotGrants.tsx`).
   const stagedBots = stagedBotScopes(app)
   const hasStagedGrants = hasOtherStagedGrants || stagedBots.length > 0
@@ -346,6 +344,7 @@ export default function AppDetailPage() {
             messageActionGrant: installed.messageActionGrant,
             linkOpenGrant: installed.linkOpenGrant,
             composerActionGrant: installed.composerActionGrant,
+            sessionControlInsertGrant: installed.sessionControlInsertGrant,
             selectionActionGrant: installed.selectionActionGrant,
             workerAutoApproveGrant: installed.workerAutoApproveGrant,
             userSessionReachGrant: installed.userSessionReachGrant,
@@ -474,6 +473,7 @@ export default function AppDetailPage() {
             messageActionGrant: installed.messageActionGrant,
             linkOpenGrant: installed.linkOpenGrant,
             composerActionGrant: installed.composerActionGrant,
+            sessionControlInsertGrant: installed.sessionControlInsertGrant,
             selectionActionGrant: installed.selectionActionGrant,
             workerAutoApproveGrant: installed.workerAutoApproveGrant,
             userSessionReachGrant: installed.userSessionReachGrant,
@@ -1118,173 +1118,22 @@ export default function AppDetailPage() {
         )}
 
         {app.installed && hasStagedGrants && (
-          <div
-            role="status"
-            className="mb-4 flex flex-wrap items-start gap-3 rounded-lg border border-warn/30 bg-warn-subtle p-3 animate-rise"
-          >
-            <ShieldAlert size={14} className="mt-[3px] shrink-0 text-warn" />
-            <div className="text-text text-sm flex-1 min-w-0 grid gap-2">
-              <span>
-                {app.enabled
-                  ? i18nT('pages.appDetailPage.grants_reconsent_notice', { name: appDisplayName(app) })
-                  : i18nT('pages.appDetailPage.grants_reconsent_notice_disabled', { name: appDisplayName(app) })}
-              </span>
-              {app.enabled && (
-                <span className="text-[13px] text-text">{i18nT('pages.appDetailPage.grants_reconsent_keep', { name: appDisplayName(app) })}</span>
-              )}
-              {stagedApi.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_api')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {stagedApi.map(p => (
-                      <code key={p} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text">{p}</code>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {stagedEvents.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_events')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {stagedEvents.map(e => (
-                      <code key={e} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text">{e}</code>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <StagedBotScopes scopes={stagedBots} />
-              {stagedLinkHosts.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_hosts')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {stagedLinkHosts.map(h => (
-                      <code key={h} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text">{h}</code>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {stagedLinkPatterns.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_patterns')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {stagedLinkPatterns.map(p => (
-                      <code key={p} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text break-all">{p}</code>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {stagedFullUrl && (
-                <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_full_url')}</div>
-              )}
-              {stagedSessionKey && (
-                <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_session_key')}</div>
-              )}
-              {stagedMessageActions.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_message_actions')}</div>
-                  <ul className="mt-1 text-[13px] list-disc pl-5" data-testid="staged-message-actions">
-                    {stagedMessageActions.map(e => (
-                      <li key={e}>{messageActionGrantLabel(e, declaredMessageActions)}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {stagedOpenHosts.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_open_hosts')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {stagedOpenHosts.map(h => (
-                      <code key={h} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text">{h}</code>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {stagedFrameSources.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_frame_sources')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1" data-testid="staged-frame-sources">
-                    {stagedFrameSources.map(o => (
-                      <code key={o} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text">{o}</code>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {stagedComposerActions.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_composer_actions')}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {stagedComposerActions.map(id => (
-                      <code key={id} className="bg-bg-elevated border border-border px-1.5 py-0.5 rounded text-[11px] text-text">{id}</code>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {stagedSelection.length > 0 && (
-                <div>
-                  <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_selection_actions')}</div>
-                  <ul className="mt-1 text-[13px] list-disc pl-5" data-testid="staged-selection-actions">
-                    {stagedSelection.map(e => (
-                      <li key={e}>{selectionActionGrantLabel(e, declaredSelectionActions)}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {stagedOpenFullUrl && <div className="text-[13px]">{i18nT('pages.appDetailPage.grants_reconsent_link_open_full_url')}</div>}
-              {stagedWorkerAutoApprove && <WorkerAutoApproveStaged />}
-              <UserSessionReachStaged staged={stagedUserSessionReach} />
-              <DesktopCapabilitiesStaged staged={stagedDesktopCapabilities} />
-              {stagedOpenFiles && <OpenFilesStaged />}
-              {app.enabled && (
-                <span className="text-[13px] text-muted">{i18nT('pages.appDetailPage.grants_reconsent_undo', { name: appDisplayName(app) })}</span>
-              )}
-            </div>
-            {/* Approval is offered only on a running app: on a disabled one the
-                enable route would also switch the app on. Enabling it first runs
-                it on the approved set, and the notice stays until approval. */}
-            {app.enabled && (
-            <Btn
-              primary
-              onClick={async () => {
-                startAction('approve_grants')
-                const approved = fmtList([...stagedApi, ...stagedEvents, ...stagedBots, ...stagedLinkHosts, ...stagedLinkPatterns, ...(stagedFullUrl ? ['fullUrl'] : []), ...(stagedSessionKey ? ['sessionKey'] : []), ...stagedMessageActions.map(e => messageActionGrantLabel(e, declaredMessageActions)), ...stagedOpenHosts, ...(stagedOpenFullUrl ? ['fullUrl'] : []), ...stagedComposerActions, ...stagedSelection.map(e => selectionActionGrantLabel(e, declaredSelectionActions)), ...(stagedWorkerAutoApprove ? ['workerAutoApprove'] : []), ...stagedUserSessionReach, ...stagedDesktopCapabilities, ...stagedFrameSources, ...(stagedOpenFiles ? ['openFiles'] : [])], { style: 'narrow' })
-                try {
-                  const result = await api.enableApp(app.name, false, {
-                    api: stagedApi,
-                    events: stagedEvents,
-                    bots: stagedBots,
-                    linkPreviewHosts: stagedLinkHosts,
-                    linkPreviewTextPatterns: stagedLinkPatterns,
-                    linkPreviewFullUrl: stagedFullUrl ? ['fullUrl'] : [],
-                    linkPreviewSessionKey: stagedSessionKey ? [SESSION_KEY_GRANT] : [],
-                    messageActions: stagedMessageActions,
-                    linkOpenHosts: stagedOpenHosts,
-                    linkOpenFullUrl: stagedOpenFullUrl ? ['fullUrl'] : [],
-                    composerActions: stagedComposerActions.map(actionGrant),
-                    selectionActions: stagedSelection,
-                    workerAutoApprove: stagedWorkerAutoApprove ? ['ownSlots'] : [],
-                    reachableByUserSessions: stagedUserSessionReach,
-                    desktopCapabilities: stagedDesktopCapabilities,
-                    frameSources: stagedFrameSources,
-                    openFiles: stagedOpenFiles ? ['open'] : [],
-                  })
-                  setBackendRefusedMsg(appActionNotice(appDisplayName(app), result, 'enable'))
-                  setGrantsApprovedMsg(i18nT('pages.appDetailPage.grants_approved', { entries: approved }))
-                  await load({ keepView: true })
-                  // The Bot card's own query: `mc:apps-changed` marks it stale without a refetch.
-                  if (stagedBots.length) void queryClient.invalidateQueries({ queryKey: ['apps', app.name, 'bot-grants'] })
-                  window.dispatchEvent(new Event('mc:apps-changed'))
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e))
-                } finally {
-                  finishAction('approve_grants')
-                }
-              }}
-              disabled={actionBusy}
-            >
-              {i18nT('pages.appDetailPage.approve_new_permissions')}
-            </Btn>
-            )}
-          </div>
+          <AppDetailStagedNotice app={app} staged={staged} stagedBots={stagedBots} busy={actionBusy} onApprove={async (grants, entries) => {
+            startAction('approve_grants')
+            try {
+              const result = await api.enableApp(app.name, false, grants)
+              setBackendRefusedMsg(appActionNotice(appDisplayName(app), result, 'enable'))
+              setGrantsApprovedMsg(i18nT('pages.appDetailPage.grants_approved', { entries }))
+              await load({ keepView: true })
+              // The Bot card's own query: `mc:apps-changed` marks it stale without a refetch.
+              if (stagedBots.length) void queryClient.invalidateQueries({ queryKey: ['apps', app.name, 'bot-grants'] })
+              window.dispatchEvent(new Event('mc:apps-changed'))
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e))
+            } finally {
+              finishAction('approve_grants')
+            }
+          }} />
         )}
         {grantsApprovedMsg && !hasStagedGrants && (
           <div role="status" className="mb-4 bg-ok/10 border border-ok/20 rounded-lg p-3 animate-rise">

@@ -885,7 +885,7 @@ describe('AppDetailPage — uncovered surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
     await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, {
       api: ['/api/memory'], events: ['log'], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], linkOpenHosts: [], linkOpenFullUrl: [],
-      api: ['/api/memory'], events: ['log'], bots: [], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], composerActions: [], selectionActions: [], workerAutoApprove: [], reachableByUserSessions: [], desktopCapabilities: [], frameSources: [], openFiles: [],
+      api: ['/api/memory'], events: ['log'], bots: [], linkPreviewHosts: [], linkPreviewTextPatterns: [], linkPreviewFullUrl: [], linkPreviewSessionKey: [], messageActions: [], composerActions: [], sessionControlInserts: [], selectionActions: [], workerAutoApprove: [], reachableByUserSessions: [], desktopCapabilities: [], frameSources: [], openFiles: [],
     }))
     expect(await screen.findByText('Approved: /api/memory, log. The app can use them now.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve new permissions' })).not.toBeInTheDocument()
@@ -903,6 +903,20 @@ describe('AppDetailPage — uncovered surfaces', () => {
     expect(screen.getByText('summarize')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
     await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ composerActions: ['summarize:insert'] })))
+  })
+
+  it("lists a docked box's held-back message box insert and approves its grant entry", async () => {
+    getApp.mockResolvedValue(installedApp({
+      manifest: { displayName: 'Ledger Lens', permissions: { api: [], events: [] } },
+      approvedGrants: { api: [], events: [] },
+      sessionControlInsertGrant: { approved: [], staged: ['inbox'] },
+    }))
+    renderDetail()
+    await loaded()
+    expect(screen.getByText(/Message box text: lets these docked boxes put text/)).toBeInTheDocument()
+    expect(screen.getByTestId('staged-session-control-inserts')).toHaveTextContent('inbox')
+    fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
+    await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ sessionControlInserts: ['inbox:insert'] })))
   })
 
   it('lists a held-back link-preview session key and approves its one entry', async () => {

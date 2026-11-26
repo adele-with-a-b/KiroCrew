@@ -17,7 +17,10 @@ one chat. Level 16 adds a session control's ``dock`` and ``stayOpen``: its box o
 the composer dock, between the chat and the message box, and may stay open while the
 person reads and clicks the chat. Level 17 adds the SDK's ``useSessionControlGo``: on a
 click in its box, a session control opens its own box in another chat, with a request
-the box reads as ``via: 'control'``.
+the box reads as ``via: 'control'``. Level 18 adds a session control's
+``composerInsert`` and the SDK's ``useInsertIntoComposer``: a docked box puts text in
+its chat's message box at the caret, beside the draft, and reads nothing back but
+whether it went in.
 """
 
-APP_SDK_LEVEL = 17
+APP_SDK_LEVEL = 18

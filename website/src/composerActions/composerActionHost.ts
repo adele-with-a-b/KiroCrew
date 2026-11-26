@@ -12,7 +12,6 @@
  */
 import {
   isRelayMessage,
-  displaySafe,
   freshRate,
   MAX_HOST_MESSAGE_BYTES,
   messageBytes,
@@ -21,7 +20,7 @@ import {
   type OfferRefusal,
 } from '../appFrame/frameProtocol'
 import { HostInvocation } from '../appFrame/invocation'
-import { visibleOnly } from './literalInsert'
+import { cleanOfferedText } from './literalInsert'
 import {
   createSandboxedFrame,
   loadMintedFrame,
@@ -147,7 +146,7 @@ export class ComposerActionHost {
             // One insert per click, whatever state `settle()` leaves the invocation in.
             if (this.taken) return 'stale'
             // Only what the person can see goes in: text that draws nothing is dropped.
-            const text = visibleOnly(displaySafe(value.replace(/\r\n?/g, '\n')))
+            const text = cleanOfferedText(value)
             if (!text.trim()) return 'not_allowed'
             const refused = this.opts.onText(text)
             if (refused) return refused

@@ -828,6 +828,25 @@ row does; that box reads it with `via: 'control'`, and `useStatusGoBack()` is th
 way back. No manifest field: the SDK's `useSessionControlGo()`, in the
 [API reference](api-reference.md#session-control-go). Needs `APP_SDK_LEVEL >= 17`.
 
+**`composerInsert` — putting text in the message box.** A docked control may put text in its chat's message box, for an Inbox whose rows answer a question, say. Declare it on the control, with `dock`:
+
+```json
+{ "id": "inbox", "entryPoint": "dist/inbox.mjs", "label": "Inbox", "icon": "Tag",
+  "dock": true, "stayOpen": true, "composerInsert": true }
+```
+
+The box calls the SDK's `useInsertIntoComposer()` (in the [API reference](api-reference.md#insert-into-composer)) and gets `insertIntoComposer(text)`, or `null` while the control has no approved `composerInsert`:
+
+- **Where it goes.** At the caret the person left in the message box, or at the end when they placed none; after a selection, which stays. What they typed stays. When the text before that point is not empty and does not end in a space or a newline, Kiro Crew puts one space first. Your text's own trailing space stays, except before a space or newline already there, so there is never a double space. A caret inside something of the person's that resolves (a mention, a `$skill`, a command, a path, a pasted chip, a marker), or at its first character, moves to its end: your text never splits or sticks to it.
+- **Then.** Focus moves to the message box, with the caret after your text. Nothing is sent: the person reads it, edits it and sends it. Two calls in a row both land, the second after the first.
+- **Only just after the person acts.** A call is taken within **5 seconds** of the person's last act on this control: opening the box with its chip or its [key](#contributessessioncontrols--a-per-chat-control-in-the-composer), pressing that key again (a request with `via: 'key'`), or a key press or click inside the box. The newest act restarts the 5 seconds. Only real events count; an event your module dispatches does not. The box opening is no act by itself: a box your app opens (a card's `openSessionControl`, a status go, `useSessionControlGo`), one Kiro Crew opens again on its own, and one whose module is still loading or suspended when the 5 seconds end wait for the person's next key or click in it. Closing the box ends its 5 seconds. Later, the call answers `no_gesture`, so a timer in a box nobody touched writes nothing into a draft being typed. A key handler in the box works as a click does.
+- **The answer.** `{ ok: true }`, or `{ ok: false, code }`. Your text is judged on its own first, and a text refused on its own gets the same code whatever the message box holds: `not_allowed` (not a string, or blank once cleaned), `too_large` (over 32,000 characters), `not_literal` (read as more than text, by the same rule as a [composer action](#contributescomposeractions--buttons-that-put-text-in-the-composer)). Then: `no_gesture` (no act in the last 5 seconds), `not_allowed` (the box is drawn as a popover on a narrow window, or the owner withdrew the grant while it was open), `stale` (the box is closed, its chat is no longer on screen, or the message box takes no text now: another tab holds its typing lock, the prompt optimizer is rewriting it, it is in terminal-command mode, or it is disabled), `not_literal` (the text would join the characters next to the caret into something that resolves: a `$` before a word, a `/` before a file name). Nothing is put in when the answer is a refusal. Text is cleaned the way a composer action's is.
+- **What the answer can tell your app.** Nothing of the message box is handed to the app: not the draft, not the caret or the selection, not a send, and no call reads the box. For text that passes the rules on its own, the answer does say one thing about the box at that moment: `stale`, that it could not take text then; `not_literal`, that the characters next to the caret would have joined your text into something that resolves. That is at most one bit about the draft per call, and only while the person acts. This is the security line of the seam: an app that needs the person's words asks for them in its own box.
+- **Approval.** `composerInsert` is part of what the owner approves for the app, per control. An update that adds it waits on the app's page until the owner approves it, as a new composer action does; until then `useInsertIntoComposer()` is `null`.
+- **Refused at install.** A value that is not `true` or `false`, and `composerInsert` without `dock: true`.
+
+Needs `APP_SDK_LEVEL >= 18`; an older host ignores the field and has no `useInsertIntoComposer`, so feature-detect it by name. A signed app is the exception: that host signs the control without the field, so a signature over `composerInsert: true` fails there, and where signatures are required the install is refused ([admission metadata](#admission-metadata)); set `minKiroCrewVersion` so the refusal names the floor.
+
 **`keys` — a key that opens the box.** A control can declare up to **4** keys,
 each opening its box in the chat on screen with its own `arg`:
 

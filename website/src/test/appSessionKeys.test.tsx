@@ -6,7 +6,7 @@
  * Settings recorder (a held key is refused and named; a free one is stored).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, renderHook, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient } from '@tanstack/react-query'
 
 import { renderHookWithProviders, renderWithProviders } from './helpers'
@@ -14,7 +14,15 @@ import { ShortcutsPanel } from '../pages/settings/ShortcutsPanel'
 import { api } from '../api/client'
 import { sendAppNav } from '../linkPreview/linkPreviewNav'
 import { useComposerSessionControls, useSessionControlChips } from '../pages/chat/page/sessionControls'
-import { clearSessionControlRequest, peekSessionControlRequestForTest } from '../app-sdk/sessionControlRequest'
+import {
+  INSERT_ACT_MS,
+  SessionControlRequestScope,
+  clearSessionControlRequest,
+  insertActClock,
+  peekSessionControlRequestForTest,
+  useInsertIntoComposer,
+  type ComposerInsertResult,
+} from '../app-sdk/sessionControlRequest'
 import { useAppKeyRecorder } from '../hooks/useAppSessionKeys'
 import { SHORTCUTS_ENABLED_KEY } from '../hooks/useKeyboardShortcuts'
 import {
@@ -34,7 +42,14 @@ import type { ResolvedSessionControl } from '../hooks/useSessionControls'
 vi.mock('../api/client', () => ({
   api: { listApps: vi.fn(), chatFolders: vi.fn(), appSessionStatus: vi.fn(), kirocrewConfig: vi.fn() },
 }))
+// jsdom marks every event it is handed as untrusted; a test stands in the person's key.
+const trust = vi.hoisted(() => ({ next: true }))
+vi.mock('../components/trustedClick', async (orig) => ({
+  ...(await orig<typeof import('../components/trustedClick')>()),
+  isTrustedEvent: () => trust.next,
+}))
 const mockApps = api.listApps as unknown as ReturnType<typeof vi.fn>
+const clock = { t: 1_000 }
 
 const KEYS = [
   { id: 'questions', label: 'Open Questions', default: 'Alt+Shift+Q', arg: { view: 'questions' } },
@@ -88,11 +103,15 @@ beforeEach(() => {
   mockApps.mockResolvedValue([refsApp])
   ;(api.chatFolders as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([])
   ;(api.appSessionStatus as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ state: 'none' })
+  trust.next = true
+  clock.t = 1_000
+  insertActClock.now = () => clock.t
 })
 afterEach(() => {
   cleanup()
   document.body.replaceChildren()
   clearSessionControlRequest('dashboard:chat-1', KEY)
+  insertActClock.now = () => performance.now()
 })
 
 describe('reading and resolving app keys', () => {
@@ -167,6 +186,32 @@ describe('an app key in the chat on screen', () => {
     press('KeyL')
     expect(result.current.openSessionControl).toBeNull()
     expect(peekSessionControlRequestForTest('dashboard:chat-1', KEY)).toBeNull()
+  })
+
+  it("takes only the person's own key: a dispatched chord opens nothing, hands nothing over and starts no insert window", async () => {
+    const { result } = await mountComposer()
+    drawChip()
+    // The box's insert, for the chat and control the key is for.
+    let insert: ((t: string) => ComposerInsertResult) | null = null
+    function Probe() {
+      insert = useInsertIntoComposer()
+      return null
+    }
+    render(<SessionControlRequestScope sessionKey="dashboard:chat-1" control={KEY} insert={() => undefined}><Probe /></SessionControlRequestScope>)
+    clock.t += INSERT_ACT_MS + 1
+    trust.next = false
+    expect(press('KeyQ').defaultPrevented).toBe(false)
+    expect(result.current.openSessionControl).toBeNull()
+    expect(peekSessionControlRequestForTest('dashboard:chat-1', KEY)).toBeNull()
+    expect(insert!('Q4a')).toEqual({ ok: false, code: 'no_gesture' })
+    trust.next = true
+    expect(press('KeyQ').defaultPrevented).toBe(true)
+    expect(result.current.openSessionControl).toEqual({ key: KEY, slot: 'chat-1' })
+    expect(insert!('Q4a')).toEqual({ ok: true })
+    // A scripted press of the key that opened it does not close it either.
+    trust.next = false
+    press('KeyQ')
+    expect(result.current.openSessionControl).toEqual({ key: KEY, slot: 'chat-1' })
   })
 
   it('the key that closes a docked box from inside it hands focus back to the chip', async () => {
