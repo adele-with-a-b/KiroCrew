@@ -79,6 +79,7 @@ if TYPE_CHECKING:
     )
     from kiro_crew.dashboard.chat_turn.deny_chokepoints import (
         _redact_display_text,
+        _refuse_conductor_long_shell,
         _reject_attributed,
         _reject_hook_blocked,
         _reject_hook_error,
@@ -663,6 +664,18 @@ async def _decide_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CO
     # to this request (``deny_override``): the gate and every transport approval
     # of the request below carry the same keys.
     turn._session_deny_waivers = _request_deny_waivers(slot, event, client)
+    # A Conductor's shell call that declares a wait past one step, before any rung.
+    if await _refuse_conductor_long_shell(
+        client,
+        slot,
+        event,
+        session_key=session_key,
+        backend=capabilities_of(client).backend,
+        state=state,
+        refusal_reasons=_refusal_reasons,
+        refusal_notices=_refusal_notices,
+    ):
+        return _Flow.CONTINUE
     # The turn runs a Dashboard card's reply: words a page chose. It never inherits an
     # auto-approval, so every rung below that approves without asking anyone (the
     # hook auto-approve list, native crew, trusted patterns, trust-reads, session

@@ -23,6 +23,25 @@ GUEST_AGENT_PROMPT = (
 )
 
 
+#: The bound a Conductor's tool calls keep (``conductor_step``), stated where every
+#: backend's model reads it in the turn: the harnesses whose shell call the gate can
+#: refuse (Claude Code, Copilot CLI) take no refusal steer, so a refused call's own
+#: reason reaches the model only in the recovery turn after it. Carried by every
+#: conductor: the root, the crewmate's and the team lead (``_LEDGER_CONDUCTOR_RULES``,
+#: which ``_SHARED_CONDUCTOR_RULES_BLOCK`` gives the team lead), and the pipeline and
+#: security conductors (``_CONDUCTOR_WORK_LEDGER_PROTOCOL``).
+_STEP_BOUND_RULE = """**Hold no tool call open longer than 60 s.** The person's message is read when
+the call in flight ends. A shell call that asks to wait longer is refused: give it a
+`timeout` of 60000 ms or less, or run it with `run_in_background` and check its
+output in later steps. A shell call that declares no length can still run long, so
+keep each to one short step. `spawn_sub_agents` waits for its whole wave inside the
+call and is refused; start each sub-agent with `spawn_run`. A `wait` ends early when
+a message comes in. For a longer watch, have a worker wait in steps of 60 s or less
+and report with `work_report`, then end your turn.
+
+"""
+
+
 _TEAM_LEAD_SYSTEM_PROMPT = """# Kiro Crew Team Lead
 
 You are `kirocrew-team-lead`. A person hands you a goal and you own it end to
@@ -191,6 +210,7 @@ landed, what is left, and the links. Then, in a later step, stop the loop with
 *requested* confirms receipt only — do not retry it in the same turn.
 Confirm activation from the gateway arm notice or `monitor_inspect` on a later turn. """,
     "dependent_calls": _DEPENDENT_CALLS_RULE,
+    "step_bound": _STEP_BOUND_RULE,
     "act_by_status": """Read the ledger first, every cycle. A cycle a worker's report woke you for
 arrives with a `[work-ledger wake]` line naming each item that moved and a
 `[work-ledger]` line telling you what to call. A cycle whose board has a seat
@@ -489,6 +509,7 @@ this checklist, and pass it again on every cycle while the ask is open:
 """,
     ),
     ("dependent_calls", _LEDGER_CONDUCTOR_RULES["dependent_calls"]),
+    ("step_bound", _LEDGER_CONDUCTOR_RULES["step_bound"]),
     ("act_by_status", _LEDGER_CONDUCTOR_RULES["act_by_status"]),
     (
         "steer",
@@ -768,7 +789,7 @@ The ledger holds the item's state, and it is what the person's Dashboard tab
 reads. A store of your own — a queue, a decisions file, a findings ledger —
 stays as the detail behind the ledger row, never as a replacement for it.
 
-"""
+""" + _STEP_BOUND_RULE
 
 
 _PIPELINE_CONDUCTOR_SYSTEM_PROMPT = """# Kiro Crew Pipeline Conductor
