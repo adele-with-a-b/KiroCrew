@@ -366,22 +366,28 @@ def next_pick(items: list[Any]) -> str | None:
     fold dicts.
     """
 
-    def get(item: Any, name: str) -> Any:
-        return item.get(name) if isinstance(item, dict) else getattr(item, name, None)
-
     best: tuple[int, float, str, str] | None = None
     for item in items:
-        plan = coerce_plan(get(item, "plan")) or {}
-        bound = bool(get(item, "worker_session_key"))
-        if bound or not in_backlog(plan, state=get(item, "state"), worker_bound=bound):
+        plan = coerce_plan(_get(item, "plan")) or {}
+        bound = bool(_get(item, "worker_session_key"))
+        if bound or not in_backlog(plan, state=_get(item, "state"), worker_bound=bound):
             continue
-        rank = plan.get("rank")
-        key = (
-            0 if rank is not None else 1,
-            rank if rank is not None else 0.0,
-            str(get(item, "created_at") or ""),
-            str(get(item, "item_id") or ""),
-        )
+        key = pick_key(item)
         if best is None or key < best:
             best = key
     return best[3] if best else None
+
+
+def _get(item: Any, name: str) -> Any:
+    return item.get(name) if isinstance(item, dict) else getattr(item, name, None)
+
+
+def pick_key(item: Any) -> tuple[int, float, str, str]:
+    """The order :func:`next_pick` picks in: ranked first by rank, then oldest, then id."""
+    rank = (coerce_plan(_get(item, "plan")) or {}).get("rank")
+    return (
+        0 if rank is not None else 1,
+        rank if rank is not None else 0.0,
+        str(_get(item, "created_at") or ""),
+        str(_get(item, "item_id") or ""),
+    )

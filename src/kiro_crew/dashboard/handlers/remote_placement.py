@@ -21,6 +21,9 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from kiro_crew.dashboard.remote_dispatch_headroom import (
     CPU_BUSY_THRESHOLD,
+    SHORT_CPU,
+    SHORT_DISK,
+    SHORT_MEMORY,
     remote_dispatch_settings,
 )
 
@@ -80,15 +83,17 @@ def _connected(mgr: Any, instance_id: str) -> bool:
     return getattr(getattr(status, "state", None), "value", None) == _CONNECTED
 
 
-async def _candidate(
-    state: "DashboardState", mgr: Any, row: Any, mem_gb: float, disk_gb: float
-) -> Candidate | None:
-    """*row* as a :class:`Candidate`, or ``None`` when it is not eligible."""
-    from kiro_crew.dashboard.handlers import remote_dispatch_routes as routes
+#: What :func:`room_short` answers for a snapshot missing a reading it needs.
+ROOM_UNREAD = "unknown"
 
-    instance_id = str(getattr(row, "id", "") or "")
-    if not instance_id or not _connected(mgr, instance_id):
-        return None
+
+async def read_headroom(mgr: Any, instance_id: str) -> dict[str, Any] | None:
+    """A connected crew's headroom snapshot, or ``None`` when it gave none in time.
+
+    Bounded by :data:`PROBE_TIMEOUT_S`. Placement and the patrol's ``[seats]`` line
+    (``dashboard/patrol_seats.py``) both read a crew's room through this.
+    """
+    from kiro_crew.dashboard.handlers import remote_dispatch_routes as routes
 
     async def _probe() -> tuple[int, Any]:
         await routes.check_version(mgr, instance_id)
@@ -97,25 +102,54 @@ async def _candidate(
     try:
         status, payload = await asyncio.wait_for(_probe(), PROBE_TIMEOUT_S)
     except routes.CrewCallError as exc:
-        logger.info("placement skips crew %s (%s)", instance_id, exc.code)
+        logger.info("crew %s headroom unread (%s)", instance_id, exc.code)
         return None
     except asyncio.TimeoutError:
-        logger.info("placement skips crew %s (headroom read timed out)", instance_id)
+        logger.info("crew %s headroom unread (the read timed out)", instance_id)
         return None
-    except Exception:  # noqa: BLE001 - one crew's fault must not fail the placement
-        logger.warning("placement skips crew %s (probe failed)", instance_id, exc_info=True)
+    except Exception:  # noqa: BLE001 - one crew's fault must not fail its caller
+        logger.warning("crew %s headroom unread (probe failed)", instance_id, exc_info=True)
         return None
     if not 200 <= status < 300 or not isinstance(payload, dict):
         return None
+    return payload
+
+
+def room_short(payload: dict[str, Any], mem_gb: float, disk_gb: float) -> str:
+    """What *payload* leaves its crew short of for one item: "" when it has room.
+
+    Otherwise ``memory``, ``disk`` or ``cpu``, or :data:`ROOM_UNREAD` when the
+    snapshot lacks a memory or disk reading. The same bar placement admits a crew by.
+    """
     mem, disk = (
         _number(payload.get("mem_free_gb")),
         _number(payload.get("disk_free_gb")),
     )
+    if mem is None or disk is None:
+        return ROOM_UNREAD
+    if mem < mem_gb:
+        return SHORT_MEMORY
+    if disk < disk_gb:
+        return SHORT_DISK
     # The peer gate's own number; an older peer sends none and its gate decides.
     cpu_busy = _number(payload.get("cpu_busy"))
-    if mem is None or disk is None or mem < mem_gb or disk < disk_gb:
-        return None
     if cpu_busy is not None and cpu_busy >= CPU_BUSY_THRESHOLD:
+        return SHORT_CPU
+    return ""
+
+
+async def _candidate(
+    state: "DashboardState", mgr: Any, row: Any, mem_gb: float, disk_gb: float
+) -> Candidate | None:
+    """*row* as a :class:`Candidate`, or ``None`` when it is not eligible."""
+    instance_id = str(getattr(row, "id", "") or "")
+    if not instance_id or not _connected(mgr, instance_id):
+        return None
+    payload = await read_headroom(mgr, instance_id)
+    if payload is None or room_short(payload, mem_gb, disk_gb):
+        return None
+    mem, disk = _number(payload.get("mem_free_gb")), _number(payload.get("disk_free_gb"))
+    if mem is None or disk is None:
         return None
     return Candidate(instance_id, str(getattr(row, "name", "") or instance_id), mem, disk)
 

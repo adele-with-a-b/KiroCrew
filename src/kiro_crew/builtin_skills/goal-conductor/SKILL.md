@@ -418,7 +418,11 @@ URL only when that PR is all you wait on). **`watch="work-ledger"` is
 mandatory**, and the interval is fixed at 300 seconds: fix a loop without the
 watch FIRST with `monitor_update(watch="work-ledger")`.
 `monitor_start` is create-only, so every change after arming is a
-`monitor_update`. Then end your turn.
+`monitor_update`. Then end your turn. A patrol cycle that ends with `[seats]`
+lines is the gateway's own count of seats with no worker, free seats with the
+backlog's next pick, room and finished workers still open: fill those seats
+and close those workers in that cycle, as your prompt's rule on reading by
+status says.
 
 **A finding rewrites the plan at once**, as your prompt's goal-plan rule says:
 only the plan text moves now; dispatch still follows the rules below.

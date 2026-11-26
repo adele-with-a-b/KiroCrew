@@ -125,6 +125,15 @@ name is refused: update a release instead of adding one.
   The Board's read also sends `conductor.seats_held`, the seats the cap counts
   (`null` until a goal is recorded). It can exceed the stories with a worker,
   because an unmarked story with no worker is a backlog row yet holds a seat.
+- A work-ledger patrol turn ends with two `[seats]` lines when the board has
+  something to start or close, counted the same way: the stories holding a seat
+  with no worker, then, only while a seat is free (`concurrency_cap` minus the
+  seats held, or with no goal recorded), the marked backlog and its next pick,
+  the room on this computer and each crew, and the finished worker sessions still
+  open; then one fixed instruction. A full board's backlog adds nothing. A
+  finished worker is counted once per session, named by its newest closed item,
+  and never while an open item uses that session; a crew's, only while
+  `session_close(crew=)` can reach that crew.
 
 A planned item's `step` moves by itself on every read (`work_plan_vocab.shown_step`),
 so the conductor writes `todo`, `mocks` and `build` and never the rest:

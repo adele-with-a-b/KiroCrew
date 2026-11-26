@@ -41,10 +41,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from kiro_crew import irq, ledger_wake, work_ledger, work_preview
-from kiro_crew.work_plan_vocab import counts_toward_concurrency
+from kiro_crew.session_ledger import ledger_key
+from kiro_crew.work_plan_vocab import counts_toward_concurrency, pick_key
 from kiro_crew.work_vocab import (
     WORK_BLOCKED_REASONS,
     WORK_REASON_STATUSES,
@@ -566,6 +567,132 @@ def has_open_items(conductor_key: str) -> bool:
     except Exception:  # noqa: BLE001 - a read fault must leave the bound in force
         logger.debug("work-ledger probe: open-items read failed for %s", conductor_key)
         return False
+
+
+class SeatFacts(NamedTuple):
+    """What the patrol's ``[seats]`` line says, as the store counts seats."""
+
+    #: Open stories holding a seat with no worker bound: bind one now. Pick order.
+    ready: tuple[str, ...]
+    #: Marked backlog stories (``plan.backlog: true``): each needs a free seat to pull
+    #: into. Pick order, so the first is the backlog's next pick.
+    backlog: tuple[str, ...]
+    #: ``concurrency_cap`` minus the seats held, or ``None`` with no goal recorded
+    #: (the store then enforces no cap: ``work_ledger_plan.refuse_if_no_seat``).
+    seats_free: int | None
+    cap: int | None
+    #: One closed item per finished worker session still open: the newest one.
+    finished_open: tuple[str, ...]
+
+
+def seat_facts(
+    conductor_key: str,
+    *,
+    slot_present: Callable[[str], bool],
+    crew_reachable: Callable[[str], bool],
+) -> SeatFacts | None:
+    """The patrol's ``[seats]`` facts for *conductor_key*, or ``None`` with no ledger.
+
+    Seats are the goal's ``concurrency_cap`` slots, counted the way the store
+    refuses on (``work_ledger.count_seated``). An epic and a sub-task hold none and
+    are never bound, so neither is named.
+
+    Finished workers are counted per session, not per item: a Conductor may bind a
+    new item to the session a closed one used, so a session any open item names is
+    that item's worker and never a finished one, and a session several closed items
+    shared is one worker, read from the newest of them (:func:`_session`).
+    Such a worker is open only on positive evidence: *slot_present* answers for a
+    slot that is really there now, or, for a crew-bound item, the hub's stored
+    record of that crew's slot list says so (a ``session_close(crew=)`` marks it
+    closed) and *crew_reachable* says a ``session_close(crew=)`` can reach that crew
+    now, since a worker no close can reach would stay on the line for good.
+
+    Blocking file reads; call it off the event loop. Never raises.
+    """
+    try:
+        record = work_ledger.read_conductor(conductor_key)
+        if record is None:
+            return None
+        items = work_ledger.list_work_items(conductor_key)
+        ready: list[work_ledger.WorkItem] = []
+        backlog: list[work_ledger.WorkItem] = []
+        held = {_session(i) for i in items if not i.is_terminal and i.worker_session_key}
+        finished: dict[tuple[str, str], work_ledger.WorkItem] = {}
+        for item in items:
+            if item.is_terminal:
+                session = _session(item)
+                if item.worker_session_key and session not in held:
+                    newest = finished.get(session)
+                    if newest is None or _closed_order(item) > _closed_order(newest):
+                        finished[session] = item
+            elif not item.worker_session_key:
+                if counts_toward_concurrency(item.plan):
+                    ready.append(item)
+                elif (item.plan or {}).get("level") not in ("epic", "task"):
+                    backlog.append(item)
+        finished_open = [
+            item.item_id
+            for item in finished.values()
+            if _worker_still_open(conductor_key, item, slot_present, crew_reachable)
+        ]
+        capped = record.goal_version > 0
+        cap = int(record.concurrency_cap) if capped else None
+        return SeatFacts(
+            ready=tuple(i.item_id for i in sorted(ready, key=pick_key)),
+            backlog=tuple(i.item_id for i in sorted(backlog, key=pick_key)),
+            seats_free=max(cap - work_ledger.count_seated(items), 0) if cap is not None else None,
+            cap=cap,
+            finished_open=tuple(sorted(finished_open)),
+        )
+    except Exception:  # noqa: BLE001 - a read fault leaves the wake without the line
+        logger.debug("work-ledger probe: seat read failed for %s", conductor_key)
+        return None
+
+
+def _session(item: work_ledger.WorkItem) -> tuple[str, str]:
+    """The worker session *item* names: ``(crew, peer slot)``, or ``("", ledger key)``.
+
+    A local key is folded by ``ledger_key``, since one dashboard session is spelled
+    both with and without its ``dashboard_`` prefix; a peer's slot key is its own.
+    """
+    key = item.worker_session_key or ""
+    if item.worker_instance_id:
+        return item.worker_instance_id, key
+    return "", ledger_key(key)
+
+
+def _closed_order(item: work_ledger.WorkItem) -> tuple[str, str]:
+    return item.closed_at or "", item.item_id
+
+
+def _worker_still_open(
+    conductor_key: str,
+    item: work_ledger.WorkItem,
+    slot_present: Callable[[str], bool],
+    crew_reachable: Callable[[str], bool],
+) -> bool:
+    """Whether closed *item*'s worker session is positively known to be open."""
+    key = item.worker_session_key or ""
+    if item.worker_instance_id:
+        stored = work_ledger.read_remote_state(conductor_key, item.item_id)
+        if not (
+            stored is not None
+            and stored.roster_read
+            and not stored.closed
+            and stored.binding in (None, work_ledger.binding_id(item))
+        ):
+            return False
+        try:
+            return crew_reachable(item.worker_instance_id)
+        except Exception:  # noqa: BLE001 - an unreadable registry reaches no crew
+            return False
+    for candidate in (key, f"dashboard_{key}"):
+        try:
+            if slot_present(candidate):
+                return True
+        except Exception:  # noqa: BLE001 - an unreadable slot table proves nothing open
+            return False
+    return False
 
 
 def worker_report_revision(items: list[work_ledger.WorkItem]) -> str:

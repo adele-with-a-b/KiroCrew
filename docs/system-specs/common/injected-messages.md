@@ -716,6 +716,11 @@ next turn into the same slot:
   fact and asks for nothing (`nudge_cycle_header`). A goal-conductor work-ledger
   patrol is uncapped (rfc-permanent-patrol.md), so it never shows the line and
   has nothing to renew.
+- A work-ledger watch's turn on a dashboard slot may end with two `[seats]`
+  lines after the message: the gateway's count of seats with no worker, the
+  backlog's next pick while a seat is free, room here and on each crew, and
+  finished workers still open, then one fixed instruction ([monitor-architecture](../modules/monitor-architecture.md)). They
+  are absent when the board has nothing to say.
 - `{{STOP_FILE}}` in the configured message is substituted with the resolved stop
   sentinel path before the tag is prepended.
 - The slot entry uses role `nudge` with a structured `nudge` meta block (`cycle`,
