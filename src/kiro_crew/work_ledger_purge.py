@@ -376,8 +376,13 @@ def purge_conductor(slot_key: str, *, allow_unreadable: bool, idle_for: timedelt
 def _remove_remote_records(slot_key: str) -> None:
     """Drop the board's remote-worker records (``work-ledger/remote/<board>/``).
 
-    Gateway observations about items the purge removed; best effort, since a
-    leftover record names nothing a reader can reach.
+    Gateway observations about items the purge removed, and the board's
+    crew-session record (``crew-sessions.json``): the peer slots the board's chat
+    opened with a plain ``session_create(crew=)``. This purge is the only thing
+    that removes that record when its chat is gone; a chat closed without a purged
+    ledger leaves it, naming only that chat's own key. Best effort: a leftover item
+    record names nothing a reader can reach, and a leftover crew-session record
+    admits only a chat that holds that key and passes the owner-only caller rule.
     """
     remote = resolved_within(_work_ledger_root() / _REMOTE_DIR, _store_name(slot_key))
     if remote is None or is_link(remote) or not remote.is_dir():

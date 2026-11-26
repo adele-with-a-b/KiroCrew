@@ -344,6 +344,74 @@ def test_a_retire_drops_the_slot_from_the_dispatch_record(recorded, peer):
     asyncio.run(go())
 
 
+def test_a_retire_drops_the_slot_from_the_stored_record_too(recorded, peer):
+    """The record an earlier hub process stored loses the retired slot, so a hub
+    restart after the retire reaches it by ``close`` only, as before the restart."""
+
+    async def go() -> None:
+        item_id = await _remote_item(peer)
+        work_ledger.write_crew_sessions(CONDUCTOR, [(CREW, PEER_SLOT)])
+        state = _state(peer)
+        await _retire_on(state, peer, item_id)
+        assert work_ledger.read_crew_sessions().get(CONDUCTOR, []) == []
+        restarted = _state(peer)
+        for verb in ("send", "read", "stop"):
+            with pytest.raises(crew_routes.CrewCallError) as refused:
+                await crew_routes._fenced_target_or_item(
+                    restarted, CONDUCTOR, CONDUCTOR, CREW, PEER_SLOT, verb
+                )
+            assert refused.value.code == remote_ingest.CODE_TARGET_RETIRED
+
+    asyncio.run(go())
+
+
+@pytest.mark.parametrize("fault", ["write", "read"])
+def test_a_retire_whose_stored_record_fails_does_not_land(recorded, peer, monkeypatch, fault):
+    """Fail closed: while the stored record may still name the slot, a retire written
+    then would hand the slot back to its opener after a restart. So it does not land:
+    the item stays bound, the slot stays recorded in memory and on disk, and the next
+    read retires it once the store works."""
+    real_write = work_ledger.write_crew_sessions
+    real_read = work_ledger.read_crew_sessions
+    broken = {"on": True}
+
+    def failing_write(caller, pairs):
+        if broken["on"]:
+            raise OSError(5, "Input/output error")
+        return real_write(caller, pairs)
+
+    def failing_read():
+        if broken["on"]:
+            raise OSError(5, "Input/output error")
+        return real_read()
+
+    async def go() -> None:
+        item_id = await _remote_item(peer)
+        work_ledger.write_crew_sessions(CONDUCTOR, [(CREW, PEER_SLOT)])
+        if fault == "write":
+            monkeypatch.setattr(work_ledger, "write_crew_sessions", failing_write)
+        else:
+            monkeypatch.setattr(work_ledger, "read_crew_sessions", failing_read)
+        state = _state(peer)
+        peer.state = "disconnected"
+        await remote_ingest.ingest_board(state, CONDUCTOR)
+        _age_down_since(item_id, 31)
+        peer.clock.now += 31 * 60
+        await remote_ingest.ingest_board(state, CONDUCTOR)
+        item = work_ledger.read_work_item(CONDUCTOR, item_id)
+        assert item.worker_session_key == PEER_SLOT and not item.retired_bindings
+        assert real_read()[CONDUCTOR] == [(CREW, PEER_SLOT)]
+        if fault == "write":
+            assert crew_routes.dispatched_by(state, CONDUCTOR, CREW, PEER_SLOT)
+        broken["on"] = False
+        await remote_ingest.ingest_board(state, CONDUCTOR)
+        assert work_ledger.read_work_item(CONDUCTOR, item_id).retired_bindings
+        assert real_read().get(CONDUCTOR, []) == []
+        assert not crew_routes.dispatched_by(state, CONDUCTOR, CREW, PEER_SLOT)
+
+    asyncio.run(go())
+
+
 def test_a_retired_slot_is_reached_by_close_only(recorded, peer):
     async def go() -> None:
         item_id = await _remote_item(peer)
@@ -849,6 +917,8 @@ def test_a_retire_that_does_not_land_restores_the_dispatch_entry(
         item = work_ledger.read_work_item(CONDUCTOR, item_id)
         assert item.worker_session_key == PEER_SLOT and not item.retired_bindings
         assert crew_routes.dispatched_by(state, CONDUCTOR, CREW, PEER_SLOT)
+        # The stored record has it back too, so a hub restart keeps the worker.
+        assert (CREW, PEER_SLOT) in work_ledger.read_crew_sessions()[CONDUCTOR]
         # The still-bound worker counts toward the cap: one more create is refused.
         with pytest.raises(crew_routes.CrewCallError) as refused:
             await crew_routes._create(state, peer, CONDUCTOR, CREW, {})

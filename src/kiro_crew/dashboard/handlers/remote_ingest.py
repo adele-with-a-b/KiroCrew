@@ -346,9 +346,9 @@ async def _close_peer_slot(mgr: Any, instance_id: str, slot: str) -> None:
 async def holds_peer_slot(board: str, instance_id: str, slot: str) -> bool:
     """Whether an OPEN item on *board* is bound to *slot* on *instance_id*.
 
-    The target fence for the item pair, which survives a hub restart where the
-    in-memory dispatch record does not. Read under the board lock, so a bind or
-    close still being recorded never opens the fence.
+    The target fence for the item pair, which admits a slot the dispatch record
+    does not hold. Read under the board lock, so a bind or close still being
+    recorded never opens the fence.
     """
     async with _board_lock(board):
         if await _refuse_if_dirty(board, board, "remote_dispatch.fence"):
@@ -371,7 +371,7 @@ async def holds_finished_slot(board: str, instance_id: str, slot: str) -> bool:
     A conductor closes a worker after its item is finished, and by then
     :func:`holds_peer_slot` does not answer for it. Such a slot keeps only the
     ``session_close(crew=)`` right, so the worker can still be closed when the
-    in-memory dispatch record is gone. An unreadable board admits nothing.
+    dispatch record does not hold it. An unreadable board admits nothing.
     """
     async with _board_lock(board):
         if await _refuse_if_dirty(board, board, "remote_dispatch.fence"):
@@ -920,14 +920,22 @@ async def _commit_retire(
     """Record the retire, then drop the dispatch entry and store a fresh record."""
     from kiro_crew.dashboard.handlers.work_ledger import _record_conductor_write
 
-    # The slot leaves the in-memory dispatch record BEFORE the retire commits, so
+    # The slot leaves the dispatch record and its stored copy BEFORE the retire commits, so
     # no send / read / stop reaches it through the cache while the write is still
     # settling; until then only the item pair admits it, read under the board
     # lock, which waits for the write and then refuses a retired slot. If the
     # retire does not land (refused, failed or cancelled), every caller that held
     # the slot gets it back: the worker is still bound and still counts toward its
     # caller's crew-session cap. No peer call.
+    #
+    # The stored copy fails closed: a retire lands only once the stored record no
+    # longer names the slot, so a hub restart can never hand a retired slot back to
+    # its opener. A record that cannot be read, or an evict that does not store,
+    # makes this a retire that did not land, and the next read tries again.
     routes = _routes()
+    if not await routes.load_record(state):
+        logger.info("remote retire of %s waits: dispatch record unreadable", item.item_id)
+        return False
     # Evict -> write -> restore holds the cap lock, as a create's cap check and
     # record do, so a create never counts the slot as freed mid-retire.
     async with routes.cap_lock(state):
@@ -935,6 +943,9 @@ async def _commit_retire(
         routes.forget_dispatched_slot(state, crew, slot)
         landed = False
         try:
+            if not await routes._persist(state, *holders):
+                logger.info("remote retire of %s waits: dispatch record not stored", item.item_id)
+                return False
             resp = await _record_conductor_write(
                 state,
                 board,
@@ -959,6 +970,7 @@ async def _commit_retire(
             if not landed:
                 for caller in holders:
                     routes._record_dispatch(state, caller, crew, slot)
+                await routes._persist(state, *holders)
     # The record described the retired crew; a new binding starts its own, with
     # no report floor: the replacement's stamps come from another clock. A store
     # that fails leaves the old record naming the retired pair, which fences the

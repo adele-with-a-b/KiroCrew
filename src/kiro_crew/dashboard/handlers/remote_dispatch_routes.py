@@ -28,11 +28,15 @@ Four rules hold for every call, in this order:
 
 **Target fence (wave 1).** ``send``/``read``/``stop``/``close`` with a crew reach
 only a peer slot that THIS caller created with ``session_create(crew=)`` on THAT
-crew, as recorded in gateway memory by :func:`_record_dispatch`. The record is not
-persisted: after a hub restart a slot no item names cannot be driven by the
-conductor, and the person still can from the crew window. The work item's
-``worker_session_key`` + ``worker_instance_id`` pair survives a restart (wave 4):
-an open item admits every verb for its slot, a finished one admits ``close`` only.
+crew, as recorded by :func:`_record_dispatch`. The record is held in gateway memory
+and stored in the hub's data home (``work_ledger.write_crew_sessions``) on every
+change, and loaded back once per gateway state (:func:`load_record`) before a fence
+check, create or retire reads it, so a hub restart keeps it. The stored copy lives
+under the work-ledger root, which is ``HIDDEN`` in every sandbox mode
+(``sandbox_leaves._CREW_HIDDEN_LEAVES``); the fence rests on that, since a process
+that could write the file could name any slot for any caller. The work item's
+``worker_session_key`` + ``worker_instance_id`` pair also survives a restart (wave
+4): an open item admits every verb for its slot, a finished one admits ``close`` only.
 """
 
 from __future__ import annotations
@@ -90,7 +94,8 @@ _CREATE_FIELDS = frozenset({"crew", "title", "agent", "agent_kind", "model", "wo
 _PEER_SLOT_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$")
 
 #: Most peer slots one caller may hold through ``crew=`` at once. Bounds the
-#: in-memory record; a conductor at the cap closes a worker before opening one.
+#: record and its stored copy; a conductor at the cap closes a worker before
+#: opening one.
 MAX_CREW_SLOTS_PER_CALLER = 64
 
 #: Peer read page bound, the same ceiling the local ``session_read_message`` has.
@@ -100,6 +105,12 @@ _READ_LIMIT_MAX = 100
 _DISPATCHED: "weakref.WeakKeyDictionary[Any, dict[str, set[tuple[str, str]]]]" = (
     weakref.WeakKeyDictionary()
 )
+
+#: The gateway states whose record already holds what the data home stored.
+_LOADED: "weakref.WeakSet[Any]" = weakref.WeakSet()
+
+#: The refusal for a create while the stored record is there but cannot be read.
+DISPATCH_RECORD_UNREADABLE = "crew_dispatch_record_unreadable"
 
 
 #: One lock per gateway state over the dispatch record: every change to it (a
@@ -659,6 +670,71 @@ def _record(state: "DashboardState") -> dict[str, set[tuple[str, str]]]:
     return rec
 
 
+async def load_record(state: "DashboardState") -> bool:
+    """Fold what the data home stored into *state*'s record, once per gateway state.
+
+    Answers whether the record now holds it. Run before anything reads or changes
+    the record (a fence check, a create, a retire), so a write never stores a
+    record that misses what an earlier process kept. A stored pair is held to the
+    create's own rules again: a slot key of one plain segment, and no more than the
+    cap per caller. Torn content reads as no record. A store that is there but
+    cannot be read (an I/O error, a file over the size ceiling) is NOT read as
+    empty: the state stays unloaded, nothing is stored over it, and the next call
+    tries again. Until then a create is refused, a retire does not land, and the
+    fence answers from what this process recorded and from the item pair, which
+    admits no slot the stored copy would not.
+    """
+    if state in _LOADED:
+        return True
+    from kiro_crew import work_ledger
+
+    try:
+        stored = await asyncio.to_thread(work_ledger.read_crew_sessions)
+    except (work_ledger.WorkLedgerError, OSError):
+        logger.warning("dispatch record unreadable; not loaded", exc_info=True)
+        return False
+    if state in _LOADED:
+        # Another call loaded meanwhile and may have changed the record since.
+        return True
+    rec = _record(state)
+    for caller, pairs in stored.items():
+        held = rec.setdefault(caller, set())
+        for instance_id, slot in pairs:
+            if len(held) >= MAX_CREW_SLOTS_PER_CALLER:
+                break
+            if _slot_ok(slot):
+                held.add((instance_id, slot))
+        if not held:
+            rec.pop(caller, None)
+    _LOADED.add(state)
+    return True
+
+
+async def _persist(state: "DashboardState", *callers: str) -> bool:
+    """Store each caller's record as it now stands; whether every write landed.
+
+    Run under :func:`cap_lock`. A record that was never loaded is not written, so
+    it cannot overwrite what an earlier process kept, and that answers ``False``. A
+    failed write is logged and answers ``False``; the record in memory still
+    answers until a restart reads the older copy. A retire treats ``False`` as a
+    retire that did not land; a create or a close only logs it.
+    """
+    if state not in _LOADED:
+        logger.warning("dispatch record not loaded; not stored")
+        return False
+    from kiro_crew import work_ledger
+
+    stored = True
+    for caller in dict.fromkeys(callers):
+        pairs = sorted(_record(state).get(caller, ()))
+        try:
+            await asyncio.to_thread(work_ledger.write_crew_sessions, caller, pairs)
+        except (work_ledger.WorkLedgerError, OSError):
+            logger.warning("dispatch record write failed for %s", caller, exc_info=True)
+            stored = False
+    return stored
+
+
 def _record_dispatch(state: "DashboardState", caller: str, instance_id: str, slot: str) -> None:
     _record(state).setdefault(caller, set()).add((instance_id, slot))
 
@@ -708,9 +784,9 @@ async def _fenced_target_or_item(
 ) -> str:
     """:func:`_fenced_target`, or a slot an open item on *board* is bound to on that crew.
 
-    The item pair (``worker_session_key`` + ``worker_instance_id``) survives a hub
-    restart, which the in-memory record does not (wave 4). A retired binding's slot
-    (wave 8) is dropped from the in-memory record when it is retired, so ``send``,
+    The item pair (``worker_session_key`` + ``worker_instance_id``) admits a slot the
+    record does not hold, such as one opened before the record was stored (wave 4).
+    A retired binding's slot (wave 8) is dropped from the record when it is retired, so ``send``,
     ``read`` and ``stop`` reach only the current binding and need no read of the
     history; only ``close`` may name a retired slot, and only when the history can
     be read and holds it. ``close`` may also name the slot a finished item is still
@@ -718,6 +794,7 @@ async def _fenced_target_or_item(
     """
     from kiro_crew.dashboard.handlers import remote_ingest
 
+    await load_record(state)
     try:
         return _fenced_target(state, caller, instance_id, target)
     except CrewCallError as exc:
@@ -789,6 +866,15 @@ async def _create(
     # The cap check and the record each take the cap lock, which a retire holds
     # from evict to restore: the cap never reads a record a retire is settling.
     # The peer call between them is not held, so creates still run side by side.
+    if not await load_record(state):
+        # The cap cannot be counted and the new slot could not be stored over a
+        # record this hub cannot read, so nothing is created.
+        raise CrewCallError(
+            503,
+            DISPATCH_RECORD_UNREADABLE,
+            "this hub cannot read its record of the crew sessions it opened, so it "
+            "created nothing; try again",
+        )
     async with cap_lock(state):
         if len(_record(state).get(caller, set())) >= MAX_CREW_SLOTS_PER_CALLER:
             raise CrewCallError(
@@ -841,6 +927,7 @@ async def _create(
     # caller's to close.
     async with cap_lock(state):
         _record_dispatch(state, caller, instance_id, slot)
+        await _persist(state, caller)
     result: dict[str, Any] = {
         "target": slot,
         "crew": instance_id,
@@ -996,6 +1083,7 @@ async def _forget_locked(state: "DashboardState", caller: str, instance_id: str,
     """:func:`_forget_dispatch` under the cap lock, so no retire restore undoes it."""
     async with cap_lock(state):
         _forget_dispatch(state, caller, instance_id, slot)
+        await _persist(state, caller)
 
 
 async def _close(

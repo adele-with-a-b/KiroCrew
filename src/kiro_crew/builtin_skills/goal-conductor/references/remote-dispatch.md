@@ -83,8 +83,8 @@ that keeps failing, goes to the user.
 
 **Driving it.** `session_send`, `session_read_message`, `session_stop` and
 `session_close` take the same `crew=` and reach only a crew session you created
-or one an open item of yours is bound to. After a hub restart only an item
-counts: an open one for every verb, a finished one for `session_close` alone.
+or one an open item of yours is bound to. Both survive a hub restart. A
+finished item's session takes `session_close` alone.
 A `session_send` with `crew=` cuts into a busy worker unless you pass
 `steer: false`, which makes the message wait for the worker's turn to end. The
 reply says what the crew did: steered, started a turn (it was idle), or queued
