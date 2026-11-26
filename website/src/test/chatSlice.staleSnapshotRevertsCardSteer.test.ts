@@ -329,6 +329,31 @@ describe('#20833 gate-3: a stale snapshot reverts a newer steer row', () => {
     expect(steers[0].meta?.steerState).toBe('requeued')
   })
 
+  it('keeps an unconfirmed steer unconfirmed against a snapshot captured while it was written', () => {
+    const store = makeStore()
+    const row = (steerState: string): Row => ({
+      role: 'user',
+      content: 'a note',
+      cls: 'msg msg-u',
+      ts: STEER_TS,
+      meta: { mid: STEER_MID, steer: true, steerState, sendId: 's-4' },
+    })
+    store.dispatch(switchSlot.pending('seed', KEY))
+    store.dispatch(
+      switchSlot.fulfilled(slotPayload(KEY, [...olderServerRows(6), row('unconfirmed')], false), 'seed', KEY),
+    )
+    const stalePage: Row[] = [
+      row('written'),
+      { role: 'assistant', content: 'newer reply', cls: 'msg msg-a', ts: '2026-08-25T08:50:00Z', meta: { mid: 'm-new-U' } },
+    ]
+    store.dispatch(switchSlot.pending('req-stale', KEY))
+    store.dispatch(switchSlot.fulfilled(slotPayload(KEY, stalePage, true), 'req-stale', KEY))
+
+    const steers = store.getState().chat.messages.filter(m => m.meta?.steer)
+    expect(steers.length).toBe(1)
+    expect(steers[0].meta?.steerState).toBe('unconfirmed')
+  })
+
   it('keeps a taken-back steer taken back against a snapshot captured while it was written', () => {
     const store = makeStore()
     const liveHead: Row[] = [

@@ -81,6 +81,10 @@ _UNDELIVERED_KEY = "undelivered"
 #: entry's queue id, so one stuck message wakes the conductor once.
 _UNREAD_KEY = "unread"
 
+#: Prefix for an unconfirmed-note wake's dedupe key, kept apart from
+#: :data:`_UNREAD_KEY` so neither replaces the other's spent wake.
+_UNCONFIRMED_KEY = "unconfirmed"
+
 #: What a worker's queue holds that its conductor wanted read now:
 #: ``(count, oldest_secs, oldest_id)``, or ``None``.
 UnreadResolver = Callable[[str, str], "tuple[int, float | None, str] | None"]
@@ -464,8 +468,13 @@ class WorkLedgerProbe(irq.Probe):
         (the target's turn could not take it), or a steer the turn accepted and has
         not reached a step to read (one long tool call), and only once it has waited past
         ``ledger_wake.UNREAD_WAKE_SECS``. Keyed on the oldest such entry's queue id,
-        so one stuck message wakes once and the next stuck one is news. A remote
-        worker's queue is on its peer, which this gateway cannot read.
+        so one stuck message wakes once and the next stuck one is news. A note the
+        worker's turn took in and then failed without confirming wakes at once, as
+        ``reason=message_unconfirmed`` (``ledger_wake.is_unconfirmed_wait``): that
+        turn is over and nothing runs the note again, whether or not the worker
+        has started another turn; it spends its own key (``unconfirmed:``), so it
+        never re-arms an older note's spent ``unread:`` wake. A remote worker's
+        queue is on its peer, which this gateway cannot read.
         """
         worker = item.worker_session_key or ""
         if not worker or item.worker_instance_id:
@@ -478,18 +487,28 @@ class WorkLedgerProbe(irq.Probe):
         if unread is None:
             return []
         count, oldest_secs, oldest_id = unread
-        if not oldest_id or not ledger_wake.is_unread_overdue(oldest_secs):
+        if not oldest_id or not ledger_wake.is_unread_overdue(oldest_secs, oldest_id):
             return []
-        token = f"{_UNREAD_KEY}:{oldest_id}"
-        if not self._spend(conductor_key, item.item_id, token, replaces=f"{_UNREAD_KEY}:"):
+        # An unconfirmed note spends its own key, so it never replaces the spent
+        # wake of an older queued note, which would then wake a second time once
+        # the unconfirmed one stops counting.
+        unconfirmed = ledger_wake.is_unconfirmed_wait(oldest_id)
+        key = _UNCONFIRMED_KEY if unconfirmed else _UNREAD_KEY
+        token = f"{key}:{oldest_id}"
+        if not self._spend(conductor_key, item.item_id, token, replaces=f"{key}:"):
             return []
+        brief = (
+            ledger_wake.unconfirmed_wake_brief(item_id=item.item_id, count=count)
+            if unconfirmed
+            else ledger_wake.unread_wake_brief(
+                item_id=item.item_id, count=count, waited_secs=float(oldest_secs or 0)
+            )
+        )
         return [
             irq.Observation(
                 f"{_UNREAD_KEY}:{item.item_id}:{oldest_id}",
                 irq.Severity.WAKE,
-                ledger_wake.unread_wake_brief(
-                    item_id=item.item_id, count=count, waited_secs=float(oldest_secs or 0)
-                ),
+                brief,
                 irq.ResetsOn.NEVER,
             )
         ]
@@ -677,7 +696,8 @@ def _overdue_unread(
     conductor_key: str, items: list[work_ledger.WorkItem], resolver: UnreadResolver | None
 ) -> dict[str, str]:
     """``{item id: oldest unread id}`` for each local item whose worker has left a
-    message of *conductor_key*'s unread past the wake threshold."""
+    message of *conductor_key*'s unread past the wake threshold, or took one into a
+    turn that failed without confirming it."""
     if resolver is None:
         return {}
     found: dict[str, str] = {}
@@ -688,7 +708,7 @@ def _overdue_unread(
             answer = resolver(item.worker_session_key, conductor_key)
         except Exception:  # noqa: BLE001 - a slot read never holds or fails a tick
             continue
-        if answer is not None and answer[2] and ledger_wake.is_unread_overdue(answer[1]):
+        if answer is not None and answer[2] and ledger_wake.is_unread_overdue(answer[1], answer[2]):
             found[item.item_id] = answer[2]
     return found
 

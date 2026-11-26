@@ -494,7 +494,10 @@ Each cycle:
    `messages_unread` is set has messages you sent still sitting in its worker's
    queue, unread; one that has waited long wakes you with `reason=message_unread`.
    Its turn could not take the message, so read the worker's `session_status`
-   before you send again. An item whose
+   before you send again. A wake with `reason=message_unconfirmed` means the
+   worker's turn took your message in and then ended with an error, so it may not
+   have run and nothing will run it again: read its `session_status`, then send
+   again what still matters. An item whose
    `report_undelivered` is set had a worker that TRIED to report or read its brief
    and the harness never delivered the call: check that worker's `session_status`
    and its pull request, and tell the user what you find ("couldn't send its

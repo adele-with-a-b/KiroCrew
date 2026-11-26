@@ -540,6 +540,8 @@ async def send_to_target(
         # The live witness that this child's creator still drives it, so its
         # turn ends may report back (``dashboard.mate_thread_wakes``).
         slot._reports_to_creator = True
+    # This send is the caller's answer to any "may not have run" notice of its.
+    queue_age.forget_unconfirmed(slot, caller_key)
     # Sanitized on the same grounds as the steer path (``chat_delivery`` sanitizes
     # before ``slot.append``): this body comes from ANOTHER session and is persisted
     # into — and broadcast from — the target's transcript, so raw content must never

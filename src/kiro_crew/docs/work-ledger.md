@@ -330,7 +330,12 @@ running turn, and has waited ten minutes (`ledger_wake.UNREAD_WAKE_SECS`), wakes
 the conductor's work-ledger watch once with `reason=message_unread`, even while
 the watch is holding because every item waits on a person. A message restored
 from the queue after a gateway restart carries no age, so it never causes this
-wake. Neither does a remote worker, whose queue is on its peer.
+wake. Neither does a remote worker, whose queue is on its peer. A message the
+worker's turn took in and then ended with an error, before the harness could
+confirm it was read, is not queued to run again: it counts in `messages_unread`
+until the conductor next sends to that worker, and it wakes the conductor at once
+with `reason=message_unconfirmed`, because only the conductor can send it again.
+That holds whether the worker is idle or already running its next turn.
 
 Reports belong at real milestones, not on a timer.
 `summary` is capped at 500 characters.

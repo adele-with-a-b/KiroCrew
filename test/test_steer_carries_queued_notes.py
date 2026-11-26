@@ -529,9 +529,10 @@ def test_a_conductors_steer_requeued_unwritten_goes_in_ahead_of_the_next_one(tmp
     assert _handed(worker) == ["first", "first", "second"] and worker._queue == []
 
 
-def test_a_conductors_steer_the_turn_took_is_not_requeued_by_an_error_end(tmp_path):
+def test_a_hub_conductors_taken_steer_is_still_requeued_by_an_error_end(tmp_path):
     """The harness took it (claude answered ``injected``) and the turn ended
-    without ``end_turn``: it went in, so it never runs a second time."""
+    without ``end_turn``. A hub conductor's steer stamps no sender this crew can
+    write a notice to, so it is requeued as before rather than dropped unheard."""
     from kiro_crew.dashboard import chat_runner as cr
     from kiro_crew.dashboard.chat_turn.steer_queue import _mark_held_steers_possibly_delivered
 
@@ -541,7 +542,53 @@ def test_a_conductors_steer_the_turn_took_is_not_requeued_by_an_error_end(tmp_pa
     _mark_held_steers_possibly_delivered(worker, worker._acp_client)
     cr._requeue_unconsumed_steers(state, worker)
 
-    assert worker._queue == [] and worker._pending_steers == []
+    assert [entry["content"] for entry in worker._queue] == ["first"]
+
+
+def test_a_requeued_steer_the_turn_may_have_read_does_not_hold_back_the_senders_queued_notes(
+    tmp_path,
+):
+    """It stays for the drain; the sender's queued note behind it still goes in
+    before the new one, so the turn reads them in send order."""
+    from kiro_crew.dashboard.chat_utils_injected_rows import STEER_POSSIBLY_DELIVERED_META
+
+    state, caller, worker = _setup(tmp_path)
+    _queue_notes(state, caller, worker, "first", "second")
+    requeued = worker._queue[0]
+    requeued["meta"].pop(sc.SESSION_SEND_QUEUED_META)  # as a requeued steer's meta is
+    requeued["meta"][STEER_POSSIBLY_DELIVERED_META] = True
+    carry = steer_carry.from_session(state, caller.key)
+
+    outcome = asyncio.run(
+        session_deliver.deliver(
+            state, worker, "third", session_deliver.peer(steer=True, carry=carry)
+        )
+    )
+
+    assert outcome == session_deliver.DELIVERED_STEERED
+    assert [_body(text) for text in _handed(worker)] == ["second", "third"]
+    assert carry.count == 1 and worker._queue == [requeued]
+
+
+def test_a_typed_entry_with_the_senders_stamp_is_not_moved(tmp_path):
+    """A recovery replay or an app message carries the sender's stamp with a kind
+    and callbacks of its own; steering its text would drop both."""
+    state, caller, worker = _setup(tmp_path)
+    _queue_notes(state, caller, worker, "replayed")
+    typed = worker._queue[0]
+    typed["meta"].pop(sc.SESSION_SEND_QUEUED_META)
+    typed["kind"] = "synthetic_recovery"
+    carry = steer_carry.from_session(state, caller.key)
+
+    outcome = asyncio.run(
+        session_deliver.deliver(
+            state, worker, "next", session_deliver.peer(steer=True, carry=carry)
+        )
+    )
+
+    assert outcome == session_deliver.DELIVERED_STEERED
+    assert [_body(text) for text in _handed(worker)] == ["next"]
+    assert carry.count == 0 and worker._queue == [typed]
 
 
 def test_a_conductors_steer_records_its_actor_for_a_requeue(tmp_path):

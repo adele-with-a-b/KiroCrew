@@ -123,6 +123,7 @@ class _ChatSlot:
         "_queued_as",
         "_broadcast_replaced",
         "_steered_at",
+        "_steer_unconfirmed_waits",
         "_approval_futures",
         "_approval_instances",
         "_approval_stopped",
@@ -600,6 +601,7 @@ class _ChatSlot:
     _queued_as: dict[str, str]
     _broadcast_replaced: dict[str, int]
     _steered_at: dict[str, tuple[float, bool]]
+    _steer_unconfirmed_waits: dict[str, tuple[str, float]]
     _approval_futures: dict[str, asyncio.Future[str]]
     _approval_instances: dict[str, tuple[asyncio.Future[str], str]]
     _approval_stopped: set[str]

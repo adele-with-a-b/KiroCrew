@@ -3,8 +3,9 @@ steer arm (``_on_steer_consumed``)."""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from kiro_crew.dashboard.chat_delivery import (
     STEER_STATE_CONSUMED,
@@ -324,17 +325,24 @@ def _mark_taken_steers(slot: "_ChatSlot", client: object) -> None:
 
 
 def _settles_taken(slot: "_ChatSlot", steer_msg: str, taken: set[str]) -> bool:
-    """Whether the teardown settles *steer_msg* as taken but unconfirmed.
+    """Whether the teardown tries to settle *steer_msg* as taken but unconfirmed.
 
-    Only another session's steer: the person's own steer and an automation's keep
-    the requeue, which is how a person sees the message their turn may have
-    dropped. A steer whose RPC has not returned is left to that RPC's own
-    reconcile, as the requeue leaves it.
+    Only another session's steer whose sender can be told (a send-origin stamp,
+    which ``notify_send_origin_discarded`` writes to; the settle itself still
+    requeues one whose notice does not land): the person's own steer, an
+    automation's, and one with nobody to tell (a hub conductor's, an app's) keep
+    the requeue, which is how they learn of a message the turn may have dropped.
+    A steer whose RPC has not returned is left to that RPC's own reconcile, as the
+    requeue leaves it.
     """
     from kiro_crew.dashboard import responsive_chat
+    from kiro_crew.dashboard.session_control_parts.delivery_containment import (
+        send_origin_slot,
+    )
 
     return (
         steer_msg in taken
+        and bool(send_origin_slot(slot._steer_admissions.get(steer_msg)))
         and not slot._steer_user_origin.get(steer_msg, False)
         and steer_msg not in slot._steer_automation
         and steer_msg not in slot._steer_rpc_in_flight
@@ -342,31 +350,65 @@ def _settles_taken(slot: "_ChatSlot", steer_msg: str, taken: set[str]) -> bool:
     )
 
 
+def _push_unconfirmed_wake(slot: "_ChatSlot", admission: Any) -> None:
+    """Pull the sender's work-ledger tick forward when it is this worker's conductor
+    (``conductor_wake.wake_for_unconfirmed_note``), off the event loop: the push
+    reads the worker's binding file. Best-effort: the sender's scheduled tick reads
+    the same record."""
+    from kiro_crew import conductor_wake
+    from kiro_crew.dashboard.session_control_parts.delivery_containment import (
+        send_origin_slot,
+    )
+
+    origin = send_origin_slot(admission)
+    if not origin:
+        return
+    try:
+        asyncio.get_running_loop().run_in_executor(
+            None, conductor_wake.wake_for_unconfirmed_note, str(slot.key), origin
+        )
+    except Exception:  # noqa: BLE001 - the teardown must finish
+        logger.debug("unconfirmed-note wake not scheduled (slot %s)", slot.key)
+
+
 def _settle_taken_peer_steer(
     state: "DashboardState", slot: "_ChatSlot", steer_msg: str, live: list[str]
-) -> None:
-    """Settle a peer's steer the ending turn took in and never confirmed.
+) -> bool:
+    """Settle a peer's steer the ending turn took in and never confirmed, or say
+    it cannot be.
 
     The text was on the turn's input, so it is not queued to run a second time.
-    Its row says so (``unconfirmed``), its sender is told it may not have run, and
-    every per-text record of it goes, as a consumed steer's does.
+    Its sender is told first that it may not have run; only once that notice
+    landed does its row say so (``unconfirmed``), the sender's work-ledger watch
+    get its wake (:func:`queue_age.note_unconfirmed`), and every per-text record
+    of it go, as a consumed steer's does. A notice that did not land (a closed
+    sender, a key another tab now holds, a write that failed) settles nothing and
+    answers False, so the caller requeues the steer as before: a steer is never
+    dropped with nobody told.
     """
+    from kiro_crew.dashboard import queue_age
     from kiro_crew.dashboard.session_control import (
         SEND_DISCARD_UNCONFIRMED_STEER,
         notify_send_origin_discarded,
     )
 
-    _mark_steer_row_state(state, slot, steer_msg, STEER_STATE_UNCONFIRMED, live)
+    admission = slot._steer_admissions.get(steer_msg)
     try:
-        notify_send_origin_discarded(
+        told = notify_send_origin_discarded(
             state,
-            entry_meta=slot._steer_admissions.get(steer_msg),
+            entry_meta=admission,
             target_slot=slot,
             text=steer_msg,
             cause=SEND_DISCARD_UNCONFIRMED_STEER,
         )
-    except Exception:  # noqa: BLE001 - the teardown must finish; the notice is best-effort
+    except Exception:  # noqa: BLE001 - the teardown must finish; the requeue still covers it
         logger.warning("unconfirmed-steer notice failed (slot %s)", slot.key, exc_info=True)
+        told = False
+    if told is not True:
+        return False
+    _mark_steer_row_state(state, slot, steer_msg, STEER_STATE_UNCONFIRMED, live)
+    queue_age.note_unconfirmed(slot, steer_msg, admission)
+    _push_unconfirmed_wake(slot, admission)
     for records in (
         slot._steer_admissions,
         slot._steer_delivery_ids,
@@ -384,6 +426,7 @@ def _settle_taken_peer_steer(
     if isinstance(stamps, dict):
         stamps.pop(steer_msg, None)  # its send instant, kept only for a requeue
     logger.info("a peer steer went into %s's failed turn unconfirmed; not requeued", slot.key)
+    return True
 
 
 def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> None:
@@ -414,8 +457,9 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
 
     A peer's steer the turn's agent took in without confirming it
     (:func:`_mark_taken_steers`) is not requeued either: it went into the turn,
-    so it is settled ``unconfirmed`` and its sender is told
-    (:func:`_settle_taken_peer_steer`). It never runs twice.
+    so it is settled ``unconfirmed`` once its sender has been told
+    (:func:`_settle_taken_peer_steer`), and it never runs twice. One whose sender
+    could not be told is requeued like any other.
     """
     from kiro_crew.dashboard import steer_retract
 
@@ -431,9 +475,16 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
     # Past the owner's entries already waiting at the front: his requeued
     # steers go here, after the messages he sent before them.
     owner_at = after_owner_front(slot._queue)
-    for steer_msg in reversed(requeued):
-        if _settles_taken(slot, steer_msg, taken):
-            _settle_taken_peer_steer(state, slot, steer_msg, requeued)
+    # Settled oldest first, so each sender's notices arrive in send order (the
+    # requeue below walks newest first only because each insert goes in front).
+    settled = {
+        at
+        for at, steer_msg in enumerate(requeued)
+        if _settles_taken(slot, steer_msg, taken)
+        and _settle_taken_peer_steer(state, slot, steer_msg, requeued)
+    }
+    for at, steer_msg in reversed(list(enumerate(requeued))):
+        if at in settled:
             continue
         # The turn is over and never confirmed this steer, so the row persisted at
         # write time is now WRONG if it still reads as a successful injection.

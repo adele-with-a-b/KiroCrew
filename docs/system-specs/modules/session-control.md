@@ -573,8 +573,10 @@ steer whose request went away mid-write names the same actor on its entry. A ste
 old steer row is marked `superseded` by the row the steer writes, so it never waits
 a whole turn and never reads "runs as its own message" once it went in. One the
 ending turn may already have read (`meta.steerPossiblyDelivered`) stays for the
-drain, which tells the model so; it ends the carry, and the new note still goes
-in. The carry never answers `turn_ended` for a turn that is running.
+drain, which tells the model so, and the carry goes on past it to the sender's
+later entries. A typed entry (a `kind`, consume callbacks, a restored card) is never
+moved this way, whatever stamp it carries. The carry never answers `turn_ended`
+for a turn that is running.
 
 An entry whose text equals the new text also ends the carry and stays queued:
 steered first, it would leave the new text refused as `same_pending`.
@@ -600,14 +602,25 @@ unavailable and the message queues. With the key on, the peer's steer is held
 as the composer's is: it counts as delivered only when its turn ends cleanly,
 and the turn's teardown otherwise requeues it as a queue card that runs as the
 next turn, so it can run twice. One exception makes a peer's claude steer
-exactly-once: one claude answered `injected` was on the running turn's input, so
+at-most-once: one claude answered `injected` was on the running turn's input, so
 when that turn then ends without `end_turn` (an error such as a failed
 compaction, not a stop or a refusal) the teardown does not requeue it
-(`steers_taken_unconfirmed`, `_settle_taken_peer_steer`). Its row reads
+(`steers_taken_unconfirmed`, `_settle_taken_peer_steer`); the turn may not have
+read it, so it may not run at all. Its sender is told first that it may not have
+run (`unconfirmed_steer`); only once that notice lands is its row set to
 `steerState: unconfirmed` ("went into the turn, which then ended with an error --
-may not have run"), context replay keeps it, and its sender is told it may not
-have run (`unconfirmed_steer`). A person's steer and an automation's keep the
-requeue. The default steer does not change that trade:
+may not have run"), which context replay keeps. When the sender is the
+Conductor the worker is bound to, its work-ledger watch is pulled forward and
+wakes it at once with `reason=message_unconfirmed` (`queue_age.note_unconfirmed`,
+`conductor_wake.wake_for_unconfirmed_note`), because nothing runs the note
+again. That holds whether the worker is idle or has already started a turn
+queued behind the failed one; the wait counts until the sender next sends to
+the worker (`queue_age.forget_unconfirmed`), and the notices go out oldest
+first. Only a steer whose sender can be told is settled so: a person's
+steer, an automation's, one with no send-origin stamp (a hub conductor's, an
+app's answer to a question card), and one whose notice did not land (a closed
+sender, a key now held by another tab) keep the requeue. The default steer does
+not change that trade:
 with the key off (the default) a defaulted steer to those harnesses queues marked
 as wanting the turn, so the unread wake covers it; with it on, the operator has
 already accepted "may run twice" for every peer steer, asked for or defaulted.
@@ -2856,7 +2869,12 @@ gateway (`nudge_wiring._worker_unread` → `AutoNudgeService(worker_unread=…)`
 `probes.build` → `WorkLedgerProbe`), answers a bound worker's wanted entries and
 unread steers from its conductor, and once the oldest has waited
 `ledger_wake.UNREAD_WAKE_SECS` the probe wakes the conductor once per oldest id
-(`unread:<id>`, `reason=message_unread`). The same overdue answer is folded into
+(`unread:<id>`, `reason=message_unread`). A note the worker's failed turn took in
+unconfirmed (`queue_age.note_unconfirmed`) is counted too, under an id that starts
+`ledger_wake.UNCONFIRMED_WAIT_PREFIX`; that wait is overdue at once and wakes with
+`reason=message_unconfirmed`, spending its own key (`unconfirmed:<id>`) so an older
+note's spent `unread:<id>` wake is never re-armed, and the settle pulls the conductor's tick forward
+(`conductor_wake.wake_for_unconfirmed_note`). The same overdue answer is folded into
 `person_wait_fingerprint` (`firing._ledger_person_wait_fp` passes the resolver),
 so a patrol held because every item waits on a person releases for that wake.
 `work_ledger_read` shows every entry the conductor queued for its worker, wanted
