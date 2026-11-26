@@ -2334,7 +2334,9 @@ puts text in its chat's message box and reads nothing back), and level 19 adds
 the key's `arg` again as a new [request](#session-control-requests) and never closes
 it; an older host ignores it on an app it does not verify, and its key closes the box on
 the second press, and refuses a signed app that sets it where signatures are required,
-[manifest reference](manifest-reference.md#admission-metadata)); each level
+[manifest reference](manifest-reference.md#admission-metadata)), and level 20 adds a
+link-preview card's `card.step` (a pinned card moves to another of its provider's
+labels in the same chat, [manifest reference](manifest-reference.md)); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

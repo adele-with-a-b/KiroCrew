@@ -937,9 +937,10 @@ def _resolve_link_preview(name: str, provider_id: str) -> FrameEntry | None:
 # point's own (`website/src/linkPreview/linkPreviewProtocol.ts`), not the shared
 # invocation contract.
 _LINK_PREVIEW_POINT = r"""
-// An open's answer (`opened`), by the number it was sent with. A host that never
-// answers (an older one, a message dropped past the size or burst limit)
-// resolves `no_answer` after 5 s. An id that is not a string of 1 to 128
+// An open's answer (`opened`) or a step's (`stepped`), by the number it was sent
+// with. A host that never answers (an older one, a message dropped past the size
+// or burst limit) resolves `no_answer`: after 5 s for an open, 30 s for a step,
+// which may page in older history first. An id that is not a string of 1 to 128
 // characters (no declaration has one), a payload that is not JSON, or a session
 // control's over 4 KB (`MAX_OPEN_PAYLOAD_BYTES`), is refused here unsent, so it
 // never spends the click that showed the card.
@@ -950,12 +951,15 @@ function openTarget(type, invocation, key, id, payload, maxBytes) {
   let copy, json;
   try { json = JSON.stringify(payload === undefined ? null : payload); copy = JSON.parse(json); } catch (_) { return Promise.resolve({ ok: false, reason: 'not_json' }); }
   if (maxBytes && new TextEncoder().encode(json).length > maxBytes) return Promise.resolve({ ok: false, reason: 'too_large' });
+  return answered(type, { invocation, [key]: id, payload: copy }, 5000);
+}
+function answered(type, fields, ms) {
   openSeq += 1;
   const request = openSeq;
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { opens.delete(request); resolve({ ok: false, reason: 'no_answer' }); }, 5000);
+    const timer = setTimeout(() => { opens.delete(request); resolve({ ok: false, reason: 'no_answer' }); }, ms);
     opens.set(request, (r) => { clearTimeout(timer); resolve(r); });
-    send(type, { invocation, [key]: id, payload: copy, request });
+    send(type, { ...fields, request });
   });
 }
 function cardControls(invocation) {
@@ -975,6 +979,22 @@ function cardControls(invocation) {
     jumpTo: (message) => {
       if (!message || typeof message.ts !== 'string') return;
       send('jump', { invocation, ts: message.ts, id: typeof message.id === 'string' ? message.id : undefined });
+    },
+    // Move this PINNED card to another of its provider's labels in this show's
+    // chat: the label whose whole text is `text` in `message` (`link.message`'s
+    // shape). The chat brings it into view, paging in older history when it is
+    // far up, and the card is shown again beside it (`trigger: 'step'`); `line`,
+    // the app's own words, is said by the chat's live region. Resolves `{ ok: true }`
+    // once it landed, or `{ ok: false, reason }`.
+    step: (to) => {
+      const m = to && to.message;
+      if (!m || typeof m.ts !== 'string' || typeof to.text !== 'string' || !to.text || to.text.length > 128) {
+        return Promise.resolve({ ok: false, reason: 'not_found' });
+      }
+      return answered('step', {
+        invocation, ts: m.ts, id: typeof m.id === 'string' ? m.id : undefined,
+        text: to.text, line: typeof to.line === 'string' ? to.line : undefined,
+      }, 30000);
     },
   });
 }
@@ -1006,7 +1026,7 @@ const POINT = {
           link.message = { ts: m.message.ts };
           if (typeof m.message.id === 'string') link.message.id = m.message.id;
         }
-        if (m.trigger === 'hover' || m.trigger === 'click' || m.trigger === 'tap') link.trigger = m.trigger;
+        if (m.trigger === 'hover' || m.trigger === 'click' || m.trigger === 'tap' || m.trigger === 'step') link.trigger = m.trigger;
         if (m.placement === 'above' || m.placement === 'below') link.placement = m.placement;
         if (m.modifiers && typeof m.modifiers === 'object') {
           const k = m.modifiers;
@@ -1018,7 +1038,8 @@ const POINT = {
       }
       case 'leave': call('leave'); return;
       case 'hide': call('hide', String(m.reason || 'other')); return;
-      case 'opened': {
+      case 'opened':
+      case 'stepped': {
         const done = opens.get(m.request);
         if (!done) return;
         opens.delete(m.request);

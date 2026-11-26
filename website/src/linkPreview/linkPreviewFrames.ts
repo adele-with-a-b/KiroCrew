@@ -31,6 +31,7 @@ import {
   type PreviewLink,
   type Placement,
   type ShowTrigger,
+  type StepRefusal,
   type ToFrame,
 } from './linkPreviewProtocol'
 import { MAX_OPEN_PAYLOAD_BYTES, jsonBytes, type AppOpenTarget, type OpenRefusal } from './linkPreviewNav'
@@ -131,8 +132,27 @@ export interface FrameHostOptions {
   onOpen?(appName: string, target: AppOpenTarget, payload: unknown, scope: ShowScope): true | OpenRefusal
   /** A shown card of an app approved for `sessionKey` asked to jump to `target` in the chat `scope` is in. */
   onJump?(appName: string, target: MessageRef, scope: ShowScope): void
+  /** A pinned card of an app approved for `sessionKey` asked to step to its
+   *  provider's label `text` in message `target` of the chat `slot` is on screen
+   *  in (`linkPreviewStep.ts`): bring it into view, call `land` with where it is
+   *  (again while the scroll settles), and `done` once. Returns its cancel. */
+  onStep?(key: string, ask: StepRequest, hooks: StepLanding): () => void
   /** The provider's card-mode hover card closed itself (`card.close`). */
   onClosed?(key: string): void
+}
+
+/** What a card's `step` names, in the chat its show sat in. */
+export interface StepRequest {
+  slot: string
+  target: MessageRef
+  text: string
+  line?: string
+}
+
+/** How the host side of a step reports back to the frame host. */
+export interface StepLanding {
+  land(rect: AnchorRect, link: PreviewLink): void
+  done(result: true | StepRefusal): void
 }
 
 export function mintFrame(appName: string, frameId?: string, providerId = ''): Promise<Minted> {
@@ -162,6 +182,8 @@ export class FrameHost {
   /** Bumped by every leave and dismissal, so a show still waiting for a loading
    *  frame is dropped instead of opening a card the user already left. */
   private readonly showTokens = new Map<PreviewFrame, number>()
+  /** A card's step still settling, by frame: ending it answers it `replaced`. */
+  private readonly steps = new Map<PreviewFrame, () => void>()
 
   constructor(opts: FrameHostOptions, root: HTMLElement = document.body) {
     this.opts = opts
@@ -425,6 +447,7 @@ export class FrameHost {
     this.settlers.get(frame)?.cancel()
     this.settlers.delete(frame)
     this.showTokens.delete(frame)
+    this.steps.get(frame)?.()
     if (this.hover.get(frame.key) === frame) this.hover.delete(frame.key)
     const at = this.detached.indexOf(frame)
     if (at >= 0) this.detached.splice(at, 1)
@@ -573,6 +596,68 @@ export class FrameHost {
     return age >= 0 && age <= CLICK_GRANT_MS
   }
 
+  /** Why the card `frame` may not step for `invocation`, or the scope it steps in. */
+  private stepScope(frame: PreviewFrame, invocation: number): (ShowScope & { slot: string }) | StepRefusal {
+    if (!frame.visible || frame.overlay || invocation !== frame.invocation) return 'not_shown'
+    if (!frame.pinned) return 'not_pinned'
+    if (!hasGesture(frame.el)) return 'no_click'
+    const scope = frame.scopes.get(invocation)
+    if (!scope) return 'not_shown'
+    if (!scope.messages) return 'not_approved'
+    return scope.slot ? { ...scope, slot: scope.slot } : 'not_on_screen'
+  }
+
+  /** A pinned card's `step`: the host brings the label into view, and the card is
+   *  shown again beside it (`trigger: 'step'`, a fresh scope for that message),
+   *  then kept beside it while the scroll settles. One step per card at a time. */
+  private step(frame: PreviewFrame, msg: Extract<FromFrame, { type: 'step' }>): void {
+    const reply = (result: true | StepRefusal) => {
+      if (msg.request === undefined || !frame.el.isConnected) return
+      this.post(frame, result === true
+        ? { type: 'stepped', request: msg.request, ok: true }
+        : { type: 'stepped', request: msg.request, ok: false, reason: result })
+    }
+    const scope = this.stepScope(frame, msg.invocation)
+    const onStep = this.opts.onStep
+    if (typeof scope === 'string' || !onStep) { reply(typeof scope === 'string' ? scope : 'not_on_screen'); return }
+    this.steps.get(frame)?.()
+    let answered = false
+    let showing: Promise<boolean> | null = null
+    let cancel: () => void = () => {}
+    const answer = (result: true | StepRefusal) => {
+      if (answered) return
+      answered = true
+      reply(result)
+    }
+    const end = () => {
+      if (this.steps.get(frame) === end) this.steps.delete(frame)
+      cancel()
+      answer('replaced')
+    }
+    this.steps.set(frame, end)
+    cancel = onStep(frame.key, { slot: scope.slot, target: msg.target, text: msg.text, ...(msg.line ? { line: msg.line } : {}) }, {
+      land: (rect, link) => {
+        if (this.steps.get(frame) !== end || !frame.pinned) return
+        if (!showing) {
+          showing = this.show(frame, link, rect, undefined, { trigger: 'step', scope: { slot: scope.slot, origin: msg.target, messages: true } })
+          return
+        }
+        frame.anchor = rect
+        if (!frame.moved && !frame.dock) this.place(frame)
+      },
+      done: (result) => {
+        if (this.steps.get(frame) !== end) return
+        if (result !== true) {
+          this.steps.delete(frame)
+          answer(result)
+          return
+        }
+        // Answered after the card's new `show`, so the app hears where it is first.
+        void (showing ?? Promise.resolve(false)).then((ok) => answer(ok ? true : 'replaced'))
+      },
+    })
+  }
+
   /** Act on one message from `frame`. Public for tests. */
   handle(frame: PreviewFrame, msg: FromFrame): void {
     switch (msg.type) {
@@ -613,6 +698,10 @@ export class FrameHost {
       const scope = this.scopeOf(frame, msg.invocation)
       if (!scope?.slot || !scope.messages) return
       this.opts.onJump?.(frame.appName, msg.target, scope)
+      return
+    }
+    if (msg.type === 'step') {
+      this.step(frame, msg)
       return
     }
     if (msg.type === 'regions') {

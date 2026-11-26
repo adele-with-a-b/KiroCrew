@@ -1,0 +1,21 @@
+{
+  "name": "card-step-example",
+  "version": "0.1.0",
+  "displayName": "Card Step Example",
+  "description": "A label card that pins itself and steps label to label with the arrow keys, far up in the chat included.",
+  "author": "kirocrew",
+  "contributes": {
+    "linkPreviews": [
+      {
+        "id": "labels",
+        "entry": "dist/labels.mjs",
+        "hosts": [],
+        "sessionKey": true,
+        "textPatterns": [
+          { "id": "labels", "pattern": "\\[[A-Z][0-9]+[a-z]?\\]", "flags": "g", "tone": "accent" }
+        ]
+      }
+    ]
+  },
+  "tags": ["example"]
+}

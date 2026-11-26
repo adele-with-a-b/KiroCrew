@@ -17,8 +17,9 @@ JSON is composed), see
 | [migration-guide.md](migration-guide.md) | Moving an app across a breaking platform version. |
 
 `examples/` holds source fixtures: an installable minimal app, a fuller
-UI/agent/skill/cron example, and two installable session controls
+UI/agent/skill/cron example, two installable session controls
 (`open-files-app`, which opens a file on a click, and `docked-control-app`, a box
-docked above the message box that stays open). The full example intentionally
+docked above the message box that stays open), and an installable label card
+(`card-step-app`, which steps a pinned card from label to label). The full example intentionally
 omits build tooling, a compiled UI bundle, and a backend; use it as a code
 reference rather than installing it directly.

@@ -4,6 +4,7 @@ import {
   READING_LINE_TOLERANCE_PX,
   readingPosition,
   registerTurnStepper,
+  sayStepLine,
   stepTurn,
   turnStepTarget,
 } from '../pages/chat/turnStep'
@@ -99,5 +100,16 @@ describe('the turn-stepper seam', () => {
     stepTurn(1)
     expect(second).toHaveBeenCalledWith(1)
     expect(first).not.toHaveBeenCalled()
+  })
+
+  it('speaks another step\'s line in the registered live region, and says when none is on screen', () => {
+    expect(sayStepLine('[A2] · 2 of 5')).toBe(false)
+    const say = vi.fn()
+    unregister = registerTurnStepper(() => true, say)
+    expect(sayStepLine('[A2] · 2 of 5')).toBe(true)
+    expect(say).toHaveBeenCalledWith('[A2] · 2 of 5')
+    unregister()
+    unregister = null
+    expect(sayStepLine('[A3] · 3 of 5')).toBe(false)
   })
 })

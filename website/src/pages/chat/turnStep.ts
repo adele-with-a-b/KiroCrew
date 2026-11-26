@@ -13,6 +13,11 @@
  *
  * One stepper at a time: the single-chat page is the only host, and a host that
  * unregisters only clears its own registration.
+ *
+ * The stepper's spoken line (a polite live region under the transcript) also
+ * speaks other steps through the transcript: a link-preview card's `step` from
+ * one label to another (`linkPreview/linkPreviewStep.ts`) says its app's line
+ * there, so the chat has one announcer for stepping, not two.
  */
 
 export type TurnStepDirection = -1 | 1
@@ -21,17 +26,29 @@ export type TurnStepDirection = -1 | 1
 export type TurnStepper = (dir: TurnStepDirection) => boolean
 
 let activeStepper: TurnStepper | null = null
+let activeSay: ((line: string) => void) | null = null
 
-export function registerTurnStepper(stepper: TurnStepper): () => void {
+/** Register the transcript's stepper and the live region its steps are spoken in. */
+export function registerTurnStepper(stepper: TurnStepper, say?: (line: string) => void): () => void {
   activeStepper = stepper
+  activeSay = say ?? null
   return () => {
-    if (activeStepper === stepper) activeStepper = null
+    if (activeStepper !== stepper) return
+    activeStepper = null
+    activeSay = null
   }
 }
 
 /** Step the registered transcript. `false` when none is registered or it has no turns. */
 export function stepTurn(dir: TurnStepDirection): boolean {
   return activeStepper ? activeStepper(dir) : false
+}
+
+/** Speak `line` in the transcript's step live region. `false` when no transcript is on screen. */
+export function sayStepLine(line: string): boolean {
+  if (!activeSay) return false
+  activeSay(line)
+  return true
 }
 
 /**

@@ -30,6 +30,7 @@ import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions, type Sh
 import { resolveTextPreview, setLinkPreviewTextPatterns, setTextPatternsOff } from './textPatterns'
 import { readMessageRef, type PreviewLink, type ShowTrigger } from './linkPreviewProtocol'
 import { sendAppNav, sendLinkPreviewNav, setClickOpenProbe } from './linkPreviewNav'
+import { runStep } from './linkPreviewStep'
 
 const HOVER_DELAY_MS = 300
 /** The scope attribute's session key is `dashboard:<slot>` (`MarkdownRenderer`). */
@@ -163,6 +164,9 @@ export default function LinkPreviewLayer() {
       onJump: (_appName, target, scope) => {
         if (scope.slot && sendLinkPreviewNav({ kind: 'jump', slot: scope.slot, target, from: scope.origin })) hideAllRef.current('scroll')
       },
+      // A pinned card's step to another of its labels: the jump, then the label
+      // centred, and the card shown again beside it (`linkPreviewStep.ts`).
+      onStep: (key, ask, hooks) => runStep({ key, ...ask }, hooks),
     })
     hostRef.current = host
     // A popover a press on a label would close waits while that click may still open it.

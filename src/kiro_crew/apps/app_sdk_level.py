@@ -22,6 +22,9 @@ the box reads as ``via: 'control'``. Level 18 adds a session control's
 its chat's message box at the caret, beside the draft, and reads nothing back but
 whether it went in. Level 19 adds a session control key's ``keepOpen``: each press on
 the open box hands it the key's ``arg`` again, as a new request, and never closes it.
+Level 20 adds a link-preview card's ``card.step``: a pinned card moves to another of
+its provider's labels in the same chat, which the chat brings into view, and the
+chat's live region says the app's line.
 """
 
-APP_SDK_LEVEL = 19
+APP_SDK_LEVEL = 20

@@ -1382,8 +1382,9 @@ export function activate(ctx: {
     url?: string; text?: string; sessionKey?: string; theme: 'dark' | 'light'
     message?: { ts: string; id?: string }
     // 'hover': the hover delay ran out; 'click': a mouse click on a text span;
-    // 'tap': a touch tap on a text span.
-    trigger?: 'hover' | 'click' | 'tap'
+    // 'tap': a touch tap on a text span; 'step': this card's own `card.step`
+    // moved it here (level 20).
+    trigger?: 'hover' | 'click' | 'tap' | 'step'
     // Card mode: which side of the link the dashboard put the card on, from the
     // card's size at the time of the show; `placement` below says when the card's
     // own size moves it to the other side. Absent in overlay mode.
@@ -1408,10 +1409,17 @@ export function activate(ctx: {
       // Scroll the chat this show came from to one of its messages and light it
       // (an approved `sessionKey` only); a Back pill returns to where it was.
       jumpTo(message: { ts: string; id?: string }): void
+      // Move this PINNED card to another of this provider's labels in the same
+      // chat: the span whose whole text is `text` in `message`. The chat brings it
+      // into view and the card is shown again beside it (`trigger: 'step'`);
+      // `line` is said by the chat's live region (level 20).
+      step(to: { message: { ts: string; id?: string }; text: string; line?: string }): Promise<StepResult>
     }
   }): void
   // OpenResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' |
   //   'not_approved' | 'not_on_screen' | 'not_declared' | 'too_large' | 'not_json' | 'no_answer' }
+  // StepResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' | 'not_pinned' |
+  //   'not_approved' | 'not_on_screen' | 'not_found' | 'load_failed' | 'replaced' | 'no_answer' }
   leave(): void              // the pointer left the link; the card may hold itself open
   hide(reason: string): void // 'scroll' | 'escape' | 'blur' | 'click' | 'other-provider' | 'disabled'
   theme?(theme: 'dark' | 'light'): void
@@ -1449,7 +1457,7 @@ example from a slow fetch that finished after the user moved to another link, is
 dropped. A message over 8 KB, or
 past a burst of 120 messages refilled at 60 a second, is dropped unread.
 
-**Reaching into the chat.** Three card calls act outside the frame, and only on the
+**Reaching into the chat.** Four card calls act outside the frame, and only on the
 chat the show came from, while that chat is the one on screen and the card is
 showing (in card mode, for the latest show only), and only for an app the owner
 approved for `sessionKey`. Each also needs the person's own click in the card a
@@ -1466,8 +1474,8 @@ Call `card.open()` first (the card must be showing), then `card.openPanelTab` or
 since the 3 seconds count from the show. The first open of either kind that
 reaches the dashboard uses the allowance up whether it opens anything or not;
 so do `leave`, `hide`, pinning the card and the next show.
-A hover show has no allowance, and `jumpTo` and links in the card always need a
-click in the card:
+A hover show has no allowance, and `jumpTo`, `step` and links in the card always
+need a click (or a key) in the card:
 
 - `card.openPanelTab(tab, payload)` opens `tab`, one of this app's own
   `contributes.panelTabs`, in that chat's side panel. Another app's tab, or a tab the
@@ -1506,8 +1514,33 @@ click in the card:
   to the message the card's link or text sat in; a newer jump replaces it, and
   switching chats or scrolling back to the bottom by hand drops it.
 
-Feature-detect the calls (`'jumpTo' in link.card`, `'openSessionControl' in
-link.card`) and the hooks (`usePanelTabRequest`, `useSessionControlRequest` in the
+- `card.step({ message, text, line? })` moves a card that is PINNED to another of
+  this provider's own labels in the same chat: the `textPatterns` span whose whole
+  text is `text` (at most 128 characters) in `message`, which may be any message of
+  that chat, loaded or far up. A label already in view: the card moves to it and
+  the chat stays still. Otherwise the chat scrolls there as `jumpTo` does (paging
+  back, lighting the message, the Back pill; successive steps keep the Back spot of
+  the first) and centres the label. Either way the card is shown again beside the
+  label: a new `show` with `trigger: 'step'` and a new `link.card` for that
+  message, so the card's next step goes from there. Keep the card pinned across
+  that show: the dashboard keeps it, and the app's own state should too. `line`,
+  your words for the person (`"[Q4a] · 4 of 8"`, at most 160 characters,
+  cleaned of control characters), is said once by the chat's polite live region,
+  the one Alt+↑ / Alt+↓ speaks in; nothing is drawn. A key in the card counts as
+  the click, so an arrow-key handler inside the card may call it; a key the
+  dashboard passes to the card never does (arrows are never passed). It resolves
+  `{ ok: true }` once the card is shown at the label, after that show, or `{ ok:
+  false, reason }`: `not_pinned` (pin it first), `no_click`, `not_shown`,
+  `not_approved`, `not_on_screen` as for the opens, `not_found` (no such message,
+  or no such label of this provider in it; also a `message` or `text` the frame
+  refuses unsent), `load_failed` (a page of older history failed), `replaced` (a
+  newer step, another jump, or the person's own scroll took its place) or
+  `no_answer` (no answer within 30 seconds: a dashboard older than level 20). A
+  step never reads or writes the message box and sends nothing: it changes only
+  where the card sits and what is in view.
+
+Feature-detect the calls (`'jumpTo' in link.card`, `'step' in link.card`,
+`'openSessionControl' in link.card`) and the hooks (`usePanelTabRequest`, `useSessionControlRequest` in the
 SDK's exports): a dashboard older than these has neither.
 
 Links in a card open through the dashboard's link bridge, only right after a click
