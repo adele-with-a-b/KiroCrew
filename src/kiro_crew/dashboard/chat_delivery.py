@@ -660,8 +660,9 @@ async def steer_into_running_turn(
         # once, as the owner's own turn with their rights (``responsive_chat.accept``).
         logger.info("slot %s runs a turn its owner did not send; queueing first", slot.key)
         return SteerUnavailable(steer_refusal.NOT_OWNERS_TURN)
-    # His own turn, a note joined: nothing about his message is unusual for him.
-    without_owner_rights = without_owner_rights and not owner_steer.owners_own_turn(slot)
+    # His own turn, a note joined: his row says nothing unusual, but the steer is still
+    # recorded (`note_taken`), so a step refused there runs it once more at the turn's end.
+    labelled = without_owner_rights and not owner_steer.owners_own_turn(slot)
     if owner_steer.unannounced(
         slot, owner_origin=owner_origin, user_origin=user_origin, channel_origin=channel_origin
     ):
@@ -1221,7 +1222,7 @@ async def steer_into_running_turn(
     )
     if _retractable:
         meta[STEER_RETRACTABLE_META] = True
-    if without_owner_rights:
+    if labelled:
         meta[STEER_WITHOUT_OWNER_RIGHTS_META] = True
     # The row survives a page reload via the dirty-flush cycle. The session's own
     # human's steer is stored as typed, like an ordinary send's row; a peer's is
@@ -1286,7 +1287,7 @@ async def steer_into_running_turn(
         push_payload.setdefault("meta", {}).update(quote)
     if banner:
         push_payload.setdefault("meta", {})[CHAT_BANNER_META_KEY] = banner
-    if without_owner_rights:
+    if labelled:
         push_payload.setdefault("meta", {})[STEER_WITHOUT_OWNER_RIGHTS_META] = True
     if relay_meta:
         # A peer's steer: an open tab draws the row from this frame, so without

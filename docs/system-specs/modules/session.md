@@ -5041,10 +5041,12 @@ responsive path) the steer seam still refuses his steer there
 (`steer_refusal.NOT_OWNERS_TURN`, the same arm as in a turn he did not start), and its
 queue arm stops the turn and runs his message at once as his own turn. The turn is
 still his (`OwnerSteers.owners_turn`, `owners_own_turn`): his row carries no
-`steerWithoutOwnerRights` and the steer is not recorded as taken without his rights,
-so a step a gate refuses there for want of the owner's mark (the joined text ended
-`_turn_owner_sent`) gains no `REFUSAL_NOTICE`, never tells the agent to end his turn,
-and runs nothing again. A turn the owner did not start that announced
+`steerWithoutOwnerRights`, yet the steer is still recorded as taken without his
+rights (`note_taken`), so a step a gate refuses there for want of the owner's mark
+(the joined text ended `_turn_owner_sent`) gains `OWN_TURN_REFUSAL_NOTICE` instead of
+`REFUSAL_NOTICE`: it never tells the agent to end his turn nor calls it one he did not
+start, the turn runs to its own end, and `deliver_again` then runs his message once
+more as his own turn. A turn the owner did not start that announced
 none (a slash command, an agent-started turn, a nested prompt) gets no frame: the
 steer seam refuses the owner's steer (`steer_refusal.NOT_OWNERS_TURN`) and it runs
 next as the owner's own turn. Both notes say the mark counts only in a message to the model, never

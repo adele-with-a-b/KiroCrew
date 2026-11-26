@@ -206,8 +206,10 @@ async def test_a_refusal_in_his_own_turn_a_peer_joined_never_ends_it(
 ) -> None:
     """A peer's steer joins the turn, the owner types "go", the agent reads it and a gate
     refuses its crew= call (the joined text ended the owner's mark). In the turn he
-    started that is all: no line under his row, no notice telling the agent to end the
-    turn, nothing run again. In a turn he did not start, both still happen."""
+    started: no line under his row, no notice telling the agent to end the turn or
+    calling it a turn he did not start, the turn runs to its own end, and then "go"
+    runs exactly once more as his own turn, where crew= is allowed. In a turn he did
+    not start, the line and the end-the-turn notice still come, and it runs once too."""
     from kiro_crew.dashboard import session_control as sc
     from kiro_crew.dashboard import session_deliver
 
@@ -232,14 +234,17 @@ async def test_a_refusal_in_his_own_turn_a_peer_joined_never_ends_it(
     labelled = owner_steer.STEER_WITHOUT_OWNER_RIGHTS_META in row["meta"]
     told_to_end = owner_steer.REFUSAL_NOTICE in body["error"]
     assert not live.slot.task.done(), "the turn runs on"
+    assert live.crew_calls == [] and len(live.turns) == 1, "nothing runs before it ends"
     await live.finish()
     if opener == "owner":
         assert (labelled, told_to_end) == (False, False), body["error"]
-        assert live.owner_turns() == [] and len(live.turns) == 1, "his turn, not ended"
+        assert owner_steer.OWN_TURN_REFUSAL_NOTICE in body["error"], body["error"]
+        assert "End this turn" not in body["error"], body["error"]
     else:
         assert (labelled, told_to_end) == (True, True), body["error"]
-        (turn,) = live.owner_turns()
-        assert turn == (owner_steer.AGAIN_NOTE + GO, True, "")
+    (turn,) = live.owner_turns()
+    assert turn == (owner_steer.AGAIN_NOTE + GO, True, ""), "once more, as his own turn"
+    assert len(live.turns) == 2 and [s for s, _ in live.crew_calls] == [200], "exactly once"
     assert live.slot.queue_depth == 0
 
 
