@@ -51,6 +51,13 @@ describe('ThinkingBlock honours "Reasoning starts expanded"', () => {
     expect(screen.getByTestId('thinking-body').textContent).toContain('settled reasoning')
   })
 
+  it('starts expanded when "Show Thinking Inline" is on, with "Reasoning starts expanded" off', () => {
+    setStored({ collapseAllSteps: false, reasoningStartsExpanded: false })
+    const { container } = render(<ThinkingBlock content="settled reasoning" />)
+    expect(isOpen(container)).toBe('true')
+    expect(screen.getByTestId('thinking-body').textContent).toContain('settled reasoning')
+  })
+
   it('keeps a row the user closed by hand closed when it remounts', () => {
     setStored({ reasoningStartsExpanded: true })
     function Host() {

@@ -248,7 +248,8 @@ type FoldMode = 'interim' | 'collapseAll' | 'default'
  * - Settled, on top: the mode's own collapse. Default folds every tool row;
  *   collapseAll folds what precedes the conclusion, or every working step
  *   when the turn has none (collapseAllFoldRange); an interim fan-out folds
- *   every row. `isVisibleInline` rows never fold.
+ *   every row, and only with "Show Thinking Inline" off (see `mode` in
+ *   TurnBlock). `isVisibleInline` rows never fold.
  *
  * The settled set contains the running set, so completion only ever folds
  * more rows. It never opens a row the window had folded.
@@ -668,9 +669,12 @@ function TurnBlock({ turn, renderItem, collapseAll = false, appToolCallIds = EMP
   // every live row. A row that is running, awaiting approval, hosting an app,
   // opened by the user or focused never folds, whatever the disclosure says.
   // A ChatPanel mounted with `expandSteps` shows its working steps inline,
-  // whatever the user's "Show Thinking Inline" setting says.
+  // whatever the user's "Show Thinking Inline" setting says. With steps
+  // inline a fan-out region folds like any other turn, its tool rows only,
+  // so the agent's own text before the wave stays in view.
   const expandSteps = useContext(ExpandStepsContext)
-  const mode: FoldMode = turn.interim ? 'interim' : collapseAll && !expandSteps ? 'collapseAll' : 'default'
+  const foldsSteps = collapseAll && !expandSteps
+  const mode: FoldMode = !foldsSteps ? 'default' : turn.interim ? 'interim' : 'collapseAll'
   // A dismiss drops its notice from the count at once, not on the next flush.
   const specHooksNoticeDismissed = useSpecHooksRunNowhereDismissed()
   const candidates = useMemo(
