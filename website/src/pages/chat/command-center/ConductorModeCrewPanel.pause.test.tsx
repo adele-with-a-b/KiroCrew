@@ -29,8 +29,8 @@ function renderPanel() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const store = createTestStore({ dashboard: { slots: [ROOT, WORKER] } } as never)
   render(<QueryClientProvider client={qc}><Provider store={store}><ConductorModeCrewPanel root="root-1" viewing="root-1" active /></Provider></QueryClientProvider>)
-  // The row sits on the Workers list, the panel's second view.
-  fireEvent.click(screen.getByTestId('conductor-mode-view-list'))
+  // The row sits on the Workers list, the switch's last position.
+  fireEvent.click(screen.getByTestId('conductor-mode-view-workers'))
 }
 
 describe('Conductor mode Pause all on the default conductor', () => {

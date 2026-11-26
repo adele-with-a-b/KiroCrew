@@ -18,6 +18,14 @@ export interface CrewWorkItemFacts {
   /** Its worker's own loop will wake it (`ledger_wake.worker_looping`): idle
    *  between checks, waiting on CI, still running. Absent from an older gateway. */
   looping?: boolean
+  /** Epoch ms its last report has waited on its conductor since (a done, blocked or
+   *  question report nothing answered or judged); `0` for none. Absent from an older
+   *  gateway. Read for the other projects' "late" count. */
+  conductor_since_ms?: number
+  /** A remote worker's turn is running, by the record its machine last sent
+   *  (`work_ledger.remote_liveness`); sent only for a remote worker, which has no
+   *  slot key here to look up. */
+  worker_running?: boolean
 }
 
 /** A conductor mode board's settled verdict (`dashboard/conductor_mode_run.py`):

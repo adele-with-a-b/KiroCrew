@@ -9,12 +9,15 @@ live Crew Mode root, primes it once, and releases a root that left the frame.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from kiro_crew import work_ledger
 from kiro_crew.crew_log import bus
 from kiro_crew.dashboard import crew_work
 from kiro_crew.dashboard.handlers.crew_log import CrewLogPublisher
@@ -79,10 +82,12 @@ def test_summary_counts_open_items_and_splits_out_the_person():
         "worker": "chat-w",
         "stale_at_ms": NOW_MS - 5 * 60_000 + WINDOW_MS,
         "looping": False,
+        "conductor_since_ms": 0,
     }
     # A question for the conductor: the ledger never flags it while the move is not
-    # the worker's.
+    # the worker's, and it has waited on the conductor since the report.
     assert e["stale_at_ms"] == 0
+    assert e["conductor_since_ms"] == NOW_MS - 5 * 60_000
 
 
 def test_a_person_wait_with_no_local_worker_names_none():
@@ -134,7 +139,118 @@ def test_a_closed_worker_that_reported_is_stale_at_once():
 def test_a_remote_worker_is_never_flagged_stalled_here():
     quiet = _item("r", worker_instance_id="peer-1", last_report_at=_stamp(40))
     (only,) = _summary([quiet], closed={"dashboard:chat-w"})["items"]
-    assert only == {"worker": "", "stale_at_ms": 0, "looping": False}
+    assert only == {
+        "worker": "",
+        "stale_at_ms": 0,
+        "looping": False,
+        "conductor_since_ms": 0,
+        "worker_running": False,
+    }
+
+
+def test_a_remote_worker_s_running_turn_rides_its_row_from_its_stored_record():
+    """A remote worker has no slot key a reader can look up (``worker: ""``), so the
+    row says from the record its machine last sent whether its turn runs; the late
+    count then exempts it as it does a local running worker (``crewWorkerRunning``).
+    Read on the fold, so a turn that ends is read on the next fold even when the
+    items themselves did not move."""
+    item_id = "it_0123abcd"
+    reported = _item(item_id, worker_instance_id="peer-1", status="done", last_report_at=_stamp(40))
+    work_ledger.write_remote_state("chat-7", item_id, work_ledger.RemoteState(running=True))
+    assert crew_work.remember("chat-7", {"items": [reported]}) == "chat-7"
+    (only,) = crew_work.summary_for_state("chat-7", SimpleNamespace(_slots={}))["items"]
+    assert only["worker_running"] is True
+    work_ledger.write_remote_state("chat-7", item_id, work_ledger.RemoteState(running=False))
+    assert crew_work.remember("chat-7", {"items": [reported]}) == "chat-7"
+    (only,) = crew_work.summary_for_state("chat-7", SimpleNamespace(_slots={}))["items"]
+    assert only["worker_running"] is False
+    # A local worker's item never carries it: its running row answers instead.
+    assert "worker_running" not in _summary([_item("l")])["items"][0]
+
+
+def test_a_remote_turn_that_ends_with_no_ledger_move_is_read_from_the_pull():
+    """A done report filed mid-turn moves the ledger while the turn still runs; the
+    turn's end moves only the stored record, which a pull writes. The row must read
+    that write, or the report never counts late on "Other projects"."""
+    from kiro_crew.dashboard.handlers import remote_ingest
+
+    item_id = "it_4567cdef"
+    # The board's ledger key, one spelling for the fold and the pull; its row is chat-7.
+    board = "dashboard:chat-7"
+    reported = _item(item_id, worker_instance_id="peer-1", status="done", last_report_at=_stamp(40))
+    heard: list[str] = []
+    crew_work.set_listener(heard.append)
+    assert remote_ingest._store(board, item_id, work_ledger.RemoteState(running=True))
+    assert crew_work.remember(board, {"items": [reported]}) == "chat-7"
+    state = SimpleNamespace(_slots={})
+    assert crew_work.summary_for_state("chat-7", state)["items"][0]["worker_running"] is True
+
+    # The pull after the turn ended: no fold, no remember.
+    assert remote_ingest._store(board, item_id, work_ledger.RemoteState(running=False))
+    assert crew_work.summary_for_state("chat-7", state)["items"][0]["worker_running"] is False
+    assert heard == ["chat-7"]
+    # An unchanged answer pushes nothing, and a record for an item the row does not
+    # list changes nothing.
+    assert remote_ingest._store(board, item_id, work_ledger.RemoteState(running=False))
+    assert remote_ingest._store(board, "it_00000000", work_ledger.RemoteState(running=True))
+    assert heard == ["chat-7"]
+    # A turn that starts again reads running on the same road.
+    assert remote_ingest._store(board, item_id, work_ledger.RemoteState(running=True))
+    assert crew_work.summary_for_state("chat-7", state)["items"][0]["worker_running"] is True
+
+
+def test_a_handed_back_done_report_with_its_worker_gone_is_stalled_at_once():
+    """A done report its conductor answered is the worker's move again (the Board's
+    ``reportAnswered``). With that worker's chat closed nobody is on it, so the row
+    flags it now, as a closed worker's open report; the Board reads it Stuck."""
+    decision = {"id": "ev1", "ts": _stamp(3), "item_id": "d", "kind": "decision", "text": ""}
+    handed_back = _item("d", status="done", decided_at=_stamp(3), events=[decision])
+    (gone,) = _summary([handed_back], closed={"dashboard:chat-w"})["items"]
+    assert gone["stale_at_ms"] == NOW_MS
+    assert gone["conductor_since_ms"] == 0
+    # Its worker still there: the worker's move, not a stall.
+    assert _summary([handed_back])["items"][0]["stale_at_ms"] == 0
+    # A done report nobody answered is the conductor's wait, not a stall.
+    waiting = _item("w", status="done")
+    (owed,) = _summary([waiting], closed={"dashboard:chat-w"})["items"]
+    assert owed["stale_at_ms"] == 0
+    assert owed["conductor_since_ms"] == NOW_MS - 5 * 60_000
+    # A remote worker is never flagged here, handed back or not.
+    remote = _item("r", status="done", decided_at=_stamp(3), worker_instance_id="peer-1")
+    assert _summary([remote], closed={"dashboard:chat-w"})["items"][0]["stale_at_ms"] == 0
+
+
+#: The Board's "waits on its Conductor" cases, shared with the browser's
+#: ``conductorWaitMinutes`` test so the two copies of the rule cannot drift apart.
+_WAIT = json.loads((Path(__file__).parent / "fixtures" / "conductor_wait_cases.json").read_text())
+
+
+@pytest.mark.parametrize("case", _WAIT["cases"], ids=lambda case: case["name"])
+def test_a_report_waits_on_the_conductor_until_it_answers(case):
+    """``conductor_since_ms`` is the Board's "Conductor's move" clock, for the other
+    projects' "late" count: the report's time while the conductor owes the next move."""
+    now = datetime.fromisoformat(_WAIT["now"].replace("Z", "+00:00"))
+
+    def ago(minutes: float) -> str:
+        return (now - timedelta(minutes=minutes)).isoformat()
+
+    events = [
+        {"id": f"ev{n}", "ts": ago(e["minutes_ago"]), "item_id": "d", "kind": e["kind"], "text": ""}
+        for n, e in enumerate(case["events"])
+    ]
+    decided = case.get("decided_minutes_ago")
+    item = _item(
+        "d",
+        status=case["status"],
+        last_report_at=ago(_WAIT["report_minutes_ago"]),
+        decided_at=ago(decided) if decided is not None else None,
+        events=events,
+    )
+    (only,) = crew_work.summarize(
+        [item], closed=lambda _k: False, looping=lambda _k: False, now=now
+    )["items"]
+    reported_ms = int((now - timedelta(minutes=_WAIT["report_minutes_ago"])).timestamp() * 1000)
+    assert only["conductor_since_ms"] == (reported_ms if case["waits"] else 0)
 
 
 def test_remember_keeps_open_items_by_slot_and_reports_only_a_move():

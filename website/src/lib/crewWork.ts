@@ -9,8 +9,9 @@
  *  running, which this tab holds and which the ledger reads the same way: a
  *  running worker is never stale. */
 import { useEffect, useState } from 'react'
-import type { CrewWorkFacts } from '../types'
+import type { CrewWorkFacts, CrewWorkItemFacts } from '../types'
 import { fmtDuration } from '../i18n/format'
+import { CONDUCTOR_WAIT_LOUD_MINUTES } from './boardMoves'
 
 export interface CrewWorkCounts {
   /** Open items waiting on a person. */
@@ -45,7 +46,7 @@ export function crewWorkCounts(
   for (const item of facts.items) {
     if (!item || typeof item !== 'object') continue
     const at = typeof item.stale_at_ms === 'number' ? item.stale_at_ms : 0
-    const stale = !facts.conductor_looping && !(item.worker && running.has(item.worker)) && at > 0 && now >= at
+    const stale = !facts.conductor_looping && !crewWorkerRunning(item, running) && at > 0 && now >= at
     if (stale) stalled += 1
     else {
       moving += 1
@@ -72,7 +73,7 @@ export function stalledWorkKeys(
   for (const item of facts.items) {
     if (!item || typeof item !== 'object') continue
     const at = typeof item.stale_at_ms === 'number' ? item.stale_at_ms : 0
-    if ((item.worker && running.has(item.worker)) || at <= 0 || now < at) continue
+    if (crewWorkerRunning(item, running) || at <= 0 || now < at) continue
     out.push(`${item.worker || ''}@${at}`)
   }
   return out.join(' ')
@@ -114,6 +115,30 @@ export function crewNeedsYou(
   const unkeyed = Math.max(0, person - keyed.length)
   const extra = new Set(keyed.filter(k => !approvals.has(k) && !working.has(k))).size
   return approvals.size + extra + unkeyed
+}
+
+/** Whether an item's worker turn runs now: a local worker by its slot row, a remote
+ *  one (no slot key, `worker: ''`) by the record its machine last sent. The one owner
+ *  of "the worker moved on", for every count that exempts it. */
+export function crewWorkerRunning(item: CrewWorkItemFacts, running: ReadonlySet<string>): boolean {
+  return item.worker ? running.has(item.worker) : item.worker_running === true
+}
+
+/** Of `facts`' listed items, how many are late on their conductor at `now`: a last
+ *  report it has not answered or judged (`conductor_since_ms`) for at least
+ *  `CONDUCTOR_WAIT_LOUD_MINUTES`, its worker's turn not running (a running turn is
+ *  the worker moving on, as the Board reads it; `crewWorkerRunning`). */
+export function crewWorkLate(facts: CrewWorkFacts | undefined | null, rows: readonly CrewWorkRow[], now: number): number {
+  if (!facts || typeof facts !== 'object' || !Array.isArray(facts.items)) return 0
+  const running = new Set(rows.filter(r => r.running).map(r => r.key))
+  const loud = CONDUCTOR_WAIT_LOUD_MINUTES * 60_000
+  let late = 0
+  for (const item of facts.items) {
+    if (!item || typeof item !== 'object') continue
+    const since = typeof item.conductor_since_ms === 'number' ? item.conductor_since_ms : 0
+    if (since > 0 && !crewWorkerRunning(item, running) && now - since >= loud) late += 1
+  }
+  return late
 }
 
 /** The earliest `stale_at_ms` after `now` across `facts`, or `null` for none. */

@@ -1,16 +1,18 @@
-/** The conductor mode chat's Crew tab: a Board | Workers switch, opening on the
- *  Board (`ConductorBacklogView`). This file works out what the Board draws from the
- *  ledger: the goal as one line that opens onto its "Done when", scope and latest
- *  change; the run's state word; Needs your input (the main chat's question as one
- *  row pointing at its card, the approval cards compact); and each story's line,
- *  what its worker last said or what it waits on. Workers = the crew as one
+/** The conductor mode chat's Board tab: one switch (Moves, Steps, Timeline,
+ *  Workers, `BoardViewSwitch`), opening on Moves (`BoardMovesView`). This file works
+ *  out what the Board draws from the ledger: the goal as one line that opens onto
+ *  its "Done when", scope and latest change; the run's state word; and for each open
+ *  story who must act (`boardMove`), how long it has waited, and its line, what its
+ *  worker last said or what it waits on. Needs you also holds the main chat's
+ *  question as one row pointing at its card and the approval cards compact. Steps
+ *  (`BoardStepsView`) regroups the same rows by step. Workers = the crew as one
  *  indented tree, each lead foldable, trees finished all through folded away; a
  *  click opens the member in the main pane. Every number comes from reads the
  *  dashboard already makes: the crew list route, the work-ledger board, the live
  *  slot rows and the pending question cards. No model call. */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { cloneElement, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowDown, Check, ChevronDown, ChevronLeft, ChevronRight, Loader, Loader2, MessageCircleQuestionMark, MessageSquare, Pause, CircleStop, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, Check, ChevronDown, ChevronLeft, ChevronRight, Loader, Loader2, MessageCircleQuestionMark, Pause, CircleStop, X } from 'lucide-react'
 import { safeGetItem, safeSetItem } from '../../../utils/safeStorage'
 import { useCrewBack, type CrewBack } from '../../../components/crew/useCrewBack'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu'
@@ -19,7 +21,7 @@ import type { CrewWorker, ConductorModeRun } from '../../../types'
 import { timedPoll, usePollRule } from '../../../lib/pollRule'
 import { crewBoardQueryKey, CREW_BOARD_POLL_MS, type WorkBoardItem, type WorkBoardResponse } from '../../../api/crewBoard'
 import { artifactEntries } from '../../crewBoardRows'
-import { fmtList, fmtRelative } from '../../../i18n/format'
+import { fmtRelative } from '../../../i18n/format'
 import { fmtMinutes } from '../../../lib/crewWork'
 import ErrorNotice from '../../../components/ErrorNotice'
 import { isNotFoundError } from '../../../api/apiError'
@@ -35,12 +37,18 @@ import { openCrewWindow } from '../crew-window/crewWindowStore'
 import { fmtRelativeTime } from '../sessionOrder'
 import { CREW_FINISHED_OPEN_KEY, CREW_WORKER_SEARCH_MIN, CrewPanelBack, CrewWorkerSearch, openCrewSession, reopenCrewWorker, useCrewWorkerQuery, useCrewWorkers, useLiveCrewWorkers } from './CrewWorkerList'
 import { usePersistedBool } from '../../../hooks/usePersistedBool'
-import { RadioChipGroup, radioChip } from '../../../components/RadioChipGroup'
 import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
 import { conductorModeRunState, type ConductorModeRunState } from '../../../lib/conductorModeRun'
-import ConductorBacklogView, { type BacklogRowState } from './ConductorBacklogView'
-import { levelOf } from '../../../lib/crewPlan'
+import { boardPlan, childProgress, estimateMinutes, isMerged, levelOf, seatsBusy } from '../../../lib/crewPlan'
+import { boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, reportAnswered, type MilestoneState } from '../../../lib/boardMoves'
+import BoardViewSwitch, { type BoardView } from '../../../components/board/BoardViewSwitch'
+import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/BoardRow'
+import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
+import BoardMovesView from './BoardMovesView'
+import BoardStepsView from './BoardStepsView'
+import BoardUpNext, { fmtEstimate } from './BoardUpNext'
+import OtherProjectsLine from './OtherProjectsLine'
 
 export interface ConductorModeCounts { total: number; done: number; running: number; approvals: number; questions: number }
 
@@ -53,11 +61,6 @@ export function conductorModeCounts(workers: readonly CrewWorker[], approvals: n
     approvals,
     questions,
   }
-}
-
-/** Names joined for a sentence, in the active locale ("A, B and C"). */
-function joinNames(names: string[]): string {
-  return fmtList(names)
 }
 
 /** One member in the Workers tree, with what its subtree holds: the members
@@ -232,31 +235,11 @@ export function latestChange(text: string): { text: string; stamp: string; at: n
   return { text: entry, stamp: s ? s[0] : '', at: Number.isFinite(at) ? at : null }
 }
 
-type MilestoneState = 'done' | 'not_done' | 'needs_you' | 'running' | 'waiting' | 'quiet' | 'stuck' | 'next'
-
 /** A report a worker said only a person can move (`reason` approval / needs_human). */
 const PERSON_REASONS = new Set(['approval', 'needs_human'])
 
-/** The item's last blocked / question report has its answer: for a question the
- *  board's own `outstanding` (a newer decision or person's steer), for a blocked
- *  report the conductor's `decide`, or a decision / steer after the newest report
- *  on the event tail, as `answered_since_report` reads it on the server. */
-export function reportAnswered(item: WorkBoardItem): boolean {
-  if (item.status === 'question') return !item.outstanding
-  // Stamps may carry different offsets (a remote peer keeps its own), so they
-  // are compared as instants; one that does not parse answers nothing.
-  const reported = item.last_report_at ? Date.parse(item.last_report_at) : NaN
-  const atOrAfterReport = (ts: string | null | undefined) => {
-    const t = ts ? Date.parse(ts) : NaN
-    return Number.isFinite(t) && (!item.last_report_at || (Number.isFinite(reported) && t >= reported))
-  }
-  if (atOrAfterReport(item.decided_at)) return true
-  const events = item.events || []
-  let last = -1
-  events.forEach((e, n) => { if (e.kind === 'report') last = n })
-  if (last >= 0) return events.slice(last + 1).some(e => e.kind === 'decision' || e.kind === 'steer')
-  return events.some(e => (e.kind === 'decision' || e.kind === 'steer') && atOrAfterReport(e.ts))
-}
+// The rule lives with the Board's moves (`lib/boardMoves`), which read it too.
+export { reportAnswered }
 
 export function milestoneState(item: WorkBoardItem, waiting: boolean): MilestoneState {
   // A closed item is finished whatever its last report said: done when
@@ -275,8 +258,11 @@ export function milestoneState(item: WorkBoardItem, waiting: boolean): Milestone
   if (item.alive === 'running') return 'running'
   // Stuck only when nothing is left to move it: its session closed on an open
   // report, or the board is orphaned (no main chat reads its reports). A done
-  // report or an unstarted item keeps its own state even on an orphaned board.
-  if (open && (item.alive === 'closed' || item.orphaned)) return 'stuck'
+  // report its Conductor handed back (`reportAnswered`) is the worker's move as an
+  // open report is, so it is stuck the same way. Any other done report, or an
+  // unstarted item, keeps its own state even on an orphaned board.
+  const handedBack = item.status === 'done' && reportAnswered(item)
+  if ((open || handedBack) && (item.alive === 'closed' || item.orphaned)) return 'stuck'
   // Quiet: the board's `stale` flag with the chat still there. Its worker is
   // idle with no loop to wake it and the next move is its own, so it stays
   // visible, but calmer than stuck: the chat can still be resumed. An item
@@ -297,9 +283,6 @@ export function milestoneState(item: WorkBoardItem, waiting: boolean): Milestone
 function onConductor(item: WorkBoardItem): boolean {
   return (item.status === 'blocked' || item.status === 'question') && !reportAnswered(item)
 }
-
-/** A wait on the conductor this long is drawn loud: a patrol looks far more often. */
-export const CONDUCTOR_WAIT_LOUD_MINUTES = 10
 
 /** A verdict on the event tail after the newest report: the conductor judged it
  *  (pending while CI, a merge or the person is awaited; fail hands it back). */
@@ -326,36 +309,42 @@ export function conductorWaitMinutes(item: WorkBoardItem, now: number): number |
   return Number.isFinite(mins) ? mins : null
 }
 
+/** Whole minutes from `a` to `b`, rounded down: a wait reads 10m, and turns late,
+ *  only once ten full minutes have passed. */
 function minutesBetween(a: string | null | undefined, b: string | number | null | undefined): number {
   const ta = a ? Date.parse(a) : NaN
   const tb = typeof b === 'number' ? b : b ? Date.parse(b) : NaN
-  return Number.isFinite(ta) && Number.isFinite(tb) ? Math.max(0, Math.round((tb - ta) / 60000)) : NaN
+  return Number.isFinite(ta) && Number.isFinite(tb) ? Math.max(0, Math.floor((tb - ta) / 60000)) : NaN
 }
 
 
 /** A text that wraps, a long word (a SHA, a path) included, instead of being cut. */
 const WRAP = 'min-w-0 [overflow-wrap:anywhere]'
 
-const VIEW_LABEL = {
-  board: 'components.crewMode.conductor_mode_view_board',
-  list: 'components.crewMode.conductor_mode_view_list',
-} as const
+/** The parts of one story line that are there, each but the last ending in the
+ *  separator (`PART_SEP`): a part is a wrap unit, so a line that wraps never starts
+ *  with a lone dot. */
+function lineParts(parts: ReadonlyArray<JSX.Element | false | null | undefined | ''>): JSX.Element[] {
+  const shown = parts.filter((p): p is JSX.Element => !!p)
+  return shown.map((p, n) => cloneElement(p, { key: n }, (p.props as { children?: ReactNode }).children, n < shown.length - 1 ? PART_SEP : null))
+}
 
 /** A story's line on the Board: what its worker last said, or what it waits on,
  *  as far as the board knows. The story's title, chips and button are the Board's. */
 function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state: MilestoneState; waitingOn: string }) {
   let sub: JSX.Element | string = ''
+  const pr = item.pr != null ? i18nT('components.crewMode.conductor_mode_ms_pr', { n: item.pr }) : ''
   if (state === 'done') {
     const link = artifactEntries(item).find(([, v]) => /^https?:\/\//.test(v))
     // Reported done but not accepted yet: it stays in the sprint, so it says Done.
     const open = item.state !== 'accepted'
     const said = firstSentence(item.summary)
-    sub = <>
-      {open && <span className="shrink-0">{i18nT('components.crewMode.conductor_mode_run_done')}</span>}
-      {said && <span className={WRAP}>{open ? `· ${said}` : said}</span>}
-      {item.pr != null && <span className="shrink-0 conductor-mode-accent">{i18nT('components.crewMode.conductor_mode_ms_pr', { n: item.pr })}</span>}
-      {link && <a className="shrink-0 conductor-mode-accent hover:underline" href={link[1]} target="_blank" rel="noreferrer">· {link[0]}</a>}
-    </>
+    sub = <>{lineParts([
+      open && <span className="shrink-0">{i18nT('components.crewMode.conductor_mode_run_done')}</span>,
+      said && <span className={WRAP}>{said}</span>,
+      pr && <span className="shrink-0 conductor-mode-accent">{pr}</span>,
+      link && <a className="shrink-0 conductor-mode-accent hover:underline" href={link[1]} target="_blank" rel="noreferrer">{link[0]}</a>,
+    ])}</>
   } else if (state === 'not_done') {
     const text = i18nT(item.state === 'rejected' ? 'components.crewMode.conductor_mode_ms_not_done_rejected' : 'components.crewMode.conductor_mode_ms_not_done_abandoned')
     sub = <span className={WRAP} title={firstSentence(item.summary) || text}>{text}</span>
@@ -374,8 +363,10 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
     const why = i18nT('components.crewMode.conductor_mode_ms_quiet')
     sub = <span className="flex flex-col min-w-0 w-full">
       <span className="flex flex-wrap items-baseline gap-x-1 min-w-0">
-        <span className={WRAP} title={why} data-testid="conductor-mode-quiet-reason">{why}</span>
-        {item.pr != null && <span className="shrink-0">{i18nT('components.crewMode.conductor_mode_ms_pr', { n: item.pr })}</span>}
+        {lineParts([
+          <span className={WRAP} title={why} data-testid="conductor-mode-quiet-reason">{why}</span>,
+          pr && <span className="shrink-0">{pr}</span>,
+        ])}
       </span>
       {said && <span className={WRAP} title={said} data-testid="conductor-mode-quiet-said">{said}</span>}
     </span>
@@ -385,15 +376,15 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
     const said = firstSentence(item.summary)
     const head = item.pr != null ? i18nT('components.crewMode.conductor_mode_ms_waiting_pr', { n: item.pr })
       : said ? i18nT('commandCenter.worker_group_waiting') : i18nT('components.crewMode.conductor_mode_ms_waiting_no_reason')
-    sub = <>
-      <span className="shrink-0">{head}</span>
-      {said && <span className={WRAP} title={said}>· {said}</span>}
-    </>
+    sub = <>{lineParts([
+      <span className="shrink-0">{head}</span>,
+      said && <span className={WRAP} title={said}>{said}</span>,
+    ])}</>
   } else {
     // A worker idle inside its own loop reads one way, typed: "In progress · PR #N".
     const text = state === 'needs_you' ? waitingOn
-      : state === 'running' && item.alive !== 'running' && item.pr != null ? `${i18nT('components.crewMode.conductor_mode_ms_running')} ${i18nT('components.crewMode.conductor_mode_ms_pr', { n: item.pr })}`
-      : state === 'running' ? [i18nT('components.crewMode.conductor_mode_ms_running'), firstSentence(item.summary)].filter(Boolean).join(' · ')
+      : state === 'running' && item.alive !== 'running' && pr ? joinParts([i18nT('components.crewMode.conductor_mode_ms_running'), pr])
+      : state === 'running' ? joinParts([i18nT('components.crewMode.conductor_mode_ms_running'), firstSentence(item.summary)])
         : i18nT('components.crewMode.conductor_mode_ms_not_started')
     sub = <span className={WRAP} title={text}>{text}</span>
   }
@@ -402,12 +393,11 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
   )
 }
 
-/** The time since a story's last report, a running turn's too, and an open one
- *  reported done; a closed one's whole run. */
-function milestoneAge(item: WorkBoardItem, state: MilestoneState, now: number): string {
-  return state === 'next' ? i18nT('components.crewMode.conductor_mode_ms_next')
-    : (state === 'done' || state === 'not_done') && item.closed_at ? fmtMinutes(minutesBetween(item.created_at, item.closed_at || item.last_report_at))
-      : fmtMinutes(minutesBetween(item.last_report_at || item.created_at, now))
+/** How long a story has been in its state: the time since its last report (a
+ *  running turn's too, and an open one reported done), or since it was created when
+ *  it has none yet. */
+function milestoneAge(item: WorkBoardItem, now: number): string {
+  return fmtMinutes(minutesBetween(item.last_report_at || item.created_at, now))
 }
 
 const RUN_ICON: Record<ConductorModeRunState, JSX.Element> = {
@@ -531,14 +521,15 @@ function clip(text: string, n: number): string {
   return text.length > n ? `${text.slice(0, n - 1)}…` : text
 }
 
-/** One item that waits on the person: which task, what it asks, and goal-board's
- *  Reply: one Write a reply button and, when the conductor offered answers, one
- *  Suggested answers menu holding them (two controls in the row). Each only FILLS
- *  the chat box (`onAct`); the person still presses send, and the line under the
- *  buttons says so. With a crew member on screen (`onAct` absent) the row offers
- *  the way back to the main chat (`back`: "Back to main chat", or "Open main chat"
- *  reopening a closed one), the same as the panel's Back row. */
-function PersonAskRow({ root, item, options, onAct, back }: { root: string; item: WorkBoardItem; options: readonly string[]; onAct?: (text: string) => void; back: CrewBack }) {
+/** What a story that waits on the person offers under its row: goal-board's Reply,
+ *  one Write a reply button and, when the conductor offered answers, one Suggested
+ *  answers menu holding them (two controls in the row). Each only FILLS the chat box
+ *  (`onAct`); the person still presses send, and the line under the buttons says
+ *  so. With a crew member on screen (`onAct` absent) it offers the way back to the
+ *  main chat (`back`: "Back to main chat", or "Open main chat" reopening a closed
+ *  one), the same as the panel's Back row. Then Skip question on its own line, with
+ *  what skipping does. */
+function PersonAskActions({ root, item, options, onAct, back }: { root: string; item: WorkBoardItem; options: readonly string[]; onAct?: (text: string) => void; back: CrewBack }) {
   const draft = (answer: string) => i18nT('components.crewMode.conductor_mode_reply_draft', { t: clip(item.title, 70), id: item.item_id, answer })
   const small = 'inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium border border-border hover:bg-bg-hover max-w-full'
   // Dismiss: the server writes a person steer on the item, so every surface drops
@@ -553,23 +544,9 @@ function PersonAskRow({ root, item, options, onAct, back }: { root: string; item
   })
   const dismissHint = i18nT('components.crewMode.conductor_mode_dismiss_hint', { t: clip(item.title, 70) })
   return (
-    <article className="rounded-lg border border-warn bg-card px-2.5 py-2 space-y-1 text-text" data-testid="conductor-mode-person-ask" data-item={item.item_id}>
-      <div className="flex items-center gap-2 min-w-0">
-        <MessageSquare size={14} aria-hidden="true" className="shrink-0 text-warn" />
-        <h4 className="flex-1 min-w-0 text-[13px] font-semibold truncate" title={item.title}>{item.title}</h4>
-        {reportId && (
-          <button type="button" onClick={() => dismiss.mutate()} disabled={dismiss.isPending} aria-label={dismissHint} title={dismissHint} data-testid="conductor-mode-person-ask-dismiss"
-            className="shrink-0 inline-flex items-center gap-1 h-6 px-1.5 rounded-md text-[12px] text-muted hover:text-text hover:bg-bg-hover disabled:opacity-50">
-            <X size={12} aria-hidden="true" />{i18nT('components.crewMode.conductor_mode_dismiss')}
-          </button>
-        )}
-      </div>
-      {/* The row holds no unsaved input (Reply only fills the chat box), so the hand-off loses nothing. */}
-      {dismiss.isError && <ErrorNotice variant="inline" message={errMessage(dismiss.error)} askAgent />}
-      {item.summary && <p className="pl-[22px] text-[12px] text-text/85 break-words line-clamp-3" title={item.summary} data-testid="conductor-mode-person-ask-text">{item.summary}</p>}
-      {reportId && <p className="pl-[22px] text-[11px] text-muted" data-testid="conductor-mode-person-ask-dismiss-note">{i18nT('components.crewMode.conductor_mode_dismiss_note')}</p>}
+    <>
       {onAct ? (
-        <div className="pl-[22px] space-y-1">
+        <div className="space-y-1">
           <div className="flex items-center gap-1.5" data-testid="conductor-mode-person-ask-actions">
             <button type="button" className={`${small} conductor-mode-accent`} onClick={() => onAct(draft(''))} data-testid="conductor-mode-person-ask-reply">{i18nT('components.crewMode.conductor_mode_reply')}</button>
             {options.length > 0 && (
@@ -590,7 +567,7 @@ function PersonAskRow({ root, item, options, onAct, back }: { root: string; item
           <p className="text-[11px] text-muted" data-testid="conductor-mode-person-ask-hint">{i18nT('components.crewMode.conductor_mode_option_title')}</p>
         </div>
       ) : (
-        <div className="pl-[22px] space-y-1">
+        <div className="space-y-1">
           <button type="button" onClick={back.back} data-testid="conductor-mode-person-ask-open-main"
             className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium conductor-mode-accent hover:bg-bg-hover">
             <ChevronLeft size={12} aria-hidden="true" />{back.label}
@@ -598,7 +575,18 @@ function PersonAskRow({ root, item, options, onAct, back }: { root: string; item
           {back.reopenFailed && <ErrorNotice variant="inline" message={i18nT('commandCenter.worker_reopen_failed')} askAgent />}
         </div>
       )}
-    </article>
+      {reportId && (
+        <p className="flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-muted">
+          <button type="button" onClick={() => dismiss.mutate()} disabled={dismiss.isPending} aria-label={dismissHint} title={dismissHint} data-testid="conductor-mode-person-ask-dismiss"
+            className="inline-flex items-center gap-1 rounded-sm font-medium hover:text-text disabled:opacity-50">
+            <X size={11} aria-hidden="true" />{i18nT('components.crewMode.conductor_mode_dismiss')}
+          </button>
+          <span data-testid="conductor-mode-person-ask-dismiss-note">{i18nT('components.crewMode.conductor_mode_dismiss_note')}</span>
+        </p>
+      )}
+      {/* The row holds no unsaved input (Reply only fills the chat box), so the hand-off loses nothing. */}
+      {dismiss.isError && <ErrorNotice variant="inline" message={errMessage(dismiss.error)} askAgent />}
+    </>
   )
 }
 
@@ -705,8 +693,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       onToggle={searching ? undefined : () => toggleRow(n, pathToViewing.has(n.w.key))} onOpen={canOpen(n.w) ? () => open(n.w) : undefined}
       pausedIn={pause?.stopped.includes(n.w.key) ? root : undefined} />
   )
-  // The Board opens first; the per-tab choice is not kept, as before.
-  const [view, setView] = useState<'board' | 'list'>('board')
+  // Moves opens first; the per-tab choice is not kept, as before.
+  const [view, setView] = useState<BoardView>('moves')
   // The work ledger through the Crew page's own read (GET /api/crew-board), same key and cadence.
   const boardInterval = usePollRule(`crew-board:${root}`, CREW_BOARD_POLL_MS, active, crewBoardQueryKey(root))
   const board = useQuery({ queryKey: crewBoardQueryKey(root), queryFn: () => timedPoll(`crew-board:${root}`, () => api.crewBoard(root)) as Promise<WorkBoardResponse>, enabled: !!root && active, refetchInterval: boardInterval, retry: false })
@@ -721,33 +709,29 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // The raw goal: its Changed entries may be one per line, which collapsing would lose.
   const changed = latestChange(board.data?.conductor?.goal || '')
   const now = useMinuteClock()
-  // Which ledger item each pending approval belongs to: the crew list's own join.
-  const approvalByItem = new Map<string, string>()
+  // Which ledger item each pending approval belongs to (the crew list's own join),
+  // with the worker it waits in. Its approval card is in Needs you.
+  const approvalWorker = new Map<string, string>()
   for (const a of approvals) {
     const w = workers.find(x => x.key === a.worker)
-    if (w?.ledger_item) approvalByItem.set(w.ledger_item, i18nT('components.crewMode.conductor_mode_ms_waiting_approval'))
+    if (w?.ledger_item) approvalWorker.set(w.ledger_item, w.title || w.agent || i18nT('commandCenter.worker_untitled'))
   }
+  const carded = new Set(approvalWorker.keys())
   // The ledger items a worker said wait on the person, with the conductor's offered answers.
-  const forYou = personAsks(items, new Set(approvalByItem.keys()))
-  // Its milestone says it waits on the person too, not on the main chat.
-  for (const item of forYou) approvalByItem.set(item.item_id, i18nT('components.crewMode.conductor_mode_ms_waiting_answer'))
+  const forYou = personAsks(items, carded)
+  const asks = new Set(forYou.map(i => i.item_id))
   // Only while the main chat is on screen: the side panel's insert fills the
   // composer on screen, and a reply belongs in the main chat's.
   const replyInto = !viewing || viewing === root ? onAct : undefined
   const crewBack = useCrewBack(root)
   // An epic is the plan's container for its stories, never an outcome of its own.
   const milestones = items.filter(item => levelOf(item) !== 'epic').map(item => {
-    const state = milestoneState(item, approvalByItem.has(item.item_id))
-    const waitingOn = approvalByItem.get(item.item_id) || firstSentence(item.summary) || i18nT('components.crewMode.conductor_mode_needs_you')
+    const state = milestoneState(item, carded.has(item.item_id) || asks.has(item.item_id))
+    const waitingOn = approvalWorker.has(item.item_id)
+      ? i18nT('components.crewMode.worker_approval_waiting', { name: approvalWorker.get(item.item_id) })
+      : firstSentence(item.summary) || i18nT('components.crewMode.conductor_mode_needs_you')
     return { item, state, waitingOn }
   })
-  // Needs-you milestones with no approval card of their own count too (an
-  // approval row's card is already in `c.approvals`), so the header and the
-  // rows agree on whether the person must act.
-  const needsYouRows = milestones.filter(m => m.state === 'needs_you' && !approvalByItem.has(m.item.item_id)).map(m => m.item.title)
-  const needYou = c.approvals + c.questions + needsYouRows.length
-  // Plus the rows below that wait on the person (kept out of `needsYouRows`).
-  const needCount = needYou + forYou.length
   const openMs = milestones.filter(m => m.state !== 'done')
   const lastReport = items.map(i => i.last_report_at).filter(Boolean).sort().pop() || null
   // Stuck: a milestone with nothing left to move it. Quiet: one idle with
@@ -758,6 +742,47 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // "moving" only while a milestone runs; with nothing running, stuck or quiet
   // (waiting or next only) there is no pulse.
   const moving = openMs.some(m => m.state === 'running')
+  const openItem = (item: WorkBoardItem) => {
+    const w = workers.find(x => x.ledger_item === item.item_id)
+    return w && canOpen(w) ? () => open(w) : undefined
+  }
+  const plan = useMemo(() => boardPlan(items), [items])
+  const byId = new Map(milestones.map(m => [m.item.item_id, m]))
+  // Every open story the Conductor is working (not Up next), as one Board row: who
+  // must act, how long it has waited, why, and its quiet facts. Moves and Steps draw
+  // the same rows.
+  const stories: BoardStory[] = plan.sprint.map(item => {
+    const m = byId.get(item.item_id)
+    const state: MilestoneState = m?.state ?? milestoneState(item, false)
+    const wait = state === 'needs_you' ? null : conductorWaitMinutes(item, now)
+    const move = boardMove(item, state, wait)
+    const estimate = estimateMinutes(item)
+    const age = wait != null ? fmtMinutes(wait)
+      : move === 'working' && estimate !== undefined ? i18nT('components.crewMode.board_age_of', { age: milestoneAge(item, now), estimate: fmtEstimate(estimate) })
+        : milestoneAge(item, now)
+    const ask = asks.has(item.item_id)
+    const subtasks = childProgress(item, plan.children)
+    const w = workers.find(x => x.ledger_item === item.item_id)
+    const worker = w ? w.title || w.agent || undefined : undefined
+    return {
+      item, move, age, late: wait != null && wait >= CONDUCTOR_WAIT_LOUD_MINUTES, onOpen: openItem(item),
+      // A person's ask quotes what it asks; every other row says what its worker last
+      // said or what it waits on.
+      why: ask
+        ? <span title={item.summary} data-testid="conductor-mode-person-ask-text">{i18nT('components.crewMode.board_asks', { what: firstSentence(item.summary) })}</span>
+        : <MilestoneLine item={item} state={state} waitingOn={m?.waitingOn ?? ''} />,
+      facts: storyHasFacts(item, worker, subtasks) ? <StoryFacts item={item} worker={worker} facts={board.data?.pr_facts?.[item.item_id]} subtasks={subtasks} /> : undefined,
+      actions: ask ? <PersonAskActions root={root} item={item} options={board.data?.asks?.[item.item_id] ?? []} onAct={replyInto} back={crewBack} /> : undefined,
+      testId: ask ? 'conductor-mode-person-ask' : undefined,
+    }
+  })
+  const storyById = new Map(stories.map(s => [s.item.item_id, s]))
+  // In Moves a story whose tool approval has its own card is that card, not a second row.
+  const moveStories = stories.filter(s => !(s.move === 'needs_you' && carded.has(s.item.item_id)))
+  // Needs you, first in Moves: the main chat's own question and the crew's approval
+  // cards, then the stories that wait on the person.
+  const needsYouLeadCount = c.questions + c.approvals
+  const needCount = needsYouLeadCount + moveStories.filter(s => s.move === 'needs_you').length
   // The run's one state: what is live here first, then the gateway's verdict.
   // The main chat's own tool approval waits on the person too, though its turn still runs.
   const rootSlot = slots.find(s => s.key === root)
@@ -765,23 +790,11 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     paused: !!pause, needsYou: needCount > 0 || !!rootSlot?.pending_approval, hasGoal: !!goalText, items: items.length, run: board.data?.run,
     working: moving || c.running > 0 || !!rootSlot?.running,
   })
-  const openItem = (item: WorkBoardItem) => {
-    const w = workers.find(x => x.ledger_item === item.item_id)
-    return w && canOpen(w) ? () => open(w) : undefined
-  }
-  // Needs your input, on the Board above the sprint: the chat's own
-  // ask_question card and the crew's approval cards, both compact.
-  const needsYouSection = (
-    <section data-testid="conductor-mode-needs-you" className="space-y-1.5">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">{`${i18nT('components.crewMode.conductor_mode_needs_input')} · ${needCount}`}</h3>
-      {/* A milestone that needs the person without an approval card, or one
-          that is stuck or quiet, is not counted here, but the line does not claim
-          nothing is wrong: it points at the rows below. */}
-      {(needCount === 0 || needsYouRows.length > 0) && <p className="text-[12px] text-muted" data-testid="conductor-mode-needs-you-none">{needsYouRows.length
-        ? i18nT(needsYouRows.length === 1 ? 'components.crewMode.conductor_mode_needs_you_rows_one' : 'components.crewMode.conductor_mode_needs_you_rows_many', { names: joinNames(needsYouRows) })
-        : i18nT(stuck || quiet ? 'components.crewMode.conductor_mode_needs_you_none_stuck' : 'components.crewMode.conductor_mode_needs_you_none')}</p>}
+  const needsYouLead: ReactNode = (
+    <>
       {pendingQuestion?.questions?.length ? (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-elevated/40 px-2.5 py-2" data-testid="conductor-mode-main-question">
+        <div className="flex items-center gap-2" data-testid="conductor-mode-main-question">
+          <MessageCircleQuestionMark size={14} aria-hidden="true" className="shrink-0 crew-tone-warn" />
           <span className="flex-1 min-w-0 text-[13px] text-text truncate" title={pendingQuestion.questions[0].question}>{pendingQuestion.questions[0].question}</span>
           <button type="button" onClick={answerInChat} data-testid="conductor-mode-answer-in-chat"
             className="shrink-0 inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium conductor-mode-accent hover:bg-bg-hover">
@@ -789,24 +802,20 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
           </button>
         </div>
       ) : null}
-      {forYou.map(item => <PersonAskRow key={item.item_id} root={root} item={item} options={board.data?.asks?.[item.item_id] ?? []} onAct={replyInto} back={crewBack} />)}
       <CrewApprovalCards root={root} compact />
-    </section>
+    </>
   )
-  const byId = new Map(milestones.map(m => [m.item.item_id, m]))
-  const backlogRow = (itemId: string): BacklogRowState | undefined => {
-    const m = byId.get(itemId)
-    if (!m) return undefined
-    // A plan row quotes the worker's ask itself: the plan's rows sit far below the
-    // Needs-you card, where "the answer above" points at nothing.
-    const asked = forYou.some(i => i.item_id === itemId) ? firstSentence(m.item.summary) : ''
-    const wait = m.state === 'needs_you' ? null : conductorWaitMinutes(m.item, now)
-    return {
-      needsYou: m.state === 'needs_you', waitingOn: asked || m.waitingOn,
-      line: <MilestoneLine item={m.item} state={m.state} waitingOn={m.waitingOn} />, age: milestoneAge(m.item, m.state, now),
-      conductorWait: wait == null ? undefined : { age: fmtMinutes(wait), loud: wait >= CONDUCTOR_WAIT_LOUD_MINUTES },
-    }
-  }
+  const upNext = <BoardUpNext root={root} backlog={plan.backlog} openItem={openItem} />
+  const loaded = board.isSuccess || (board.isError && isNotFoundError(board.error))
+  // The run line's counts, each one Crew can read: stories merged, and seats in use
+  // against the goal's cap.
+  const storyItems = items.filter(i => levelOf(i) === 'story')
+  const cap = board.data?.conductor?.concurrency_cap
+  const counts = joinParts([
+    storyItems.length > 0 ? i18nT('components.crewMode.plan_epic_progress', { done: storyItems.filter(isMerged).length, total: storyItems.length }) : '',
+    cap != null ? i18nT('components.crewMode.plan_slots_busy', { busy: seatsBusy(items), cap }) : '',
+  ])
+  const detail = runDetail(runState, board.data?.run)
   // The goal as ONE line above the stories. A click opens what sat under it: the
   // whole goal sentence, its "Done when", the scope and the latest change.
   const overview = (
@@ -848,20 +857,28 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       {/* A failed crew read, shown in both views; a gateway that does not serve
           the route is not a failure (the live rows stand in). */}
       {listed.isError && !crewRouteNotServed(listed.error) && <div className="shrink-0 px-3 pt-3"><ErrorNotice variant="inline" message={i18nT(live.length ? 'commandCenter.workers_error_live' : 'commandCenter.workers_error')} askAgent /></div>}
-      <div className="shrink-0 px-3 pt-3">
-        <RadioChipGroup ariaLabel={i18nT('commandCenter.workers_view_label')} className="flex gap-1 rounded-lg border border-border bg-bg-hover/40 p-0.5" data-testid="conductor-mode-view-switch">
-          {(['board', 'list'] as const).map(v => (
-            <button key={v} type="button" {...radioChip(view === v)} data-testid={`conductor-mode-view-${v}`} onClick={() => setView(v)}
-              className={`flex-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors ${view === v ? 'bg-bg-elevated text-text shadow-sm' : 'text-muted hover:text-text'}`}>
-              {i18nT(VIEW_LABEL[v])}
-            </button>
-          ))}
-        </RadioChipGroup>
-      </div>
-      {view === 'board' ? (
-        <ConductorBacklogView root={root} items={items} conductor={board.data?.conductor} prFacts={board.data?.pr_facts} rowState={backlogRow} openItem={openItem} needsYou={needsYouSection} needCount={runState === 'waiting' ? 0 : needCount}
-          overview={overview} run={runState ? <RunWord state={runState} run={board.data?.run} /> : null} runDetail={runDetail(runState, board.data?.run)} pulse={pulse}
-          loaded={board.isSuccess || (board.isError && isNotFoundError(board.error))} />
+      <div className="shrink-0 px-3 pt-3"><BoardViewSwitch value={view} onChange={setView} /></div>
+      {view !== 'workers' ? (
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3" data-testid="conductor-mode-board" data-board-view={view}>
+          {/* The same head under every position of the switch; only the body changes. */}
+          <section className="space-y-1" data-testid="plan-overview">
+            {overview}
+            {/* No separator between the word and the counts: on a narrow bar the counts
+                wrap whole onto the next line, never leaving a lone dot behind. */}
+            <p className="flex flex-wrap items-baseline gap-x-2 text-[12px] text-muted" data-testid="plan-sprint-line">
+              {runState && <RunWord state={runState} run={board.data?.run} />}
+              {counts && <span className="tabular-nums" data-testid="plan-sprint-counts">{counts}</span>}
+              {pulse}
+            </p>
+            {detail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{detail}</p>}
+          </section>
+          {loaded && (view === 'moves'
+            ? <BoardMovesView stories={moveStories} needsYouLead={needsYouLead} needsYouLeadCount={needsYouLeadCount} upNext={upNext} />
+            : view === 'steps'
+              ? <BoardStepsView steps={boardSteps(items, plan)} stories={storyById} upNext={upNext} />
+              : <p className="text-[12px] text-muted" data-testid="board-timeline-coming">{i18nT('components.crewMode.board_timeline_coming')}</p>)}
+          <OtherProjectsLine root={root} now={now} />
+        </div>
       ) : (
         <div className="relative flex-1 min-h-0 flex flex-col">
         {showSearch && <CrewWorkerSearch query={query} onChange={setQuery} />}

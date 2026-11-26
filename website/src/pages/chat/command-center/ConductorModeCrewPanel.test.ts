@@ -3,8 +3,11 @@
  * latest change, the story state rule, and the Workers tree's depth.
  */
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { CrewWorker } from '../../../types'
 import type { WorkBoardItem } from '../../../api/crewBoard'
+import { CONDUCTOR_WAIT_LOUD_MINUTES } from '../../../lib/boardMoves'
 import { CREW_BOARD_EXPANDED_KEY, conductorWaitMinutes, crewAncestors, crewRowOpen, crewTree, doneWhen, goalDoneWhen, goalScope, goalSentence, latestChange, milestoneState, readCrewBoardExpanded, visibleCrewRows, type CrewTreeNode } from './ConductorModeCrewPanel'
 
 const item = (over: Partial<WorkBoardItem>): WorkBoardItem => ({
@@ -17,6 +20,36 @@ const item = (over: Partial<WorkBoardItem>): WorkBoardItem => ({
 const worker = (key: string, by: string): CrewWorker => ({
   key, title: key, agent: 'kirocrew-worker', status: 'idle', group: 'working', last_activity: '', ledger_item: '',
   created_by: by, dispatched_by: by,
+})
+
+/** The same cases the server's `conductor_wait_since_ms` test reads, so the browser's
+ *  rule and the server's late count cannot drift apart. */
+interface WaitCase {
+  name: string
+  status: WorkBoardItem['status']
+  outstanding?: boolean
+  decided_minutes_ago?: number
+  events: { kind: 'report' | 'verdict' | 'decision' | 'steer'; minutes_ago: number }[]
+  waits: boolean
+}
+const WAIT = JSON.parse(readFileSync(resolve(__dirname, '../../../../../test/fixtures/conductor_wait_cases.json'), 'utf8')) as {
+  now: string; late_minutes: number; report_minutes_ago: number; cases: WaitCase[]
+}
+
+describe('Waits on its conductor, by the cases the server reads too', () => {
+  const now = Date.parse(WAIT.now)
+  const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString()
+  it('turns a wait red at the shared rule', () => {
+    expect(CONDUCTOR_WAIT_LOUD_MINUTES).toBe(WAIT.late_minutes)
+  })
+  it.each(WAIT.cases.map(c => [c.name, c] as const))('%s', (_name, c) => {
+    const events = c.events.map((e, n) => ({ id: `e${n}`, ts: ago(e.minutes_ago), item_id: 'it_1', kind: e.kind, status: null, text: '' }))
+    const read = item({
+      status: c.status, outstanding: c.outstanding ?? false, last_report_at: ago(WAIT.report_minutes_ago),
+      decided_at: c.decided_minutes_ago == null ? null : ago(c.decided_minutes_ago), events,
+    })
+    expect(conductorWaitMinutes(read, now)).toBe(c.waits ? WAIT.report_minutes_ago : null)
+  })
 })
 
 describe('Waits on its conductor', () => {

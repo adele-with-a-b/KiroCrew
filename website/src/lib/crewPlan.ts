@@ -1,7 +1,7 @@
-/** The board plan, read on the client: epics, the sprint, the ranked backlog and
- *  the releases a conductor's work ledger carries (`work_plan_vocab.py`). Pure
- *  functions only, so the Backlog view and its tests share one reading. */
-import { PLAN_STEPS, type PlanLevel, type PlanStep, type WorkBoardItem, type WorkBoardRelease, type WorkItemPlan } from '../api/crewBoard'
+/** The board plan, read on the client: epics, the sprint and the ranked backlog a
+ *  conductor's work ledger carries (`work_plan_vocab.py`). Pure functions only, so
+ *  the Board views and their tests share one reading. */
+import { PLAN_STEPS, type PlanLevel, type PlanStep, type WorkBoardItem, type WorkItemPlan } from '../api/crewBoard'
 
 export function planOf(item: WorkBoardItem): WorkItemPlan {
   return item.plan ?? {}
@@ -82,17 +82,6 @@ export function boardPlan(items: readonly WorkBoardItem[]): BoardPlan {
   return { epics, sprint, backlog, children, byId, planned }
 }
 
-/** The epic a story belongs to (a task's through its story), or null. */
-export function epicOf(item: WorkBoardItem, byId: ReadonlyMap<string, WorkBoardItem>): WorkBoardItem | null {
-  let at: WorkBoardItem | undefined = item
-  for (let hops = 0; at && hops < 3; hops++) {
-    if (levelOf(at) === 'epic') return at === item ? null : at
-    const parent: string | undefined = planOf(at).parent
-    at = parent ? byId.get(parent) : undefined
-  }
-  return null
-}
-
 /** Done and total among an item's children: an epic's stories, a story's tasks. */
 export function childProgress(item: WorkBoardItem, children: ReadonlyMap<string, readonly WorkBoardItem[]>): { done: number; total: number } {
   const kids = children.get(item.item_id) ?? []
@@ -104,18 +93,6 @@ export function childProgress(item: WorkBoardItem, children: ReadonlyMap<string,
  *  `has_worker`, and then every open story outside the backlog counts. */
 export function seatsBusy(items: readonly WorkBoardItem[]): number {
   return items.filter(i => isOpen(i) && levelOf(i) === 'story' && (i.has_worker ?? !planOf(i).backlog)).length
-}
-
-/** How many more workers can start toward the next pick. A seat not taken by a
- *  worker or by a story held in the sprint is free, and a waiting story with no
- *  `backlog` mark already holds its own seat in the store, so starting one takes
- *  none. Pulling a MARKED row takes a new seat, so when the next pick is one, only
- *  the seats the store has not handed out count (`held`, `conductor.seats_held`). */
-export function freeSeats(items: readonly WorkBoardItem[], cap: number | undefined, held: number | null | undefined, pick: WorkBoardItem | undefined): number {
-  if (cap == null) return 0
-  const heldInSprint = items.filter(i => isOpen(i) && levelOf(i) === 'story' && i.has_worker === false && i.in_backlog === false).length
-  const open = Math.max(0, cap - seatsBusy(items) - heldInSprint)
-  return pick && planOf(pick).backlog === true && held != null ? Math.min(open, Math.max(0, cap - held)) : open
 }
 
 /** The rank writes a drop of the row at `from` onto `to` (an index in the list
@@ -173,36 +150,9 @@ export function moveRow<T>(order: readonly T[], from: number, to: number): T[] {
   return next
 }
 
-export interface ReleaseView {
-  release: WorkBoardRelease
-  items: WorkBoardItem[]
-  merged: number
-}
-
-/** The board's releases newest first, each with the stories that ship in it. */
-export function releaseViews(releases: readonly WorkBoardRelease[] | undefined, items: readonly WorkBoardItem[]): ReleaseView[] {
-  return [...(releases ?? [])].reverse().map(release => {
-    const mine = items.filter(i => planOf(i).release === release.name && levelOf(i) !== 'epic')
-    return { release, items: mine, merged: mine.filter(isMerged).length }
-  })
-}
-
-/** Theme tones an epic's chip takes, by its place among the epics. */
-export const EPIC_TONES = ['var(--danger)', 'var(--info)', 'var(--aim)', 'var(--warn)', 'var(--ok)', 'var(--accent)'] as const
-
-export function epicTone(epic: WorkBoardItem | null, epics: readonly WorkBoardItem[]): string {
-  if (!epic) return 'var(--muted)'
-  const n = epics.findIndex(e => e.item_id === epic.item_id)
-  return EPIC_TONES[(n < 0 ? 0 : n) % EPIC_TONES.length]
-}
-
 /** A conductor's estimate tag, `est: 2 h`, `est: 1.5 h` or `est: 45 m`: the number
  *  and its unit, hours or minutes. The estimate rides `plan.tags` and nothing else. */
 const ESTIMATE_TAG = /^est:\s*(\d+(?:\.\d+)?)\s*(h|m)$/i
-
-export function isEstimateTag(tag: string): boolean {
-  return ESTIMATE_TAG.test(tag.trim())
-}
 
 /** An item's estimate in minutes, read from its first estimate tag; undefined when it has none. */
 export function estimateMinutes(item: WorkBoardItem): number | undefined {
@@ -211,13 +161,4 @@ export function estimateMinutes(item: WorkBoardItem): number | undefined {
     if (m) return Number(m[1]) * (m[2].toLowerCase() === 'h' ? 60 : 1)
   }
   return undefined
-}
-
-/** `rows` by estimate, smallest first, the rows with none last; a tie keeps the
- *  order given. A copy: the ranked order it came from is not touched. */
-export function byEstimate(rows: readonly WorkBoardItem[]): WorkBoardItem[] {
-  return rows
-    .map((item, n) => ({ item, n, est: estimateMinutes(item) }))
-    .sort((a, b) => (a.est ?? Infinity) - (b.est ?? Infinity) || a.n - b.n)
-    .map(r => r.item)
 }
