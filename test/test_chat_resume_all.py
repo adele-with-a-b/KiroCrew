@@ -1526,12 +1526,57 @@ def test_an_explicit_stop_keeps_its_chats_stopped(tmp_path, dispatched, monkeypa
     path = _record(monkeypatch, tmp_path, None)
     assert kept_trust.mark_owner_stop("kirocrew stop")
     _stop_from_outside(state, monkeypatch)
-    assert path.exists()
+    # An owner stop writes no record at all.
+    assert not path.exists()
 
     _boot_reconciles(cut)
     assert _boot(state).call_args_list == []
     dispatched.started.assert_not_awaited()
     assert [(m["role"], m["content"]) for m in cut.messages] == [("user", "refactor the parser")]
+    assert not path.exists()
+
+
+def test_an_explicit_stop_removes_an_older_record(tmp_path, monkeypatch):
+    """A record an earlier restart left must not outlive the owner's stop, even with
+    a chat mid-turn at the stop."""
+    from kiro_crew import kept_trust
+
+    state = _make_state(tmp_path)
+    _mid_turn(state.get_or_create_slot("cut"))
+    path = _record(monkeypatch, tmp_path, ["left-over"])
+    assert kept_trust.mark_owner_stop("ctrl-c")
+
+    _stop_from_outside(state, monkeypatch)
+
+    assert not path.exists()
+
+
+def test_an_explicit_stop_resumes_nothing_even_when_the_next_boot_dies_early(
+    tmp_path, dispatched, monkeypatch
+):
+    """The shutdown reads the owner-stop mark without taking it, so the next boot
+    still finds it. That boot takes the mark early and the record only once ready:
+    when it dies in between, the boot after it must still resume nothing."""
+    from kiro_crew import kept_trust
+
+    state = _make_state(tmp_path)
+    cut = state.get_or_create_slot("cut")
+    _mid_turn(cut)
+    path = _record(monkeypatch, tmp_path, None)
+    assert kept_trust.mark_owner_stop("kirocrew stop")
+
+    _stop_from_outside(state, monkeypatch)
+
+    assert kept_trust.kept_path(kept_trust.OWNER_STOP_FILE).exists()
+    # The next boot takes the mark (``server.start_dashboard``), then dies.
+    assert kept_trust.take_owner_stop() is True
+    assert not kept_trust.kept_path(kept_trust.OWNER_STOP_FILE).exists()
+    kept_trust.reset_for_tests()
+
+    # The boot after it: no mark left, and it must find no record either.
+    _boot_reconciles(cut)
+    assert _boot(state).call_args_list == []
+    dispatched.started.assert_not_awaited()
     assert not path.exists()
 
 

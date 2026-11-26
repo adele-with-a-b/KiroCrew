@@ -144,6 +144,18 @@ def _audit(outcome: str, resources: str) -> None:
         logger.debug("Could not audit the owner-stop clear", exc_info=True)
 
 
+def owner_stop_marked() -> bool:
+    """Whether the explicit-stop mark is on disk now. Reads it without taking it.
+
+    For the gateway's own shutdown after the stop that left the mark: the next
+    boot's :func:`take_owner_stop` must still find it. MAY BLOCK; never raises.
+    """
+    try:
+        return _marked(_mark_path())
+    except Exception:
+        return True  # as :func:`_marked`: a mark that cannot be read counts as present
+
+
 def take_owner_stop() -> bool:
     """Whether the previous process ended on an explicit stop. Read once per process.
 

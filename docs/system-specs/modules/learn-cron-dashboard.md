@@ -326,10 +326,15 @@ on the dashboard state calls `record_running_slots` beside the slot save
 bound adds no time to `GRACEFUL_SHUTDOWN_SECS`; the import and the write are
 best-effort, and the stop goes on without the record. A stop with no chat mid-turn
 removes an earlier file. The next boot resumes these chats as after a planned
-restart, with one exception: after an explicit stop by the owner (`kirocrew stop`,
-the desktop app's Quit, Ctrl-C), the stops that leave `kept_trust`'s owner-stop
-mark, `resume_after_restart` still deletes the file but resumes nothing
-(`kept_trust.take_owner_stop`, read once per process), so a gateway the owner
+restart, with one exception: an explicit stop by the owner (`kirocrew stop`, the
+desktop app's Quit, Ctrl-C) leaves `kept_trust`'s owner-stop mark before
+`_shutdown` runs, and `_shutdown` then reads the mark without taking it
+(`kept_trust.owner_stop_marked`), writes no record and removes an earlier file.
+The boot consumes the mark early (`kept_trust.take_owner_stop`, read once per
+process) and takes the record only once the dashboard is ready, so a record
+written at an owner stop would outlive a boot that died in between and resume on
+the boot after it. As a second guard, `resume_after_restart` still deletes any
+file it finds after an owner stop and resumes nothing, so a gateway the owner
 stopped starts with its chats as they were left. A watchdog's own exit (stale
 assets, a lost listener or data home) reaches `_shutdown` too, leaves no mark, and
 its relaunch resumes. A hard kill, a power loss or an exception that never reaches

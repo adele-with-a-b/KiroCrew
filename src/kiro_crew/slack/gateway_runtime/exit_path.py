@@ -177,16 +177,28 @@ async def _shutdown(self: GatewayOrchestrator) -> None:
 
         async def _record_running_chats() -> None:
             # A stop from outside (an install's ``launchctl kickstart -k``, a
-            # service manager, ``kirocrew stop``) ends the turns close_all() cuts
-            # below exactly as a planned restart does, so it records them the same
-            # way and the next boot resumes them (``restart_resume``). Beside the
-            # slot save, so its own 5 s bound adds no time to this shutdown; the
-            # names are read before either awaits, while every turn still runs.
-            # Never raises: a stop goes on without the record.
-            try:
+            # service manager) ends the turns close_all() cuts below exactly as a
+            # planned restart does, so it records them the same way and the next
+            # boot resumes them (``restart_resume``). An explicit stop by the owner
+            # (``kirocrew stop``, Quit, Ctrl-C) left ``kept_trust``'s mark before
+            # this ran: it records nothing and removes an older record, so a later
+            # boot that dies before it takes the record cannot resume a chat he
+            # stopped. The mark is read, not taken: the next boot's
+            # ``take_owner_stop`` still finds it. Beside the slot save and under one
+            # 5 s bound, so it adds no time to this shutdown; the names are read
+            # before close_all() below, while every turn still runs. Never raises:
+            # a stop goes on without the record.
+            async def _record() -> None:
+                from kiro_crew import kept_trust
                 from kiro_crew.dashboard import restart_resume
 
-                await restart_resume.record_running_slots(dashboard_state)
+                if await asyncio.to_thread(kept_trust.owner_stop_marked):
+                    await asyncio.to_thread(restart_resume.write_intent, [])
+                else:
+                    await restart_resume.record_running_slots(dashboard_state)
+
+            try:
+                await asyncio.wait_for(_record(), timeout=5.0)
             except Exception:
                 logger.warning("Resume-after-stop record skipped", exc_info=True)
 

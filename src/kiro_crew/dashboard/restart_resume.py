@@ -11,8 +11,10 @@ record once, deleting it before it acts (:func:`take_intent`), and resumes those
 chats through the Resume-all run (``chat_resume_all.start_resume_all``), so its
 bound on concurrent turns and every refusal it makes still apply. An explicit
 stop (``kirocrew stop``, the desktop app's Quit, Ctrl-C) is the owner ending Kiro
-Crew, the stop ``kept_trust`` marks: after one the boot drops the record and
-resumes nothing. A crash (a hard kill, a power loss, an exception that never
+Crew, the stop ``kept_trust`` marks: its ``_shutdown`` sees the mark (without
+taking it) and writes no record, removing an older one, so even a boot that dies
+before it takes the record cannot resume those chats; and a boot that finds a
+record after one still drops it and resumes nothing. A crash (a hard kill, a power loss, an exception that never
 reaches ``_shutdown``) writes no record: its chats keep the Resume button and
 wait for the owner.
 """
