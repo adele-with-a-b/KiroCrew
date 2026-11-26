@@ -42,10 +42,11 @@ PERMISSION_WAIT = "permission_wait"
 TOO_LONG = "too_long"
 #: The agent answered that it did not take it, or the write did not go out.
 REFUSED = "refused"
-#: The owner typed it while a turn the owner did not send was running (a note from
-#: another session, a wake or an automation opened it, or text of theirs joined
-#: it). Inside that turn it would run without the owner's standing, so it waits
-#: at the front of the queue and runs next, as the owner's own turn.
+#: The owner typed it in a Bot conversation while a turn the owner did not send was
+#: running (a note from another session, a wake or an automation opened it, or text
+#: of theirs joined it). Inside that turn it would run without the owner's standing,
+#: so the conversation's queue arm stops the turn and runs it at once, as the owner's
+#: own turn. Every other chat steers it in (``chat_delivery_owner_steer``).
 NOT_OWNERS_TURN = "not_owners_turn"
 
 #: Every code, in the order the table below gives them.

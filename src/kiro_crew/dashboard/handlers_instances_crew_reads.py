@@ -371,11 +371,17 @@ async def _authorize_crew_read(request: web.Request, operation: str) -> "web.Res
             status=403,
         )
     state: DashboardState = request.app["state"]
-    refusal = _slot_refusal(state.get_slot(slot_key))
+    slot = state.get_slot(slot_key)
+    refusal = _slot_refusal(slot)
     if refusal is not None:
         code, why = refusal
         _audit_crew(request, operation, "denied", error=why)
-        return web.json_response({"error": "forbidden", "code": code}, status=403)
+        from kiro_crew.dashboard.chat_delivery_owner_steer import refused_for_owner_rights
+
+        error = "forbidden"
+        if code == "not_owner_turn":
+            error = refused_for_owner_rights(state, slot, error)
+        return web.json_response({"error": error, "code": code}, status=403)
     if str(request.get("user") or "") and not is_owner_dashboard_request(request):
         _audit_crew(request, operation, "denied", error="non-owner identity rejected")
         return _owner_denial_response(request, "remote-crew session reads are owner-only")

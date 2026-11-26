@@ -4104,18 +4104,72 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   ([monitor-architecture](monitor-architecture.md)). Nothing is granted: the turn
   keeps only the mark it already held, and a peer's or a channel's steer still
   clears it;
-- **never granted by a steer, so the owner's typed message is not steered into a
-  turn that lacks it**: a note from another session (`session_send`), a loop wake,
-  a cron or an app opened the running turn, or text of theirs joined the owner's
-  turn and narrowed it. Steered in, the owner's words would run without the mark
-  and a crew-scoped read or a `crew=` dispatch they ask for would be refused as
-  `not_owner_turn`. `steer_into_running_turn` answers such a steer
-  `steer_refusal.NOT_OWNERS_TURN` once every other availability check has passed
-  (owner's own dashboard request, not through a channel, running turn without
-  `_turn_owner_sent`), with nothing registered and nothing changed on the turn.
-  The composer's queue path (`queue_for_next_turn`) then puts that entry at the
+- **never granted by a steer, and the owner's typed message goes in anyway**: a
+  note from another session (`session_send`), a loop wake, a cron or an app opened
+  the running turn, or text of theirs joined the owner's turn and narrowed it. The
+  owner decided their message is read at the turn's next step, not after every step
+  it still takes, at the cost of their rights inside that turn, and it never has to
+  be typed again (`chat_delivery_owner_steer`). So `steer_into_running_turn` steers
+  it in like any other: the turn keeps no mark, and a crew-scoped read or a `crew=`
+  dispatch it asks for is refused as `not_owner_turn` (a guide, card or
+  `update_self` call as `not_user_turn`). A patrol wake's `_turn_patrol_wake`
+  stays: the owner's words take nothing from the wake, so its remote work goes on.
+  The row and its `steer_push` carry `meta.steerWithoutOwnerRights` (owner's own
+  dashboard request, not through a channel, running turn without `_turn_owner_sent`,
+  slot not opened for another caller), and the transcript says under the bubble
+  that it runs there without their rights and runs again as their own turn if a step
+  needs them (it does not name `crew=`: a patrol wake the operator let use `crew=`
+  is admitted to it). Every gate arm that refuses for want of the owner's or the
+  person's mark completes its refusal through ONE helper,
+  `chat_delivery_owner_steer.refused_for_owner_rights`, which, while such a steer is
+  in the turn, adds `REFUSAL_NOTICE` (end this turn now, the owner's message comes
+  again as their own turn), records the turn as refused and starts the durable
+  queue write. The arms are listed in `OWNER_RIGHTS_REFUSAL_SITES`:
+  `_resolve_agent_caller`'s `not_user_turn` (guides, cards, `update_self`,
+  `propose_self`, `request_server`, the crew reads), `member_self`'s own-thread
+  `not_user_turn`, `request_server`'s own wording of it, the crew read's
+  `not_owner_turn`, `crew=` rule 8, and a denied shell command whose override card
+  only the owner's turn is offered (`deny_override.override_withheld_for_owner_rights`;
+  the turn reads it only while such a steer is held). A test walks every module that
+  reads `_turn_owner_sent` or `_turn_user_sent` against that list and
+  `OTHER_MARK_READERS` (each with what it reads the mark for), so a new gate cannot
+  read a mark unnamed. At that turn's end (`_hand_off_queue`) `deliver_again` queues
+  each such steer the turn read, once, at the front with the owner's mark, BEFORE
+  the teardown requeue, so a read steer stays ahead of one the turn never read, as
+  he typed them. Its model input (not its row) is led by `AGAIN_NOTE`, and its row
+  carries `meta.ownerSteerAgain` naming the first row's `mid`; the transcript labels
+  it as his message again, now as his own turn. Nothing comes again when nothing was
+  refused, and a hard Stop drops it with the queue. A steer the turn ends before
+  reading requeues with their mark and runs as their own turn
+  (`_requeue_unconsumed_steers`), and the turn's end adds no second copy. claude
+  (`steer_needs_loss_recovery`) reports a steer read only at a clean turn end, so
+  after a Stop or a failure the steer is still unread and comes back by that requeue
+  alone, once; one the failed turn took in (`steers_taken_unconfirmed`) is led by
+  `AGAIN_NOTE` too. Until it runs as their own turn, an owner's steer is part of the
+  durable queue (`durable_queue`, read by `_ChatSlot.durable_queue_entries`): unread,
+  or read and owed again after a refusal (labelled as that message again). The
+  refusal and the read each start the write at once (`start_queue_persist`), so a
+  gateway restart hands back an owed or unread one as their queued message, behind
+  their waiting entries and ahead of the rest, once and without the mark like every
+  restored entry, and never one the turn read with nothing owed. Two places keep
+  the queue instead, because going in is worse for the owner
+  there: a Bot conversation (the responsive path), where `NOT_OWNERS_TURN` takes
+  that path's queue arm, which stops the running turn and runs their message at once
+  with the mark; and a manual `/compact` (`COMPACTING`, checked first). The steer is
+  also queued, as any steer is, where it cannot go in: a backend in none of the steer
+  sets (`NO_STEER`: strands, deepseek, copilot and mimocode, and a steering-request
+  member whose adapter did not advertise `_session/steering`; `supports_steer`), the
+  steer cap (`TOO_MANY`: `MAX_PENDING_STEERS` unwritten steers, or the retained
+  count and size bounds of `steer_carry.has_steer_room`; on claude also the
+  adapter's own written-steer bounds), and on claude an approval card the turn is parked
+  on (`PERMISSION_WAIT`, `client_turn_control._steering_refusal`). On kiro-cli that
+  card does not queue it: the steer goes in and the card stays open
+  (`reject_approvals_superseded_by_steer` runs only for their own turn), because it
+  is another sender's request; the steer is read after it is answered.
+  The composer's queue path (`queue_for_next_turn`) puts an owner's entry at the
   FRONT of the queue, as it does every owner entry it queues, whatever the cause
-  (his own Queue pick, a steer refused for any other reason, a take-back to the
+  (their own Queue pick, a Bot conversation's `NOT_OWNERS_TURN`, a steer refused for
+  any other reason, a take-back to the
   queue), and so does the send route's hold on an idle slot (an open card
   editor, a pending conversation discard, messages parked behind a stalled
   child): `slot_queue_repository.owner_front_order` on both. One rule: the
@@ -4144,13 +4198,10 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   the row and the send's reply carry the code (`meta.steerRefusal`,
   `steerRefusal`). The responsive path takes its own queue arm for a steer that
   did not go in: the message waits as a priority entry, the running turn is asked
-  to stop, and the drain takes that entry first and alone. Two cases keep the
-  steer: a turn that holds the mark (the owner's own),
-  and a slot opened on another caller's behalf (`_lineage_minted`, `_created_by`:
-  a worker's chat), where the crew gate refuses the slot whoever sent the turn,
-  so the steer loses no crew right and the owner can still redirect a running
-  worker. The cost is latency: the message waits for the running turn to end
-  (the owner's own Stop ends it sooner);
+  to stop, and the drain takes that entry first and alone. A slot opened on
+  another caller's behalf (`_lineage_minted`, `_created_by`: a worker's chat)
+  takes their steer with its row as it always was: the crew gate refuses the slot
+  whoever sent the turn, so the steer loses no crew right there;
 - **carried by a recovery requeue as the dying turn held it**: `_queue_recovery`
   (`turn_ledgers`), the one requeue every runtime-loss arm uses (the dead process,
   the retryable ACP error, a Stop's recovery), stamps `_directive_owner_origin` from

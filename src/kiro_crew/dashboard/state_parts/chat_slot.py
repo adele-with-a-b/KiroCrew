@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Callable
 from kiro_crew._facade_bindings import own_methods
 from kiro_crew.approval_mode_policy import session_mode_permitted
 from kiro_crew.dashboard import run_clock as _run_clock
+from kiro_crew.dashboard.chat_delivery_owner_steer import OwnerSteers
+from kiro_crew.dashboard.chat_delivery_owner_steer import durable_queue as owner_steer_durable_queue
 from kiro_crew.dashboard.recovery_replays import RecoveryReplays
 from kiro_crew.dashboard.side_state import SideState
 from kiro_crew.dashboard.slot_buffers import SlotBufferCoordinator
@@ -389,6 +391,7 @@ class _ChatSlot:
         "_steer_attachment_meta",
         "_steer_act_now",
         "_steer_automation",
+        "_owner_steer_turn",
         "_wait_state",
         "_end_wait_request",
         "_end_wait_by",
@@ -782,6 +785,9 @@ class _ChatSlot:
     _steer_attachment_meta: dict[str, dict[str, Any]]
     _steer_act_now: set[str]
     _steer_automation: dict[str, dict]
+    #: The running turn's owner steers taken without the owner's rights
+    #: (:mod:`kiro_crew.dashboard.chat_delivery_owner_steer`).
+    _owner_steer_turn: OwnerSteers
     _wait_state: dict | None
     _end_wait_request: str | None
     _end_wait_by: str
@@ -1050,8 +1056,9 @@ class _ChatSlot:
             self._retry_deferred_release()
 
     def durable_queue_entries(self) -> list[dict[str, Any]]:
-        """The queued user prompts a metadata writer may persist right now."""
-        return durable_queue_entries(self._queue)
+        """The queued user prompts a metadata writer may persist right now, the
+        owner's unread steers among them (:func:`owner_steer_durable_queue`)."""
+        return durable_queue_entries(owner_steer_durable_queue(self))
 
     def durable_queue_view(self) -> tuple[list[dict[str, Any]], int]:
         """Persistable queued prompts and the candidate count, from one read.
@@ -1059,7 +1066,7 @@ class _ChatSlot:
         Used where the two are SUBTRACTED (the save's over-cap report), so the
         difference describes one observation of the queue rather than two.
         """
-        return durable_queue_view(self._queue)
+        return durable_queue_view(owner_steer_durable_queue(self))
 
     @property
     def queue_persist_pending(self) -> bool:

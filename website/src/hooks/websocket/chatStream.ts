@@ -209,9 +209,13 @@ export function useChatStream({ dispatch, queryClient, buffers, voice, reconnect
       // validated the way the transcript reads it, so the live row draws the
       // same incoming card a reload does.
       const steerRelay = readRelay(steerMeta && typeof steerMeta === 'object' ? (steerMeta as ChatMessage['meta']) : undefined)
+      // The owner's words went into a turn the owner did not start, so they run there
+      // without the owner's rights; the row says so under the bubble.
+      const steerWithoutRights = !!steerMeta && typeof steerMeta === 'object'
+        && (steerMeta as { steerWithoutOwnerRights?: unknown }).steerWithoutOwnerRights === true
       dispatch(appendSlotMessage({
         slot: (data as { slot?: string }).slot || store.getState().chat.activeSlot || '',
-        message: { role: 'user', content: (data as { content?: string }).content || '', cls: 'msg msg-u', meta: { steer: true, ...(typeof steerSid === 'string' && steerSid ? { sendId: steerSid } : {}), ...(typeof steerState === 'string' && steerState ? { steerState } : {}), ...(typeof steerMid === 'string' && steerMid ? { mid: steerMid } : {}), ...(steerRetract ? { steerRetract: true } : {}), ...(Array.isArray(steerFiles) ? { files: steerFiles } : {}), ...(Array.isArray(steerDirs) ? { dirs: steerDirs } : {}), ...(steerQuote ? { quote: steerQuote } : {}), ...(steerBanner ? { banner: steerBanner } : {}), ...(steerRelay ? { relay: steerRelay } : {}) }, ts: (data as { ts?: string }).ts },
+        message: { role: 'user', content: (data as { content?: string }).content || '', cls: 'msg msg-u', meta: { steer: true, ...(typeof steerSid === 'string' && steerSid ? { sendId: steerSid } : {}), ...(typeof steerState === 'string' && steerState ? { steerState } : {}), ...(typeof steerMid === 'string' && steerMid ? { mid: steerMid } : {}), ...(steerRetract ? { steerRetract: true } : {}), ...(Array.isArray(steerFiles) ? { files: steerFiles } : {}), ...(Array.isArray(steerDirs) ? { dirs: steerDirs } : {}), ...(steerQuote ? { quote: steerQuote } : {}), ...(steerBanner ? { banner: steerBanner } : {}), ...(steerRelay ? { relay: steerRelay } : {}), ...(steerWithoutRights ? { steerWithoutOwnerRights: true } : {}) }, ts: (data as { ts?: string }).ts },
       }))
       // Steering is the other way to type into a busy session, so it
       // settles the rank exactly like a queued send. The server appends a

@@ -13277,6 +13277,8 @@
         "redirecting_the_running_turn_not_yet_confirmed": "正在重定向正在运行的这一轮——尚未确认。",
         "turn_ended_before_this_applied_runs_as_its_own_message": "这一轮在此生效前已结束，此消息作为独立消息运行。",
         "went_in_turn_failed_may_not_have_run": "已进入本轮，但本轮随后因错误结束——可能未执行。",
+        "steer_without_owner_rights": "已进入一个不是由你发起的轮次，因此在其中不带你的权限运行。如果其中某一步需要你的权限，它会作为你自己的轮次再运行一次。",
+        "owner_steer_again": "你的消息再次运行，这次作为你自己的轮次：它所进入的轮次中有一步需要你的权限。",
         "quote_message": "引用消息",
         "more_actions": "更多操作",
         "edit_replaces_below": "发送会替换下方的回复",

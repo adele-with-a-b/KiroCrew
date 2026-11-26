@@ -114,8 +114,19 @@ _CALLER_REFUSALS: dict[str, str] = {
 }
 
 
-def _caller_refusal(exc: GuideError) -> web.Response:
+def _caller_refusal(exc: GuideError, request: web.Request) -> web.Response:
     message = _CALLER_REFUSALS.get(exc.code, exc.message.replace("guide", "card"))
+    if exc.code == "not_user_turn":
+        # Said in this card's own words, so the owner-rights notice is added here too.
+        from kiro_crew.dashboard.chat_delivery_owner_steer import refused_for_owner_rights
+        from kiro_crew.dashboard.handlers._shared import _read_session_key
+        from kiro_crew.dashboard.session_control import caller_slot_key
+
+        state = request.app["state"]
+        slot_key = caller_slot_key(state, _read_session_key(request))
+        message = refused_for_owner_rights(
+            state, state.get_slot(slot_key) if slot_key else None, message
+        )
     status = exc.status if exc.status in (400, 403, 404, 409, 429) else 400
     return _deny(status, exc.code, message)
 
@@ -352,7 +363,7 @@ async def api_cards_agent_request_server(request: web.Request) -> web.Response:
         slot_key, sk = await _resolve_agent_caller(request, OP_REQUEST_SERVER)
         body = await _json_body(request)
     except GuideError as exc:
-        return _caller_refusal(exc)
+        return _caller_refusal(exc, request)
     unknown = sorted(set(body) - _BODY_KEYS)
     if unknown:
         # A command, url, template or session is never the caller's to give.

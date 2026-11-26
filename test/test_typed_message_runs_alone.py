@@ -1,15 +1,13 @@
-"""A message the owner typed runs as the owner's own turn.
+"""A message the owner typed and queued runs as the owner's own turn.
 
 Two places could run it as someone else's, and each keeps it apart:
 
-* **The steer.** A note from another session (``session_send``), a wake or an
-  automation opens a turn, and the owner types while it runs. A steer never
-  gives a turn the owner's mark, so inside that turn the owner's go would be
-  refused ``crew_owner_unverifiable``. The steer seam
-  (``steer_into_running_turn``) keeps the message out of that turn
-  (``steer_refusal.NOT_OWNERS_TURN``), and the queue seam
-  (``queue_for_next_turn``) puts it first: it runs next, alone, with the mark.
-  A note queued before it runs after it, without the mark.
+* **The queue.** A steer that did not go in (a Bot conversation's turn the owner did
+  not send, ``steer_refusal.NOT_OWNERS_TURN``, or any other cause) falls back to
+  the queue seam (``queue_for_next_turn``), which puts it first: it runs next,
+  alone, with the mark. A note queued before it runs after it, without the mark.
+  Typed into any other running turn, their message goes in at the next step and
+  runs there without their rights (``test_owner_message_read_at_next_step.py``).
 * **The merge at the drain.** With ``dashboard.merge_queued_messages`` on, a run
   of waiting entries becomes one turn, and its owner mark is ``all`` over them.
   The merge (``_dequeue_next_message``) takes the entries a person sent first,
@@ -42,11 +40,11 @@ from kiro_crew.dashboard import session_deliver
 from kiro_crew.dashboard.chat_delivery import queue_for_next_turn
 from kiro_crew.dashboard.chat_utils import _dequeue_next_message
 from kiro_crew.dashboard.handlers.remote_dispatch_routes import owner_unverifiable_reason
-from kiro_crew.dashboard.slot_queue_repository import sanitize_restored_queue
 
 REFUSED = "the running turn was not sent by the owner"
-#: The longest any wait on a stubbed turn may take before the test fails.
-BOUND = 20
+#: The longest any wait on a stubbed turn may take before the test fails: a bound on
+#: a signal the test itself sets, never a barrier.
+BOUND = 60
 
 
 def _busy(slot):
@@ -302,7 +300,7 @@ def test_the_merge_takes_the_persons_entries_and_leaves_the_rest_in_place(tmp_pa
     assert slot._queue == []
 
 
-# ── typed while a turn the owner did not send runs: never steered in ──
+# ── typed while a turn runs: the steer seam, and the mark it never grants ──
 
 
 class _Live:
@@ -402,56 +400,6 @@ class _Live:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("opener", ["note", "wake"])
-async def test_typed_during_a_turn_the_owner_did_not_send_runs_next_alone_with_the_mark(
-    tmp_path, monkeypatch, opener: str
-) -> None:
-    """The reported case. A note queued BEFORE the owner's message runs AFTER it."""
-    live = _Live(tmp_path, monkeypatch)
-    await live.open_with(opener)
-    await _note(live.state, live.slot, "a later note")
-
-    receipt = await live.type("Q1a Go.")
-
-    assert receipt.get("queued") is True and "steered" not in receipt
-    assert receipt.get("steerRefusal") == steer_refusal.NOT_OWNERS_TURN, "the receipt says why"
-    live.agent.steer.assert_not_awaited()
-    assert live.waiting() == ["Q1a Go.", "a later note"], "first in the queue"
-    assert live.slot._pending_steers == [], "nothing of it is inside the running turn"
-
-    await live.finish()
-
-    assert len(live.turns) == 3
-    assert live.turns[1][0] == "Q1a Go.", "next, and alone"
-    assert "a later note" in live.turns[2][0] and "Q1a Go." not in live.turns[2][0]
-    assert live.marks() == [(False, REFUSED), (True, ""), (False, REFUSED)]
-    (row,) = [m for m in live.slot.messages if m.get("content") == "Q1a Go."]
-    assert row["role"] == "user"
-    assert row["meta"][steer_refusal.QUEUE_META_KEY] == steer_refusal.NOT_OWNERS_TURN
-    assert live.slot.queue_depth == 0
-
-
-@pytest.mark.asyncio
-async def test_typed_during_a_turn_a_background_notice_opened_runs_as_the_owners_own_turn(
-    tmp_path, monkeypatch
-) -> None:
-    """Nothing else joined and nothing else waits: a job's notice opened the running
-    turn, and the owner's message still runs as its own turn, alone, first."""
-    live = _Live(tmp_path, monkeypatch)
-    await live.open_with("notice")
-
-    receipt = await live.type("Q1a Go.")
-
-    assert receipt.get("steerRefusal") == steer_refusal.NOT_OWNERS_TURN
-    live.agent.steer.assert_not_awaited()
-    assert live.waiting() == ["Q1a Go."]
-    await live.finish()
-    assert len(live.turns) == 2
-    assert live.turns[1][0] == "Q1a Go."
-    assert live.marks() == [(False, REFUSED), (True, "")]
-
-
-@pytest.mark.asyncio
 async def test_ledger_news_arriving_mid_turn_leaves_the_owners_turn_its_mark(
     tmp_path, monkeypatch
 ) -> None:
@@ -519,56 +467,9 @@ async def test_typed_during_the_owners_own_turn_steers_as_before(tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_the_owners_turn_another_sessions_text_joined_takes_no_more_of_his_steers(
-    tmp_path, monkeypatch
-) -> None:
-    """A peer's steer ends the turn's mark; the owner's next message keeps his own."""
-    live = _Live(tmp_path, monkeypatch)
-    await live.open_with("owner")
-    outcome = await session_deliver.deliver(
-        live.state,
-        live.slot,
-        "a peer's steer",
-        session_deliver.peer(steer=True, sender="dashboard:other"),
-        admission=sc.containment_meta(live.state, live.slot),
-    )
-    assert outcome == session_deliver.DELIVERED_STEERED
-    assert live.slot._turn_owner_sent is False
-
-    receipt = await live.type("Q1a Go.")
-
-    assert receipt.get("steerRefusal") == steer_refusal.NOT_OWNERS_TURN
-    live.slot._pending_steers.clear()  # the peer's steer; no consumed echo from the stub
-    await live.finish()
-    assert live.turns[1][0] == "Q1a Go."
-    assert live.marks()[1] == (True, "")
-
-
-@pytest.mark.asyncio
-async def test_the_owners_waiting_messages_keep_their_order_ahead_of_the_notes(
-    tmp_path, monkeypatch
-) -> None:
-    live = _Live(tmp_path, monkeypatch)
-    await live.open_with("note")
-    await _note(live.state, live.slot, "note two")
-    await live.type("typed one")
-    await _note(live.state, live.slot, "note three")
-    await live.type("typed two")
-
-    assert live.waiting() == ["typed one", "typed two", "note two", "note three"]
-    await live.finish()
-
-    prompts = [prompt for prompt, _, _ in live.turns]
-    assert prompts[1:3] == ["typed one", "typed two"]
-    assert live.marks()[1:3] == [(True, ""), (True, "")]
-    assert all(mark is False for mark, _ in live.marks()[3:]), "no note runs with the mark"
-    assert all("typed" not in prompt for prompt in prompts[3:])
-
-
-@pytest.mark.asyncio
 async def test_a_stop_of_the_running_turn_loses_neither_message(tmp_path, monkeypatch) -> None:
-    """A Stop that resolved while the turn wound up: the drain still runs the
-    owner's message next, as his own turn, and the note after it."""
+    """A Stop that resolved while the turn wound up, their steer still unread: the
+    drain still runs it next, as their own turn, and the note after it."""
     live = _Live(tmp_path, monkeypatch)
     await live.open_with("note")
     await _note(live.state, live.slot, "a later note")
@@ -580,26 +481,6 @@ async def test_a_stop_of_the_running_turn_loses_neither_message(tmp_path, monkey
     assert [prompt for prompt, _, _ in live.turns][1] == "Q1a Go."
     assert "a later note" in live.turns[2][0]
     assert live.marks()[1:] == [(True, ""), (False, REFUSED)]
-
-
-@pytest.mark.asyncio
-async def test_a_restart_keeps_both_messages_in_order_and_restores_no_mark(
-    tmp_path, monkeypatch
-) -> None:
-    """The queue is what a restart restores: both entries, the owner's first. The
-    marks never cross a restart, for any queued entry (the restored card is the
-    owner's to send again)."""
-    live = _Live(tmp_path, monkeypatch)
-    await live.open_with("note")
-    await _note(live.state, live.slot, "a later note")
-    await live.type("Q1a Go.")
-
-    restored = sanitize_restored_queue([dict(item) for item in live.slot._queue])
-
-    assert [item["content"] for item in restored] == ["Q1a Go.", "a later note"]
-    assert all("_directive_owner_origin" not in item for item in restored)
-    live.slot._queue.clear()
-    await live.finish()
 
 
 def _foreign_turn(tmp_path):
@@ -619,34 +500,23 @@ async def _steer(state, slot, **origin) -> str:
 
 
 @pytest.mark.asyncio
-async def test_a_steer_never_gives_the_turn_the_mark(tmp_path) -> None:
-    """Never the reverse fix: kept out, the owner's message changes nothing on the turn."""
-    state, slot = _foreign_turn(tmp_path)
-
-    outcome = await _steer(state, slot, user_origin=True, owner_origin=True)
-
-    assert chat_delivery.steer_refusal_of(outcome) == steer_refusal.NOT_OWNERS_TURN
-    assert slot._turn_owner_sent is False and slot._turn_user_sent is False
-    assert slot._pending_steers == [] and slot._steer_owner_origin == {}
-    slot._acp_client.steer.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "origin",
     [
+        {"user_origin": True, "owner_origin": True},
         {"user_origin": True, "owner_origin": False},
         {"user_origin": False, "owner_origin": False},
         {"user_origin": True, "owner_origin": True, "channel_origin": True},
     ],
-    ids=["another dashboard user", "a peer", "a channel"],
+    ids=["the owner", "another dashboard user", "a peer", "a channel"],
 )
-async def test_only_the_owners_own_typed_message_is_kept_out(tmp_path, origin: dict) -> None:
-    """Everyone else's steer goes in as before, and still earns no mark."""
+async def test_a_steer_never_gives_the_turn_the_mark(tmp_path, origin: dict) -> None:
+    """Never the reverse fix: every steer goes in, and none earns the mark."""
     state, slot = _foreign_turn(tmp_path)
 
     assert await _steer(state, slot, **origin) == chat_delivery.STEER_STEERED
-    assert slot._turn_owner_sent is False
+    assert slot._turn_owner_sent is False and slot._turn_user_sent is False
+    slot._acp_client.steer.assert_awaited_once_with("redirect")
 
 
 @pytest.mark.asyncio

@@ -353,10 +353,14 @@ async def authorize_remote_dispatch(request: web.Request, verb: str) -> str:
         reason = ""
     if reason:
         _audit(caller_key, verb, "denied", error=OWNER_UNVERIFIABLE)
+        from kiro_crew.dashboard.chat_delivery_owner_steer import refused_for_owner_rights
+
         raise CrewCallError(
             403,
             OWNER_UNVERIFIABLE,
-            f"crew= is open only to a turn the owner sent: {reason}",
+            refused_for_owner_rights(
+                state, slot, f"crew= is open only to a turn the owner sent: {reason}"
+            ),
         )
     return slot_key
 

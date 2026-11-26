@@ -17,7 +17,9 @@ from kiro_crew.dashboard.deny_override import (
     client_accepts_deny_waivers,
     deny_key_family,
     deny_key_note_label,
+    no_override_offer,
     override_offer_key,
+    owner_rights_deny_reason,
     slot_deny_waivers,
 )
 from kiro_crew.dashboard.state import DENY_CAUSE_POLICY
@@ -825,7 +827,7 @@ async def _decide_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CO
                     tool_result,
                     slot,
                     event,
-                    on_queue_timeout=_no_override_offer,
+                    on_queue_timeout=no_override_offer,
                 )
                 if client_accepts_deny_waivers(client)
                 else None
@@ -837,6 +839,9 @@ async def _decide_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CO
                     detail=deny_key_description(_override_key),
                 )
                 return None
+            _deny_msg = await owner_rights_deny_reason(
+                state, client, slot, event, tool_result, _deny_msg
+            )
             # Audit FIRST, before any wire I/O for this decision
             # (see _reject_hook_blocked): a stalled ACP reader
             # cancels this coroutine at the turn deadline, and an
@@ -1615,11 +1620,6 @@ def _request_deny_waivers(slot: Any, event: Any, client: Any) -> frozenset[str]:
     if not client_accepts_deny_waivers(client):
         return frozenset()
     return slot_deny_waivers(slot, event)
-
-
-def _no_override_offer(_waited: float) -> str | None:
-    """The offer when no gate worker took the lookup in time: none, so the refusal stands."""
-    return None
 
 
 def _deny_waiver_kwargs(turn: Any) -> dict[str, frozenset[str]]:

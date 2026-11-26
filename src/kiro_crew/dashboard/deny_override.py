@@ -203,7 +203,7 @@ def is_deny_override_card(messages: Any, request_id: str) -> bool:
     return False
 
 
-def slot_may_override(slot: Any, event: Any) -> bool:
+def slot_may_override(slot: Any, event: Any, *, owner_turn: bool = True) -> bool:
     """Whether *event* on *slot* is a call a person at the dashboard can override.
 
     The slot must be one a person created and drives from the dashboard: not
@@ -213,6 +213,10 @@ def slot_may_override(slot: Any, event: Any) -> bool:
     transport tells apart (``AcpEvent.child_calls_marked``), be the agent's own
     (not a backend subagent's) and be a shell command whose bytes the transport
     delivered unredacted.
+
+    *owner_turn* False leaves out the owner-sent arm alone, to ask whether the card is
+    withheld for want of the owner's rights and nothing else
+    (:func:`override_withheld_for_owner_rights`).
     """
     if getattr(slot, "_app", "") or getattr(slot, "unattended", False):
         return False
@@ -227,7 +231,7 @@ def slot_may_override(slot: Any, event: Any) -> bool:
     # turn another dashboard user sent, a cron delivery, an app injection, a loop
     # wake or a sub-agent's completion gets no card and does not reuse a session
     # waiver.
-    if getattr(slot, "_turn_owner_sent", False) is not True:
+    if owner_turn and getattr(slot, "_turn_owner_sent", False) is not True:
         return False
     if (
         getattr(slot, "channel_origin", False)
@@ -317,13 +321,22 @@ def _overlay_patterns() -> "set[str] | None":
         return None
 
 
-def override_offer_key(tool_result: Any, slot: Any, event: Any) -> str | None:
-    """The refusal key a card may offer to override for *tool_result*, else ``None``."""
+def override_offer_key(
+    tool_result: Any, slot: Any, event: Any, *, owner_turn: bool = True
+) -> str | None:
+    """The refusal key a card may offer to override for *tool_result*, else ``None``.
+
+    *owner_turn* as :func:`slot_may_override` reads it.
+    """
     if getattr(tool_result, "tier", "") != DENY_OVERRIDE_TIER:
         return None
     key = deny_reason_key(getattr(tool_result, "reason", "") or "")
     # A self-guard rule keeps its flat refusal: no card, so no waiver either.
-    if key is None or deny_key_is_self_guard(key) or not slot_may_override(slot, event):
+    if (
+        key is None
+        or deny_key_is_self_guard(key)
+        or not slot_may_override(slot, event, owner_turn=owner_turn)
+    ):
         return None
     pinned = _pinned_rule_ids()
     if pinned is None or deny_key_is_pinned(key, pinned):
@@ -332,6 +345,57 @@ def override_offer_key(tool_result: Any, slot: Any, event: Any) -> str | None:
     if overlay is None or deny_key_is_overlay(key, overlay):
         return None
     return key
+
+
+def override_withheld_for_owner_rights(tool_result: Any, slot: Any, event: Any) -> bool:
+    """Whether the card for *tool_result* is withheld only for want of the owner's mark.
+
+    The owner's own turn would be offered it, so the owner's message steered into
+    this one is owed a second run as their turn (``chat_delivery_owner_steer``).
+    Blocking like :func:`override_offer_key`: it reads governance pins.
+    """
+    if getattr(slot, "_turn_owner_sent", False) is True:
+        return False
+    return override_offer_key(tool_result, slot, event, owner_turn=False) is not None
+
+
+def no_override_offer(_waited: float) -> None:
+    """The offer when no gate worker took the lookup in time: none, so the refusal stands."""
+    return None
+
+
+async def owner_rights_deny_reason(
+    state: Any, client: Any, slot: Any, event: Any, tool_result: Any, reason: str
+) -> str:
+    """*reason* for a denied command, completed when only the owner's turn gets the card.
+
+    Read only while the turn holds an owner's steer taken without their rights, so
+    the governance-pin read runs on the tool-gate pool for that turn alone. Then the
+    refusal says so and the owner's message runs again as their own turn, where the
+    card is offered (``chat_delivery_owner_steer.refused_for_owner_rights``).
+    """
+    from kiro_crew.dashboard.chat_delivery_owner_steer import (
+        holds_unrighted_steer,
+        refused_for_owner_rights,
+    )
+
+    if not holds_unrighted_steer(slot) or not client_accepts_deny_waivers(client):
+        return reason
+    from kiro_crew.executors import run_in_tool_gate_pool
+
+    withheld = await run_in_tool_gate_pool(
+        override_withheld_for_owner_rights,
+        tool_result,
+        slot,
+        event,
+        on_queue_timeout=_not_withheld,
+    )
+    return refused_for_owner_rights(state, slot, reason) if withheld else reason
+
+
+def _not_withheld(_waited: float) -> bool:
+    """No gate worker took the lookup in time: the refusal stands as it is."""
+    return False
 
 
 def override_decision(outcome: str) -> tuple[str, str]:

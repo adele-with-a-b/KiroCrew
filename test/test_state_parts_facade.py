@@ -638,6 +638,7 @@ _BASE_SLOT_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "_steer_audience_fence_holders": ("value", "{}"),
     "_steer_audience_fences": ("value", "{}"),
     "_steer_automation": ("value", "{}"),
+    "_owner_steer_turn": ("type", "kiro_crew.dashboard.chat_delivery_owner_steer.OwnerSteers"),
     "_steer_channel_origin": ("value", "{}"),
     "_steer_clear": ("value", "None"),
     "_steer_owner_origin": ("value", "{}"),
