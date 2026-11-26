@@ -47,6 +47,8 @@ import { approvalCarded, boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, mov
 import BoardViewSwitch, { type BoardView } from '../../../components/board/BoardViewSwitch'
 import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/BoardRow'
 import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
+import BoardStoryView from '../../../components/board/BoardStoryView'
+import { useOpenStory } from '../../../components/board/storyView'
 import BoardMovesView from './BoardMovesView'
 import BoardStepsView from './BoardStepsView'
 import BoardTimelineView from './BoardTimelineView'
@@ -685,6 +687,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   )
   // Moves opens first; the per-tab choice is not kept, as before.
   const [view, setView] = useState<BoardView>('moves')
+  // A story's title opens its story view; the view keeps its chat one press away.
+  const openStory = useOpenStory()
   // The work ledger through the Crew page's own read (GET /api/crew-board), same key and cadence.
   const boardInterval = usePollRule(`crew-board:${root}`, CREW_BOARD_POLL_MS, active, crewBoardQueryKey(root))
   const board = useQuery({ queryKey: crewBoardQueryKey(root), queryFn: () => timedPoll(`crew-board:${root}`, () => api.crewBoard(root)) as Promise<WorkBoardResponse>, enabled: !!root && active, refetchInterval: boardInterval, retry: false })
@@ -760,7 +764,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     const w = workers.find(x => x.ledger_item === item.item_id)
     const worker = w ? w.title || w.agent || undefined : undefined
     return {
-      item, move, age, late: wait != null && wait >= CONDUCTOR_WAIT_LOUD_MINUTES, onOpen: openItem(item),
+      item, move, age, late: wait != null && wait >= CONDUCTOR_WAIT_LOUD_MINUTES, onOpen: () => openStory.open(item.item_id),
       // A person's ask quotes what it asks; every other row says what its worker last
       // said or what it waits on.
       why: ask
@@ -845,10 +849,22 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     </span>
   ) : null
 
+  // One story open: its own view in place of the Board, until its crumb or Escape goes back.
+  const storyItem = openStory.id ? items.find(i => i.item_id === openStory.id) : undefined
+  const storyWorker = storyItem ? workers.find(x => x.ledger_item === storyItem.item_id) : undefined
+
   return (
-    <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={view}>
+    <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={storyItem ? 'story' : view}>
       {/* A crew member on screen: one click back to its root. */}
       {viewing && viewing !== root && <CrewPanelBack root={root} />}
+      {storyItem && (
+        <BoardStoryView root={root} item={storyItem} story={storyById.get(storyItem.item_id)} project={rootSlot?.title} worker={storyWorker ? storyWorker.title || storyWorker.agent || undefined : undefined}
+          facts={board.data?.pr_facts?.[storyItem.item_id]} plan={plan} onBack={openStory.back} onOpenChat={openItem(storyItem)} reopenFailed={reopenFailed} active={active} now={now} />
+      )}
+      {/* The Board stays mounted under an open story, hidden (out of the tab order and
+          the accessibility tree), so back finds its view, Timeline window and scroll as
+          they were left. */}
+      <div hidden={!!storyItem} className={storyItem ? undefined : 'flex-1 min-h-0 flex flex-col'} data-testid="conductor-mode-board-pane">
       {/* A failed crew read, shown in both views; a gateway that does not serve
           the route is not a failure (the live rows stand in). */}
       {listed.isError && !crewRouteNotServed(listed.error) && <div className="shrink-0 px-3 pt-3"><ErrorNotice variant="inline" message={i18nT(live.length ? 'commandCenter.workers_error_live' : 'commandCenter.workers_error')} askAgent /></div>}
@@ -867,12 +883,12 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
             </p>
             {detail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{detail}</p>}
           </section>
-          <SeatsStrip active={active} />
+          <SeatsStrip active={active && !storyItem} />
           {loaded && (view === 'moves'
             ? <BoardMovesView stories={moveStories} needsYouLead={needsYouLead} needsYouLeadCount={needsYouLeadCount} upNext={upNext} />
             : view === 'steps'
               ? <BoardStepsView steps={boardSteps(items, plan)} stories={storyById} upNext={upNext} />
-              : <BoardTimelineView root={root} stories={stories} closed={closedStories} active={active} />)}
+              : <BoardTimelineView root={root} stories={stories} closed={closedStories} active={active && !storyItem} />)}
           <OtherProjectsLine root={root} now={now} />
         </div>
       ) : (
@@ -904,6 +920,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
         </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
