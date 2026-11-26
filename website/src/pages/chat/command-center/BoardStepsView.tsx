@@ -7,7 +7,7 @@
 import type { ReactNode } from 'react'
 import { CircleX, GitMerge, PackageCheck } from 'lucide-react'
 import { PLAN_STEPS, type PlanStep } from '../../../api/crewBoard'
-import { BOARD_MOVES, longestWaitingFirst, type BoardSteps } from '../../../lib/boardMoves'
+import { BOARD_MOVES, longestWaitingFirst, type BoardSteps, type MovedStory } from '../../../lib/boardMoves'
 import { i18nT } from '../../../i18n/t'
 import { fmtNumber } from '../../../i18n/format'
 import { BoardRow, StoryRow, type BoardStory } from '../../../components/board/BoardRow'
@@ -23,7 +23,7 @@ export const STEP_KEY: Record<PlanStep, string> = {
 }
 
 /** Who must act first, then the one waiting longest. */
-function byMoveThenWait(a: BoardStory, b: BoardStory): number {
+export function byMoveThenWait(a: MovedStory, b: MovedStory): number {
   return BOARD_MOVES.indexOf(a.move) - BOARD_MOVES.indexOf(b.move) || longestWaitingFirst(a.item, b.item)
 }
 
@@ -50,6 +50,23 @@ function LandedRow({ icon, label, value, testId }: { icon: ReactNode; label: str
   return <li><BoardRow mark={<span className="text-muted inline-flex">{icon}</span>} title={label} age={value} testId={testId} /></li>
 }
 
+/** What landed, as counts: merged, of those released, and closed not done. The
+ *  all-projects page's bands draw the same rows. */
+export function LandedRows({ landed }: { landed: BoardSteps['landed'] }) {
+  return (
+    <BoardRows>
+      <LandedRow icon={<GitMerge size={14} aria-hidden="true" />} label={i18nT('components.crewMode.plan_step_merged')} value={fmtNumber(landed.merged)} testId="board-landed-merged" />
+      {landed.merged > 0 && (
+        <LandedRow icon={<PackageCheck size={14} aria-hidden="true" />} label={i18nT('components.crewMode.plan_step_released')}
+          value={i18nT('components.crewMode.board_count_of', { n: landed.released, total: landed.merged })} testId="board-landed-released" />
+      )}
+      {landed.notDone > 0 && (
+        <LandedRow icon={<CircleX size={14} aria-hidden="true" />} label={i18nT('components.crewMode.board_landed_not_done')} value={fmtNumber(landed.notDone)} testId="board-landed-not-done" />
+      )}
+    </BoardRows>
+  )
+}
+
 export default function BoardStepsView({ steps, stories, upNext }: {
   steps: BoardSteps
   /** The Moves rows by item id: the same rows, regrouped. */
@@ -74,16 +91,7 @@ export default function BoardStepsView({ steps, stories, upNext }: {
       </BoardSections>
       <BoardSections>
         <BoardSection id="landed" name={i18nT('components.crewMode.board_landed')} count={landedCount} testId="board-landed">
-          <BoardRows>
-            <LandedRow icon={<GitMerge size={14} aria-hidden="true" />} label={i18nT('components.crewMode.plan_step_merged')} value={fmtNumber(landed.merged)} testId="board-landed-merged" />
-            {landed.merged > 0 && (
-              <LandedRow icon={<PackageCheck size={14} aria-hidden="true" />} label={i18nT('components.crewMode.plan_step_released')}
-                value={i18nT('components.crewMode.board_count_of', { n: landed.released, total: landed.merged })} testId="board-landed-released" />
-            )}
-            {landed.notDone > 0 && (
-              <LandedRow icon={<CircleX size={14} aria-hidden="true" />} label={i18nT('components.crewMode.board_landed_not_done')} value={fmtNumber(landed.notDone)} testId="board-landed-not-done" />
-            )}
-          </BoardRows>
+          <LandedRows landed={landed} />
         </BoardSection>
       </BoardSections>
     </div>

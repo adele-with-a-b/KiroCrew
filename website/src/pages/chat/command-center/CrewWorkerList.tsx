@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
 import { crewBoardQueryKey } from '../../../api/crewBoard'
 import { refreshDashboardReads } from '../../../api/dashboardRefresh'
 import type { ChatSlot, CrewWorker } from '../../../types'
@@ -135,6 +135,19 @@ export function useCrewWorkers(root: string, active: boolean) {
   })
 }
 
+/** One root's worker-list read while it is always on screen (a session-list summary,
+ *  a breadcrumb, the all-projects page): polled at the list's own gap, re-read on
+ *  each push by `useCrewWorkersPush`, and left alone where the gateway does not serve
+ *  the route. */
+export function crewWorkersQuery(root: string) {
+  return queryOptions({
+    queryKey: crewWorkersQueryKey(root),
+    queryFn: () => readCrewWorkers(root),
+    enabled: !!root,
+    refetchInterval: query => (routeNotServed(query.state.error) ? false : crewWorkersGapMs(root, CREW_WORKERS_FALLBACK_POLL_MS)),
+  })
+}
+
 /** A root's OPEN workers from the slot store, shaped as worker-list rows
  *  (`liveCrewWorkers`): the part of the list that needs no route. */
 export function useLiveCrewWorkers(root: string): CrewWorker[] {
@@ -155,12 +168,7 @@ export function useCrewWorkerSummary(root: string): {
   lastWorkers: CrewWorker[] | undefined
 } {
   useCrewWorkersPush(root, true)
-  const query = useQuery({
-    queryKey: crewWorkersQueryKey(root),
-    queryFn: () => readCrewWorkers(root),
-    enabled: !!root,
-    refetchInterval: query => (routeNotServed(query.state.error) ? false : crewWorkersGapMs(root, CREW_WORKERS_FALLBACK_POLL_MS)),
-  })
+  const query = useQuery(crewWorkersQuery(root))
   const live = useLiveCrewWorkers(root)
   // A closed root's list is read from saved data and names the root's saved title.
   const savedTitle = query.data?.root_closed ? query.data.root_title || '' : ''

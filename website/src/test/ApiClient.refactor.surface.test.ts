@@ -28,7 +28,7 @@ const API_KEY_ORDER = [
   'sessionInventory', 'sessionInventoryDetail', 'sessionInventoryTrash', 'reportUiControlClick', 'sessionCrewLogProjections', 'sessionWorkProjection',
   'telemetryStartup', 'telemetryContextTrace', 'telemetryContextTurn', 'usageTurns', 'usageSeries',
   'wakatimeStats', 'wakatimeExportUrl', 'wakatimeOauthStatus', 'wakatimeOauthAuthorize', 'wakatimeOauthDisconnect',
-  'crewBoard', 'crewBoardAction', 'crewBoardTimeline', 'wakatimeExportDownload',
+  'crewBoard', 'crewBoardAction', 'crewBoardTimeline', 'crewBoardCapacity', 'wakatimeExportDownload',
   'sessionSummary', 'dashboardCard', 'generateSessionSummary',
   'beaconStatus', 'collectionStatus', 'kiroPrerequisite', 'repairKiroPrerequisiteSpecs',
   'updateKiroPrerequisiteCli', 'kasLoginStatus', 'kasLoginSources', 'kasLoginBeginDevice', 'kasLoginPoll',

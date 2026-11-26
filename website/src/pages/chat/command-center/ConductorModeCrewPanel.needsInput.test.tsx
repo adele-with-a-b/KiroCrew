@@ -5,17 +5,20 @@
  * board read's `asks`. A button fills the chat box and never sends.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
+import { MemoryRouter } from 'react-router-dom'
 import { createTestStore } from '../../../test/helpers'
+import { sseSlots } from '../../../store/dashboardSlice'
+import { crewBoardQueryKey, type WorkBoardResponse } from '../../../api/crewBoard'
 
 const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), resumeChatSlot: vi.fn(), crewBoard: vi.fn(), crewBoardAction: vi.fn(), sessionSummary: vi.fn(), sendMessage: vi.fn() }))
 vi.mock('../../../api/client', () => ({ api }))
 vi.mock('../../../hooks/usePanelTabs', () => ({ openPanelView: vi.fn() }))
 
 import ConductorModeCrewPanel, { personAsks } from './ConductorModeCrewPanel'
-import { CrewWorkersTab } from './CrewWorkerList'
+import { CrewWorkersTab, crewWorkersQueryKey } from './CrewWorkerList'
 import type { WorkBoardItem } from '../../../api/crewBoard'
 
 const ITEM = (over: Partial<WorkBoardItem>): WorkBoardItem => ({
@@ -172,6 +175,108 @@ describe('Conductor mode Needs your input', () => {
     expect(line).toHaveAttribute('data-state', 'running')
     expect(line.closest('[data-section]')).toHaveAttribute('data-section', 'working')
     expect(screen.getByTestId('conductor-mode-needs-you')).toHaveAttribute('data-count', '0')
+  })
+
+  /** One root, mounted with the board read and the slot row given; then every board
+   *  re-read is held back, so a slot push moves only the live slot row. Its crew list
+   *  binds worker `w-tool` to the story (`bound`), answers without it because it was
+   *  read before the bind (`late`), never answers (`loading`) or fails (`failed`).
+   *  `flagged` stories carry a stray `approval_waiting`, which no board read sends and
+   *  no Board may read. Each test takes its own root: a push re-read another test left
+   *  pending for its root would swallow this one's. */
+  async function mountHeld(rootKey: string, { asks, list = 'bound', flagged = [] }: { asks: boolean; list?: 'bound' | 'late' | 'loading' | 'failed'; flagged?: string[] }) {
+    const quiet = { status: 'progress', reason: null, awaits_person: false, outstanding: false, alive: 'running' } as const
+    const stories = [ITEM(quiet), ...(flagged.includes('it_old') ? [ITEM({ ...quiet, item_id: 'it_old', title: 'Old ask' })] : [])]
+    const tool = { key: 'w-tool', title: 'Tool worker', agent: 'kirocrew-worker', status: 'working', group: 'working', last_activity: '', ledger_item: 'it_q', created_by: rootKey }
+    if (list === 'bound') api.crewWorkers.mockResolvedValue({ root: rootKey, workers: [tool] })
+    else if (list === 'late') api.crewWorkers.mockResolvedValue({ root: rootKey, workers: [] })
+    else if (list === 'loading') api.crewWorkers.mockImplementation(() => new Promise(() => {}))
+    else api.crewWorkers.mockRejectedValue(Object.assign(new Error('crew list down'), { status: 500 }))
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: stories.map(s => (flagged.includes(s.item_id) ? { ...s, approval_waiting: true } : s)) })
+    const root = { key: rootKey, title: 'Root', crew_mode_root: true, messages: 1 }
+    const idle = { key: 'w-tool', title: 'Tool worker', crew_root: rootKey, running: true, pending_approval: false, messages: 1 }
+    const asking = { ...idle, pending_approval: true, pending_approval_info: { origin: 'native', tool: 'shell', tool_input: 'ls', request_id: 'req-1', request_mid: 'm1' } }
+    const { store, qc } = renderWith(<ConductorModeCrewPanel root={rootKey} viewing={rootKey} active onAct={vi.fn()} />, [root, asks ? asking : idle])
+    await screen.findByTestId('board-moves')
+    await waitFor(() => expect(qc.getQueryData(crewBoardQueryKey(rootKey)) as WorkBoardResponse).toBeTruthy())
+    if (list === 'bound' || list === 'late') await waitFor(() => expect(qc.getQueryData(crewWorkersQueryKey(rootKey))).toBeTruthy())
+    else if (list === 'failed') await waitFor(() => expect(qc.getQueryState(crewWorkersQueryKey(rootKey))?.status).toBe('error'))
+    else await waitFor(() => expect(api.crewWorkers).toHaveBeenCalled())
+    const held: unknown[] = []
+    api.crewBoard.mockImplementation(() => new Promise(resolve => { held.push(resolve) }))
+    return { push: (slot: typeof idle) => act(() => { store.dispatch(sseSlots([root, slot] as never)) }), idle, asking, held }
+  }
+  const working = () => screen.getByTestId('board-section-working')
+  const needsYou = () => screen.getByTestId('conductor-mode-needs-you')
+  const inWorking = (title: string) => within(working()).queryByText(title)
+
+  it('with the crew list still loading, a story stays in Working beside its card, and stays there at the decision, as on the base', async () => {
+    const { push, idle } = await mountHeld('root-loading', { asks: true, list: 'loading', flagged: ['it_q'] })
+    await waitFor(() => expect(within(needsYou()).getAllByTestId('crew-approval-card')).toHaveLength(1))
+    expect(needsYou()).toHaveAttribute('data-count', '1')
+    expect(inWorking('Pick a tea')).not.toBeNull()
+    push(idle)
+    await waitFor(() => expect(needsYou()).toHaveAttribute('data-count', '0'))
+    expect(screen.queryByTestId('crew-approval-card')).toBeNull()
+    expect(inWorking('Pick a tea')).not.toBeNull()
+    expect(working()).toHaveAttribute('data-count', '1')
+  })
+
+  it('with the crew list failed and no card on screen, a story stays in Working, as on the base', async () => {
+    await mountHeld('root-failed', { asks: false, list: 'failed', flagged: ['it_q'] })
+    expect(screen.queryByTestId('crew-approval-card')).toBeNull()
+    expect(inWorking('Pick a tea')).not.toBeNull()
+    expect(needsYou()).toHaveAttribute('data-count', '0')
+  })
+
+  it('one card stands for one story: a second flagged story nobody is bound to stays in Working, as on the base', async () => {
+    await mountHeld('root-two', { asks: true, flagged: ['it_q', 'it_old'] })
+    await waitFor(() => expect(inWorking('Pick a tea')).toBeNull())
+    expect(needsYou()).toHaveAttribute('data-count', '1')
+    expect(inWorking('Old ask')).not.toBeNull()
+    expect(working()).toHaveAttribute('data-count', '1')
+  })
+
+  it('with the crew list read before the worker was bound, a story stays in Working beside its card, as on the base', async () => {
+    await mountHeld('root-late', { asks: true, list: 'late', flagged: ['it_q'] })
+    await waitFor(() => expect(within(needsYou()).getAllByTestId('crew-approval-card')).toHaveLength(1))
+    expect(needsYou()).toHaveAttribute('data-count', '1')
+    expect(inWorking('Pick a tea')).not.toBeNull()
+  })
+
+  it('an ask moves the story into its card at once, before the board re-read', async () => {
+    const { push, asking, held } = await mountHeld('root-ask', { asks: false })
+    expect(within(working()).getByText('Pick a tea')).toBeTruthy()
+    push(asking)
+    await waitFor(() => expect(within(working()).queryByText('Pick a tea')).toBeNull())
+    expect(needsYou()).toHaveAttribute('data-count', '1')
+    expect(within(needsYou()).getAllByTestId('crew-approval-card')).toHaveLength(1)
+    expect(screen.queryByTestId('board-story')).toBeNull()
+    // The board has not answered since the push.
+    await waitFor(() => expect(held).toHaveLength(1))
+  })
+
+  it('a decision puts the story back in Working at once, before the board re-read', async () => {
+    const { push, idle, held } = await mountHeld('root-decide', { asks: true, flagged: ['it_q'] })
+    await waitFor(() => expect(within(needsYou()).getAllByTestId('crew-approval-card')).toHaveLength(1))
+    expect(within(working()).queryByText('Pick a tea')).toBeNull()
+    push(idle)
+    await waitFor(() => expect(within(working()).getByText('Pick a tea')).toBeTruthy())
+    expect(needsYou()).toHaveAttribute('data-count', '0')
+    expect(screen.queryByTestId('crew-approval-card')).toBeNull()
+    await waitFor(() => expect(held).toHaveLength(1))
+  })
+
+  it('keeps the All projects link under Moves, Steps and Workers alike', async () => {
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({})] })
+    renderWith(<MemoryRouter><ConductorModeCrewPanel root="root-1" viewing="root-1" active onAct={vi.fn()} /></MemoryRouter>)
+    await screen.findByTestId('board-moves')
+    for (const view of ['moves', 'steps', 'workers']) {
+      fireEvent.click(screen.getByTestId(`conductor-mode-view-${view}`))
+      await waitFor(() => expect(screen.getByTestId('conductor-mode-crew-panel')).toHaveAttribute('data-view', view))
+      expect(screen.getByTestId('board-all-projects-link')).toHaveAttribute('href', '/crew-board')
+    }
+    expect(screen.getByTestId('conductor-mode-list')).toContainElement(screen.getByTestId('board-all-projects-link'))
   })
 
   it('the Board tab hands its composer insert to the panel', async () => {

@@ -6,22 +6,22 @@
  *  minutes. Who must act is `boardMove` (`lib/boardMoves.ts`), read on every render
  *  from facts the Board read derives; nothing here is stored. */
 import type { ReactNode } from 'react'
-import { BOARD_MOVES, CONDUCTOR_WAIT_LOUD_MINUTES, longestWaitingFirst, type BoardMove } from '../../../lib/boardMoves'
+import { BOARD_MOVES, CONDUCTOR_WAIT_LOUD_MINUTES, longestWaitingFirst, type BoardMove, type MovedStory } from '../../../lib/boardMoves'
 import { fmtMinutes } from '../../../lib/crewWork'
 import { i18nT } from '../../../i18n/t'
 import { MOVE_LABEL, StoryRow, type BoardStory } from '../../../components/board/BoardRow'
 import { BoardRows, BoardSection, BoardSections } from '../../../components/board/BoardSection'
 
-/** The rule a section follows, said in its head. */
-function moveHint(move: BoardMove): string | undefined {
+/** The rule a section follows, said in its head. The all-projects page's columns say it too. */
+export function moveHint(move: BoardMove): string | undefined {
   if (move === 'stuck') return i18nT('components.crewMode.board_stuck_hint')
   if (move === 'conductor') return i18nT('components.crewMode.board_conductor_hint', { age: fmtMinutes(CONDUCTOR_WAIT_LOUD_MINUTES) })
   return undefined
 }
 
 /** The stories under each move, the one waiting longest first. */
-export function storiesByMove(stories: readonly BoardStory[]): Map<BoardMove, BoardStory[]> {
-  const by = new Map<BoardMove, BoardStory[]>()
+export function storiesByMove<S extends MovedStory>(stories: readonly S[]): Map<BoardMove, S[]> {
+  const by = new Map<BoardMove, S[]>()
   for (const s of stories) by.set(s.move, [...(by.get(s.move) ?? []), s])
   for (const list of by.values()) list.sort((a, b) => longestWaitingFirst(a.item, b.item))
   return by

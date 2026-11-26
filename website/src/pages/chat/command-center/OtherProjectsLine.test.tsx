@@ -1,11 +1,13 @@
 /**
  * The Board's line for the other projects: what every other Conductor's row
  * carries, summed. Late is a report its Conductor has not picked up for 10 minutes,
- * read against a pinned clock, and a running worker turn is never late.
+ * read against a pinned clock, and a running worker turn is never late. The line
+ * ends with the "All projects" link, drawn even when nothing is counted.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
+import { MemoryRouter } from 'react-router-dom'
 import { createTestStore } from '../../../test/helpers'
 import OtherProjectsLine, { otherProjectsCounts, type OtherProjectRow } from './OtherProjectsLine'
 import { crewWorkLate } from '../../../lib/crewWork'
@@ -63,18 +65,28 @@ describe('otherProjectsCounts', () => {
   })
 })
 
+function renderLine(slots: OtherProjectRow[]) {
+  return render(
+    <Provider store={createTestStore({ dashboard: { slots } } as never)}>
+      <MemoryRouter><OtherProjectsLine root="here" now={NOW} /></MemoryRouter>
+    </Provider>,
+  )
+}
+
 describe('OtherProjectsLine', () => {
-  it('says only the counts above zero', () => {
+  it('says only the counts above zero, then the All projects link', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(NOW)
-    render(<Provider store={createTestStore({ dashboard: { slots: ROWS } } as never)}><OtherProjectsLine root="here" now={NOW} /></Provider>)
+    renderLine(ROWS)
     expect(screen.getByTestId('board-other-projects')).toHaveTextContent('Other projects: 1 needs you, 1 stuck, and 2 late')
     // One sentence from one key: the list is its placeholder, drawn bold inside it.
     expect(screen.getByText('1 needs you, 1 stuck, and 2 late')).toHaveClass('font-medium')
+    expect(screen.getByTestId('board-all-projects-link')).toHaveAttribute('href', '/crew-board')
   })
 
-  it('draws nothing when the other projects hold nothing', () => {
-    const { container } = render(<Provider store={createTestStore({ dashboard: { slots: [ROWS[0]] } } as never)}><OtherProjectsLine root="here" now={NOW} /></Provider>)
-    expect(container).toBeEmptyDOMElement()
+  it('keeps the All projects link alone when the other projects hold nothing', () => {
+    renderLine([ROWS[0]])
+    expect(screen.queryByTestId('board-other-projects')).toBeNull()
+    expect(screen.getByTestId('board-all-projects-link')).toHaveTextContent('All projects')
   })
 })

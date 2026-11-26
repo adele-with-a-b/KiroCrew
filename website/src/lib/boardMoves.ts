@@ -124,3 +124,36 @@ export function longestWaitingFirst(a: WorkBoardItem, b: WorkBoardItem): number 
   const x = a.last_report_at || a.created_at || '', y = b.last_report_at || b.created_at || ''
   return x < y ? -1 : x > y ? 1 : 0
 }
+
+/** What a Board's rules read of a drawn story. */
+export interface MovedStory { item: WorkBoardItem; move: BoardMove }
+
+/** A crew-list row as this reads it: the worker and the ledger item it is bound to. */
+export interface BoundWorker { key: string; ledger_item?: string | null }
+
+/** The items whose worker waits on a tool approval with its own card in Needs you:
+ *  each live card (`cards`, `crewApprovalRequests` over the slot rows) joined to the
+ *  ledger item the crew list binds its worker to (`ledger_item`), and nothing else.
+ *  So the story and its card move together the moment an ask or a decision lands, and
+ *  a story whose worker the crew list binds to no item yet stays where its own state
+ *  puts it, beside the card. Every Board reads this one rule. */
+export function approvalCarded(cards: readonly { worker: string }[], workers: readonly BoundWorker[]): Set<string> {
+  const carded = new Set<string>()
+  for (const card of cards) {
+    const item = workers.find(w => w.key === card.worker)?.ledger_item
+    if (item) carded.add(item)
+  }
+  return carded
+}
+
+/** The stories Moves draws: one whose approval has its own card (`carded`, from
+ *  `approvalCarded`) is that card, not a second row. */
+export function movesStories<S extends MovedStory>(stories: readonly S[], carded: ReadonlySet<string>): S[] {
+  return stories.filter(s => !(s.move === 'needs_you' && carded.has(s.item.item_id)))
+}
+
+/** Needs you's count: the main chat's question card, the crew's approval cards
+ *  (`crewApprovalRequests`), and the stories Moves draws there (`movesStories`). */
+export function needsYouCount(questions: number, approvals: number, shown: readonly MovedStory[]): number {
+  return questions + approvals + shown.filter(s => s.move === 'needs_you').length
+}
