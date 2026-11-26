@@ -15,7 +15,9 @@ the box reads the key's ``arg`` with ``via: 'key'``. Level 15 adds a session con
 status answer's ``replyChips``: an app supplies the strings of Crew's reply chips for
 one chat. Level 16 adds a session control's ``dock`` and ``stayOpen``: its box opens in
 the composer dock, between the chat and the message box, and may stay open while the
-person reads and clicks the chat.
+person reads and clicks the chat. Level 17 adds the SDK's ``useSessionControlGo``: on a
+click in its box, a session control opens its own box in another chat, with a request
+the box reads as ``via: 'control'``.
 """
 
-APP_SDK_LEVEL = 16
+APP_SDK_LEVEL = 17

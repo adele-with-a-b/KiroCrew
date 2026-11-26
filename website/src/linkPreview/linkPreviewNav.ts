@@ -54,8 +54,9 @@ export function jsonBytes(value: unknown): number {
 export type JumpOutcome = true | 'not_found' | 'load_failed' | 'not_on_screen' | 'replaced'
 
 export type LinkPreviewNav =
-  /** Open `target` of `appName` and hand it `payload`; `via` says who asked (a card's click, a status go). */
-  | { kind: 'open'; slot: string; appName: string; target: AppOpenTarget; payload: unknown; via: 'link' | 'status' }
+  /** Open `target` of `appName` and hand it `payload`; `via` says who asked (a card's click, a status go,
+   *  or the app's own session control in another chat). */
+  | { kind: 'open'; slot: string; appName: string; target: AppOpenTarget; payload: unknown; via: 'link' | 'status' | 'control' }
   /** Scroll to `target`; `from` is the message the card's text sits in. A jump
    *  from a session control has no such message: `from: 'view'` keeps the view
    *  on screen now as the Back pill's spot, and `onDone` is told how it ended. */

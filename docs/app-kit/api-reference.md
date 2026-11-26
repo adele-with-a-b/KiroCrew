@@ -1009,7 +1009,8 @@ person opened the chip by hand and outside a session control. `via` says who ask
 payload)`), `'status'` for one of its status rows or its `go` (`target.sessionControl`,
 with `target.arg` as the payload), `'key'` for one of the control's own
 [`keys`](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)
-(its `arg` as the payload; level 14). A request sent before the control's module loaded is
+(its `arg` as the payload; level 14), `'control'` for this control's own box in another
+chat ([`useSessionControlGo`](#session-control-go); level 17). A request sent before the control's module loaded is
 read on its first render, and an open while the popover is already open keeps it mounted
 and only raises `seq`, so act on a `seq` you have not handled. The request is dropped when
 the popover closes. A card's open resolves with the dashboard's answer, `{ ok: true }` or
@@ -1018,7 +1019,7 @@ manifest reference). Needs `APP_SDK_LEVEL >= 11`; read it off the namespace impo
 
 ```tsx
 const useSessionControlRequest = (sdk as Record<string, unknown>).useSessionControlRequest as
-  (() => { seq: number; payload: unknown; via: 'link' | 'status' | 'key' } | null) | undefined
+  (() => { seq: number; payload: unknown; via: 'link' | 'status' | 'key' | 'control' } | null) | undefined
 
 // Inside the control (call it only when it is there):
 const req = useSessionControlRequest?.()
@@ -1127,6 +1128,58 @@ const jumpTo = useSessionControlJump?.() ?? null
   const r = await jumpTo!({ ts: row.ts, id: row.mid })
   if (!r.ok) setNote(r.reason)
 }}>Go to it in the chat</button>
+```
+
+## Session Control Go
+
+`useSessionControlGo()` lets a session control send the person to another chat and
+open its own box there, as a status item's row does (`target.sessionControl`). It
+returns `go(sid, payload?)`, or `null` outside a session control. `sid` is the chat's
+slot key, as `/chat?sid=` takes it, or its session key (`dashboard:<slot>`, the
+`session.sessionKey` each box is handed). The box in that chat reads `payload` from
+`useSessionControlRequest()` with `via: 'control'`, and `useStatusGoBack()` there is
+the way back to the chat the person left.
+
+- **Only your own box.** The control is the one the hook is called in; nothing you
+  pass can name another app's control, or another control of yours.
+- **Only on a click.** A go needs a real click (or a key that clicks a button)
+  inside your module in the last few seconds, and one click is good for one go. A
+  call with no such click, or a second call on the same click, is `no_click`. The
+  grant is the click's, not the handler's: call `go` from the click handler of the
+  row the person pressed, never from a timer or an effect, which would spend a
+  click meant for something else. The host's own header and buttons never grant.
+- **Like any switch.** It goes behind the unsaved-draft guard (the person may stay),
+  reopens a closed chat from its history, and does nothing when the chat is gone.
+- **The window.** A real click in your box grants one go for 3 seconds.
+- **Archived chats.** A go to an archived chat brings it back: it is reopened from
+  its history, as a status row's go does.
+
+| Answer | When |
+|---|---|
+| `{ ok: true }` | the switch began; the box opens in that chat once its composer is on screen |
+| `{ ok: false, reason: 'no_click' }` | no real click in your box just before the call |
+| `{ ok: false, reason: 'bad_chat' }` | `sid` is not a chat key |
+| `{ ok: false, reason: 'not_json' }` | `payload` cannot be written as JSON |
+| `{ ok: false, reason: 'too_large' }` | `payload` is over 4 KB as JSON |
+
+A refused call sends nothing and spends no click. Needs `APP_SDK_LEVEL >= 17`; read
+it off the namespace import:
+
+```tsx
+type GoResult = { ok: true } | { ok: false; reason: 'no_click' | 'bad_chat' | 'not_json' | 'too_large' }
+const useSessionControlGo = (sdk as Record<string, unknown>).useSessionControlGo as
+  (() => ((sid: string, payload?: unknown) => GoResult) | null) | undefined
+
+// Inside the control (call it only when it is there):
+const go = useSessionControlGo?.() ?? null
+<button disabled={!go} onClick={() => {
+  const r = go!(row.chat, { label: row.label })
+  if (!r.ok) setNote(r.reason)
+}}>Answer it in its chat</button>
+
+// In the box that opens there:
+const req = useSessionControlRequest?.() ?? null
+if (req?.via === 'control') { /* came from this app's box in another chat */ }
 ```
 
 ## Chat Marker Protocol
@@ -2234,7 +2287,9 @@ adds `contributes.sessionControls[].keys` with a request's `via: 'key'`, and lev
 adds a session control status answer's `replyChips` (the strings of the reply chips
 above the message box, [manifest reference](manifest-reference.md)), and level 16
 adds `contributes.sessionControls[].dock` and `stayOpen` (a box docked above the
-message box that may stay open, [manifest reference](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)); each level
+message box that may stay open, [manifest reference](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)), and level 17
+adds the [session control go](#session-control-go) (`useSessionControlGo`, a request's
+`via: 'control'`); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

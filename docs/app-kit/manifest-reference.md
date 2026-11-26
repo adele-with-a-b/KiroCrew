@@ -805,7 +805,7 @@ and its status rows and go (`target.sessionControl`, under
 [`contributes.statusItems`](#contributesstatusitems--a-readout-in-the-top-bar))
 can open the control in a chat and hand it a JSON payload. The control reads it
 with the SDK's `useSessionControlRequest()`: `{ seq, payload, via }` for the latest
-open, where `via` is `'link'` or `'status'` and `seq` grows with each open, so the
+open, where `via` is `'link'` or `'status'` (or `'key'` and `'control'`, below) and `seq` grows with each open, so the
 same payload twice still reads as new; `null` when the person opened the chip by
 hand. It lasts until the popover closes, and a request sent before the module
 loaded is still there when it mounts. An open while the popover is already open
@@ -821,6 +821,12 @@ and any other press outside it, a link included, closes it at once. Needs
 to one of its messages, with the Back pill a card's `jumpTo` gives, and stay open:
 the SDK's `useSessionControlJump()`, in the
 [API reference](api-reference.md#session-control-jump). Needs `APP_SDK_LEVEL >= 13`.
+
+**Opening its box in another chat.** On a click in its box, the control can send
+the person to another chat and open its own box there with a payload, as a status
+row does; that box reads it with `via: 'control'`, and `useStatusGoBack()` is the
+way back. No manifest field: the SDK's `useSessionControlGo()`, in the
+[API reference](api-reference.md#session-control-go). Needs `APP_SDK_LEVEL >= 17`.
 
 **`keys` — a key that opens the box.** A control can declare up to **4** keys,
 each opening its box in the chat on screen with its own `arg`:

@@ -17,5 +17,7 @@
  * the strings of Crew's reply chips for one chat.
  * Level 16 adds a session control's `dock` and `stayOpen`: its box opens in the
  * composer dock, above the message box, and may stay open while the chat is used.
+ * Level 17 adds `useSessionControlGo`: on a click in its box, a session control
+ * opens its own box in another chat, read there with `via: 'control'`.
  */
-export const APP_SDK_LEVEL = 16
+export const APP_SDK_LEVEL = 17

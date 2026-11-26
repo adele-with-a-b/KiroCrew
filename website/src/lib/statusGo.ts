@@ -14,7 +14,8 @@
  * module is the one place it is checked. Nothing here knows any app.
  *
  * The shell's top bar, the chat page, the keyboard shortcuts and the App SDK all
- * read it, so it lives outside the shell.
+ * read it, so it lives outside the shell. A session control's own go to its box
+ * in another chat (`useSessionControlGo`) takes the same route, as `via: 'control'`.
  *
  * @module lib/statusGo
  */
@@ -178,14 +179,18 @@ export function parseStatusCardParam(raw: string | null | undefined): string | n
 
 // ---- The go in flight, and the way back ------------------------------------
 
+/** Who sent a go: a status item's row or go, or a session control's own box. */
+export type StatusGoVia = 'status' | 'control'
+
 /** The latest go: where it went, where it left, and the tab request still to hand over. */
 export interface ActiveStatusGo {
   to: string
   /** The chat the go left, or null when it left a page that is not a chat. */
   from: string | null
   appName: string
-  /** Not yet handed to the landed chat (its panel or its composer). Cleared once it was taken. */
-  pending: { target: AppOpenTarget; arg: unknown } | null
+  /** Not yet handed to the landed chat (its panel or its composer). Cleared once it was taken.
+   *  `via` is who asked: a status row or go (absent), or the app's own box in another chat. */
+  pending: { target: AppOpenTarget; arg: unknown; via?: StatusGoVia } | null
   /** True while a closed chat is being reopened: another chat on screen is
    *  then not a walk-away yet. */
   opening?: boolean
@@ -221,15 +226,16 @@ export function useActiveStatusGo(): ActiveStatusGo | null {
 /**
  * `go(appName, target)`: switch to the target's chat (behind the unsaved-draft
  * guard every "go to chat" button uses) and queue its tab request. A target in
- * the chat already on screen keeps no way back: nothing was left.
+ * the chat already on screen keeps no way back: nothing was left. `via` says who
+ * asked, and is what the landed control's request reads (`'status'` when absent).
  */
-export function useStatusGo(): (appName: string, target: StatusTarget) => void {
+export function useStatusGo(): (appName: string, target: StatusTarget, via?: StatusGoVia) => void {
   const dispatch = useAppDispatch()
   const store = useAppStore()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const leave = useGuardedLeave()
-  return useCallback((appName: string, target: StatusTarget) => {
+  return useCallback((appName: string, target: StatusTarget, via?: StatusGoVia) => {
     leave(() => {
       const here = store.getState().chat.activeSlot
       const onChat = isChatRoute(pathname)
@@ -246,7 +252,7 @@ export function useStatusGo(): (appName: string, target: StatusTarget) => void {
         to: target.sid,
         from,
         appName,
-        pending: open ? { target: open, arg: target.arg } : null,
+        pending: open ? { target: open, arg: target.arg, ...(via ? { via } : {}) } : null,
         ...(reopen ? { opening: true } : {}),
       }
       setActiveStatusGo(go)
