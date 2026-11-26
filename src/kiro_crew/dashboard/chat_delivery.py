@@ -130,6 +130,7 @@ STEER_STATE_UNCONFIRMED = "unconfirmed"
 SEND_ID_MAX_LEN = 128
 
 # Slots rarely have more than a handful pending; 32 leaves generous burst headroom.
+# Counts the steers not yet written (``steer_carry.has_steer_room``).
 MAX_PENDING_STEERS = 32
 
 # The accepted send-id alphabet. Client mints are ``s-<base36>-<base36>``; the
@@ -713,12 +714,11 @@ async def steer_into_running_turn(
         logger.info("identical steer already pending for slot %s; queueing instead", slot.key)
         return SteerUnavailable(steer_refusal.SAME_PENDING)
 
-    retained_steer_count = steer_carry.retained_steers(slot)
-    if retained_steer_count >= MAX_PENDING_STEERS:
+    if not steer_carry.has_steer_room(slot, chars=len(message)):
         logger.warning(
-            "pending steer limit reached for slot %s (%d); queueing instead",
+            "pending steer limit reached for slot %s (%d retained); queueing instead",
             slot.key,
-            MAX_PENDING_STEERS,
+            steer_carry.retained_steers(slot),
         )
         return SteerUnavailable(steer_refusal.TOO_MANY)
 

@@ -346,6 +346,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "get_valid_effort_levels": ("function", False, "6806e867af4e", "client_model_selection"),
     "has_active_turn": ("function", False, "a6632a57e602", "client_turn_control"),
     "has_unfinished_turn": ("function", False, "a6632a57e602", "client_turn_control"),
+    "held_steer_count": ("property", False, "fa6cfecd5574", "client_turn_control"),
     "held_steers_possibly_delivered": ("property", False, "602c14087aa8", "client_class"),
     "initialize_result": ("property", False, "44dc9acb7120", "client_class"),
     "is_process_alive": ("function", False, "a6632a57e602", "client_class"),

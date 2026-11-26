@@ -909,6 +909,88 @@ async def test_held_steers_count_toward_the_turn_bound():
         assert wire.steering_frames() == []
 
 
+async def _inject(wire: _Wire, client: AcpClient, spawned: list[Any], text: str) -> bool:
+    """Steer *text* and answer it ``injected`` once its frame is written."""
+    before = len(wire.steering_frames())
+    steer = _spawn(spawned, client.steer(text))
+    await async_wait_until(
+        lambda: len(wire.steering_frames()) > before or steer.done(), describe=lambda: wire.sent
+    )
+    if not steer.done():
+        wire.answer(wire.steering_frames()[-1]["id"], "injected")
+    return await await_until(steer, what="the steer")
+
+
+@pytest.mark.asyncio
+async def test_written_steers_do_not_count_toward_the_turn_bound():
+    """A long turn takes its 17th note: the first 16 are written, not held."""
+    from kiro_crew.acp.types import MAX_STEERING_ANSWERS
+
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        for n in range(MAX_STEERING_ANSWERS + 1):
+            assert await _inject(wire, client, spawned, f"note {n}") is True, client.steer_refusal
+        assert len(client._steers_accepted) == MAX_STEERING_ANSWERS + 1
+
+        wire.end_turn()
+        kinds = [e.kind for e in await await_until(turn, what="the turn")]
+        assert kinds.count(EVENT_STEER_CONSUMED) == MAX_STEERING_ANSWERS + 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bound", ["count", "chars"])
+async def test_written_steers_are_still_bounded_in_memory(monkeypatch, bound):
+    from kiro_crew.acp import client_turn_control
+
+    if bound == "count":
+        monkeypatch.setattr(client_turn_control, "MAX_ACCEPTED_STEERS", 3)
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        for n in range(3):
+            assert await _inject(wire, client, spawned, f"note {n}") is True
+        if bound == "chars":
+            # Full now: the written text is exactly the bound.
+            written = sum(len(text) for _, text in client._steers_accepted)
+            monkeypatch.setattr(client_turn_control, "MAX_ACCEPTED_STEER_CHARS", written)
+        assert await client.steer("one more") is False
+        assert client.steer_refusal == "too_many"
+        assert len(wire.steering_frames()) == 3
+
+        wire.end_turn()
+        await await_until(turn, what="the turn")
+
+
+@pytest.mark.asyncio
+async def test_a_held_steer_counts_toward_the_written_bound(monkeypatch):
+    """A held steer is written once its tool call returns, so it counts toward the
+    written bound when it is taken: the written list never passes the bound."""
+    from kiro_crew.acp import client_turn_control
+
+    monkeypatch.setattr(client_turn_control, "MAX_ACCEPTED_STEERS", 3)
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        for n in range(2):
+            assert await _inject(wire, client, spawned, f"note {n}") is True
+        wire.inbound.put_nowait(_open_tool())
+        await async_wait_until(lambda: "tc1" in client._active_tool_calls)
+        assert await client.steer("held") is True
+        assert await client.steer("one more") is False
+        assert client.steer_refusal == "too_many"
+
+        wire.inbound.put_nowait(_close_tool())
+        await async_wait_until(lambda: len(wire.steering_frames()) == 3)
+        wire.answer(wire.steering_frames()[-1]["id"], "injected")
+        await async_wait_until(lambda: len(client._steers_accepted) == 3)
+        wire.end_turn()
+        await await_until(turn, what="the turn")
+
+
 @pytest.mark.asyncio
 async def test_a_steer_after_the_tool_finished_is_sent():
     async with _Tasks() as spawned:

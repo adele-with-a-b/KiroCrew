@@ -48,6 +48,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from kiro_crew.acp.types import ACP_BACKEND_CLAUDE, ACP_BACKEND_CODEX, MAX_STEERING_TEXT_CHARS
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Awaitable, Callable
 
@@ -61,6 +63,20 @@ logger = logging.getLogger(__name__)
 #: turn ended: the delivery id and the possibly-delivered mark are only on a
 #: steer whose call was still in flight then.
 WAS_STEERED_META = "wasSteered"
+
+#: The memory bound on every steer a slot holds a record of, written or not
+#: (:func:`has_steer_room`): a harness that reports a steer read only when its
+#: turn ends keeps a written one until then. The text bound is what the old count
+#: of ``MAX_PENDING_STEERS`` (32) full-size steers allowed.
+MAX_RETAINED_STEERS = 256
+MAX_RETAINED_STEER_CHARS = 32 * MAX_STEERING_TEXT_CHARS
+
+#: The backends whose written steer stays pending until its turn ends cleanly:
+#: their client steers over ``_session/steering`` (``AcpClient.steer``), which
+#: reports a steer read only then. Only these leave written steers out of
+#: ``MAX_PENDING_STEERS`` (:func:`has_steer_room`). goose and pi report each read
+#: as it happens, so their pending steers are unread and every one counts.
+WRITTEN_STEERS_STAY_PENDING = frozenset({ACP_BACKEND_CLAUDE, ACP_BACKEND_CODEX})
 
 
 @dataclass
@@ -165,10 +181,52 @@ def _queued_by_hub_conductor(entry: dict[str, Any]) -> bool:
 def retained_steers(slot: Any) -> int:
     """How many distinct steers *slot* still holds a record of.
 
-    The count ``MAX_PENDING_STEERS`` bounds: every per-steer store, not only the
-    pending list, because a store that outlives its steer is still held memory.
+    Every per-steer store, not only the pending list, because a store that
+    outlives its steer is still held memory. :func:`has_steer_room` bounds it.
     """
     return len(_retained(slot))
+
+
+def has_steer_room(slot: Any, *, adding: int = 1, chars: int = 0) -> bool:
+    """Whether *slot* may take *adding* more steers, *chars* of text, now.
+
+    Two bounds. ``MAX_PENDING_STEERS`` counts the steers not yet written into the
+    running turn: every retained steer but the ones its client has written. A
+    harness that reports a steer read only when its turn ends keeps a written
+    steer pending until then, so counting those would refuse a long turn's 33rd
+    note though the turn read the first 32. The memory those records hold is
+    bounded on its own, by count (``MAX_RETAINED_STEERS``) and by text size
+    (``MAX_RETAINED_STEER_CHARS``, the 32 full-size steers the old count let a
+    slot hold).
+    """
+    from kiro_crew.dashboard.chat_delivery import MAX_PENDING_STEERS
+
+    retained = _retained(slot)
+    if len(retained) + adding > MAX_RETAINED_STEERS:
+        return False
+    if sum(len(t) for t in retained if isinstance(t, str)) + chars > MAX_RETAINED_STEER_CHARS:
+        return False
+    return len(retained) - _written_steers(slot) + adding <= MAX_PENDING_STEERS
+
+
+def _written_steers(slot: Any) -> int:
+    """How many of *slot*'s pending steers its client has written into the turn.
+
+    A pending steer whose call has returned is with the client, which has either
+    written it or holds it behind an open tool call (``held_steer_count``). Only
+    a client of a :data:`WRITTEN_STEERS_STAY_PENDING` backend that reports that
+    count proves any steer written: for any other, every pending steer counts as
+    not written, as before.
+    """
+    client = getattr(slot, "_acp_client", None)
+    if getattr(client, "backend", None) not in WRITTEN_STEERS_STAY_PENDING:
+        return 0
+    held = getattr(client, "held_steer_count", None)
+    if type(held) is not int:
+        return 0
+    in_flight = getattr(slot, "_steer_rpc_in_flight", None) or set()
+    returned = [m for m in set(slot._pending_steers) if m not in in_flight]
+    return max(0, len(returned) - held)
 
 
 def _retained(slot: Any) -> set[Any]:
@@ -192,7 +250,6 @@ def _may_go(state: "DashboardState", slot: Any, entry: dict[str, Any]) -> bool:
     does not already hold it, the cap leaves room for it and the new note, and no
     containment constraint holds that its own admission never saw."""
     from kiro_crew.dashboard import responsive_chat
-    from kiro_crew.dashboard.chat_delivery import MAX_PENDING_STEERS
     from kiro_crew.dashboard.queue_edit_hold import edit_held
     from kiro_crew.dashboard.session_control import containment_snapshot, newly_held_constraints
 
@@ -201,7 +258,7 @@ def _may_go(state: "DashboardState", slot: Any, entry: dict[str, Any]) -> bool:
         return False
     if edit_held(entry) or responsive_chat.row_already_written(slot, entry):
         return False
-    if retained_steers(slot) + 2 > MAX_PENDING_STEERS:
+    if not has_steer_room(slot, adding=2, chars=len(content)):
         return False
     # The drain would drop an entry whose audience widened while it waited, and
     # tell its sender. Steering it here must not be a way around that drop.

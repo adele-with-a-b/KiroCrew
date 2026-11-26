@@ -1486,6 +1486,7 @@ class AcpClient:
     _drop_folded_steer = _client_turn_control._drop_folded_steer
     _steering_refusal = _client_turn_control._steering_refusal
     _held_steers = _client_turn_control._held_steers
+    held_steer_count = property(_client_turn_control.held_steer_count)
     _release_held_steers = _client_turn_control._release_held_steers
     _held_steer_writes = _client_turn_control._held_steer_writes
     _send_held_steers = _client_turn_control._send_held_steers
