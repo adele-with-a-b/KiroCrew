@@ -75,16 +75,16 @@ describe('TurnBlock — visible rows survive the completion flip (#11083)', () =
   })
 
   it('interim mode: a visible-inline error row mounts once across the flip', () => {
-    // The interim region folds prose in both modes; an error row is
-    // visible-inline (isAlwaysVisible), so it renders in place before and after.
+    // The interim region folds prose with "Show Thinking Inline" off; an error
+    // row is visible-inline (isAlwaysVisible), so it renders in place before and after.
     const items: TurnItem[] = [
       { kind: 'single', msg: { role: 'assistant', content: 'Two of three agents are still in flight; here is the running summary.', ts: '1' }, idx: 0 },
       { kind: 'single', msg: { role: 'error', content: 'a spawn failed', ts: '2' }, idx: 1 },
     ]
     const { rerender } = render(
-      <TurnBlock turn={makeTurn(items, false, { interim: true })} renderItem={renderItem} />,
+      <TurnBlock turn={makeTurn(items, false, { interim: true })} renderItem={renderItem} collapseAll />,
     )
-    rerender(<TurnBlock turn={makeTurn(items, true, { interim: true })} renderItem={renderItem} />)
+    rerender(<TurnBlock turn={makeTurn(items, true, { interim: true })} renderItem={renderItem} collapseAll />)
     expect(mounts.get('2')).toBe(1)
   })
 

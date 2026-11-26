@@ -29,9 +29,9 @@ describe('TurnBlock — interim fan-out fold', () => {
   /** The element CollapsibleSection wraps its children in. */
   const collapsed = (c: HTMLElement) => c.querySelector('[data-collapsed="true"]')
 
-  it('folds the region behind one toggle in DEFAULT mode, where nothing folded before', () => {
+  it('folds the region behind one toggle with "Show Thinking Inline" off', () => {
     const turn = { ...makeTurn(interimItems()), interim: true }
-    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} collapseAll />)
     // The interim summary is inside the collapsible; the toggle is its control.
     expect(container.querySelector('button')).toBeInTheDocument()
     expect(collapsed(container)).toContainElement(screen.getByTestId('item-0'))
@@ -39,15 +39,47 @@ describe('TurnBlock — interim fan-out fold', () => {
 
   it('leaves an error row outside the fold', () => {
     const turn = { ...makeTurn(interimItems()), interim: true }
-    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} collapseAll />)
     expect(collapsed(container)).not.toContainElement(screen.getByTestId('item-1'))
   })
 
   it('does not fold while the turn is still running', () => {
     const turn = { ...makeTurn(interimItems(), false), interim: true }
-    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} collapseAll />)
     expect(container.querySelector('button')).toBeNull()
     expect(collapsed(container)).toBeNull()
+  })
+
+  it('keeps the agent text before a wave, and the synthesis answer, in view with "Show Thinking Inline" on', () => {
+    // Text A, a wave, synthesis C, grouped by the real grouper: with the
+    // setting on, A is the agent's own text and must not fold under the wave's
+    // toggle; with it off the region folds whole as before. C shows either way.
+    const A = 'I will split the audit across three agents and compare what they find.'
+    const C = 'All three agents agree: the retry fires before the timeout elapses.'
+    const completion = {
+      role: 'subagent', cls: '', meta: { subagentCompletion: {} },
+      content: ['[Subagent completion event]', 'Agent `53e3e5eb` (kirocrew) completed ✅', 'Task: audit', '', 'done'].join('\n'),
+    } as unknown as ChatMessage
+    const msgs = [
+      { role: 'user', content: 'Audit the retry path.', cls: '' },
+      { role: 'assistant', content: A, cls: '' },
+      { role: 'tool', content: '🔧 Running: spawn_run', cls: '' },
+      completion,
+      { role: 'inject', content: '[SYSTEM] Sub-agent synthesis: …', cls: '', meta: { injectKind: 'synthesis' } },
+      { role: 'assistant', content: C, cls: '' },
+    ] as unknown as ChatMessage[]
+    const shown = (collapseAll: boolean) => {
+      const { container, unmount } = render(<>{groupDisplayItems(msgs).turns.map((d, i) => d.kind === 'turn'
+        ? <TurnBlock key={i} turn={d} renderItem={renderItem} collapseAll={collapseAll} />
+        : <div key={i}>{d.kind === 'single' ? d.msg.content : null}</div>)}</>)
+      const inView = (text: string) => Array.from(container.querySelectorAll('div'))
+        .some(el => el.textContent === text && el.closest('[data-collapsed="true"]') === null)
+      const out = { a: inView(A), c: inView(C) }
+      unmount()
+      return out
+    }
+    expect(shown(false)).toEqual({ a: true, c: true })
+    expect(shown(true)).toEqual({ a: false, c: true })
   })
 
   it('an identical turn without the interim flag is untouched in default mode', () => {
@@ -61,7 +93,7 @@ describe('TurnBlock — interim fan-out fold', () => {
     // The bubble-vanish probe keys its hidden-in-place bucket off this
     // attribute: present exactly while the section hides its mounted rows.
     const turn = { ...makeTurn(interimItems()), interim: true }
-    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} collapseAll />)
     const fold = collapsed(container) as HTMLElement
     expect(fold.getAttribute('data-collapsed')).toBe('true')
     fireEvent.click(container.querySelector('button')!)

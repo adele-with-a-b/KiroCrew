@@ -383,7 +383,7 @@ describe('a closed settled fold drops what cannot go live', () => {
 
   it.each([
     ['collapseAll', turnOf([...tools(100), done], true), true],
-    ['interim', { ...turnOf([...tools(100), done], true), interim: true }, false],
+    ['interim', { ...turnOf([...tools(100), done], true), interim: true }, true],
   ])('drops folded tool rows in %s mode too, so a 100-call turn does not keep 100 hidden pills', (_mode, turn, collapseAll) => {
     const { container } = render(<TurnBlock turn={turn} renderItem={renderItem} collapseAll={collapseAll} />)
     expect(container.querySelectorAll('[data-collapsed="true"]').length).toBeGreaterThanOrEqual(100)

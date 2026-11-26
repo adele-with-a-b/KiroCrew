@@ -20,7 +20,8 @@ const renderItem = (it: TurnItem, i: number) => (
   <div data-testid={`item-${i}`}>{it.kind === 'single' ? it.msg.content : 'group'}</div>
 )
 
-/** An interim fan-out region: folded in both modes, so one toggle is rendered. */
+/** An interim fan-out region: folded whole with "Show Thinking Inline" off
+ *  (`collapseAll`), so one toggle is rendered. */
 const foldedTurn = () => ({
   ...makeTurn([
     { kind: 'single', msg: { role: 'assistant', content: 'Two of three agents are in…', ts: '1' }, idx: 0 },
@@ -31,7 +32,7 @@ const foldedTurn = () => ({
 
 describe('TurnBlock — restored fold row shape', () => {
   it('announces its disclosure state with aria-expanded, both ways', () => {
-    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} collapseAll />)
     const toggle = container.querySelector('button')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(toggle)
@@ -39,7 +40,7 @@ describe('TurnBlock — restored fold row shape', () => {
   })
 
   it('is a bare row, not a pill: no card background and no ring', () => {
-    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} collapseAll />)
     const cls = container.querySelector('button')!.className
     expect(cls).toContain('bg-transparent')
     expect(cls).not.toMatch(/\bbg-card\b/)
@@ -49,14 +50,14 @@ describe('TurnBlock — restored fold row shape', () => {
   it('leaves the visible label as the accessible name — no aria-label to drift from it', () => {
     // WCAG 2.5.3 label-in-name: a speech-input user says what they read, and the
     // label already states the action ("Worked through 2 steps" / "Hide reasoning").
-    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} collapseAll />)
     const toggle = container.querySelector('button')!
     expect(toggle.hasAttribute('aria-label')).toBe(false)
     expect(toggle.textContent).toMatch(/step|reasoning|tool call/i)
   })
 
   it('hides the chevron from assistive tech — the label carries the meaning', () => {
-    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} />)
+    const { container } = render(<TurnBlock turn={foldedTurn()} renderItem={renderItem} collapseAll />)
     expect(container.querySelector('button svg')!.getAttribute('aria-hidden')).toBe('true')
   })
 })
