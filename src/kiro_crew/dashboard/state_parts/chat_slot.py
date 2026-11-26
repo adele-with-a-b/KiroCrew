@@ -394,6 +394,7 @@ class _ChatSlot:
         "_end_wait_by",
         "_wait_last_ping",
         "_wait_steer_baseline",
+        "_wait_queue_baseline",
         "_wait_contested",
         "_question_pending",
         "_embed_question_polled_at",
@@ -786,6 +787,7 @@ class _ChatSlot:
     _end_wait_by: str
     _wait_last_ping: float
     _wait_steer_baseline: float
+    _wait_queue_baseline: frozenset[str]
     _wait_contested: bool
 
     # Initialised by state_parts/slot_transcript.py.

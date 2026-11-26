@@ -178,10 +178,12 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
                 "context. Use when waiting for external systems (code review, CI "
                 "pipeline, deployment). Range 60-1800s (max 30 min). After it "
                 "returns, check the results yourself. A wait can end before its "
-                "deadline (the user's End-wait button or a mid-turn steer stops "
-                "it), so read the returned end reason instead of assuming the full "
-                "duration elapsed, and do not re-issue a wait that was ended "
-                "deliberately."
+                "deadline (the user's End-wait button, a mid-turn steer, or a "
+                "message queued for this chat stops it), so read the returned end "
+                "reason instead of assuming the full duration elapsed, and do not "
+                "re-issue a wait that was ended deliberately. When the result says "
+                "messages are queued, they run only after your turn ends, so end "
+                "your turn to read them unless the work in hand must finish first."
             ),
             "inputSchema": {
                 "type": "object",

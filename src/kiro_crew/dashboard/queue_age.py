@@ -379,6 +379,103 @@ def oldest_field(slot: Any) -> dict[str, int]:
     return {"queue_oldest_secs": int(found.oldest_secs)}
 
 
+#: Most sender chats :meth:`Senders.as_data` names; the rest are counted, not named.
+MAX_SENDER_CHATS = 8
+
+
+@dataclass(frozen=True)
+class Senders:
+    """Who sent the entries waiting in a chat's queue: counts and chat keys only.
+
+    ``owner`` is the owner's own typed words, ``people`` any other person's (a
+    channel's or a shared crew member's), ``chats`` another chat's sends by its
+    key, and ``automation`` every other entry (a cron or app card, a sub-agent
+    result, a loop's wake). A restored card that waits for a person is left out:
+    it never runs on its own.
+    """
+
+    owner: int = 0
+    people: int = 0
+    automation: int = 0
+    #: ``(sender chat key, count)`` pairs, ordered by key.
+    chats: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def total(self) -> int:
+        return self.owner + self.people + self.automation + sum(n for _, n in self.chats)
+
+    def as_data(self) -> dict[str, Any]:
+        """The JSON a reply carries. Past :data:`MAX_SENDER_CHATS` chats, the rest
+        are summed under ``chats_more``."""
+        data: dict[str, Any] = {
+            "total": self.total,
+            "owner": self.owner,
+            "people": self.people,
+            "automation": self.automation,
+            "chats": dict(self.chats[:MAX_SENDER_CHATS]),
+        }
+        more = sum(n for _, n in self.chats[MAX_SENDER_CHATS:])
+        if more:
+            data["chats_more"] = more
+        return data
+
+
+def senders(slot: Any) -> Senders:
+    """Who sent what waits in *slot*'s queue (:class:`Senders`)."""
+    # circular import: these modules import this one at load.
+    from kiro_crew.dashboard.session_control_parts.delivery_containment import (
+        send_origin_slot,
+    )
+    from kiro_crew.dashboard.slot_queue_repository import (
+        is_held_queue_entry,
+        is_owner_queue_entry,
+    )
+
+    owner = people = automation = 0
+    chats: dict[str, int] = {}
+    for entry in _entries(slot):
+        if is_held_queue_entry(entry):
+            continue
+        chat = ledger_key(send_origin_slot(entry.get("meta")))
+        if is_owner_queue_entry(entry):
+            owner += 1
+        elif chat:
+            chats[chat] = chats.get(chat, 0) + 1
+        elif entry.get("_directive_user_origin") is True:
+            people += 1
+        else:
+            automation += 1
+    return Senders(owner, people, automation, tuple(sorted(chats.items())))
+
+
+def queue_ids(slot: Any) -> frozenset[str]:
+    """The ids of the entries in *slot*'s queue now."""
+    return frozenset(str(entry.get("id") or "") for entry in _entries(slot))
+
+
+def queued_since(slot: Any, before: frozenset[str]) -> bool:
+    """Whether *slot*'s queue holds an entry that is not in *before* and runs on its own.
+
+    A restored card that waits for a person never runs on its own. Nor is a loop's
+    wake in the queue news: a live wake reaches a running turn as a steer
+    (``session_deliver``), so one found queued is a wake a turn ended without
+    reading (``AUTOMATION_STEER_META``), whose items may have closed since, and the
+    queue cannot tell.
+    """
+    # circular import: these modules import this one at load.
+    from kiro_crew.dashboard.chat_utils_injected_rows import AUTOMATION_STEER_META
+    from kiro_crew.dashboard.slot_queue_repository import is_held_queue_entry
+
+    for entry in _entries(slot):
+        if str(entry.get("id") or "") in before or is_held_queue_entry(entry):
+            continue
+        meta = entry.get("meta")
+        if isinstance(meta, dict) and meta.get(AUTOMATION_STEER_META):
+            continue
+        return True
+    return False
+
+
 def _entries(slot: Any) -> list[dict[str, Any]]:
     queue = getattr(slot, "_queue", None)
     if not isinstance(queue, list):

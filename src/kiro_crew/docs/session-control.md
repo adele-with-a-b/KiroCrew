@@ -712,8 +712,11 @@ comes back when two sleeps share the target's session key: the dashboard cannot
 tell which one to wake, and hides the button for the same reason.
 
 Compared with the verbs next to it: `session_stop` discards the turn's work,
-and `session_send` to a sleeping target also ends its wait (as a steer) but
-delivers text the target then acts on. `session_end_wait` does neither.
+and `session_send` to a sleeping target also ends its wait but delivers text
+the target then acts on: as a steer it comes into the turn, and queued it ends
+the sleep with a result that counts who waits in the queue (counts and session
+keys, never the text), so the target can end its turn to read it.
+`session_end_wait` does neither.
 
 ### `session_set_model`
 
