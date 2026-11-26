@@ -5,7 +5,9 @@
  *  story who must act (`boardMove`), how long it has waited, and its line, what its
  *  worker last said or what it waits on. Needs you also holds the main chat's
  *  question as one row pointing at its card and the approval cards compact. Steps
- *  (`BoardStepsView`) regroups the same rows by step. Workers = the crew as one
+ *  (`BoardStepsView`) regroups the same rows by step; Timeline
+ *  (`BoardTimelineView`) draws them as lanes over the last hours, on its own
+ *  read. Workers = the crew as one
  *  indented tree, each lead foldable, trees finished all through folded away; a
  *  click opens the member in the main pane. Every number comes from reads the
  *  dashboard already makes: the crew list route, the work-ledger board, the live
@@ -47,6 +49,7 @@ import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/
 import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
 import BoardMovesView from './BoardMovesView'
 import BoardStepsView from './BoardStepsView'
+import BoardTimelineView from './BoardTimelineView'
 import BoardUpNext, { fmtEstimate } from './BoardUpNext'
 import OtherProjectsLine from './OtherProjectsLine'
 
@@ -876,7 +879,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
             ? <BoardMovesView stories={moveStories} needsYouLead={needsYouLead} needsYouLeadCount={needsYouLeadCount} upNext={upNext} />
             : view === 'steps'
               ? <BoardStepsView steps={boardSteps(items, plan)} stories={storyById} upNext={upNext} />
-              : <p className="text-[12px] text-muted" data-testid="board-timeline-coming">{i18nT('components.crewMode.board_timeline_coming')}</p>)}
+              : <BoardTimelineView root={root} stories={stories} active={active} />)}
           <OtherProjectsLine root={root} now={now} />
         </div>
       ) : (
