@@ -60,8 +60,51 @@ async def test_the_owner_reads_the_probe_and_this_computers_name(monkeypatch):
         "tight_gb": 4.0,
         "critical_gb": 2.0,
         "pressure_held": False,
+        "crews": [],
     }
     assert calls == [1]
+
+
+class _State:
+    """A gateway state the patrol's readings can be keyed by (weakly referenceable)."""
+
+    owner_id = OWNER
+
+
+def test_a_crews_room_is_the_patrols_last_fresh_reading_by_its_runs_on_name(monkeypatch):
+    from kiro_crew.dashboard import patrol_seats
+    from kiro_crew.dashboard.handlers import work_ledger_read
+
+    state = _State()
+    monkeypatch.setattr(patrol_seats, "_clock", lambda: 1000.0)
+    monkeypatch.setitem(
+        patrol_seats._READINGS,
+        state,
+        {
+            "inst-b": ("", 990.0),
+            "inst-a": ("memory", 995.0),
+            "inst-old": ("", 1000.0 - patrol_seats.ROOM_FRESH_SECS - 1),
+        },
+    )
+    monkeypatch.setattr(work_ledger_read, "_crew_names", lambda _s: {"inst-b": "demo-crew"})
+    assert capacity.crew_rooms(state) == [
+        {"name": "demo-crew", "room": ""},
+        {"name": "inst-a", "room": "memory"},
+    ]
+    # Read only: asking again starts no crew read and stores nothing.
+    assert patrol_seats._REFRESHING.get(state) is None
+    assert len(patrol_seats._READINGS[state]) == 3
+
+
+def test_no_patrol_reading_names_no_crew(monkeypatch):
+    from kiro_crew.dashboard.handlers import work_ledger_read
+
+    def names(_s):
+        raise AssertionError("the registry is not read with nothing to name")
+
+    monkeypatch.setattr(work_ledger_read, "_crew_names", names)
+    assert capacity.crew_rooms(_State()) == []
+    assert capacity.crew_rooms(SimpleNamespace(owner_id=OWNER)) == []
 
 
 @pytest.mark.asyncio

@@ -88,12 +88,6 @@ export function childProgress(item: WorkBoardItem, children: ReadonlyMap<string,
   return { done: kids.filter(isMerged).length, total: kids.length }
 }
 
-/** Seats in use against the goal's cap: open stories a worker is on (a sub-task
- *  rides its story's worker, and an epic is never bound). An older gateway sends no
- *  `has_worker`, and then every open story outside the backlog counts. */
-export function seatsBusy(items: readonly WorkBoardItem[]): number {
-  return items.filter(i => isOpen(i) && levelOf(i) === 'story' && (i.has_worker ?? !planOf(i).backlog)).length
-}
 
 /** The rank writes a drop of the row at `from` onto `to` (an index in the list
  *  without it) needs, so the server's order then matches the list as shown. The

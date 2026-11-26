@@ -23,7 +23,7 @@ import type { CrewWorker, ConductorModeRun } from '../../../types'
 import { timedPoll, usePollRule } from '../../../lib/pollRule'
 import { crewBoardQueryKey, CREW_BOARD_POLL_MS, type WorkBoardItem, type WorkBoardResponse } from '../../../api/crewBoard'
 import { artifactEntries } from '../../crewBoardRows'
-import { fmtRelative } from '../../../i18n/format'
+import { fmtNumber, fmtRelative } from '../../../i18n/format'
 import { fmtMinutes } from '../../../lib/crewWork'
 import ErrorNotice from '../../../components/ErrorNotice'
 import { isNotFoundError } from '../../../api/apiError'
@@ -42,7 +42,7 @@ import { usePersistedBool } from '../../../hooks/usePersistedBool'
 import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
 import { conductorModeRunState, type ConductorModeRunState } from '../../../lib/conductorModeRun'
-import { boardPlan, childProgress, estimateMinutes, isMerged, isOpen as itemOpen, levelOf, planOf, seatsBusy } from '../../../lib/crewPlan'
+import { boardPlan, childProgress, estimateMinutes, isMerged, isOpen as itemOpen, levelOf, planOf } from '../../../lib/crewPlan'
 import { approvalCarded, boardMove, boardSteps, CONDUCTOR_WAIT_LOUD_MINUTES, movesStories, needsYouCount, reportAnswered, standingManager, type MilestoneState } from '../../../lib/boardMoves'
 import BoardViewSwitch, { type BoardView } from '../../../components/board/BoardViewSwitch'
 import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/BoardRow'
@@ -55,7 +55,8 @@ import BoardStepsView from './BoardStepsView'
 import BoardTimelineView from './BoardTimelineView'
 import BoardUpNext, { fmtEstimate } from './BoardUpNext'
 import OtherProjectsLine from './OtherProjectsLine'
-import { SeatsStrip } from '../../../components/board/CapacityLine'
+import { useSeatParts } from '../../../components/board/CapacityLine'
+import { holdsWorkerChat } from '../../../lib/allProjectsBoard'
 
 export interface ConductorModeCounts { total: number; done: number; running: number; approvals: number; questions: number }
 
@@ -824,15 +825,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   )
   const upNext = <BoardUpNext root={root} backlog={plan.backlog} openItem={openItem} />
   const loaded = board.isSuccess || (board.isError && isNotFoundError(board.error))
-  // The run line's counts, each one Crew can read: stories merged, and seats in use
-  // against the goal's cap.
   const storyItems = items.filter(i => levelOf(i) === 'story')
-  const cap = board.data?.conductor?.concurrency_cap
   const mergedStories = storyItems.filter(isMerged).length
-  const counts = joinParts([
-    storyItems.length > 0 ? i18nT('components.crewMode.plan_epic_progress', { done: mergedStories, total: storyItems.length }) : '',
-    cap != null ? i18nT('components.crewMode.plan_slots_busy', { busy: seatsBusy(items), cap }) : '',
-  ])
   const detail = runDetail(runState, board.data?.run)
   // The goal as ONE line above the stories. A click opens what sat under it: the
   // whole goal sentence, its "Done when", the scope and the latest change.
@@ -871,6 +865,15 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   // One story open: its own view in place of the Board, until its crumb or Escape goes back.
   const storyItem = openStory.id ? items.find(i => i.item_id === openStory.id) : undefined
   const storyWorker = storyItem ? workers.find(x => x.ledger_item === storyItem.item_id) : undefined
+  // The run line's counts, each one Crew can read: stories merged, this project's
+  // worker chats, then each computer's worker chats across every project and its
+  // room. No "of N": no computer refuses a worker chat past a count.
+  const seats = useSeatParts(active && !storyItem)
+  const countParts: { key: string; text: string; hurts?: boolean }[] = [
+    ...(storyItems.length > 0 ? [{ key: 'merged', text: i18nT('components.crewMode.plan_epic_progress', { done: mergedStories, total: storyItems.length }) }] : []),
+    ...(board.data ? [{ key: 'project', text: i18nT('components.crewMode.plan_project_chats', { count: fmtNumber(items.filter(holdsWorkerChat).length) }) }] : []),
+    ...seats.map(s => ({ key: `seat:${s.name}`, text: s.text, hurts: s.hurts })),
+  ]
 
   return (
     <div className="crew-board h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={storyItem ? 'story' : view}>
@@ -893,18 +896,23 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
           {/* The same head under every position of the switch; only the body changes. */}
           <section className="space-y-1" data-testid="plan-overview">
             {overview}
-            {/* No separator between the word and the counts: on a narrow bar the counts
-                wrap whole onto the next line, never leaving a lone dot behind. */}
+            {/* No separator between the word and the counts. Each count is its own wrap
+                unit, its dot kept at its end, so a narrow bar wraps between counts and
+                never leaves a lone dot behind. */}
             <p className="flex flex-wrap items-baseline gap-x-2 text-[12px] text-muted" data-testid="plan-sprint-line">
               {runState && <RunWord state={runState} run={board.data?.run} />}
-              {counts && <span className="inline-flex items-baseline gap-1 tabular-nums" data-testid="plan-sprint-counts">
-                {storyItems.length > 0 && <MergedRing done={mergedStories} total={storyItems.length} />}{counts}
+              {countParts.length > 0 && <span className="inline-flex flex-wrap items-baseline gap-x-1 min-w-0 tabular-nums" data-testid="plan-sprint-counts">
+                {storyItems.length > 0 && <MergedRing done={mergedStories} total={storyItems.length} />}
+                {countParts.map((part, i) => (
+                  <span key={part.key} className={part.hurts ? 'crew-tone-danger' : undefined} data-testid="plan-sprint-count" data-hurts={part.hurts || undefined}>
+                    {i < countParts.length - 1 ? `${part.text}${PART_SEP}` : part.text}
+                  </span>
+                ))}
               </span>}
               {pulse}
             </p>
             {detail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{detail}</p>}
           </section>
-          <SeatsStrip active={active && !storyItem} />
           {loaded && (view === 'moves'
             ? <BoardMovesView stories={moveStories} needsYouLead={needsYouLead} needsYouLeadCount={needsYouLeadCount} upNext={upNext} />
             : view === 'steps'

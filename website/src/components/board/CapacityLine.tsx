@@ -3,24 +3,23 @@
  *  story's `runs_on`): a bound worker holds its story's seat until the story closes.
  *  `CapacityLine` is the all-projects page's tiles, one per computer: the count, and
  *  this computer's room, the memory `resource_status` reads (`GET /api/crew-board/capacity`).
- *  `SeatsStrip` is the right bar's line under the goal: the same counts from the same
+ *  `seatParts` is the right bar's run line's share of it: the same counts from the same
  *  reads (every Conductor-mode project's board under the right bar's own key and poll
- *  rule, and the capacity read), so the two never disagree.
+ *  rule, and the capacity read), so the two never disagree, each computer with its
+ *  room in words (a linked Crew's as the patrol last read it).
  *  Counts only, never "N of M": no computer refuses a worker chat past a count. The
- *  goal's concurrency cap bounds one project's seats (the run line's "slots busy"),
- *  the gateway's live-chat ceiling counts every chat, not worker chats, and the
- *  execution cap counts subagents. A linked Crew's room is not known here, which its
- *  tile says. No test line: Crew keeps no queue of checks to count. Colour only where
- *  it hurts: memory tight, critical or under kernel pressure is red. */
+ *  goal's concurrency cap bounds one project's seats, the gateway's live-chat ceiling
+ *  counts every chat, not worker chats, and the execution cap counts subagents. The
+ *  tiles say a linked Crew's room is not reported. No test line: Crew keeps no queue
+ *  of checks to count. Colour only where it hurts: memory tight, critical or under
+ *  kernel pressure is red. */
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { Monitor } from 'lucide-react'
 import { api } from '../../api/client'
 import { CREW_BOARD_POLL_MS, crewBoardQueryKey, type WorkBoardResponse } from '../../api/crewBoard'
 import { CREW_BOARD_CAPACITY_POLL_MS, crewBoardCapacityQueryKey, type CrewBoardCapacity } from '../../api/crewBoardCapacity'
 import { computerLoads, projectRoots, type ComputerLoad, type ProjectSlotRow } from '../../lib/allProjectsBoard'
 import { pollGapMs, timedPoll, usePollRule } from '../../lib/pollRule'
 import { useAppSelector } from '../../store'
-import { PART_SEP } from './BoardRow'
 import { fmtNumber } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 
@@ -87,29 +86,42 @@ export function useComputerLoads(active: boolean): { loads: ComputerLoad[]; capa
   return { loads, capacity: capacity.data }
 }
 
-/** The right bar's seats line under the goal: "Seats  This computer 3  linked-crew 1",
- *  this computer's room word said in red beside its count only when it hurts. */
-export function SeatsStrip({ active }: { active: boolean }) {
+/** One computer's part of the run line: its worker chats and its room in words. */
+export interface SeatPart { name: string; here: boolean; text: string; hurts: boolean }
+
+/** A linked Crew's room as the patrol last read it, in words; `''` with no reading
+ *  (or an `unknown` one): then its count stands alone. */
+function crewRoomWord(room: string | undefined): string {
+  if (room === '') return i18nT('pages.allProjectsBoard.room_ample')
+  if (room === 'memory') return i18nT('pages.allProjectsBoard.room_short_memory')
+  if (room === 'disk') return i18nT('pages.allProjectsBoard.room_short_disk')
+  if (room === 'cpu') return i18nT('pages.allProjectsBoard.room_short_cpu')
+  if (room === 'unreachable') return i18nT('pages.allProjectsBoard.room_unreachable')
+  return ''
+}
+
+/** Each computer's part of the run line, this computer first: "this computer 14,
+ *  has room", "demo-crew 3, has room". This computer's room word is always said,
+ *  since "has room" answers "is the machine the bottleneck" too, and is red when it
+ *  hurts; an unmeasured one, or a crew with no fresh reading, shows its count alone. */
+export function seatParts(loads: readonly ComputerLoad[], capacity: CrewBoardCapacity | undefined): SeatPart[] {
+  if (!capacity) return []
+  const here = roomWord(capacity)
+  return loads.map(load => {
+    const room = load.here
+      ? (here.measured ? here.word : '')
+      : crewRoomWord(capacity.crews?.find(c => c.name === load.name)?.room)
+    const count = fmtNumber(load.chats)
+    const text = load.here
+      ? (room ? i18nT('pages.allProjectsBoard.seats_here_room', { count, room }) : i18nT('pages.allProjectsBoard.seats_here_count', { count }))
+      : (room ? i18nT('pages.allProjectsBoard.seats_on_room', { name: load.name, count, room }) : i18nT('pages.allProjectsBoard.seats_on_count', { name: load.name, count }))
+    return { name: load.name, here: load.here, text, hurts: load.here && here.hurts }
+  })
+}
+
+/** The run line's computer parts, from every Conductor-mode project's board and the
+ *  capacity read, the all-projects page's own reads; empty until both name this computer. */
+export function useSeatParts(active: boolean): SeatPart[] {
   const { loads, capacity } = useComputerLoads(active)
-  if (loads.length === 0 || !capacity) return null
-  // The word alone: the free memory is the tiles' to say, and beside a count it reads as one number.
-  const room = roomWord(capacity)
-  return (
-    <div className="flex items-center gap-2 crew-board-card rounded-lg border border-border px-2.5 py-1.5 text-[12px]" data-testid="board-seats-strip">
-      <Monitor size={14} aria-hidden="true" className="shrink-0 text-muted" />
-      <span className="text-muted">{i18nT('pages.allProjectsBoard.seats_label')}</span>
-      <ul className="flex flex-wrap items-baseline gap-x-3.5 gap-y-0.5 min-w-0" aria-label={i18nT('pages.allProjectsBoard.capacity_label')}>
-        {loads.map(load => {
-          const hurts = load.here && room.hurts
-          return (
-            <li key={load.name} className="text-muted [overflow-wrap:anywhere]" data-testid="board-seats-computer" data-here={load.here || undefined}>
-              {load.here ? i18nT('pages.allProjectsBoard.this_computer') : load.name}{' '}
-              <b className={`font-medium tabular-nums ${hurts ? 'crew-tone-danger' : 'text-text'}`} data-testid="board-seats-count">{fmtNumber(load.chats)}</b>
-              {hurts && <span className="crew-tone-danger" data-testid="board-seats-room">{`${PART_SEP} ${room.word}`}</span>}
-            </li>
-          )
-        })}
-      </ul>
-    </div>
-  )
+  return seatParts(loads, capacity)
 }

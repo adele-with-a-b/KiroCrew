@@ -191,6 +191,11 @@ export function allProjectsBoard(rows: readonly ProjectSlotRow[], boards: Readon
  *  not closed, and how many of those are running a turn now. */
 export interface ComputerLoad { name: string; here: boolean; chats: number; running: number }
 
+/** Whether a story holds a worker chat: open, a worker bound, its chat not closed. */
+export function holdsWorkerChat(item: WorkBoardItem): boolean {
+  return item.state === 'open' && !!item.has_worker && item.alive !== 'closed'
+}
+
 /** Worker chats per computer, from the stories' own `runs_on` and `alive`. `here`
  *  is the name the gateway gives this computer (`GET /api/crew-board/capacity`);
  *  this computer comes first, then linked Crews by name. */
@@ -199,7 +204,7 @@ export function computerLoads(boards: Iterable<ProjectBoard>, here: string): Com
   if (here) by.set(here, { name: here, here: true, chats: 0, running: 0 })
   for (const board of boards) {
     for (const item of board?.items ?? []) {
-      if (item.state !== 'open' || !item.has_worker || item.alive === 'closed') continue
+      if (!holdsWorkerChat(item)) continue
       const name = item.runs_on || here
       if (!name) continue
       const load = by.get(name) ?? { name, here: name === here, chats: 0, running: 0 }

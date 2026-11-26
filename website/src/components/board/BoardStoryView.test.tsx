@@ -244,7 +244,7 @@ describe('a click on a story opens its story view', () => {
     expect(await screen.findByTestId('board-story-time')).toHaveTextContent(/^0 used · estimate: no record$/)
   })
 
-  it('the hidden seats strip reads nothing under an open story, and reads again on back', async () => {
+  it("the hidden run line's computer counts read nothing under an open story, and read again on back", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     renderPanel(qc)
     const seats = () => qc.getQueryCache().find({ queryKey: crewBoardCapacityQueryKey })

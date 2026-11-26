@@ -211,6 +211,20 @@ def _refresh(state: Any, mgr: Any, instance_ids: list[str], mem_gb: float, disk_
     _REFRESHING[state] = future
 
 
+def fresh_rooms(state: Any) -> dict[str, str]:
+    """Each crew's room word from the patrol's last reading, by instance id, while fresh.
+
+    Read only: it starts no refresh and stores nothing, so a crew no patrol has read
+    is simply absent. Same freshness rule as :func:`crew_rooms`.
+    """
+    try:
+        readings = dict(_READINGS.get(state) or {})
+    except TypeError:  # a state that takes no weak reference never held a reading
+        return {}
+    now = _clock()
+    return {cid: word for cid, (word, at) in readings.items() if 0 <= now - at <= ROOM_FRESH_SECS}
+
+
 def _settled(future: "asyncio.Future[Any]") -> None:
     """Read a finished refresh's outcome, so one cancelled at shutdown logs nothing."""
     if not future.cancelled():

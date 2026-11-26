@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
 import { createTestStore } from '../../../test/helpers'
 
-const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), crewBoard: vi.fn(), sessionSummary: vi.fn() }))
+const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), crewBoard: vi.fn(), sessionSummary: vi.fn(), crewBoardCapacity: vi.fn() }))
 vi.mock('../../../api/client', () => ({ api }))
 vi.mock('../../../hooks/usePanelTabs', () => ({ openPanelView: vi.fn() }))
 
@@ -37,14 +37,14 @@ const GOAL = 'Make the main session reply as fast as the CLI or faster on the sa
   + 'Done when: side-by-side benchmarks show a reply in 0.63 s or less on Linux, macOS and Windows. '
   + 'Plan: profile, then fix. Changed: 2026-11-10 09:00 first plan; 2026-11-12T12:00Z the owner added three research tasks.'
 
-function renderPanel(goal: string) {
+function renderPanel(goal: string, extra: WorkBoardItem[] = [], slots: unknown[] = []) {
   api.crewBoard.mockResolvedValue({
-    conductor: { schema: 1, slot_key: 'root-1', goal, round: 1, depth: 0, parent_item: null, created_at: '' },
-    conductor_alive: 'idle', items: [ITEM({}), ITEM({ item_id: 'it_b', title: 'Second done one' }), RUNNING], take_over_available: false,
+    conductor: { schema: 1, slot_key: 'root-1', goal, round: 1, depth: 0, parent_item: null, created_at: '', concurrency_cap: 32 },
+    conductor_alive: 'idle', items: [ITEM({}), ITEM({ item_id: 'it_b', title: 'Second done one' }), RUNNING, ...extra], take_over_available: false,
     run: { settled: '', open: 1, accepted: 2, not_done: 0, at_limit: false },
   })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={qc}><Provider store={createTestStore({ dashboard: { slots: [] } } as never)}><ConductorModeCrewPanel root="root-1" viewing="root-1" active /></Provider></QueryClientProvider>)
+  render(<QueryClientProvider client={qc}><Provider store={createTestStore({ dashboard: { slots } } as never)}><ConductorModeCrewPanel root="root-1" viewing="root-1" active /></Provider></QueryClientProvider>)
   // The board read has landed once its running milestone is on screen.
   return screen.findByText(LONG)
 }
@@ -55,6 +55,7 @@ describe('Conductor mode Board on a long run', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(NOW)
     api.crewWorkers.mockResolvedValue({ root: 'root-1', workers: [] })
+    api.crewBoardCapacity.mockImplementation(() => new Promise(() => undefined))
     api.sessionSummary.mockResolvedValue({ enabled: false, stale: false, intents: [], constraints: [], generated_at: null, user_turns: null, last_activity: null })
   })
   afterEach(() => { vi.useRealTimers(); vi.clearAllMocks() })
@@ -98,5 +99,49 @@ describe('Conductor mode Board on a long run', () => {
     expect(row.textContent).not.toMatch(/\bnow\b/)
     expect(within(row.closest('[data-testid="board-story"]') as HTMLElement).getByTestId('board-row-age')).toHaveTextContent('29m')
     expect(screen.getByTestId('plan-sprint-line')).toHaveTextContent(/stories merged: 2 of \d+/)
+  })
+
+  describe("the run line's worker chats", () => {
+    const PROJECT = [{ key: 'root-1', title: 'Lantern', crew_mode_root: true, messages: 1, running: false }]
+    // Two worker chats in this project: one here, one on a linked Crew; a third story's chat is closed.
+    const BOUND = [
+      ITEM({ ...RUNNING, item_id: 'it_h', title: 'Here', has_worker: true, runs_on: 'box-here' }),
+      ITEM({ ...RUNNING, item_id: 'it_c', title: 'On the crew', has_worker: true, runs_on: 'demo-crew' }),
+      ITEM({ ...RUNNING, item_id: 'it_x', title: 'Chat closed', has_worker: true, runs_on: 'box-here', alive: 'closed' }),
+    ]
+    const CAPACITY = { name: 'box-here', available_gb: 10.3, posture: 'ample', tight_gb: 4, critical_gb: 2, pressure_held: false, crews: [{ name: 'demo-crew', room: '' }] }
+    const counts = () => [...screen.getByTestId('plan-sprint-counts').querySelectorAll('[data-testid="plan-sprint-count"]')].map(c => c.textContent)
+    const S = '\xa0·'
+
+    it('says this project, then both computers with their room, and never the goal cap', async () => {
+      api.crewBoardCapacity.mockResolvedValue(CAPACITY)
+      await renderPanel(GOAL, BOUND, PROJECT)
+      await screen.findByText(/this computer 1, has room/)
+      expect(counts()).toEqual([
+        expect.stringMatching(new RegExp(`^stories merged: 2 of \\d+${S}$`)),
+        `worker chats: this project 2${S}`,
+        `this computer 1, has room${S}`,
+        'demo-crew 1, has room',
+      ])
+      expect(screen.getByTestId('plan-sprint-line').textContent).not.toMatch(/ of 32|slots busy/)
+      // One line: the counts are not drawn a second time under it.
+      expect(screen.queryByTestId('board-seats-strip')).toBeNull()
+    })
+
+    it('says this computer alone when no story runs elsewhere, its room red when memory hurts', async () => {
+      api.crewBoardCapacity.mockResolvedValue({ ...CAPACITY, posture: 'tight', crews: [] })
+      await renderPanel(GOAL, [BOUND[0]], PROJECT)
+      const here = await screen.findByText('this computer 1, memory tight')
+      expect(counts().slice(1)).toEqual([`worker chats: this project 1${S}`, 'this computer 1, memory tight'])
+      expect(here).toHaveClass('crew-tone-danger')
+    })
+
+    it('shows no computer part while the shared count is unknown, and no guess', async () => {
+      api.crewBoardCapacity.mockImplementation(() => new Promise(() => undefined))
+      await renderPanel(GOAL, BOUND, PROJECT)
+      await screen.findByText(`worker chats: this project 2`)
+      expect(counts().slice(1)).toEqual(['worker chats: this project 2'])
+      expect(screen.getByTestId('plan-sprint-line').textContent).not.toMatch(/this computer|demo-crew/)
+    })
   })
 })
