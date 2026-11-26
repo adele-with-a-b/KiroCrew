@@ -644,7 +644,10 @@ class QuestionCoordinator:
         }
         state._pending_questions[ask_id] = payload
         state._question_futures[ask_id] = future
-        state.mark_question_pending(slot_key, blocking=True, card_id=ask_id)
+        # The record carries the card's words, so the slot's row can name the ask.
+        state.mark_question_pending(
+            slot_key, blocking=True, card_id=ask_id, questions=safe_questions
+        )
         broadcast_to_collaborators(state, "question_card", payload)
         decision_id = question_decision_id(ask_id)
         open_and_broadcast(
@@ -865,7 +868,9 @@ class QuestionCoordinator:
         }
         state._pending_questions[ask_id] = payload
         state._question_futures[ask_id] = future
-        state.mark_question_pending(slot_key, blocking=True, card_id=ask_id)
+        state.mark_question_pending(
+            slot_key, blocking=True, card_id=ask_id, questions=safe_questions
+        )
         open_and_broadcast(
             state,
             question_decision_id(ask_id),

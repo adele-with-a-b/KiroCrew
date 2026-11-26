@@ -44,6 +44,8 @@ from dataclasses import dataclass, field
 from itertools import chain
 from typing import Any, NamedTuple
 
+from kiro_crew.dashboard.needs_you import ReplyAsk, reply_ask_of
+
 
 @dataclass(frozen=True)
 class RowMemoContext:
@@ -111,6 +113,8 @@ class RowSummary(NamedTuple):
     last_conv_role: str
     last_activity_ts: str
     last_agent_ts: str
+    #: What the newest reply asks (``needs_you``), ``None`` when it asks nothing.
+    reply_ask: ReplyAsk | None = None
 
 
 def summarize_rows(
@@ -157,7 +161,8 @@ def summarize_rows(
     # ``nothing_to_do`` writes no reply after it. The loop has run past an
     # ``[OPTIONS:]`` ask older than that row, so that ask does not hold it.
     cycle_after_reply = False
-    for message in reversed(rows):
+    reply_ask: ReplyAsk | None = None
+    for back, message in enumerate(reversed(rows)):
         role = message.get("role")
         msg_meta = message.get("meta") or {}
         notice = is_system_notice(role, msg_meta)
@@ -182,6 +187,14 @@ def summarize_rows(
                             prompt_preview = (
                                 stripped[:240] + "…" if len(stripped) > 240 else stripped
                             )
+                        reply_ask = reply_ask_of(
+                            message,
+                            text,
+                            back=back,
+                            options=has_options,
+                            redact=redact,
+                            strip_options=strip_options,
+                        )
                 if not last_msg:
                     # Stripped, redacted and cut by the caller, which strips
                     # before redacting so markdown cannot split a credential
@@ -201,6 +214,7 @@ def summarize_rows(
         last_conv_role=last_conv_role,
         last_activity_ts=last_activity_ts,
         last_agent_ts=last_agent_ts,
+        reply_ask=reply_ask,
     )
 
 

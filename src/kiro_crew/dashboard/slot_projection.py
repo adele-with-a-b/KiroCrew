@@ -9,6 +9,14 @@ from typing import Any
 
 from kiro_crew.apps.hidden_sessions import listed_surface
 from kiro_crew.dashboard.agent_welcome import welcome_preview
+from kiro_crew.dashboard.needs_you import (
+    approval_asks,
+    ask_epoch,
+    needs_you_of,
+    pending_permission_rows,
+    question_asks,
+    reply_asks,
+)
 from kiro_crew.dashboard.slot_preparing import is_preparing, preparing_caption
 from kiro_crew.dashboard.slot_queue_repository import is_held_queue_entry
 from kiro_crew.dashboard.slot_row_memo import memo_redacted, memo_row_summary, summarize_rows
@@ -426,41 +434,29 @@ class SlotProjection:
         interrupted_stale = interrupted and is_interruption_stale(rows, time.time())
 
         pending_approval_info: dict[str, str] | None = None
-        if slot_pending:
-            # The transcript row is consulted only for a SLOT-registry future:
-            # a coordinator approval writes no row, and a stale unresolved row
-            # from an earlier turn must not describe it.
-            for message in reversed(rows):
-                if message.get("role") != "permission":
-                    continue
-                meta = parse_cls_meta(message.get("cls") or "") or {}
-                if meta.get("resolved"):
-                    continue
-                request_id = meta.get("approval_id", meta.get("request_id", ""))
-                if not isinstance(request_id, str):
-                    continue
-                future = slot._approval_futures.get(request_id)
-                if future is None or future.done():
-                    continue
-                request_mid = slot.approval_instance(request_id, message)
-                if not request_mid:
-                    continue
-                pending_approval_info = {
-                    "origin": "native",
-                    "tool": redact(message.get("content") or ""),
-                    "tool_input": redact(meta.get("tool_input", "")),
-                    "tool_kind": redact(meta.get("tool_kind", "")),
-                    "request_id": redact(request_id),
-                    "request_mid": request_mid,
-                }
-                if meta.get("tool_purpose"):
-                    pending_approval_info["tool_purpose"] = redact(meta["tool_purpose"])
-                # Whether the card's "trust" decision is grantable for this request
-                # (the slot approve route's own proof), so a card that relays it
-                # (the Crew Mode conductor's approval card) offers Trust only then.
-                if str(meta.get("trust_grantable") or "") == "1":
-                    pending_approval_info["trust_grantable"] = "1"
-                break
+        # The transcript row is consulted only for a SLOT-registry future: a
+        # coordinator approval writes no row, and a stale unresolved row from an
+        # earlier turn must not describe it. The newest one is the card's.
+        permission_rows = (
+            pending_permission_rows(slot, rows, parse_cls_meta) if slot_pending else []
+        )
+        if permission_rows:
+            message, meta, request_id, request_mid = permission_rows[0]
+            pending_approval_info = {
+                "origin": "native",
+                "tool": redact(message.get("content") or ""),
+                "tool_input": redact(meta.get("tool_input", "")),
+                "tool_kind": redact(meta.get("tool_kind", "")),
+                "request_id": redact(request_id),
+                "request_mid": request_mid,
+            }
+            if meta.get("tool_purpose"):
+                pending_approval_info["tool_purpose"] = redact(meta["tool_purpose"])
+            # Whether the card's "trust" decision is grantable for this request
+            # (the slot approve route's own proof), so a card that relays it
+            # (the Crew Mode conductor's approval card) offers Trust only then.
+            if str(meta.get("trust_grantable") or "") == "1":
+                pending_approval_info["trust_grantable"] = "1"
         if pending_approval_info is None and coordinator_pending:
             # No unresolved permission row supplied the card: the pending
             # approval is a coordinator one, whose record never reaches the
@@ -487,6 +483,32 @@ class SlotProjection:
                 pending_approval_info["tool_purpose"] = _redact_tool_field(
                     redact(str(record["tool_purpose"])), limit=_MAX_TOOL_PURPOSE
                 )
+
+        # What waits on the owner here (``needs_you``): every pending approval and
+        # open question card, and the newest reply's own asks while it is finished,
+        # not interrupted and inside the options cutoff. A Crew Mode worker's row
+        # is settled once the list is stamped (``needs_you.settle_crew_rows``).
+        reply = summary.reply_ask
+        reply_open = (
+            reply is not None
+            and not turn_in_flight
+            and not interrupted
+            and not options_ending_is_stale(reply.ts, time.time())
+        )
+        fallback_ts = ask_epoch(last_activity_ts) or 0.0
+        needs_you = needs_you_of(
+            [
+                *approval_asks(
+                    slot,
+                    permission_rows,
+                    coordinator_pending,
+                    fallback_ts=fallback_ts,
+                    redact=redact,
+                ),
+                *question_asks(slot, fallback_ts=fallback_ts, redact=redact),
+                *reply_asks(rows, reply, open_now=reply_open, is_system_notice=is_system_notice),
+            ]
+        )
 
         durable_rows = sum(1 for message in rows if message.get("role") not in transient_roles)
         title, crew_mode_agent = memo_redacted(
@@ -589,6 +611,9 @@ class SlotProjection:
             "last_agent_ts": last_agent_ts,
             "waiting_for_input": waiting_for_input,
             "needs_input": needs_input,
+            # ``None``, or what waits on the owner: ``count``, ``oldest_ts``,
+            # ``first_words``, ``row_id``, ``kinds`` (see ``dashboard/needs_you.py``).
+            "needs_you": needs_you,
             "interrupted": interrupted,
             "interrupted_stale": interrupted_stale,
             "stop_state": slot._stop_state,

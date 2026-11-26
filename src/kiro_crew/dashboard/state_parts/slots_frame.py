@@ -1188,12 +1188,11 @@ def _finish_rows(
     # the nesting and must cost the nesting rather than the whole sidebar.
     # ``getattr`` because a stub state in the suite may not carry the method at all.
     _attach_slot_parents(out, getattr(self, "spend_slot_by_session", None))
-    # After the parents, which the worker walk reads: every row says whether it is a
-    # Crew Mode root, and each session a root dispatched names that root, so the
-    # person's own list can leave workers out and the side panel can list them.
-    # The same pass stamps ``mate_root`` / ``mate_dispatched_by`` on each session a
-    # mate thread dispatched (inert: no list or client reads them yet).
+    # After the parents, which the worker walk reads: each row says whether it is a Crew Mode
+    # root and each session a root dispatched names it (the person's list leaves workers out,
+    # the side panel lists them); a mate's sessions get ``mate_root`` / ``mate_dispatched_by``.
     from kiro_crew import crew_mode
+    from kiro_crew.dashboard.needs_you import settle_crew_rows
 
     try:
         crew_mode.stamp_rows(
@@ -1205,6 +1204,7 @@ def _finish_rows(
         _attach_crew_work(self, out)
     except Exception:  # pragma: no cover - a summary fault must cost the summary only
         logger.warning("Crew Mode work summaries not attached", exc_info=True)
+    settle_crew_rows(self, out)
     if dashboard_user or include_check_status:
         # Slack code channel badge: a person's dashboard only, never the bare
         # list (SSE, app tokens). See slack/code_channels/dashboard_view.py.
