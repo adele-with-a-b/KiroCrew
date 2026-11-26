@@ -334,14 +334,21 @@ contextBridge.exposeInMainWorld("trayIconAPI", {
   set: (show) => ipcRenderer.invoke("tray-icon:set", !!show),
 });
 
-// File-open bridge for the chat path chip's "Open in editor" affordance. Hands
-// a filesystem PATH — never a URL scheme — to the main process, which validates
-// it and calls shell.openPath so the file opens in the OS default handler on the
-// user's own machine. Resolves { ok, error? }. Absent in a plain browser and in
-// the PWA — the renderer treats a missing bridge as "cannot open externally" and
-// hides the control, keeping the built-in viewer as the only path there.
-if (!REMOTE_GATEWAY) contextBridge.exposeInMainWorld("fileOpenAPI", {
-  open: (filePath) => ipcRenderer.invoke("dashboard:open-file", String(filePath || "")),
+// File-open bridge for a chat file link and the path chip's "Open in editor".
+// `open` hands a filesystem PATH — never a URL scheme — to the main process,
+// which validates it and calls shell.openPath so the file opens in the OS
+// default handler on the user's own machine; it exists only where the gateway
+// is on this machine. `openCopy` hands a file NAME and the bytes the dashboard
+// read from its gateway, which main writes as a copy (a web page inside a
+// `sandbox=""` frame) and opens the same way; every window gets it, because a
+// Remote Crew's window is the one that needs it. Both resolve { ok, error? }.
+// Absent in a plain browser and in the PWA — the renderer treats a missing
+// bridge as "cannot open externally", keeping the built-in viewer there.
+contextBridge.exposeInMainWorld("fileOpenAPI", {
+  ...(REMOTE_GATEWAY ? {} : {
+    open: (filePath) => ipcRenderer.invoke("dashboard:open-file", String(filePath || "")),
+  }),
+  openCopy: (name, bytes) => ipcRenderer.invoke("dashboard:open-copy", String(name || ""), bytes),
 });
 
 // Relay viewer: open one remote Crew reached through the Kiro relay, in its own

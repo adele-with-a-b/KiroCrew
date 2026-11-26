@@ -165,9 +165,11 @@ export const PathProbeCtx = createContext<boolean>(true)
  * A context because `MD_COMPONENTS` is module-level — the `code` renderer cannot
  * receive MarkdownRenderer's props directly. Both handlers are optional: most of
  * the ~30 MarkdownRenderer call sites pass neither, and those fall back to the
- * OS file manager.
+ * OS file manager. `slot` is the chat the text belongs to, sent with a read
+ * made to open the file outside the side panel, so the gateway refuses a chat
+ * that runs remotely there as it does for the side panel's own read.
  */
-export type PathActions = { onFileOpen?: (path: string, opts?: { line?: number; endLine?: number }) => void; onFolderOpen?: (path: string) => void }
+export type PathActions = { onFileOpen?: (path: string, opts?: { line?: number; endLine?: number }) => void; onFolderOpen?: (path: string) => void; slot?: string }
 export const PathActionCtx = createContext<PathActions>({})
 
 /**

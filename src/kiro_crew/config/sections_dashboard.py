@@ -729,6 +729,22 @@ class DashboardConfig:
             "while session summaries are on.",
         ),
     )
+    file_links_open_default_app: bool = field(
+        default=True,
+        metadata=_meta(
+            "Open file links in the default app",
+            "A click on a file link in a chat opens the file in your computer's "
+            "default app for its type, full size: a web page in your browser, a "
+            "Markdown or text file in its editor, an image in its viewer. A web "
+            "page opens as a copy with its scripts blocked, as the side panel "
+            "shows it. A file from a Crew on another computer opens as a copy, "
+            "and edits to a copy do not save back. PDF, CSV and SVG files, and a "
+            "link to a line, still open in the side panel. Alt+click "
+            "(Option+click on a Mac) does the other one. In a browser tab, a "
+            "web page opens in a new tab and other files in the side panel. Off: "
+            "every file link opens in the side panel.",
+        ),
+    )
     # Default TRUE: the chip strip shipped unconditionally before this switch
     # existed, so a config that never mentions the key must render exactly what
     # it rendered before.

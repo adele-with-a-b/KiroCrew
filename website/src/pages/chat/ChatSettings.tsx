@@ -421,6 +421,8 @@ export interface DashboardConfig {
   auto_open_git_panel: boolean
   side_panel_always_open?: boolean
   side_panel_pin_summary?: boolean
+  /** A chat file link opens in the default app (true) or the side panel. */
+  file_links_open_default_app?: boolean
   session_card_source_links: boolean
   /** Directory each new chat gets its own fresh folder under; '' = off. */
   session_folder_root?: string

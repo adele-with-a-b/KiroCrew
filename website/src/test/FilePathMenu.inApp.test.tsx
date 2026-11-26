@@ -35,7 +35,8 @@ vi.mock('../hooks/useGatewayPlatform', () => ({
   useGatewayPlatform: () => platformEnv.value,
 }))
 
-vi.mock('../lib/electron', () => ({
+vi.mock('../lib/electron', async importOriginal => ({
+  ...(await importOriginal<typeof import('../lib/electron')>()),
   canOpenFileInEditor: () => false,
   openFileInEditor: vi.fn(),
 }))

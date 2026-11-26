@@ -5942,11 +5942,81 @@ block, inline code) or inside a widget body gets no chip. The path must
 be absolute (POSIX or a Windows drive path) and pass the path-chip test (`isPathCandidate`,
 which refuses UNC roots and command lines). The chip's accessible name is its visible text
 (`Open file` and the file name); the full path is its tooltip and description. Showing
-a chip opens nothing, whether on render, while streaming or after a reload. A click calls the
-host's `onFileOpen` with the path alone: the same handler, with the same arguments, a click
-on a file path chip uses (`activatePath`), so the file opens through today's read as a plain
-file tab, never a diff. Without an `onFileOpen` no chip renders. Pinned by
-`website/src/test/OpenFileChips.test.tsx` and `website/src/test/detectOpenFileMarker.test.ts`.
+a chip opens nothing, whether on render, while streaming or after a reload. The marker's path
+is the agent's text, so each chip asks the gateway about it through the probe a path chip is
+drawn from (`usePathKind`, `/api/file-kinds`, which reads a credential store or any other
+refused path as `missing`; the answer is the chip's `data-path-kind`). Only a path confirmed as
+a file goes through `activatePath`, exactly as a click on a file path chip does (see "Where a
+file link opens" below, Alt/Option+click included); any other answer, or none yet, calls the
+host's `onFileOpen` with the path alone, so the side panel's read decides as it always did. In
+the side panel the file opens through today's read as a plain file tab, never a diff, and a
+default-app open that fails is said under the chip that was clicked, until the next click on
+any chip. Every caller of `activatePath` passes a probed kind: the path chip and the Markdown
+link from `usePathResolution`, the Open file chip from its own probe. Without an `onFileOpen`
+no chip renders. Pinned by `website/src/test/OpenFileChips.test.tsx`,
+`website/src/test/fileLinkOutside.test.tsx` and `website/src/test/detectOpenFileMarker.test.ts`.
+
+**Where a file link opens** (`components/markdown/fileLinkOutside.ts`, reached through
+`activatePath` in `markdown/pathReferences.ts` by a path chip, a Markdown link to a file and an
+Open file chip): with `dashboard.file_links_open_default_app` on (the default; Settings → Chat
+→ Side panel → **Open File Links in Default App**), a plain click opens a FILE outside the side
+panel, in the default app for its type on the machine the reader sits at, when its type has a
+route; Alt/Option+click takes the side panel. Off, the plain click takes the side panel and
+Alt/Option+click the default app. The click reads the setting the app shell registers
+(`useConfigFileLinkTarget`): until the dashboard config has said `true` (still loading, a failed
+read, a gateway that does not know the key) a click takes the side panel. A directory, a link
+with a `:line` suffix and a type with no route always take the side panel, and the chip's
+right-click **Open in side panel** row always opens the side panel (`openInPanel`). A host with
+no side panel (no `onFileOpen`) keeps what a click did there before: the OS file manager. The
+route (`outsideRoute`) depends on the type and the window:
+
+| Type | Desktop app, Crew on this machine | Desktop app, Crew elsewhere | Browser tab, phone |
+|---|---|---|---|
+| `.html`, `.htm` | sandboxed copy in the default browser | sandboxed copy in the default browser | new tab on `/api/file-html`; the side panel where the tab is refused |
+| `EDITOR_OPENABLE_EXTS` (text, `.md`, `.json`, raster images) | the real file (`fileOpenAPI.open`) | a copy (`fileOpenAPI.openCopy`) | side panel |
+| anything else (`.pdf`, `.csv`, `.svg`, scripts, unknown) | side panel | side panel | side panel |
+| any file, on a host with no side panel | OS file manager, as before | OS file manager, as before | OS file manager, as before |
+
+A copy is read through the side panel's own routes, with their owner gate, sensitive-path
+refusal and credential pass, each naming the chat's `?slot=` (`PathActions.slot`, the
+renderer's `slotKey`; an Open file chip's `slot` prop) so a chat that runs remotely is refused as
+the side panel's read is. A host that names no chat gets no route that reads (no copy, no new
+tab) and its click takes the side panel. The reads: `/api/file-html` for a page (the whole page,
+inline images included), `/api/file-read` for text (not copied when the read is cut short,
+`X-Truncated`, or decoded with replacement, `X-Lossy-Decode`; a redacted read is copied as
+redacted) and `/api/file-raw` for an image. The shell writes it read-only into a fresh
+`mkdtemp` folder made directly in the OS temp directory (no shared parent folder) and opens it
+(`electron/open-copy.js`); edits to a copy do not reach the original, and the chip's tooltip
+says so. At quit the shell removes the copy folders this launch made (`removeOwnCopies`), and
+at start and each time a copy is made those older than a day (`pruneCopies`), so a second
+build running beside it keeps its own (both wired in `electron/main.js`). The real-file route
+(`fileOpenAPI.open`) makes no gateway read itself; it is taken only for a path the gateway's
+probe confirmed, as the chip menu's **Open in editor** is.
+
+A web page is never handed to the browser as the original, whose scripts the browser would
+run. The file written is a page of the shell's own (`sandboxShell`) whose only content is one
+full-window `<iframe sandbox="">` with the page, escaped, as its `srcdoc`, and a
+`<base href="about:srcdoc" target="_self">` put first in the page so its `#fragment` links
+scroll in place (a srcdoc document's links otherwise resolve against the shell's file) and a
+`<base>` of the page's own changes nothing. The frame refuses scripts, event handlers, a meta
+refresh, navigating the window, forms, popups, plugins and downloads, whatever the page spells:
+the side panel's own `sandbox=""` posture, which a policy written into the page could not give
+(no Content-Security-Policy directive stops a meta refresh). The shell's own policy
+(`SHELL_POLICY`), which the `srcdoc` frame inherits, limits what the page may LOAD: images,
+media, fonts and stylesheets from `data:`, `https:` and `http:`, inline styles, and nothing
+else, `file:` above all (WebKit otherwise loads a `file:` image, stylesheet or frame from
+inside the sandboxed frame, and on Windows a `file://host/share` address starts an SMB
+handshake); scripts, frames, workers, plugins, fetches and form sends are refused. It sets
+no `base-uri`, which the page's in-page base needs. The browser tab's new tab has
+`/api/file-html`'s `CSP: sandbox` header, the same flags for a top-level page. A page keeps its
+inline styles, `data:` images and in-page `#fragment` links; anything that needs a script does
+not run, and a fragment in the window's address does not reach the frame (the opener never
+passes one). A page whose images or styles are separate files beside it shows without them, in
+a copy as in the side panel. When the default app cannot open the file (the shell refuses, the
+read fails, the tab is refused), the side panel opens it and the chip says why; a second click
+on a file whose open is still under way joins it, and a click clears the notice an earlier one
+left, so each click gives one result. Pinned by `website/src/test/fileLinkOutside.test.tsx` and
+`website/electron/test/open-copy.test.js`.
 
 **Chat table width**: top-level assistant Markdown tables use the transcript pane's
 available width minus a 40px band at each pane edge (never narrower than the

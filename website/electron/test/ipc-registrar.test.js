@@ -1,6 +1,7 @@
 // createIpcRegistrar's channel inventory and per-channel gates: the shell and
 // updater handler sets, crash-reports, wsl:detect, dashboard:open-file,
-// dashboard:pick-folder, external-terminal and pane:clear-http-cache.
+// dashboard:open-copy, dashboard:pick-folder, external-terminal and
+// pane:clear-http-cache.
 //
 // resolveSenderIsLocal and the app-menu channels that exercise it live in
 // ipc-registrar.sender-locality.test.js; the shared harness scaffolding lives
@@ -682,6 +683,66 @@ test("dashboard:open-file validates the path before handing it to the OS", async
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
+});
+
+// A copy is written under os.tmpdir(), so each case points it at a scratch dir.
+async function withScratchTmp(fn) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "opencopy-"));
+  const saved = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP };
+  process.env.TMPDIR = process.env.TEMP = process.env.TMP = scratch;
+  try {
+    return await fn(scratch);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+const topFrameEvent = (url = "http://localhost:5476/chat") => {
+  const frame = { url };
+  return { sender: { id: "dashboard-sender", mainFrame: frame }, senderFrame: frame };
+};
+
+test("dashboard:open-copy admits only the launch port's dashboard top frame", async () => {
+  await withScratchTmp(async (scratch) => {
+    const subFrame = { sender: { id: "s", mainFrame: { url: "http://localhost:5476/" } }, senderFrame: { url: "http://localhost:5476/" } };
+    for (const event of [topFrameEvent("https://remote.example/chat"), topFrameEvent("http://localhost:5477/chat"), subFrame, {}]) {
+      const h = harness();
+      h.registrar.registerShell();
+      await assert.rejects(
+        () => h.handlers.get("dashboard:open-copy")(event, "mock.html", Buffer.from("<p>x</p>")),
+        /dashboard:open-copy is restricted to the launch port's dashboard/,
+      );
+      assert.equal(h.shellCalls.length, 0, "a refused sender opens nothing");
+    }
+    assert.deepEqual(fs.readdirSync(scratch), [], "a refused sender writes nothing");
+  });
+});
+
+test("dashboard:open-copy opens a web page or an openable type and nothing else, local gateway or not", async () => {
+  await withScratchTmp(async () => {
+    const cases = [
+      ["mock.html", { ok: true }],
+      ["notes.md", { ok: true }],
+      ["shot.png", { ok: true }],
+      ["art.svg", { ok: false, error: "unsupported file type" }],
+      ["data.csv", { ok: false, error: "unsupported file type" }],
+      ["report.pdf", { ok: false, error: "unsupported file type" }],
+      ["run.sh", { ok: false, error: "unsupported file type" }],
+    ];
+    for (const [name, expected] of cases) {
+      const h = harness();
+      h.registrar.registerShell();
+      const result = await h.handlers.get("dashboard:open-copy")(topFrameEvent(), name, Buffer.from("x"));
+      assert.deepEqual(result, expected, name);
+      assert.equal(h.shellCalls.some(([n]) => n === "openPath"), expected.ok, `${name}: reaches the OS opener`);
+      // It opens no file of this machine, so it never asks whether the gateway is local.
+      assert.equal(h.gatewayCalls.some(([n]) => n === "probePrimaryPortOwner"), false);
+    }
+  });
 });
 
 test("dashboard:open-file opens a valid file at its realpath and reports OS refusals", async () => {

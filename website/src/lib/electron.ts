@@ -108,6 +108,7 @@ export const EDITOR_OPENABLE_EXTS: ReadonlySet<string> = new Set([
   '.md', '.markdown', '.txt', '.text', '.rst', '.org', '.log',
   '.json', '.jsonc', '.json5', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.env',
   '.css', '.graphql', '.proto',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp',
 ])
 
 /**
@@ -139,6 +140,36 @@ export async function openFileInEditor(
   if (typeof api?.open !== 'function') return { ok: false, error: 'unavailable' }
   try {
     return await api.open(filePath)
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/**
+ * Whether this window can open a COPY of a gateway file in the OS default app:
+ * the desktop shell's `fileOpenAPI.openCopy` bridge, which every desktop window
+ * has (a Remote Crew's window too) and a plain browser tab and the PWA lack.
+ */
+export function canOpenFileCopy(): boolean {
+  return typeof (window as { fileOpenAPI?: { openCopy?: unknown } }).fileOpenAPI?.openCopy === 'function'
+}
+
+/**
+ * Hand a file's NAME and the bytes read from the gateway to the desktop shell,
+ * which writes them as a read-only copy (a web page inside a `sandbox=""` frame)
+ * and opens it in the OS default app (`dashboard:open-copy`). Resolves the
+ * shell's { ok, error? }, or { ok: false, error: 'unavailable' } with no bridge.
+ */
+export async function openFileCopy(
+  name: string,
+  bytes: Uint8Array,
+): Promise<{ ok: boolean; error?: string }> {
+  const api = (window as {
+    fileOpenAPI?: { openCopy?: (n: string, b: Uint8Array) => Promise<{ ok: boolean; error?: string }> }
+  }).fileOpenAPI
+  if (typeof api?.openCopy !== 'function') return { ok: false, error: 'unavailable' }
+  try {
+    return await api.openCopy(name, bytes)
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }

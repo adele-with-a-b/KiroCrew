@@ -274,6 +274,7 @@
       "perf-metrics.js",
       "host-config.js",
       "open-path.js",
+      "open-copy.js",
       "download-handler.js",
       "download-expectations.js",
       "store-rename.js",

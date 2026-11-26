@@ -8,7 +8,8 @@ import { OverlayPortal } from '../overlayRoot'
 import FilePathMenu, { useCanReveal, useRevealFailure } from '../FilePathMenu'
 import { i18nT } from '../../i18n/t'
 import { InsideLinkCtx, PathActionCtx, PathProbeCtx, SessionActionCtx, SidebarFolderCtx } from './contexts'
-import { activatePath, basenameOf, usePathResolution } from './pathReferences'
+import { activatePath, basenameOf, openInPanel, usePathResolution } from './pathReferences'
+import { fileLinksOpenOutside, outsideRoute } from './fileLinkOutside'
 import { folderSegmentsOf, resolveFolderChip, useSessionChip } from './linkTargets'
 import { ClosedSessionNotice } from './ClosedSessionNotice'
 import { SESSION_REF_TRAILING } from './treeTransforms'
@@ -693,8 +694,23 @@ export function InlineCode({ children, ...props }: { children?: React.ReactNode 
     // Where no reveal can land, Shift+click copies the path, as the hint says,
     // rather than asking the gateway for a file manager it cannot show.
     if (e.shiftKey && !canReveal) { shiftCopy.press(e.currentTarget); return }
-    activatePath(path, kind, e.shiftKey, actions, reveal.onError, targetLine, targetEndLine)
+    // A notice from an earlier click goes, so one click shows one result.
+    reveal.clear()
+    activatePath(path, kind, e.shiftKey, actions, reveal.onError, targetLine, targetEndLine, e.altKey)
   }
+  // A file the default app can open says so, and names the other action
+  // (Alt/Option+click) and, for a copy, that edits do not save back.
+  const route = !isDir && targetLine == null && actions.onFileOpen ? outsideRoute(path, actions.slot) : null
+  const outsideHint = route
+    ? [
+        i18nT(fileLinksOpenOutside()
+          ? 'components.markdownRenderer.alt_click_opens_side_panel'
+          : 'components.markdownRenderer.alt_click_opens_default_app'),
+        ...(route === 'page-copy' || route === 'file-copy'
+          ? [i18nT('components.markdownRenderer.opens_a_copy_edits_do_not_save_back')]
+          : []),
+      ].map(s => `\n${s}`).join('')
+    : ''
   // Right-click opens the shared file-path menu (Open in default app / reveal /
   // copy path), additive to the existing click/shift-click activation. The
   // native items self-gate on the shared reveal gate; the in-app items ("Open in
@@ -704,8 +720,9 @@ export function InlineCode({ children, ...props }: { children?: React.ReactNode 
   // `kind` is threaded through so a directory chip hides "Open with default
   // app" — the reveal endpoint 400s an `open` on a directory, which would land
   // the user on an error for a click they cannot fix.
+  // The row says "Open in side panel", so it opens there whatever a click does.
   const openFileFromMenu = actions.onFileOpen
-    ? () => activatePath(path, kind, false, actions, reveal.onError, targetLine, targetEndLine)
+    ? () => openInPanel(path, actions, reveal.onError, targetLine, targetEndLine)
     : undefined
   return (
     <>
@@ -746,7 +763,7 @@ export function InlineCode({ children, ...props }: { children?: React.ReactNode 
         // instead; this title is also the target disclosure above.
         title={pathCopy.copied || shiftCopy.copied
           ? i18nT('components.markdownRenderer.copied')
-          : `${raw}\n${revealHint}\n${i18nT('components.markdownRenderer.ctrl_click_to_copy')}`}
+          : `${raw}\n${revealHint}${outsideHint}\n${i18nT('components.markdownRenderer.ctrl_click_to_copy')}`}
       >
         <Glyph size={CHIP_GLYPH_SIZE} aria-hidden="true" className={`${CHIP_GLYPH_GEOMETRY} opacity-70`} />
         {targetLine != null && raw.length > splitPath.length
