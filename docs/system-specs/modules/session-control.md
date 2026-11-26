@@ -1026,7 +1026,12 @@ by hand-editing `config.json` leaves its home locked. The sidebar draws the subt
 the same way: no menu, no new-chat control, no rename, no drag, no drop
 (`isMateManaged`). Folders a Bot
 made before this rule are left where they are. Pinned in
-`test/test_mate_folders.py`.
+`test/test_mate_folders.py`. Whether the person's Sessions list shows such a
+session at all is the Bot sessions rule in
+[crew-mode](crew-mode.md) (the Profile card's **Sessions** tab): listed by default
+under that home folder, by the Bot's own `show_sessions_in_list` (on by default)
+or, for every Bot, `dashboard.show_bot_sessions_in_list`, and left out when the
+Bot's own switch is off and the global one is off too.
 
 `session_create` also takes an optional `model` — the model the child starts
 on, pinned as the person's own pick in the model dropdown would be (same

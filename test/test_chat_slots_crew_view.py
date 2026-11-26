@@ -71,10 +71,13 @@ MATE = {"key": "dm-ada", "mode": "member", "agent": "ada"}
 MATE_CHILD = {"key": "chat-4-4", crew_mode.MATE_ROOT_FIELD: "dm-ada"}
 
 
-def _mate_app(monkeypatch: pytest.MonkeyPatch, listed: object) -> web.Application:
+def _mate_app(
+    monkeypatch: pytest.MonkeyPatch, listed: object, everyone: object = False
+) -> web.Application:
     """The route over a mate thread, its session and a plain row, stamped for real.
 
-    *listed* is Bot ``ada``'s ``show_sessions_in_list`` in the live config.
+    *listed* is Bot ``ada``'s ``show_sessions_in_list`` in the live config, and
+    *everyone* is ``dashboard.show_bot_sessions_in_list``.
     """
 
     async def _noop() -> None:
@@ -82,7 +85,10 @@ def _mate_app(monkeypatch: pytest.MonkeyPatch, listed: object) -> web.Applicatio
 
     monkeypatch.setattr(source_providers, "ensure_gitlab_hosts_loaded", _noop)
     monkeypatch.setattr(source_providers, "is_owner_dashboard_request", lambda _r: False)
-    cfg = SimpleNamespace(agents={"ada": SimpleNamespace(show_sessions_in_list=listed)})
+    cfg = SimpleNamespace(
+        dashboard=SimpleNamespace(show_bot_sessions_in_list=everyone),
+        agents={"ada": SimpleNamespace(show_sessions_in_list=listed)},
+    )
     monkeypatch.setattr(crew_mode, "_live_cfg", lambda: cfg)
     monkeypatch.setattr(crew_mode, "_known_mate_roots", set())
     monkeypatch.setattr(crew_mode, "_known_roots", set())
@@ -120,6 +126,18 @@ async def test_a_bot_that_shows_its_sessions_keeps_them_in_a_persons_read(
     app = _mate_app(monkeypatch, True)
     req = make_mocked_request("GET", "/api/chat/slots", app=app)
     assert await _keys(req) == {"dm-ada", "chat-4-4", "chat-3-3"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("listed", "everyone", "kept"), [(False, True, True), (False, "yes", False)]
+)
+async def test_show_all_bots_keeps_a_bots_sessions_whatever_its_own_switch_says(
+    monkeypatch: pytest.MonkeyPatch, listed: object, everyone: object, kept: bool
+) -> None:
+    app = _mate_app(monkeypatch, listed, everyone)
+    req = make_mocked_request("GET", "/api/chat/slots", app=app)
+    assert ("chat-4-4" in await _keys(req)) is kept
 
 
 @pytest.mark.asyncio

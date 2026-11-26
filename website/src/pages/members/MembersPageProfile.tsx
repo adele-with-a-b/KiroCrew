@@ -46,6 +46,7 @@ import { useConfirm } from '../../components/ConfirmDialog'
 import { useGuardedLeave } from '../../components/NavigationLeaveGuard'
 import CrewNotesTab from './CrewNotesTab'
 import MateSessionsList from './MateSessionsList'
+import BotSessionListSwitches from './BotSessionListSwitches'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import CrewWakeSection from '../../components/CrewWakeSection'
 import { crewWakeQueryKey, wakesCrew } from '../../components/crew/wakesCrew'
@@ -691,6 +692,7 @@ export function MembersPageProfileCard({
   )
   const sessionsBody = (
     <div className="flex flex-col gap-3" data-testid="crew-profile-sessions">
+      {active && <BotSessionListSwitches member={activeView ?? active} displayName={crewDisplayName(active)} />}
       <MateSessionsList
         key={activeMemberKey}
         root={activeMemberKey}

@@ -493,17 +493,17 @@ class KiroCrewAgentConfig:
             "open approval or question.",
         ),
     )
-    # Off by default: the sessions this crewmate's thread opens are listed on its
-    # profile's Sessions tab and left out of the person's own session list
-    # (``crew_mode.list_view`` and the dashboard's ``crewModeView``). On puts them
-    # back in that list too; the Sessions tab lists them either way.
+    # On by default: the sessions this Bot's thread opens are listed on its
+    # profile's Sessions tab and in the person's own session list too. Off leaves
+    # them out of the person's list (``crew_mode.list_view`` and the dashboard's
+    # ``crewModeView``). While ``dashboard.show_bot_sessions_in_list`` is on, every
+    # Bot's are listed and this switch does not apply.
     show_sessions_in_list: bool = field(
-        default=False,
+        default=True,
         metadata=_meta(
             "Show in my Sessions list",
-            "Off by default. The chats this crewmate opens are listed on its "
-            "profile's Sessions tab and left out of your Sessions list. Turn it "
-            "on to list them in your Sessions list too.",
+            "List the sessions this bot opens in your Sessions list. Show all "
+            "bots in my Sessions lists every bot's, whatever this says.",
         ),
     )
     # Per-agent watchdog window overrides. The global ``watchdog.tool_stall_*``

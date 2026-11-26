@@ -745,6 +745,18 @@ class DashboardConfig:
             "every file link opens in the side panel.",
         ),
     )
+    # Off by default: each Bot's own ``show_sessions_in_list`` decides whether the
+    # sessions its live thread dispatched are listed in the person's own session
+    # lists (``crew_mode.list_view`` and the dashboard's ``crewModeView``). On lists
+    # every Bot's sessions there, under each Bot's own folder, whatever a Bot says.
+    show_bot_sessions_in_list: bool = field(
+        default=False,
+        metadata=_meta(
+            "Show all bots in my Sessions",
+            "List the sessions your bots open in your Sessions list, each in its "
+            "bot's folder. While on, no bot's own switch applies.",
+        ),
+    )
     # Default TRUE: the chip strip shipped unconditionally before this switch
     # existed, so a config that never mentions the key must render exactly what
     # it rendered before.

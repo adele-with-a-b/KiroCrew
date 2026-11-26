@@ -2751,11 +2751,22 @@ mounted.
 slots whose `mate_root` is the Bot's DM slot (birth `created_by` alone does not count), merged
 with the Bot's `GET .../crew-workers` answer, which adds closed sessions, the
 ledger line and the server's group (`MateSessionsList`, `liveMateWorkers`). While
-the Bot's thread is live, the same sessions leave the person's own lists (sidebar,
+the Bot's thread is live, the same sessions stay in the person's own lists (sidebar,
 Recents, grid, unread counts and a person's `GET /api/chat/slots`; `crewModeView`,
-`crew_mode.list_view`) unless the Bot's Settings switch **Show in my Sessions list**
-(`show_sessions_in_list`, off by default, stamped on the thread's slot row) is on.
-The Sessions tab lists them either way. The tab keeps its name (a recorded decision), but its empty
+`crew_mode.list_view`) unless a switch leaves them out. Two switches decide:
+**Show all bots in my Sessions** (`dashboard.show_bot_sessions_in_list`, off by
+default, in Settings > Chat > Sessions and at the top of every Bot's Sessions tab)
+lists every Bot's sessions, and while it is on no Bot's own switch applies; while it
+is off, **Show {name} in my Sessions** (the Bot's `show_sessions_in_list`, on by
+default, at the top of that Bot's Sessions tab) decides for that Bot, so a Bot whose
+config leaves it unset lists its sessions and a stored `false` leaves them out. The
+server folds the two into one stamp on the Bot thread's row (`bot_sessions_listed`,
+`crew_mode.mate_lists_sessions`), which `list_view` and `crewModeView`
+(`mateThreadsHidingSessions`) read; a Bot's own switch reads on and cannot be
+pressed while the global one is on (`BotSessionListSwitches`), and a flip of either
+re-sends the slot list (`config_watch._push_mate_listing`). A listed session sits in
+its Bot's home folder (`mate_folders`), so the Sessions list groups them by Bot, and
+it opens like any other row. The Sessions tab lists them either way. The tab keeps its name (a recorded decision), but its empty
 box speaks the reader's words, not the mechanism's: a first-time user has no
 model for why a Bot would "drive sessions", so the box says session, chat or
 driving nowhere. The
