@@ -2,9 +2,11 @@
  * App keys (`contributes.sessionControls[].keys`): the resolver (Crew's keys
  * win, the earlier app keeps a shared default, the person's choice wins over a
  * default), the key in the chat (opens the box on its chip with the key's `arg`,
- * the same key again closes, another key or another open keeps it open), and the
- * Settings recorder (a held key is refused and named; a free one is stored).
+ * the same key again closes unless it is `keepOpen`, another key or another open
+ * keeps it open), and the Settings recorder (a held key is refused and named; a
+ * free one is stored).
  */
+import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient } from '@tanstack/react-query'
@@ -21,6 +23,7 @@ import {
   insertActClock,
   peekSessionControlRequestForTest,
   useInsertIntoComposer,
+  useSessionControlRequest,
   type ComposerInsertResult,
 } from '../app-sdk/sessionControlRequest'
 import { useAppKeyRecorder } from '../hooks/useAppSessionKeys'
@@ -301,6 +304,126 @@ describe('an app key in the chat on screen', () => {
       sessionControlStatuses: {}, appKeys: result.current.appKeys,
     })).result.current
     expect(chips[0].shortcut?.aria).toBe('Alt+Shift+Q')
+  })
+})
+
+describe('keepOpen: a key pressed again and again on the open box', () => {
+  const NEXT = { id: 'next', label: 'Next question', default: 'Alt+Shift+Y', arg: { go: 'next' }, keepOpen: true }
+  const mountWithNext = () => {
+    mockApps.mockResolvedValue([{ ...refsApp, manifest: { ...refsApp.manifest, contributes: { sessionControls: [
+      { ...refsApp.manifest.contributes.sessionControls[0], keys: [KEYS[0], NEXT] },
+    ] } } }])
+    return mountComposer()
+  }
+  const seq = () => peekSessionControlRequestForTest('dashboard:chat-1', KEY)?.seq
+
+  it('reads keepOpen as the install check holds it: only the JSON true', () => {
+    expect(parseDeclaredKeys([
+      { id: 'a', label: 'A', keepOpen: true },
+      { id: 'b', label: 'B', keepOpen: 'true' },
+      { id: 'c', label: 'C', keepOpen: 1 },
+      { id: 'd', label: 'D' },
+    ]).map(k => k.keepOpen)).toEqual([true, false, false, false])
+  })
+
+  it('opens a closed box, then hands the open box its arg again as a new request, and never closes it', async () => {
+    const { result } = await mountWithNext()
+    drawChip()
+    expect(press('KeyY').defaultPrevented).toBe(true)
+    expect(result.current.openSessionControl).toEqual({ key: KEY, slot: 'chat-1' })
+    const opened = result.current.openSessionControl
+    const first = seq()!
+    expect(peekSessionControlRequestForTest('dashboard:chat-1', KEY)).toMatchObject({ payload: { go: 'next' }, via: 'key' })
+    for (let i = 1; i <= 3; i++) {
+      expect(press('KeyY').defaultPrevented).toBe(true)
+      // The same box, never remounted, with a request it can tell apart.
+      expect(result.current.openSessionControl).toBe(opened)
+      expect(seq()).toBe(first + i)
+      expect(peekSessionControlRequestForTest('dashboard:chat-1', KEY)).toMatchObject({ payload: { go: 'next' }, via: 'key' })
+    }
+  })
+
+  it('leaves the default toggle as it was: the key without keepOpen still closes the box it opened', async () => {
+    const { result } = await mountWithNext()
+    drawChip()
+    press('KeyQ')
+    expect(result.current.openSessionControl).toEqual({ key: KEY, slot: 'chat-1' })
+    press('KeyQ')
+    expect(result.current.openSessionControl).toBeNull()
+    // Opened by the keepOpen key, the box takes the toggle key as another open,
+    // and that key's next press closes it.
+    press('KeyY')
+    press('KeyQ')
+    expect(result.current.openSessionControl).toEqual({ key: KEY, slot: 'chat-1' })
+    expect(peekSessionControlRequestForTest('dashboard:chat-1', KEY)).toMatchObject({ payload: { view: 'questions' } })
+    press('KeyQ')
+    expect(result.current.openSessionControl).toBeNull()
+  })
+
+  it('a box opened another way takes the keepOpen key as a new request and stays open', async () => {
+    const { result } = await mountWithNext()
+    drawChip()
+    act(() => { sendAppNav({ kind: 'open', slot: 'chat-1', appName: 'refs-app', target: { kind: 'sessionControl', id: 'questions' }, payload: { label: 'Q4a' }, via: 'link' }) })
+    const before = seq()!
+    press('KeyY')
+    press('KeyY')
+    expect(result.current.openSessionControl).toEqual({ key: KEY, slot: 'chat-1' })
+    expect(seq()).toBe(before + 2)
+    expect(peekSessionControlRequestForTest('dashboard:chat-1', KEY)).toMatchObject({ payload: { go: 'next' }, via: 'key' })
+  })
+
+  it("a held keepOpen key's repeats are claimed but hand nothing over", async () => {
+    const { result } = await mountWithNext()
+    drawChip()
+    press('KeyY')
+    const opened = result.current.openSessionControl
+    const first = seq()
+    for (let i = 0; i < 3; i++) expect(press('KeyY', document.body, { repeat: true }).defaultPrevented).toBe(true)
+    expect(result.current.openSessionControl).toBe(opened)
+    expect(seq()).toBe(first)
+  })
+
+  it('the box reads each press through useSessionControlRequest as a request it has not handled', async () => {
+    await mountWithNext()
+    drawChip()
+    const handled: number[] = []
+    function Box() {
+      const req = useSessionControlRequest()
+      // Each request is a new object, so this runs once per request.
+      useEffect(() => { if (req) handled.push(req.seq) }, [req])
+      return null
+    }
+    render(<SessionControlRequestScope sessionKey="dashboard:chat-1" control={KEY}><Box /></SessionControlRequestScope>)
+    press('KeyY')
+    press('KeyY')
+    press('KeyY', document.body, { repeat: true })
+    press('KeyY')
+    expect(handled).toHaveLength(3)
+    expect(new Set(handled).size).toBe(3)
+  })
+
+  it("restarts a lapsed insert window on the person's press of the keepOpen key, never on a dispatched one", async () => {
+    const { result } = await mountWithNext()
+    drawChip()
+    let insert: ((t: string) => ComposerInsertResult) | null = null
+    function Probe() {
+      insert = useInsertIntoComposer()
+      return null
+    }
+    render(<SessionControlRequestScope sessionKey="dashboard:chat-1" control={KEY} insert={() => undefined}><Probe /></SessionControlRequestScope>)
+    press('KeyY')
+    const opened = result.current.openSessionControl
+    clock.t += INSERT_ACT_MS + 1
+    expect(insert!('Q4a')).toEqual({ ok: false, code: 'no_gesture' })
+    press('KeyY')
+    expect(insert!('Q4a')).toEqual({ ok: true })
+    clock.t += INSERT_ACT_MS + 1
+    trust.next = false
+    const before = seq()
+    expect(press('KeyY').defaultPrevented).toBe(false)
+    expect(seq()).toBe(before)
+    expect(insert!('Q4a')).toEqual({ ok: false, code: 'no_gesture' })
+    expect(result.current.openSessionControl).toBe(opened)
   })
 })
 

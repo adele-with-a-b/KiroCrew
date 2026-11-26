@@ -768,7 +768,8 @@ log), declare both:
   `Map` keyed by chat, as above).
 - **Closing.** The chip, the header's close button, your `onClose`, the key that
   opened it (`keys`; a box opened another way stays open on a key, which hands it
-  the key's `arg`), and Escape while focus is inside the box. A docked box
+  the key's `arg`, and a `keepOpen` key never closes it), and Escape while focus
+  is inside the box. A docked box
   without `stayOpen` also closes on any press outside it and on any Escape, as a
   popover does. Switching to another chat closes it.
 - **One Escape, one owner.** An Escape is used once. Without `stayOpen`, the box
@@ -863,6 +864,7 @@ each opening its box in the chat on screen with its own `arg`:
 | `label` | required; Settings shows it as `<app> · <label>` |
 | `default` | optional. `Mod`, `Ctrl`, `Alt`, `Shift`, each at most once, joined by `+`, then one key: a letter, a digit, US punctuation (`` , . / \ [ ] ` - = ; ' ``), `Enter` or an arrow (`ArrowUp` …). It must hold `Mod`, `Ctrl` or `Alt`. `Mod` is ⌘ on a Mac and Ctrl elsewhere. With none, the key is unbound until the person records one |
 | `arg` | optional, any JSON value of at most 4 KB serialized; it is the request's `payload` |
+| `keepOpen` | optional boolean, default `false` (level 19). `true`: a press while the box is open hands it the `arg` again, as a new request, and never closes it (see below). Anything but `true` or `false` refuses the install |
 
 A key that breaks a rule refuses the install with the reason. The person changes
 or clears each key in **Settings → Shortcuts → Apps**, and their choice is kept
@@ -874,6 +876,54 @@ repeats type nothing. It opens the box with
 `useSessionControlRequest()` reading `via: 'key'`. The same key again closes the
 box; another key of the same control, or a key while the box was opened another
 way, keeps it open and hands over the new `arg`.
+
+**`keepOpen` — a key pressed again and again.** For a key that is an action in
+the box, not a way in and out of it (an Inbox's "Next question"), declare
+`"keepOpen": true`:
+
+```json
+"keys": [
+  { "id": "next", "label": "Next question", "default": "Ctrl+Shift+N", "arg": { "go": "next" }, "keepOpen": true }
+]
+```
+
+- **Box closed.** The key opens it, as any key does.
+- **Box open.** However it was opened (this key, another key, the chip, a card, a
+  status row), each press hands the box the key's `arg` again as a new request:
+  `useSessionControlRequest()` returns a new object whose `seq` is higher than
+  the last, so the same `arg` twice still reads as two presses. Act on each `seq`
+  you have not handled. The box stays open and mounted; the key never closes it.
+  The chip, the header's close button, `onClose` and Escape still do. Each real
+  press is the person's act for `useInsertIntoComposer`, so a box that declares
+  `composerInsert` may answer it with an insert; a key event your module
+  dispatches does nothing at all.
+- **Held down.** One press: the repeats are taken (nothing is typed) and hand
+  nothing over.
+- Everything else is as for any key: Crew's own keys win, the person changes it
+  in Settings → Shortcuts → Apps, and it passes on where a key is not heard.
+
+Needs `APP_SDK_LEVEL >= 19`. An older host ignores `keepOpen` on an app it does
+not verify, so there the key closes the box it opened on its second press. A
+signed app is refused there instead where signatures are required: that host
+signs the key without the field, so a signature over `keepOpen: true` fails
+([admission metadata](#admission-metadata)); set `minKiroCrewVersion` so the
+refusal names the floor. Feature-detect it by the level: when `APP_SDK_LEVEL` is
+lower, give the box its own button for the action, or say in the box that the
+key must be pressed twice.
+
+**Typing in the message box.** A key is heard while focus is in the chat's
+message box: the person can type a question and press `Ctrl+Shift+N` without
+leaving it. The box takes the key and focus stays in the message box; every key
+that is not a live app key reaches the message box as before. Every key holds
+`Mod`, `Ctrl` or `Alt` (the grammar requires it), so a plain or a Shift-only
+keystroke is never one. `Ctrl+Shift+N` and `Ctrl+Shift+G` are free of Crew's
+own keys on every platform: Crew's `Ctrl` + letter chat jumps (on a Mac) and
+its `Ctrl+G` agent monitor do not answer a chord with Shift. Off a Mac, a
+browser keeps a few chords for itself and never hands them to the page:
+`Ctrl+Shift+N` opens a private window in Chrome and Edge, so there the key works
+only in the desktop app, whose menu leaves that chord to the page;
+`Ctrl+Shift+G` reaches the page. Pick a `default` a browser does not keep, or
+let the person record another in Settings.
 
 **Who keeps a key.** Crew's own keys always win: a `default` that one of them
 holds (a shortcut, a panel toggle, the search key, ⌥ with a letter or a digit,

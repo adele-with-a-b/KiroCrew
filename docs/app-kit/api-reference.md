@@ -1012,7 +1012,10 @@ with `target.arg` as the payload), `'key'` for one of the control's own
 (its `arg` as the payload; level 14), `'control'` for this control's own box in another
 chat ([`useSessionControlGo`](#session-control-go); level 17). A request sent before the control's module loaded is
 read on its first render, and an open while the popover is already open keeps it mounted
-and only raises `seq`, so act on a `seq` you have not handled. The request is dropped when
+and only raises `seq`, so act on a `seq` you have not handled. A key that declares
+`keepOpen: true` (level 19) is such an open on every press while the box is open: the
+same `arg` comes again with a higher `seq`, and the box stays open, so a "Next question"
+key moves one row per press. The request is dropped when
 the popover closes. A card's open resolves with the dashboard's answer, `{ ok: true }` or
 `{ ok: false, reason }` (the reasons are listed under "Reaching into the chat" in the
 manifest reference). Needs `APP_SDK_LEVEL >= 11`; read it off the namespace import:
@@ -2326,7 +2329,12 @@ message box that may stay open, [manifest reference](manifest-reference.md#contr
 adds the [session control go](#session-control-go) (`useSessionControlGo`, a request's
 `via: 'control'`), and level 18 adds `contributes.sessionControls[].composerInsert` with
 the [insert into composer](#insert-into-composer) (`useInsertIntoComposer`: a docked box
-puts text in its chat's message box and reads nothing back); each level
+puts text in its chat's message box and reads nothing back), and level 19 adds
+`contributes.sessionControls[].keys[].keepOpen` (each press on the open box hands it
+the key's `arg` again as a new [request](#session-control-requests) and never closes
+it; an older host ignores it on an app it does not verify, and its key closes the box on
+the second press, and refuses a signed app that sets it where signatures are required,
+[manifest reference](manifest-reference.md#admission-metadata)); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

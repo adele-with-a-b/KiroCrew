@@ -22,5 +22,7 @@
  * Level 18 adds a session control's `composerInsert` and `useInsertIntoComposer`:
  * a docked box puts text in its chat's message box at the caret, and reads
  * nothing back but whether it went in.
+ * Level 19 adds a session control key's `keepOpen`: each press on the open box
+ * hands it the key's `arg` again, as a new request, and never closes it.
  */
-export const APP_SDK_LEVEL = 18
+export const APP_SDK_LEVEL = 19
