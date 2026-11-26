@@ -86,9 +86,19 @@ _UNREAD_KEY = "unread"
 #: :data:`_UNREAD_KEY` so neither replaces the other's spent wake.
 _UNCONFIRMED_KEY = "unconfirmed"
 
-#: What a worker's queue holds that its conductor wanted read now:
-#: ``(count, oldest_secs, oldest_id)``, or ``None``.
-UnreadResolver = Callable[[str, str], "tuple[int, float | None, str] | None"]
+#: Prefix for the other direction's dedupe key: a worker's note unread in its
+#: conductor's own queue. Its own prefix, so neither direction's record replaces
+#: the other's.
+_REPORT_UNREAD_KEY = "report_unread"
+
+#: What a reader's queue and turn hold that a sender wanted read now:
+#: ``(count, oldest_secs, oldest_id, unconfirmed, queued)``, or ``None``. *count* is
+#: proven unread; *unconfirmed* is steers the turn took on a harness that reports a
+#: read only at turn end (``queue_age.QueueWait.unconfirmed``); *queued* is
+#: ``(count, oldest_secs, oldest_id)`` over the queue entries alone, or ``None``.
+UnreadResolver = Callable[
+    [str, str], "tuple[int, float | None, str, int, tuple[int, float | None, str] | None] | None"
+]
 
 #: The one terminal item state that means the item's bar was MET. The other two
 #: (``rejected``, ``abandoned``) close an item without meeting it, so a ledger is
@@ -169,9 +179,12 @@ class WorkLedgerProbe(irq.Probe):
             Defaults to :func:`_never_looping`, which never suppresses a flag.
         worker_loop_held: ``session_key -> its session holds an active loop that
             cannot fire``, which voids a ``wake_at``. Defaults to never.
-        worker_unread: ``(worker key, sender key) -> (count, oldest_secs,
-            oldest_id) | None``, the sender's messages still queued unread that
-            asked for the running turn. Defaults to :func:`_nothing_unread`.
+        worker_unread: ``(reader key, sender key) -> (count, oldest_secs,
+            oldest_id, unconfirmed, queued) | None`` (:data:`UnreadResolver`), the
+            sender's messages the reader has not read that asked for the running
+            turn: the conductor's in its worker's queue or turn, and, from *queued*
+            alone, the worker's in its conductor's queue. Defaults to
+            :func:`_nothing_unread`.
     """
 
     def __init__(
@@ -424,6 +437,7 @@ class WorkLedgerProbe(irq.Probe):
                 )
 
         found.extend(self._unread_observations(conductor_key, item))
+        found.extend(self._report_unread_observations(conductor_key, item))
 
         running, closed, looping, held = work_ledger.item_liveness(
             conductor_key,
@@ -468,8 +482,14 @@ class WorkLedgerProbe(irq.Probe):
         Only a message that asked for the running turn counts: one queued instead
         (the target's turn could not take it), or a steer the turn accepted and has
         not reached a step to read (one long tool call), and only once it has waited past
-        ``ledger_wake.UNREAD_WAKE_SECS``. Keyed on the oldest such entry's queue id,
-        so one stuck message wakes once and the next stuck one is news. A note the
+        ``ledger_wake.UNREAD_WAKE_SECS``. A steer the running turn took on a harness
+        that reports a read only at turn end counts as unconfirmed, never as unread:
+        the model may have read it. Keyed on the oldest such entry's queue id,
+        so one stuck message wakes once and the next stuck one is news. An
+        unconfirmed steer sets the age and key only while nothing is proven unread,
+        so a message queued later in the same turn wakes on its own; that harness
+        holds its steers until the turn ends, so they wake their sender once per
+        worker turn. A note the
         worker's turn took in and then failed without confirming wakes at once, as
         ``reason=message_unconfirmed`` (``ledger_wake.is_unconfirmed_wait``): that
         turn is over and nothing runs the note again, whether or not the worker
@@ -487,22 +507,26 @@ class WorkLedgerProbe(irq.Probe):
             return []
         if unread is None:
             return []
-        count, oldest_secs, oldest_id = unread
+        count, oldest_secs, oldest_id, unconfirmed, _queued = unread
         if not oldest_id or not ledger_wake.is_unread_overdue(oldest_secs, oldest_id):
             return []
         # An unconfirmed note spends its own key, so it never replaces the spent
         # wake of an older queued note, which would then wake a second time once
         # the unconfirmed one stops counting.
-        unconfirmed = ledger_wake.is_unconfirmed_wait(oldest_id)
-        key = _UNCONFIRMED_KEY if unconfirmed else _UNREAD_KEY
+        failed_turn = ledger_wake.is_unconfirmed_wait(oldest_id)
+        key = _UNCONFIRMED_KEY if failed_turn else _UNREAD_KEY
         token = f"{key}:{oldest_id}"
         if not self._spend(conductor_key, item.item_id, token, replaces=f"{key}:"):
             return []
         brief = (
-            ledger_wake.unconfirmed_wake_brief(item_id=item.item_id, count=count)
-            if unconfirmed
+            ledger_wake.unconfirmed_wake_brief(item_id=item.item_id, count=count, target=worker)
+            if failed_turn
             else ledger_wake.unread_wake_brief(
-                item_id=item.item_id, count=count, waited_secs=float(oldest_secs or 0)
+                item_id=item.item_id,
+                target=worker,
+                count=count,
+                unconfirmed=unconfirmed,
+                waited_secs=float(oldest_secs or 0),
             )
         )
         return [
@@ -510,6 +534,51 @@ class WorkLedgerProbe(irq.Probe):
                 f"{_UNREAD_KEY}:{item.item_id}:{oldest_id}",
                 irq.Severity.WAKE,
                 brief,
+                irq.ResetsOn.NEVER,
+            )
+        ]
+
+    def _report_unread_observations(
+        self, conductor_key: str, item: work_ledger.WorkItem
+    ) -> list[irq.Observation]:
+        """The wake for a conductor that has not read what its worker sent it.
+
+        :meth:`_unread_observations` the other way, through the same resolver with
+        the two keys swapped, reading only its queued part (:func:`_overdue_report`).
+        A worker's note to the session that created it queues behind the
+        conductor's running turn, except a reply into the turn that asked and a
+        note from a worker a handoff made the conductor's manager, which steer in;
+        one that names no delivery is marked ``STEER_WANTED_META``
+        (``session_messaging``). This wake reaches that turn as a steer and says a
+        note waits, from whom, and how long. Only a queued note counts, past
+        ``ledger_wake.UNREAD_WAKE_SECS``, keyed on the oldest one's queue id. A turn
+        the owner sent takes no wake, so there it lands when that turn ends.
+        """
+        worker = item.worker_session_key or ""
+        if not worker or item.worker_instance_id:
+            return []
+        try:
+            unread = self._worker_unread(conductor_key, worker)
+        except Exception:  # noqa: BLE001 - a slot read must not fail a tick
+            logger.debug("work-ledger probe: report read failed for %s", conductor_key)
+            return []
+        queued = None if unread is None else _overdue_report(unread)
+        if queued is None:
+            return []
+        count, oldest_secs, oldest_id = queued
+        token = f"{_REPORT_UNREAD_KEY}:{oldest_id}"
+        if not self._spend(conductor_key, item.item_id, token, replaces=f"{_REPORT_UNREAD_KEY}:"):
+            return []
+        return [
+            irq.Observation(
+                f"{_REPORT_UNREAD_KEY}:{item.item_id}:{oldest_id}",
+                irq.Severity.WAKE,
+                ledger_wake.report_unread_wake_brief(
+                    item_id=item.item_id,
+                    sender=worker,
+                    count=count,
+                    waited_secs=float(oldest_secs or 0),
+                ),
                 irq.ResetsOn.NEVER,
             )
         ]
@@ -742,7 +811,9 @@ def person_wait_fingerprint(
     moves no report field, so its record is folded into the fingerprint: each new
     failure releases the hold once, for the probe's undelivered wake. A message of
     the conductor's that has sat unread past ``ledger_wake.UNREAD_WAKE_SECS``
-    (*worker_unread*) is folded the same way, for the probe's unread wake.
+    (*worker_unread*) is folded the same way, for the probe's unread wake, and so is
+    a worker's note that has sat unread that long in the conductor's own queue, for
+    its ``report_unread`` wake.
 
     Positive evidence only, like :func:`has_open_items`: no open item, a torn item
     file, an unreadable header or a read that raises all answer ``None``, so doubt
@@ -808,8 +879,9 @@ def person_wait_fingerprint(
         revision = worker_report_revision(items)
         if undelivered:
             revision = f"{revision}|undelivered:{ledger_wake.revision(undelivered)}"
-        # The same for the conductor's own message that has sat unread past the
-        # threshold: the worker has not seen it, so the probe's unread wake must run.
+        # The same for a message that has sat unread past the threshold, either way:
+        # the conductor's in its worker's queue, or the worker's in the conductor's.
+        # Its reader has not seen it, so the probe's unread wake must run.
         unread = _overdue_unread(conductor_key, open_items, worker_unread)
         if unread:
             revision = f"{revision}|unread:{ledger_wake.revision(unread)}"
@@ -824,20 +896,50 @@ def _overdue_unread(
 ) -> dict[str, str]:
     """``{item id: oldest unread id}`` for each local item whose worker has left a
     message of *conductor_key*'s unread past the wake threshold, or took one into a
-    turn that failed without confirming it."""
+    turn that failed without confirming it, and ``{report_unread:<item id>: id}`` for
+    each whose own note has sat unread that long in *conductor_key*'s queue: the
+    waits the probe wakes for."""
     if resolver is None:
         return {}
     found: dict[str, str] = {}
     for item in items:
         if item.worker_instance_id or not item.worker_session_key:
             continue
+        worker = item.worker_session_key
         try:
-            answer = resolver(item.worker_session_key, conductor_key)
+            answer = resolver(worker, conductor_key)
         except Exception:  # noqa: BLE001 - a slot read never holds or fails a tick
-            continue
+            answer = None
         if answer is not None and answer[2] and ledger_wake.is_unread_overdue(answer[1], answer[2]):
             found[item.item_id] = answer[2]
+        try:
+            report = resolver(conductor_key, worker)
+        except Exception:  # noqa: BLE001 - a slot read never holds or fails a tick
+            report = None
+        queued = None if report is None else _overdue_report(report)
+        if queued is not None:
+            found[f"{_REPORT_UNREAD_KEY}:{item.item_id}"] = queued[2]
     return found
+
+
+def _overdue_report(
+    answer: tuple[int, float | None, str, int, tuple[int, float | None, str] | None],
+) -> tuple[int, float | None, str] | None:
+    """The queued part of a conductor's *answer* (:data:`UnreadResolver`) when its
+    worker's note there needs the conductor woken: one with an identity, waiting
+    past the threshold. ``None`` otherwise.
+
+    Only the queue counts, ages and keys this wake. A steer of the worker's (unread,
+    unconfirmed, or settled unconfirmed by a failed turn) is in the conductor's turn
+    already, where the wake itself would go, so a count, an age or an id taken from
+    one would wake for a note in no queue, or spend the wake a queued note needs."""
+    queued = answer[4]
+    if queued is None:
+        return None
+    count, oldest_secs, oldest_id = queued
+    if count > 0 and oldest_id and ledger_wake.is_unread_overdue(oldest_secs):
+        return queued
+    return None
 
 
 def _worker_gone(

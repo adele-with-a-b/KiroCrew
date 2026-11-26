@@ -456,7 +456,13 @@ class AutoNudgeService:
         emit_judge_notice: Callable[[NudgeLoop, str], Awaitable[None]] | None = None,
         worker_running: Callable[[str], bool] | None = None,
         worker_closed: Callable[[str], bool] | None = None,
-        worker_unread: Callable[[str, str], tuple[int, float | None, str] | None] | None = None,
+        worker_unread: (
+            Callable[
+                [str, str],
+                tuple[int, float | None, str, int, tuple[int, float | None, str] | None] | None,
+            ]
+            | None
+        ) = None,
     ) -> None:
         self._base_dir = base_dir or config_dir()
         # The durable store's state and file protocol (see autonudge_service.store).
@@ -489,9 +495,10 @@ class AutoNudgeService:
         #: different question: a closed worker is stale AT ONCE, where an idle one waits
         #: out the staleness window. Absent means "not closed", which keeps the window.
         self._worker_closed_resolver = worker_closed
-        #: ``(worker key, sender key) -> (count, oldest_secs, oldest_id) | None``: the
-        #: sender's queued messages that asked for the running turn and are still
-        #: unread. Read by the same probe, for its unread-message wake.
+        #: ``(reader key, sender key) -> (count, oldest_secs, oldest_id, unconfirmed,
+        #: queued) | None`` (``probes.work_ledger.UnreadResolver``): the sender's
+        #: messages that asked for the running turn and are still unread. Read by the
+        #: same probe, for its unread-message wakes.
         self._worker_unread_resolver = worker_unread
         self._loops: dict[str, NudgeLoop] = {}
         self._timers: dict[str, asyncio.Task] = {}
@@ -1310,7 +1317,7 @@ class AutoNudgeService:
 
     def _worker_unread(
         self, worker_key: str, sender_key: str
-    ) -> tuple[int, float | None, str] | None:
+    ) -> tuple[int, float | None, str, int, tuple[int, float | None, str] | None] | None:
         """What *sender_key* wanted read now that *worker_key* still has queued.
 
         ``None`` with no resolver or a resolver that raises: this answer only ADDS a

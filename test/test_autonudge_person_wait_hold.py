@@ -451,23 +451,60 @@ def test_an_overdue_unread_message_moves_the_person_wait_fingerprint():
     wl.apply_conductor_action(CONDUCTOR, "bind", item_id=item_id, worker_session_key=worker)
     wl.apply_worker_report(CONDUCTOR, item_id, status="blocked", summary="x", reason="approval")
     held = probe.person_wait_fingerprint(CONDUCTOR)
-    answer: dict = {"now": (1, ledger_wake.UNREAD_WAKE_SECS - 1, "q1")}
+    answer: dict = {"now": (1, ledger_wake.UNREAD_WAKE_SECS - 1, "q1", 0, None)}
     asked: list = []
 
     def _unread(worker_key, sender_key):
         asked.append((worker_key, sender_key))
-        return answer["now"]
+        return answer["now"] if worker_key == worker else None
 
     assert held and probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == held
-    assert asked == [(worker, CONDUCTOR)]
-    answer["now"] = (1, ledger_wake.UNREAD_WAKE_SECS, "q1")
+    assert asked == [(worker, CONDUCTOR), (CONDUCTOR, worker)]
+    answer["now"] = (1, ledger_wake.UNREAD_WAKE_SECS, "q1", 0, None)
     stuck = probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread)
     assert stuck and stuck != held, "an overdue message is news"
     assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == stuck
-    answer["now"] = (2, ledger_wake.UNREAD_WAKE_SECS * 2, "q2")
+    answer["now"] = (2, ledger_wake.UNREAD_WAKE_SECS * 2, "q2", 0, None)
     assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) not in (held, stuck)
     answer["now"] = None
     assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == held
+
+
+def test_an_overdue_worker_note_in_the_conductors_queue_moves_the_person_wait_fingerprint():
+    """The worker's note unread in the conductor's own queue moves no report field
+    either, so it too releases the hold once, for the ``report_unread`` wake. Only
+    the queued part of the answer counts: a steer of the worker's in the conductor's
+    turn (unread, unconfirmed or settled by a failed turn), beside a younger note or
+    alone, or a note younger than the threshold, leaves it held."""
+    from kiro_crew import ledger_wake
+
+    worker = "chat-9-996"
+    item_id = _item("a")
+    wl.apply_conductor_action(CONDUCTOR, "bind", item_id=item_id, worker_session_key=worker)
+    wl.apply_worker_report(CONDUCTOR, item_id, status="blocked", summary="x", reason="approval")
+    held = probe.person_wait_fingerprint(CONDUCTOR)
+    secs = ledger_wake.UNREAD_WAKE_SECS
+    settled = f"{ledger_wake.UNCONFIRMED_WAIT_PREFIX}1.0#1"
+    answer: dict = {"report": (0, secs, "steer@1.0", 1, None)}
+
+    def _unread(reader_key, sender_key):
+        return answer["report"] if (reader_key, sender_key) == (CONDUCTOR, worker) else None
+
+    assert held and probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == held
+    for mixed in (
+        (1, 700.0, "steer@1.0", 1, (1, 5.0, "n1")),
+        (1, secs, "steer@1.0", 0, None),
+        (1, secs, settled, 0, None),
+        (1, secs - 1, "n1", 0, (1, secs - 1, "n1")),
+    ):
+        answer["report"] = mixed
+        assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == held, mixed
+    answer["report"] = (1, secs, "n1", 0, (1, secs, "n1"))
+    stuck = probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread)
+    assert stuck and stuck != held, "an overdue note to the conductor is news"
+    assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == stuck
+    answer["report"] = (2, secs * 2, "steer@2.0", 0, (1, secs, "n1"))
+    assert probe.person_wait_fingerprint(CONDUCTOR, worker_unread=_unread) == stuck
 
 
 def test_an_item_whose_worker_is_gone_is_not_a_person_wait():

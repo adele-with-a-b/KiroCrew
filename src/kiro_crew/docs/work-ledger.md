@@ -336,8 +336,15 @@ compact), counting every message this conductor sent that the worker has not
 read yet. `session_status` and `session_read_message` say how long the oldest
 queued message has waited (`queue_oldest_secs`). A message that asked for the
 running turn, and has waited ten minutes (`ledger_wake.UNREAD_WAKE_SECS`), wakes
-the conductor's work-ledger watch once with `reason=message_unread`, even while
-the watch is holding because every item waits on a person. A message restored
+the conductor's work-ledger watch once with `reason=message_unread`, naming the
+worker (`target=`) and the age, even while
+the watch is holding because every item waits on a person. On a harness that
+reports a steer read only when its turn ends (Claude), a steer the worker's turn
+took is not called unread: the model may have read it at its next step. It is
+counted as `unconfirmed=<n>` beside the unread count, and a wake with nothing
+proven unread says `reason=message_unconfirmed` instead. Such a turn keeps its
+steers until it ends, so on a long turn they wake the conductor once per worker
+turn; a message that queues later in that turn still wakes on its own. A message restored
 from the queue after a gateway restart carries no age, so it never causes this
 wake. Neither does a remote worker, whose queue is on its peer. A message the
 worker's turn took in and then ended with an error, before the harness could
@@ -345,6 +352,17 @@ confirm it was read, is not queued to run again: it counts in `messages_unread`
 until the conductor next sends to that worker, and it wakes the conductor at once
 with `reason=message_unconfirmed`, because only the conductor can send it again.
 That holds whether the worker is idle or already running its next turn.
+
+The other way round works the same. A worker's `session_send` to its conductor
+waits in the conductor's queue while the conductor's turn runs, and runs only
+once that turn ends. Two go into the running turn instead: a reply to a message
+that turn sent the worker, and a note from a worker that manages its conductor
+after a handoff. Those are in the turn already and wake nothing. A queued note
+that named no delivery and has waited ten minutes
+wakes the conductor's own work-ledger watch once with `reason=report_unread`,
+naming the worker (`from=`), the count and the age. The wake goes into the
+conductor's running turn, unless the owner sent that turn: then it comes when the
+turn ends. A note sent with `steer=false` chose to wait and wakes nothing.
 
 Reports belong at real milestones, not on a timer.
 `summary` is capped at 500 characters.

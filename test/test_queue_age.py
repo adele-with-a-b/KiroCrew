@@ -211,7 +211,13 @@ class TestTheRequeueAndTheDrain:
 
         head = slot._queue[0]
         assert head["meta"][queue_age.STEER_WANTED_META] is True
-        assert queue_age.sender_unread(state, "test", CONDUCTOR) == (1, 700.0, head["id"])
+        assert queue_age.sender_unread(state, "test", CONDUCTOR) == (
+            1,
+            700.0,
+            head["id"],
+            0,
+            (1, 700.0, head["id"]),
+        )
 
     @pytest.mark.asyncio
     async def test_the_drained_row_does_not_carry_the_mark(self, tmp_path):
@@ -242,7 +248,66 @@ class TestTheResolver:
         _queue(slot, _entry("q1", CONDUCTOR, wanted=True))
         clock.now += 42
         table = SimpleNamespace(get_slot={f"dashboard_{WORKER}": slot}.get)
-        assert queue_age.sender_unread(table, WORKER, CONDUCTOR) == (1, 42.0, "q1")
+        assert queue_age.sender_unread(table, WORKER, CONDUCTOR) == (
+            1,
+            42.0,
+            "q1",
+            0,
+            (1, 42.0, "q1"),
+        )
+
+    def test_the_queued_part_counts_ages_and_keys_on_the_queue_alone(self, clock):
+        """Beside a note queued 5 s ago: the sender's steer unread for 700 s, one the
+        turn took unconfirmed, and one a failed turn settled. The whole answer counts
+        all but the taken steer as unread and ages on the oldest of those; the
+        queued part is the note alone, which is all the conductor's own queue may
+        wake it for."""
+        slot = SimpleNamespace(
+            _queue=[], _queued_at={}, _pending_steers=[], _steer_admissions={}, _steered_at={}
+        )
+        for message, reported in (("unread", True), ("taken", False)):
+            slot._pending_steers.append(message)
+            slot._steer_admissions[message] = _origin(CONDUCTOR)
+            queue_age.note_steered(slot, message, read_reported=reported)
+        queue_age.note_unconfirmed(slot, "settled", _origin(CONDUCTOR))
+        clock.now += 695
+        _queue(slot, _entry("q1", CONDUCTOR, wanted=True))
+        clock.now += 5
+        table = SimpleNamespace(get_slot={WORKER: slot}.get)
+
+        count, oldest_secs, oldest_id, unconfirmed, queued = queue_age.sender_unread(
+            table, WORKER, CONDUCTOR
+        )
+        assert (count, oldest_secs, unconfirmed) == (3, 700.0, 1)
+        assert oldest_id.startswith(ledger_wake.UNCONFIRMED_WAIT_PREFIX)
+        assert queued == (1, 5.0, "q1")
+
+    def test_an_unconfirmed_steer_sets_the_wait_only_when_nothing_is_proven_unread(self, clock):
+        """A claude turn holds the steer it took until it ends. Alone, it is the
+        wait; beside a note queued later in that turn, the note's own stamp and id
+        are, so the note is never keyed on the steer's spent wake."""
+        slot = SimpleNamespace(_queue=[], _queued_at={}, _pending_steers=["taken"], _steered_at={})
+        slot._steer_admissions = {"taken": _origin(CONDUCTOR)}
+        queue_age.note_steered(slot, "taken", read_reported=False)
+        sent = clock.now
+        clock.now += 700
+        table = SimpleNamespace(get_slot={WORKER: slot}.get)
+        assert queue_age.sender_unread(table, WORKER, CONDUCTOR) == (
+            0,
+            700.0,
+            f"steer@{sent!r}",
+            1,
+            None,
+        )
+        _queue(slot, _entry("q1", CONDUCTOR, wanted=True))
+        clock.now += 5
+        assert queue_age.sender_unread(table, WORKER, CONDUCTOR) == (
+            1,
+            5.0,
+            "q1",
+            1,
+            (1, 5.0, "q1"),
+        )
 
     def test_nothing_to_read_answers_none(self):
         table = SimpleNamespace(get_slot={}.get)
@@ -264,8 +329,31 @@ class TestThePolicy:
         assert ledger_wake.is_unread_overdue(ledger_wake.UNREAD_WAKE_SECS)
 
     def test_the_brief_is_structural(self):
-        assert ledger_wake.unread_wake_brief(item_id="it_1", count=3, waited_secs=725.9) == (
-            "[work-ledger wake] item=it_1 reason=message_unread count=3 oldest_waited_secs=725"
+        assert ledger_wake.unread_wake_brief(
+            item_id="it_1", target=WORKER, count=3, waited_secs=725.9
+        ) == (
+            f"[work-ledger wake] item=it_1 reason=message_unread count=3 target={WORKER} "
+            "oldest_waited_secs=725"
+        )
+
+    def test_the_brief_never_calls_an_unconfirmed_message_unread(self):
+        """With nothing proven unread the text is the one unconfirmed brief's, the
+        same writer a failed turn's note wakes through."""
+        live = ledger_wake.unread_wake_brief(
+            item_id="it_1", target=WORKER, count=0, unconfirmed=2, waited_secs=600
+        )
+        assert live == (
+            f"[work-ledger wake] item=it_1 reason=message_unconfirmed count=2 target={WORKER} "
+            "oldest_waited_secs=600"
+        )
+        assert live == ledger_wake.unconfirmed_wake_brief(
+            item_id="it_1", count=2, target=WORKER, waited_secs=600
+        )
+        assert ledger_wake.unread_wake_brief(
+            item_id="it_1", target=WORKER, count=1, unconfirmed=2, waited_secs=600
+        ) == (
+            f"[work-ledger wake] item=it_1 reason=message_unread count=1 unconfirmed=2 "
+            f"target={WORKER} oldest_waited_secs=600"
         )
 
 
@@ -293,15 +381,23 @@ def _briefs(probe) -> list[str]:
     return [obs.brief for obs in probe.observe(_Ctx()).observations]
 
 
+def _in_queue(count: int, oldest_secs: float | None, oldest_id: str) -> tuple:
+    """A resolver answer whose every message is a queue entry, so its queued part
+    is the whole of it."""
+    return (count, oldest_secs, oldest_id, 0, (count, oldest_secs, oldest_id))
+
+
 class TestTheWake:
     def _probe(self, answers: dict[str, Any]):
         from kiro_crew.probes.work_ledger import WorkLedgerProbe
 
         seen: list[tuple[str, str]] = []
 
-        def _unread(worker: str, sender: str):
-            seen.append((worker, sender))
-            return answers.get("now")
+        def _unread(reader: str, sender: str):
+            seen.append((reader, sender))
+            # "now": the conductor's message in its worker's queue; "report": the
+            # worker's note in the conductor's own.
+            return answers.get("now") if reader == WORKER else answers.get("report")
 
         probe = WorkLedgerProbe(worker_running=lambda _k: True, worker_unread=_unread)
         probe.identity(_Ctx())
@@ -309,21 +405,74 @@ class TestTheWake:
 
     def test_a_message_past_the_threshold_wakes_once_and_the_next_one_wakes_again(self):
         item_id = _bound_item()
-        answers: dict[str, Any] = {"now": (2, ledger_wake.UNREAD_WAKE_SECS + 5, "q1")}
+        answers: dict[str, Any] = {"now": _in_queue(2, ledger_wake.UNREAD_WAKE_SECS + 5, "q1")}
         probe, seen = self._probe(answers)
-        brief = f"[work-ledger wake] item={item_id} reason=message_unread count=2"
+        brief = f"[work-ledger wake] item={item_id} reason=message_unread count=2 target={WORKER}"
         assert any(b.startswith(brief) for b in _briefs(probe))
-        assert seen == [(WORKER, CONDUCTOR)]
+        assert seen == [(WORKER, CONDUCTOR), (CONDUCTOR, WORKER)]
         assert not any("message_unread" in b for b in _briefs(probe))
-        answers["now"] = (1, ledger_wake.UNREAD_WAKE_SECS, "q2")
-        assert any("message_unread count=1" in b for b in _briefs(probe))
+        answers["now"] = _in_queue(1, ledger_wake.UNREAD_WAKE_SECS, "q2")
+        assert any(f"message_unread count=1 target={WORKER}" in b for b in _briefs(probe))
+
+    def test_a_worker_note_unread_in_the_conductors_queue_wakes_it_once(self):
+        """The other direction, through the same resolver with the keys swapped,
+        reading only the answer's queued part. A steer only unconfirmed went into
+        the conductor's turn and wakes nothing; a queued note past the threshold
+        wakes once, naming the worker, and the next stuck one wakes again. Neither
+        direction's record spends the other's."""
+        item_id = _bound_item()
+        secs = ledger_wake.UNREAD_WAKE_SECS
+        answers: dict[str, Any] = {"report": (0, secs, "steer@1.0", 1, None)}
+        probe, _ = self._probe(answers)
+        assert not any("report_unread" in b for b in _briefs(probe))
+        answers["report"] = _in_queue(1, secs - 1, "n1")
+        assert not any("report_unread" in b for b in _briefs(probe))
+        answers["report"] = _in_queue(1, secs + 5, "n1")
+        assert [b for b in _briefs(probe) if "report_unread" in b] == [
+            f"[work-ledger wake] item={item_id} reason=report_unread count=1 from={WORKER} "
+            f"oldest_waited_secs={int(secs) + 5}"
+        ]
+        assert not any("report_unread" in b for b in _briefs(probe))
+        answers["now"] = _in_queue(1, secs, "n1")
+        assert any("message_unread" in b for b in _briefs(probe))
+        answers["report"] = _in_queue(2, secs * 2, "n2")
+        assert any(f"report_unread count=2 from={WORKER}" in b for b in _briefs(probe))
+
+    def test_only_the_conductors_queue_counts_ages_and_keys_a_report_wake(self):
+        """A steer of the worker's is in the conductor's turn already, where the wake
+        would go: unread behind one long tool call (kiro), taken unconfirmed until the
+        turn ends (claude), or settled unconfirmed by a failed turn. Beside a note
+        queued seconds ago it neither counts, ages nor keys the wake, and alone it
+        wakes nothing. The note wakes once on its own count, wait and id."""
+        item_id = _bound_item()
+        secs = ledger_wake.UNREAD_WAKE_SECS
+        settled = f"{ledger_wake.UNCONFIRMED_WAIT_PREFIX}1.0#1"
+        young = (1, 5.0, "n1")
+        answers: dict[str, Any] = {}
+        probe, _ = self._probe(answers)
+        for mixed in (
+            (1, 700.0, "steer@1.0", 1, young),
+            (2, secs, "steer@1.0", 0, young),
+            (2, secs, settled, 0, young),
+            (1, secs, "steer@1.0", 0, None),
+            (1, secs, settled, 0, None),
+        ):
+            answers["report"] = mixed
+            assert not any("report_unread" in b for b in _briefs(probe)), mixed
+        answers["report"] = (3, secs + 100, "steer@1.0", 1, (1, secs, "n1"))
+        assert [b for b in _briefs(probe) if "report_unread" in b] == [
+            f"[work-ledger wake] item={item_id} reason=report_unread count=1 from={WORKER} "
+            f"oldest_waited_secs={int(secs)}"
+        ]
+        answers["report"] = (3, secs + 200, "steer@2.0", 1, (1, secs + 100, "n1"))
+        assert not any("report_unread" in b for b in _briefs(probe)), "keyed on the note"
 
     def test_a_younger_message_or_none_wakes_nothing(self):
         _bound_item()
-        answers: dict[str, Any] = {"now": (1, ledger_wake.UNREAD_WAKE_SECS - 1, "q1")}
+        answers: dict[str, Any] = {"now": _in_queue(1, ledger_wake.UNREAD_WAKE_SECS - 1, "q1")}
         probe, _ = self._probe(answers)
         assert not any("message_unread" in b for b in _briefs(probe))
-        answers["now"] = (1, None, "")
+        answers["now"] = _in_queue(1, None, "")
         assert not any("message_unread" in b for b in _briefs(probe))
         answers["now"] = None
         assert not any("message_unread" in b for b in _briefs(probe))
@@ -351,8 +500,8 @@ class TestTheWake:
     def test_the_service_passes_the_gateways_resolver_through(self):
         from kiro_crew.autonudge import AutoNudgeService
 
-        svc = AutoNudgeService(worker_unread=lambda w, s: (1, 1.0, f"{w}>{s}"))
-        assert svc._worker_unread(WORKER, CONDUCTOR) == (1, 1.0, f"{WORKER}>{CONDUCTOR}")
+        svc = AutoNudgeService(worker_unread=lambda w, s: _in_queue(1, 1.0, f"{w}>{s}"))
+        assert svc._worker_unread(WORKER, CONDUCTOR) == _in_queue(1, 1.0, f"{WORKER}>{CONDUCTOR}")
         assert svc._worker_unread(WORKER, "") is None
         assert AutoNudgeService()._worker_unread(WORKER, CONDUCTOR) is None
 

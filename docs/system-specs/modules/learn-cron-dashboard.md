@@ -3892,10 +3892,25 @@ Contract:
   `POST /api/session-control/end-wait`). A session-requested end also carries
   `{"end_wait_by": "<caller slot key>"}`, which the tool reads only from a reply
   naming its own `wait_id` and uses to say which session ended the sleep. Every
-  early end also carries `{"end_wait_reason": "user" | "steer"}`; on `steer` (a
-  message steered into the turn, the person's or a peer's `session_send`) the
-  tool says a message came into the turn instead of "by the user". The
-  tool breaks its loop and returns a normal string — deliberately **not**
+  early end also carries `{"end_wait_reason": "user" | "steer" | "queued"}`; on
+  `steer` (a message steered into the turn, the person's or a peer's
+  `session_send`) the tool says a message came into the turn instead of "by the
+  user". On `queued` a message was queued for the chat after the sleep began (a
+  worker's note, a cron or app card, the owner's message his turn refused): it
+  runs only after the turn ends, so the reply adds `end_wait_queue`, who waits in
+  the queue as counts and chat keys only (`queue_age.Senders.as_data`:
+  `{total, owner, people, automation, chats: {key: n}}`, at most 8 chat keys and
+  `chats_more` for the rest), and the tool's result carries it as
+  `queued={…}` and tells the model to end its turn to read them. The baseline is
+  the queue's entry ids when the sleep was minted (`_wait_queue_baseline`, re-read
+  per sleep like the steer stamp), so a message already waiting ends no sleep.
+  Two kinds never end one (`queue_age.queued_since`): a restored card that waits
+  for a person, and a loop's wake found in the queue (`AUTOMATION_STEER_META`),
+  which is one a turn ended without reading and may be for work closed since; a
+  live wake reaches a running turn as a steer. A steer and a queued message on
+  the same ping read as `steer`. A sub-agent collection (`spawn_sub_agents`)
+  pings with no `wait_id` and ignores the reply, so nothing queued cuts it short.
+  The tool breaks its loop and returns a normal string — deliberately **not**
   `ToolCancelled`, whose response is suppressed.
 - **`mcp_server_wait`** asks on the same ping what is true of one of the
   calling session's MCP servers. Request `{"mcp_server": "<name>"}` (trimmed, cut

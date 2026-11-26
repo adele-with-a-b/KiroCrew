@@ -231,6 +231,11 @@ class _WaitStep(DeferredTool):
                 ended_early=True,
                 ended_by=str(reply.get("end_wait_by") or "")[:128],
                 by_message=reply.get("end_wait_reason") == "steer",
+                queued=(
+                    _queued_data(reply.get("end_wait_queue"))
+                    if reply.get("end_wait_reason") == "queued"
+                    else None
+                ),
             )
         self.next_ping = now + self.ping_secs
         return None
@@ -271,7 +276,14 @@ class _WaitStep(DeferredTool):
             outcome="success",
         )
 
-    def _finish(self, *, ended_early: bool, ended_by: str, by_message: bool = False) -> str:
+    def _finish(
+        self,
+        *,
+        ended_early: bool,
+        ended_by: str,
+        by_message: bool = False,
+        queued: dict[str, Any] | None = None,
+    ) -> str:
         seconds = self.seconds
         waited = max(0, int(seconds - max(0.0, self.deadline - mcp_core.time.monotonic())))
         self._retire_card()
@@ -289,6 +301,13 @@ class _WaitStep(DeferredTool):
                 f"Wait ended early after {waited}s of {seconds}s: a message came into "
                 f"this turn, and you read it next. Resuming: {self.reason_safe}"
             )
+        if ended_early and queued is not None:
+            return (
+                f"Wait ended early after {waited}s of {seconds}s: messages are queued "
+                f"for this chat. queued={json.dumps(queued, sort_keys=True)}. They run "
+                f"only after this turn ends, so end your turn to read them unless the "
+                f"work in hand must finish first. Resuming: {self.reason_safe}"
+            )
         if ended_early:
             return (
                 f"Wait ended early by the user after {waited}s of {seconds}s. "
@@ -301,6 +320,34 @@ class _WaitStep(DeferredTool):
 #: answers in milliseconds; the bound only matters when the gateway is stalled,
 #: where the step pool must not be held for the helper's 30s default.
 _WAIT_PING_TIMEOUT_SECS = 5.0
+
+#: The keys of a queued early end's sender counts (``queue_age.Senders.as_data``).
+_QUEUED_COUNT_KEYS = ("total", "owner", "people", "automation", "chats_more")
+#: Bounds on the chat keys a queued early end names, as the gateway caps them.
+_QUEUED_CHATS_MAX = 8
+_QUEUED_CHAT_KEY_MAX_CHARS = 128
+
+
+def _queued_data(raw: Any) -> dict[str, Any]:
+    """The sender counts a queued early end carries, rebuilt from counts and keys only.
+
+    The reply is the gateway's, but this text goes to the model, so only whole
+    numbers and bounded chat keys pass: whatever else the field holds is dropped.
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    data: dict[str, Any] = {}
+    for key in _QUEUED_COUNT_KEYS:
+        value = raw.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            data[key] = value
+    chats = raw.get("chats")
+    if isinstance(chats, dict):
+        data["chats"] = {
+            str(chat)[:_QUEUED_CHAT_KEY_MAX_CHARS]: count
+            for chat, count in list(chats.items())[:_QUEUED_CHATS_MAX]
+            if isinstance(count, int) and not isinstance(count, bool) and count >= 0
+        }
+    return data
 
 
 def route_crew(name: str, args: dict[str, Any]) -> str:

@@ -694,6 +694,8 @@ def undelivered_wake_brief(*, item_id: str, tool: str) -> str:
 #: past one worker step, so a note the turn picks up at its next boundary never wakes
 #: anyone, and well inside the stall window, so a worker that will not read its
 #: conductor's correction is surfaced before the conductor would notice the silence.
+#: The same wait wakes a conductor for its worker's note in its own queue
+#: (:func:`report_unread_wake_brief`).
 UNREAD_WAKE_SECS = 600.0
 
 
@@ -721,28 +723,63 @@ def is_unread_overdue(oldest_secs: float | None, oldest_id: str = "") -> bool:
     return oldest_secs is not None and oldest_secs >= UNREAD_WAKE_SECS
 
 
-def unconfirmed_wake_brief(*, item_id: str, count: int) -> str:
-    """Text for a worker whose failed turn took in its conductor's note unconfirmed.
+def unconfirmed_wake_brief(
+    *, item_id: str, count: int, target: str = "", waited_secs: float | None = None
+) -> str:
+    """Text for a sender whose message went into its target's turn, with no read confirmed.
 
-    The worker's turn ended with an error after the note went in, so the note may
-    not have run and nothing runs it again: the conductor decides whether to send
-    it again. *count* is every message of the conductor's the worker has not been seen
-    to read. Structural only, for the reason :func:`wake_brief` gives.
+    The one writer of ``reason=message_unconfirmed``, for two cases. The target's
+    turn ended with an error after the note went in (``queue_age.note_unconfirmed``),
+    so the note may not have run and nothing runs it again: the conductor decides
+    whether to send it again. Or the turn still runs on a harness that reports a
+    steer read only when its turn ends, so the model may have read it at its next
+    step. *count* is the messages counted; *target* and *waited_secs*, when given,
+    name the target and the oldest one's wait. Structural only, for the reason
+    :func:`wake_brief` gives.
     """
-    return f"[work-ledger wake] item={item_id} reason=message_unconfirmed count={int(count)}"
+    who = f" target={target}" if target else ""
+    age = "" if waited_secs is None else f" oldest_waited_secs={int(waited_secs)}"
+    return (
+        f"[work-ledger wake] item={item_id} reason=message_unconfirmed count={int(count)}{who}{age}"
+    )
 
 
-def unread_wake_brief(*, item_id: str, count: int, waited_secs: float) -> str:
-    """Text for a worker that has not read its conductor's message.
+def unread_wake_brief(
+    *, item_id: str, target: str, count: int, waited_secs: float, unconfirmed: int = 0
+) -> str:
+    """Text for a chat that has not read, or not confirmed reading, a message sent it.
 
-    Says the message is still in the worker's queue, so the conductor can tell this
-    apart from a report or a stall: the worker may be working, but it has not seen
-    what it was told. Counts and seconds only, for the reason :func:`wake_brief` is
-    structural.
+    Says the message is still in *target*'s queue or turn, so the sender can tell this
+    apart from a report or a stall: the target may be working, but it has not seen
+    what it was told. *count* is proven unread; *unconfirmed* went into a turn whose
+    harness reports a read only when the turn ends, so the model may have read it.
+    With nothing proven unread it is :func:`unconfirmed_wake_brief`'s text, with the
+    unconfirmed ones as its count, so no wake says unread of a message the harness
+    took. Counts, a session key and seconds only, for the reason :func:`wake_brief`
+    is structural.
+    """
+    if count <= 0:
+        return unconfirmed_wake_brief(
+            item_id=item_id, count=unconfirmed, target=target, waited_secs=waited_secs
+        )
+    extra = f" unconfirmed={int(unconfirmed)}" if unconfirmed > 0 else ""
+    return (
+        f"[work-ledger wake] item={item_id} reason=message_unread count={int(count)}{extra} "
+        f"target={target} oldest_waited_secs={int(waited_secs)}"
+    )
+
+
+def report_unread_wake_brief(*, item_id: str, sender: str, count: int, waited_secs: float) -> str:
+    """Text for a conductor whose own queue holds its worker's note, unread.
+
+    The other direction of :func:`unread_wake_brief`: *sender*, the item's worker,
+    sent a note that queued behind the conductor's running turn, and a queued note
+    runs only once that turn ends. Counts, a session key and seconds only, for the
+    reason :func:`wake_brief` is structural.
     """
     return (
-        f"[work-ledger wake] item={item_id} reason=message_unread count={int(count)} "
-        f"oldest_waited_secs={int(waited_secs)}"
+        f"[work-ledger wake] item={item_id} reason=report_unread count={int(count)} "
+        f"from={sender} oldest_waited_secs={int(waited_secs)}"
     )
 
 

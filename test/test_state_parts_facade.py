@@ -724,6 +724,7 @@ _BASE_SLOT_DEFAULTS: dict[str, tuple[str, str | None]] = {
     "_unstarted_generation": ("value", "-1"),
     "_wait_contested": ("value", "False"),
     "_wait_last_ping": ("value", "0.0"),
+    "_wait_queue_baseline": ("value", "frozenset()"),
     "_wait_state": ("value", "None"),
     "_wait_steer_baseline": ("value", "0.0"),
     "_wake_starting_task": ("value", "None"),

@@ -66,7 +66,13 @@ def build(
     worker_closed: Callable[[str], bool] | None = None,
     worker_looping: Callable[[str], bool] | None = None,
     worker_loop_held: Callable[[str], bool] | None = None,
-    worker_unread: Callable[[str, str], tuple[int, float | None, str] | None] | None = None,
+    worker_unread: (
+        Callable[
+            [str, str],
+            tuple[int, float | None, str, int, tuple[int, float | None, str] | None] | None,
+        ]
+        | None
+    ) = None,
 ) -> "Probe | None":
     """Return a fresh probe for *kind*, or ``None`` when nothing observes it.
 

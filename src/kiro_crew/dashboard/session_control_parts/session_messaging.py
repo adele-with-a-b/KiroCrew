@@ -498,6 +498,12 @@ async def send_to_target(
     # A reply into the creator's asking turn is the one steer the creator opening
     # admits; the steer arm's re-gates pass the opening for it alone.
     reply_to_creator = steer_default and awaited and is_creator and creator_message
+    # A worker's note to the session that created it queues behind the creator's
+    # running turn, except a reply into the asking turn and a note from a worker a
+    # handoff made the creator's manager, which steer in. One that names no delivery
+    # wanted that turn the way a held default does, so when it queues its entry is
+    # marked for the creator's unread wake (``report_unread``).
+    report_default = steer is None and creator_message and is_creator
     steer = bool(steer) or steer_default
     # Only the plain send the opening is for: a caller that reaches its creator by
     # another road (a handoff made it the creator's manager) may steer it, and a
@@ -957,8 +963,13 @@ async def send_to_target(
                     SESSION_SEND_QUEUED_META: True,
                     **({steer_refusal.QUEUE_META_KEY: refusal} if refusal else {}),
                     # The sender wanted the running turn and got the queue, so it
-                    # is woken if this sits unread (``queue_age``).
-                    **({queue_age.STEER_WANTED_META: True} if steer or held_for_person else {}),
+                    # is woken if this sits unread (``queue_age``); for a report to
+                    # the creator, the creator is.
+                    **(
+                        {queue_age.STEER_WANTED_META: True}
+                        if steer or held_for_person or report_default
+                        else {}
+                    ),
                 },
                 relay_meta=relay_meta,
             )

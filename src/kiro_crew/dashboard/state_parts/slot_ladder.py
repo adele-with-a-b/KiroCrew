@@ -41,7 +41,7 @@ Writes: ``_acp_pipe_death_retries``, ``_active_fallback_model``, ``_batch_reject
 ``_transient_ladder_started``, ``_turn_agent_started``, ``_turn_channel_narrowed``,
 ``_turn_channel_origin``, ``_turn_owner_sent``, ``_turn_retries``, ``_turn_user_sent``,
 ``_turn_wrote_text``,
-``_wait_contested``, ``_wait_last_ping``,
+``_wait_contested``, ``_wait_last_ping``, ``_wait_queue_baseline``,
 ``_wait_state``, ``_wait_steer_baseline``, ``replays``.
 """
 
@@ -587,6 +587,9 @@ def init_ladder_fields(self: _ChatSlot) -> None:
     # what stops ONE unconsumed steer from ending every subsequent sleep in
     # the turn and handing the model a `wait` that returns instantly.
     self._wait_steer_baseline = 0.0
+    # The queue's entry ids as they read when the tracked wait was minted, for the
+    # same reason: only an entry queued after that ends the sleep early.
+    self._wait_queue_baseline = frozenset()
     # True once two sleeps have been seen sharing this slot: neither may be
     # tracked or ended, because there is no way to know which one the user is
     # looking at. Latched for the rest of the turn and cleared by the same

@@ -18,7 +18,7 @@ from aiohttp import web
 
 from kiro_crew import session_directive
 from kiro_crew.agent_sdk.mcp_problems import mcp_server_state
-from kiro_crew.dashboard import directive_queue
+from kiro_crew.dashboard import directive_queue, queue_age
 from kiro_crew.dashboard.body_numbers import body_int
 from kiro_crew.dashboard.handlers._shared import guard_owner_surface_routes, internal_memory_scope
 from kiro_crew.dashboard.handlers.sessions_parts.app_scope import (
@@ -614,7 +614,7 @@ def _subagent_activity_at(
 def _wait_end_reason(slot, wait_id: str, provider: Any) -> str | None:
     """Why this sleep should return early, or None to keep sleeping.
 
-    Exactly two reasons, and the narrowness is the design:
+    Exactly three reasons, and the narrowness is the design:
 
     ``"user"``
         The End-wait button parked an explicit request naming this ``wait_id``,
@@ -627,6 +627,14 @@ def _wait_end_reason(slot, wait_id: str, provider: Any) -> str | None:
         tool call is the absence of one, so without this the user's correction
         sits in the backend's steer queue until the sleep elapses — up to the
         tool's 1800s ceiling — while the agent sleeps through it.
+
+    ``"queued"``
+        A message was queued for this chat AFTER this sleep began
+        (:func:`kiro_crew.dashboard.queue_age.queued_since`): a worker's note, a
+        cron card, the owner's message his turn refused. A queued message runs
+        only once this turn ends, so the agent is told it waits instead of
+        sleeping on. The baseline is the queue's entry ids read when this sleep
+        was minted, for the same once-only reason as the steer stamp below.
 
     "After this sleep began" is decided by comparing the provider's steer stamp
     against the reading taken when this sleep was minted, so the handler reads
@@ -655,7 +663,9 @@ def _wait_end_reason(slot, wait_id: str, provider: Any) -> str | None:
         # Not the sleep this slot is tracking (contested identity, stale ping).
         return None
     steered_at = _provider_steer_stamp(provider)
-    return "steer" if steered_at > slot._wait_steer_baseline else None
+    if steered_at > slot._wait_steer_baseline:
+        return "steer"
+    return "queued" if queue_age.queued_since(slot, slot._wait_queue_baseline) else None
 
 
 def _provider_steer_stamp(provider: Any) -> float:
@@ -712,6 +722,7 @@ def _service_wait_ping(
             slot._end_wait_request = None
             slot._wait_last_ping = 0.0
             slot._wait_steer_baseline = 0.0
+            slot._wait_queue_baseline = frozenset()
             state.push_slots_update()
         return
     # ── Ambiguous-identity guard ──
@@ -744,6 +755,7 @@ def _service_wait_ping(
             slot._end_wait_request = None
             slot._wait_last_ping = 0.0
             slot._wait_steer_baseline = 0.0
+            slot._wait_queue_baseline = frozenset()
             state.push_slots_update()
         return
     prev = slot._wait_state
@@ -754,6 +766,7 @@ def _service_wait_ping(
             slot._end_wait_request = None
             slot._wait_last_ping = 0.0
             slot._wait_steer_baseline = 0.0
+            slot._wait_queue_baseline = frozenset()
             logger.info("two concurrent waits share session %s; countdown suppressed", session_key)
             state.push_slots_update()
             return
@@ -782,6 +795,9 @@ def _service_wait_ping(
         # the baseline and the later comparison are two readings of the same
         # provider stamp.
         slot._wait_steer_baseline = _provider_steer_stamp(provider)
+        # Likewise for the queued reason: only an entry queued after THIS sleep
+        # began can end it.
+        slot._wait_queue_baseline = queue_age.queue_ids(slot)
         slot._wait_last_ping = now
         state.push_slots_update()
     else:
@@ -798,6 +814,7 @@ def _service_wait_ping(
         slot._wait_state = None
         slot._wait_last_ping = 0.0
         slot._wait_steer_baseline = 0.0
+        slot._wait_queue_baseline = frozenset()
         reply["end_wait"] = wait_id
         # Advisory, for the tool's result text only: a tool that predates this
         # field honours ``end_wait`` alone exactly as before.
@@ -806,6 +823,10 @@ def _service_wait_ping(
         # Likewise advisory: a message came into this turn, so the tool says so
         # instead of naming the person, and the agent reads it next.
         reply["end_wait_reason"] = reason
+        if reason == "queued":
+            # Who waits, as counts and chat keys, never the text: the agent decides
+            # from it whether to end its turn now.
+            reply["end_wait_queue"] = queue_age.senders(slot).as_data()
         logger.info("wait ending early for %s (reason=%s)", session_key, reason)
         state.push_slots_update()
 

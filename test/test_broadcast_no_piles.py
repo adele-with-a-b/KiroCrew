@@ -235,13 +235,19 @@ class TestTheNewerNoteTakesTheOlderOnesPlace:
         first_id = child._queue[0]["id"]
         sender = slot_history_key(caller)
         before = queue_age.sender_unread(state, child.key, sender)
-        assert before == (1, 0.0, first_id)
+        assert before == (1, 0.0, first_id, 0, (1, 0.0, first_id))
         for at, sha in ((3000.0, "b2"), (5000.0, "c3")):
             now[0] = at
             _broadcast(state, caller, f"main moved to {sha}", mode=None)
             (entry,) = child._queue
             assert entry["id"] != first_id
-            assert queue_age.sender_unread(state, child.key, sender) == (1, at - 1000.0, first_id)
+            assert queue_age.sender_unread(state, child.key, sender) == (
+                1,
+                at - 1000.0,
+                first_id,
+                0,
+                (1, at - 1000.0, first_id),
+            )
         # Only the live entry keeps a record.
         assert child._queued_as == {entry["id"]: first_id}
         assert child._queued_at == {entry["id"]: 1000.0}
