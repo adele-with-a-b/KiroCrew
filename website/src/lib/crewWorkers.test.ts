@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CREW_GROUP_LABEL_KEY, CREW_GROUP_ORDER, CREW_GROUP_TONE, crewSubDispatcher, crewWorkerGroup, crewWorkerGroupOfRow, groupCrewWorkers, orderUnderDispatcher, summarizeCrewWorkers , liveCrewWorkers, liveMateWorkers, mergeCrewWorkers, crewRowCounts } from './crewWorkers'
+import { CREW_GROUP_LABEL_KEY, CREW_GROUP_ORDER, CREW_GROUP_TONE, crewSubDispatcher, crewWorkerGroup, crewWorkerGroupOfRow, groupCrewWorkers, orderUnderDispatcher, summarizeCrewWorkers , liveCrewWorkers, liveMateWorkers, mergeCrewWorkers, crewRowCounts, crewWorkerCrewChat } from './crewWorkers'
 import type { CrewWorker } from '../types'
 
 describe('crewWorkers', () => {
@@ -100,7 +100,23 @@ describe('crewWorkers', () => {
   it('summarizes the API groups, approval first, and counts only approvals for the person', () => {
     const w = (group: CrewWorker['group']) => ({ key: group, title: '', agent: '', status: 'idle', group, last_activity: '', ledger_item: '', created_by: '' }) as CrewWorker
     expect(summarizeCrewWorkers([w('done'), w('with_conductor'), w('approval'), w('waiting')]))
-      .toEqual({ groups: ['approval', 'with_conductor', 'waiting', 'done'], approval: 1, done: 1, total: 4 })
+      .toEqual({ groups: ['approval', 'with_conductor', 'waiting', 'done'], approval: 1, done: 1, total: 4, remoteRunning: [] })
+  })
+
+  it('counts the running workers on each other crew, in list order, and no other', () => {
+    const w = (key: string, group: CrewWorker['group'], remote_crew?: string) => ({ key, title: '', agent: '', status: 'idle', group, last_activity: '', ledger_item: '', created_by: '', remote_crew }) as CrewWorker
+    const summary = summarizeCrewWorkers([
+      w('l1', 'working'), w('r1', 'working', 'Second Mac'), w('r2', 'waiting', 'Second Mac'),
+      w('b1', 'working', 'Build box'), w('r3', 'working', 'Second Mac'), w('r4', 'done', 'Build box'),
+    ])
+    expect(summary.remoteRunning).toEqual([{ name: 'Second Mac', count: 2 }, { name: 'Build box', count: 1 }])
+  })
+
+  it('names the crew chat a remote row opens, and none for a local row or a row with no chat', () => {
+    const base = { key: 'k', title: '', agent: '', status: 'working', group: 'working', last_activity: '', ledger_item: '', created_by: '' } as CrewWorker
+    expect(crewWorkerCrewChat({ ...base, remote_crew: 'Second Mac', remote_instance: 'inst-1', remote_slot: 'chat-9' })).toEqual({ instanceId: 'inst-1', key: 'chat-9' })
+    expect(crewWorkerCrewChat({ ...base, remote_crew: 'Second Mac' })).toBeNull()
+    expect(crewWorkerCrewChat({ ...base, remote_instance: 'inst-1', remote_slot: 'chat-9' })).toBeNull()
   })
 
   it('counts a root row\'s workers as working, waiting and needs you, zero buckets left out', () => {

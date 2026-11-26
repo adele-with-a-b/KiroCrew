@@ -189,6 +189,17 @@ export function orderUnderDispatcher(rows: CrewWorker[], root: string): CrewWork
   return out
 }
 
+/** Where a remote row's chat is on its crew, for the crew window; null for a
+ *  local row and for a remote row that names no chat there. */
+export function crewWorkerCrewChat(worker: CrewWorker): { instanceId: string; key: string } | null {
+  return worker.remote_crew && worker.remote_instance && worker.remote_slot
+    ? { instanceId: worker.remote_instance, key: worker.remote_slot }
+    : null
+}
+
+/** How many running workers one other crew holds, by its display name. */
+export interface CrewRemoteCount { name: string; count: number }
+
 export interface CrewRootSummary {
   /** One entry per worker, approval first, for the row's ghost stack. */
   groups: CrewWorkerGroup[]
@@ -197,6 +208,9 @@ export interface CrewRootSummary {
   approval: number
   done: number
   total: number
+  /** The running workers that run on another crew, per crew in list order: the
+   *  card's "· 2 on Second Mac". Empty when every running worker is local. */
+  remoteRunning: CrewRemoteCount[]
 }
 
 /** One count on a Crew Mode root's row: how many workers are in one bucket. */
@@ -228,10 +242,15 @@ export function crewRowCounts(groups: readonly CrewWorkerGroup[]): CrewRowCount[
 export function summarizeCrewWorkers(workers: readonly CrewWorker[]): CrewRootSummary {
   const groups = workers.map(crewWorkerGroup)
   groups.sort((a, b) => CREW_GROUP_ORDER.indexOf(a) - CREW_GROUP_ORDER.indexOf(b))
+  const remote = new Map<string, number>()
+  for (const w of workers) {
+    if (w.remote_crew && crewWorkerGroup(w) === 'working') remote.set(w.remote_crew, (remote.get(w.remote_crew) ?? 0) + 1)
+  }
   return {
     groups,
     approval: groups.filter(g => g === 'approval').length,
     done: groups.filter(g => g === 'done').length,
     total: groups.length,
+    remoteRunning: [...remote].map(([name, count]) => ({ name, count })),
   }
 }

@@ -686,25 +686,34 @@ def _worker_line(row: Mapping[str, Any], ledger_line: str, slot: Any = None) -> 
     return _one_line(last)
 
 
-def _remote_facts(state: Any, remote: list[tuple[str, LedgerFacts]]) -> dict[str, tuple[str, str]]:
-    """Row key -> (crew display name, status) for remote rows. BLOCKING.
-
-    The name is the instances registry's, else the instance id. The status comes
-    from the readers the ledger read uses for the same item: liveness from
-    ``work_ledger.remote_liveness`` and the pending approval from
-    ``remote_ingest.remote_row_fields``. A closed item is ``closed`` whatever was
-    last stored: ingest pulls open items only. No peer is called.
-    """
-    from kiro_crew import work_ledger
-    from kiro_crew.dashboard.handlers.remote_ingest import remote_row_fields
+def _crew_names(state: Any) -> dict[str, str]:
+    """Instance id -> its display name in the instances registry. BLOCKING."""
     from kiro_crew.dashboard.handlers_instances_gate import _registry
 
     try:
-        names = {str(i.id): str(i.name or "") for i in _registry(state).list()}
+        return {str(i.id): str(i.name or "") for i in _registry(state).list()}
     except Exception:
         logger.debug("crew workers: instances registry unreadable", exc_info=True)
-        names = {}
-    out: dict[str, tuple[str, str]] = {}
+        return {}
+
+
+def _remote_facts(
+    state: Any, remote: list[tuple[str, LedgerFacts]], names: Mapping[str, str]
+) -> dict[str, tuple[str, str, bool]]:
+    """Row key -> (crew display name, status, chat gone) for remote rows. BLOCKING.
+
+    The name is *names*' (the instances registry's), else the instance id. The
+    status comes from the readers the ledger read uses for the same item: liveness
+    from ``work_ledger.remote_liveness`` and the pending approval from
+    ``remote_ingest.remote_row_fields``. A closed item is ``closed`` whatever was
+    last stored: ingest pulls open items only. *Chat gone* is the stored record's
+    own ``closed`` alone, never the item's: a finished task's chat may still be
+    open on its crew. No peer is called.
+    """
+    from kiro_crew import work_ledger
+    from kiro_crew.dashboard.handlers.remote_ingest import remote_row_fields
+
+    out: dict[str, tuple[str, str, bool]] = {}
     for key, facts in remote:
         item = facts.work_item
         running, closed = work_ledger.remote_liveness(facts.board, item) or (False, False)
@@ -719,7 +728,7 @@ def _remote_facts(state: Any, remote: list[tuple[str, LedgerFacts]]) -> dict[str
             status = STATUS_NEEDS_APPROVAL
         else:
             status = STATUS_WORKING if running else STATUS_IDLE
-        out[key] = (names.get(facts.crew) or facts.crew, status)
+        out[key] = (names.get(facts.crew) or facts.crew, status, closed)
     return out
 
 
@@ -796,11 +805,14 @@ async def api_crew_workers(request: web.Request) -> web.Response:
                 "dispatched_by": parents.get(key, "") or "",
             }
         )
-    remote = [(key, facts) for key, facts in items.items() if facts.crew]
-    if remote and kind != ROOT_KIND_MATE:
-        where = await asyncio.to_thread(_remote_facts, state, remote)
+    if kind != ROOT_KIND_MATE:
+        from kiro_crew.dashboard.handlers import crew_workers_remote
+
+        remote = [(key, facts) for key, facts in items.items() if facts.crew]
+        names = await asyncio.to_thread(_crew_names, state)
+        where = await asyncio.to_thread(_remote_facts, state, remote, names) if remote else {}
         for key, facts in remote:
-            name, status = where[key]
+            name, status, gone = where[key]
             workers.append(
                 {
                     "key": key,
@@ -814,10 +826,19 @@ async def api_crew_workers(request: web.Request) -> web.Response:
                     "created_by": root,
                     "dispatched_by": root,
                     # Where it runs. Its key names no local session, so the page
-                    # offers no open, steer, stop or approval on this row.
+                    # offers no steer, stop or approval on this row; a click opens
+                    # the crew's own chat in the crew window.
                     "remote_crew": name,
+                    **crew_workers_remote.open_fields(
+                        facts.crew,
+                        str(getattr(facts.work_item, "worker_session_key", "") or ""),
+                        gone,
+                    ),
                 }
             )
+        # The chats the root opened on another crew with no task: only the
+        # dispatch record knows them.
+        workers.extend(await crew_workers_remote.untied_rows(state, root, items, names))
     out: dict[str, Any] = {"root": root, "workers": workers}
     from kiro_crew.dashboard.handlers.crew_pause import pause_view
 

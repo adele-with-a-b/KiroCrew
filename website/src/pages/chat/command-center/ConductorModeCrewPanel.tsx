@@ -30,7 +30,8 @@ import { useIsMobile } from '../../../hooks/useIsMobile'
 import { i18nT } from '../../../i18n/t'
 import { CrewStatusDot } from '../../../components/crew/CrewModeMarks'
 import CrewApprovalCards, { crewApprovalRequests } from '../../../components/crew/CrewApprovalCards'
-import { crewRouteNotServed, crewSubDispatcher, crewWorkerGroup, mergeCrewWorkers, searchCrewWorkers } from '../../../lib/crewWorkers'
+import { crewRouteNotServed, crewSubDispatcher, crewWorkerCrewChat, crewWorkerGroup, mergeCrewWorkers, searchCrewWorkers } from '../../../lib/crewWorkers'
+import { openCrewWindow } from '../crew-window/crewWindowStore'
 import { fmtRelativeTime } from '../sessionOrder'
 import { CREW_FINISHED_OPEN_KEY, CREW_WORKER_SEARCH_MIN, CrewPanelBack, CrewWorkerSearch, openCrewSession, reopenCrewWorker, useCrewWorkerQuery, useCrewWorkers, useLiveCrewWorkers } from './CrewWorkerList'
 import { usePersistedBool } from '../../../hooks/usePersistedBool'
@@ -457,7 +458,7 @@ function runDetail(state: ConductorModeRunState | null, run: ConductorModeRun | 
  *  "Paused" and its own Continue instead of the status dot. */
 function MemberRow({ node, open, gutter, onToggle, onOpen, current, pausedIn }: {
   node: CrewTreeNode; open: boolean; gutter: boolean; onToggle?: () => void
-  /** Absent on a remote crew's row: its key names no session here to open. */
+  /** Absent on a remote crew's row that names no chat there to open. */
   onOpen?: () => void
   current: boolean; pausedIn?: string
 }) {
@@ -504,7 +505,10 @@ function MemberRow({ node, open, gutter, onToggle, onOpen, current, pausedIn }: 
             {!pausedIn && <CrewStatusDot group={crewWorkerGroup(w)} />}
           </span>
         </span>
-        {w.summary && <span className="block text-[12px] text-text/80 truncate mt-0.5">{w.summary}</span>}
+        {w.summary ? <span className="block text-[12px] text-text/80 truncate mt-0.5">{w.summary}</span>
+          : w.remote_crew && !w.ledger_item && (
+            <span className="block text-[12px] text-text/80 truncate mt-0.5" data-testid="conductor-mode-member-no-task">{i18nT('commandCenter.worker_no_task_linked')}</span>
+          )}
         <span className="block text-[11px] text-muted truncate mt-0.5">
           <span data-testid="conductor-mode-member-location">{w.remote_crew || i18nT('sessionEnvironments.picker.thisMachine')}</span>
           {w.last_activity && <> &middot; {fmtRelativeTime(w.last_activity)}</>}
@@ -654,9 +658,19 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   }, [dispatch, store, root, isMobile])
   const open = useCallback((w: CrewWorker) => {
     setReopenFailed(false)
+    const crewChat = crewWorkerCrewChat(w)
+    if (crewChat) {
+      // A chat on another crew opens in the crew window over the pane, the one
+      // viewer for a crew's chat; on a phone the panel's sheet steps aside for it.
+      openCrewWindow(crewChat)
+      if (isMobile) dispatch(closeActivityPanel())
+      return
+    }
     if (w.status !== 'closed') { openCrewSession(dispatch, w.key, !isMobile); return }
     void reopenCrewWorker(dispatch, store.getState, w.key, w.title, !isMobile).then(ok => { if (!ok) setReopenFailed(true) })
   }, [dispatch, store, isMobile])
+  // A remote row opens only when it names its chat on the crew.
+  const canOpen = (w: CrewWorker) => !w.remote_crew || !!crewWorkerCrewChat(w)
   // The List's search (from CREW_WORKER_SEARCH_MIN members up) filters live and
   // finished members alike; while it is on, finished matches show unfolded.
   const [query, setQuery] = useCrewWorkerQuery(root)
@@ -688,7 +702,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   const finished = visibleCrewRows(finishedTops, isOpen)
   const memberRow = (n: CrewTreeNode) => (
     <MemberRow key={n.w.key} node={n} open={isOpen(n)} gutter={gutter} current={n.w.key === viewing}
-      onToggle={searching ? undefined : () => toggleRow(n, pathToViewing.has(n.w.key))} onOpen={n.w.remote_crew ? undefined : () => open(n.w)}
+      onToggle={searching ? undefined : () => toggleRow(n, pathToViewing.has(n.w.key))} onOpen={canOpen(n.w) ? () => open(n.w) : undefined}
       pausedIn={pause?.stopped.includes(n.w.key) ? root : undefined} />
   )
   // The Board opens first; the per-tab choice is not kept, as before.
@@ -753,7 +767,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
   })
   const openItem = (item: WorkBoardItem) => {
     const w = workers.find(x => x.ledger_item === item.item_id)
-    return w && !w.remote_crew ? () => open(w) : undefined
+    return w && canOpen(w) ? () => open(w) : undefined
   }
   // Needs your input, on the Board above the sprint: the chat's own
   // ask_question card and the crew's approval cards, both compact.

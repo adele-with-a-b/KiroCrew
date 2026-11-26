@@ -941,8 +941,15 @@ export interface CrewWorker {
   dispatched_by?: string
   /** Set when remote dispatch placed the worker on another crew: that crew's
    *  display name (else its instance id). Its `key` names no local session, so
-   *  the row offers no open, steer or approval. Absent on a local worker. */
+   *  the row offers no steer or approval. Absent on a local worker. A row with
+   *  no `ledger_item` is a chat the root opened there with no task. */
   remote_crew?: string
+  /** A remote row's crew (instance id) and that crew's own key for the chat:
+   *  a click opens it in the crew window. Absent when either is unknown and
+   *  when the chat is known gone from its crew. A `closed` row whose task
+   *  finished keeps them while its chat is not known gone. */
+  remote_instance?: string
+  remote_slot?: string
 }
 
 /** One session's recap from records only, no model call
