@@ -837,7 +837,11 @@ async def steer_into_running_turn(
     possibly_delivered = False
     slot._steer_rpc_in_flight.add(message)
     try:
-        wire_message = responsive_chat.steer_message(slot, message) if responsive else message
+        wire_message = (
+            responsive_chat.steer_message(slot, message)
+            if responsive
+            else owner_steer.steer_wire(slot, message)
+        )
         steered = await client.steer(wire_message)
     except Exception as exc:  # best-effort — the caller falls back to the queue
         logger.warning("steer failed for slot %s: %s", slot.key, exc)

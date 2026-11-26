@@ -516,7 +516,14 @@ async def test_a_steer_never_gives_the_turn_the_mark(tmp_path, origin: dict) -> 
 
     assert await _steer(state, slot, **origin) == chat_delivery.STEER_STEERED
     assert slot._turn_owner_sent is False and slot._turn_user_sent is False
-    slot._acp_client.steer.assert_awaited_once_with("redirect")
+    slot._acp_client.steer.assert_awaited_once()
+    (wire,) = slot._acp_client.steer.await_args.args
+    if origin == {"user_origin": True, "owner_origin": True}:
+        # Only the owner's words are marked as theirs in a turn another sender opened.
+        assert wire.startswith("[The owner's own message ")
+        assert wire.endswith("]\nredirect\n[end of the owner's message " + wire[25:37] + "]")
+    else:
+        assert wire == "redirect"
 
 
 @pytest.mark.asyncio

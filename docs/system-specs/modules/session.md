@@ -4954,6 +4954,25 @@ no longer goes first inside a merge run: the agents' run drains first, as it doe
 with the setting off. The Shared Crew startup drain of accepted parked cards still
 picks one entry per turn.
 
+The owner's words never read as part of another sender's text. Queued, the owner's
+row ends a run and drains first, alone, as above. Typed while a turn runs, they are
+steered in and read at its next step, and a harness reads the texts written between
+two steps as one input (kiro-cli joins them, claude joins adjacent user text). So
+when the running turn holds another sender's text (it lacks `_turn_owner_sent`: a
+note, a wake, a cron or an app opened it, or a steer of theirs joined it), the
+owner's steer goes in between `[The owner's own message <mark>: …]` and
+`[end of the owner's message <mark>]`, with a mark drawn fresh for the steer
+(`chat_delivery_owner_steer.steer_wire`); bare, the words would read as the last
+lines of that note, under its `[sent by session …]` tag. The row keeps the words as
+typed. The marked text is the steer's wire form in the one raw-to-wire map
+(`responsive_chat.turn_state(slot).steers`) the echo settle, the held-write and
+taken-unconfirmed reads and a take-back's resend translate through, so its echo
+settles it, and a turn that ends before reading it requeues the words as typed, as
+the owner's own turn (`forget_steer` answers "responsive" only for a responsive
+steer). In the owner's own turn with no other sender's text, and for anyone else's
+steer, the text goes as it is. Pinned by
+`test/test_owner_words_never_under_another_tag.py`.
+
 ### Queued prompt durability
 
 A prompt admitted while the slot is busy is answered `{"ok": true, "queued":

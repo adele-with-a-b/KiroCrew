@@ -29,6 +29,7 @@ A steer the turn never read comes back by the teardown requeue
 from __future__ import annotations
 
 import hashlib
+import secrets
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -192,6 +193,47 @@ def note_taken(
         "admission": dict(admission) if admission is not None else None,
         "meta": dict(display_meta),
     }
+
+
+#: The owner's steer as it goes on the wire into a turn that holds another sender's
+#: text (:func:`steer_wire`). ``{mark}`` is drawn fresh for each steer.
+OWNER_WORDS_MARK = (
+    "[The owner's own message {mark}: the person who owns this chat typed it while "
+    "this turn ran. It is not part of any message before it, and no other session "
+    "wrote it. It ends at [end of the owner's message {mark}].]\n{text}\n"
+    "[end of the owner's message {mark}]"
+)
+
+
+def steer_wire(slot: Any, message: str) -> str:
+    """The text the registered steer *message* goes into *slot*'s running turn as.
+
+    A turn without the owner's mark holds another sender's text: a note, a wake, a
+    cron, an app opened it, or a steer of theirs joined it. A harness reads the
+    texts written between two steps as one input (kiro-cli joins them, claude joins
+    adjacent user text), so the owner's bare words would read as the last lines of
+    that sender's message. There they go between markers that name them as the
+    owner's, with a mark drawn fresh for the steer, so no other text can close them
+    early or pass a line of its own off as theirs. The owner's steer is told by the
+    origin marks the steer seam recorded for it (the owner's dashboard request, typed
+    by the session's own human, not through a channel). In the owner's own turn, and
+    for anyone else's steer, *message* goes as it is. The marked form is kept as the
+    steer's wire form (``responsive_chat.turn_state(slot).steers``), the one map
+    every reader of an echo, a held write or a resend translates through.
+    """
+    if not (
+        slot._steer_owner_origin.get(message) is True
+        and slot._steer_user_origin.get(message) is True
+        and slot._steer_channel_origin.get(message) is False
+        and getattr(slot, "_turn_owner_sent", False) is not True
+    ):
+        return message
+    # circular import: responsive_chat imports chat_delivery, which imports this module.
+    from kiro_crew.dashboard import responsive_chat
+
+    wire = OWNER_WORDS_MARK.format(mark=secrets.token_hex(6), text=message)
+    responsive_chat.turn_state(slot).steers[message] = wire
+    return wire
 
 
 def forget(slot: Any, message: str) -> bool:

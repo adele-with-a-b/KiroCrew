@@ -100,9 +100,15 @@ class _Conductor(_Live):
         resp = await handlers_sc.api_session_control_create(req)
         return resp.status, json.loads(resp.body.decode())
 
+    def wire(self, text: str) -> str:
+        """What the agent was handed for *text*: the owner's words, marked as theirs."""
+        return next(
+            c.args[0] for c in reversed(self.agent.steer.await_args_list) if text in c.args[0]
+        )
+
     def read(self, text: str) -> None:
-        """The agent reads the steer: the real ``steering_consumed`` settle."""
-        cr._settle_consumed_steers(self.slot, text, self.state)
+        """The agent reads the steer: the real ``steering_consumed`` settle of its wire text."""
+        cr._settle_consumed_steers(self.slot, self.wire(text), self.state)
 
     def owner_turns(self) -> list[tuple[str, bool, str]]:
         return [turn for turn in self.turns[1:] if GO in turn[0]]
@@ -238,7 +244,7 @@ async def test_a_harness_that_confirms_only_at_a_clean_end_brings_it_once(
     if end == "stop":
         live.slot._stopping = True
     else:
-        live.agent.steers_taken_unconfirmed = frozenset({GO})
+        live.agent.steers_taken_unconfirmed = frozenset({live.wire(GO)})
 
     await live.finish()
 

@@ -4110,7 +4110,10 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   owner decided their message is read at the turn's next step, not after every step
   it still takes, at the cost of their rights inside that turn, and it never has to
   be typed again (`chat_delivery_owner_steer`). So `steer_into_running_turn` steers
-  it in like any other: the turn keeps no mark, and a crew-scoped read or a `crew=`
+  it in, its words between markers naming them as the owner's
+  (`chat_delivery_owner_steer.steer_wire`, [session](session.md), agents' rows), so
+  they never read as the last lines of another sender's note. The turn keeps no
+  mark, and a crew-scoped read or a `crew=`
   dispatch it asks for is refused as `not_owner_turn` (a guide, card or
   `update_self` call as `not_user_turn`). A patrol wake's `_turn_patrol_wake`
   stays: the owner's words take nothing from the wake, so its remote work goes on.
