@@ -32,7 +32,7 @@ Writes: ``_acp_pipe_death_retries``, ``_active_fallback_model``, ``_batch_reject
 ``_steer_clear``, ``_steer_confirmed``,
 ``_steer_decision_strips``, ``_steer_delivery_ids``, ``_steer_owner_origin``,
 ``_steer_possibly_delivered``,
-``_steer_retract``, ``_steer_rpc_in_flight``, ``_steer_segment_cut``, ``_steer_send_ids``,
+``_steer_retract``, ``_steer_taken_unconfirmed``, ``_steer_rpc_in_flight``, ``_steer_segment_cut``, ``_steer_send_ids``,
 ``_steer_user_origin``, ``_subagent_deliveries_inflight``,
 ``_subagents_inline_collected``, ``_synthesis_armers``,
 ``_synthesis_completion_turns``, ``_synthesis_final_turn_ran``, ``_synthesis_inflight``,
@@ -489,6 +489,10 @@ def init_ladder_fields(self: _ChatSlot) -> None:
     # turn's teardown requeues them, and that requeue says they may already
     # have been delivered instead of re-sending the text as fresh.
     self._steer_possibly_delivered = set()
+    # Pending peer steers the ending turn's agent took in without confirming
+    # (``steer_queue._mark_taken_steers``): the teardown settles them instead of
+    # requeueing them, so they never run twice.
+    self._steer_taken_unconfirmed = set()
     # Steers whose ``client.steer()`` RPC has not returned yet. A turn that
     # ends meanwhile requeues them as possibly delivered: the frame may
     # already be in the pipe, and the RPC's own verdict arrives too late to

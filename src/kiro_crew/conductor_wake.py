@@ -8,7 +8,10 @@ act on (:func:`~kiro_crew.work_vocab.wake_statuses`: ``done``, ``blocked``,
 call never reached the ledger because the harness could not deliver it
 (:func:`wake_for_undelivered_report`, :mod:`kiro_crew.work_ledger_undelivered`): the
 worker meant to say something, and the conductor would otherwise hear nothing at all.
-Nothing else here wakes anybody.
+The same push runs when the worker's turn took a note of the conductor's in and then
+failed without confirming it (:func:`wake_for_unconfirmed_note`): the note may not have
+run, nothing runs it again, and only the conductor can send it again. Nothing else here
+wakes anybody.
 
 WHY NOT A TURN END OR A CLOSE. Both were triggers once, on the reading that a worker's
 turn ending means it has a result. It does not: a worker that stopped to wait, that
@@ -1034,6 +1037,33 @@ def wake_for_undelivered_report(conductor_slot_key: str, item_id: str) -> "Any |
         return asyncio.run_coroutine_threadsafe(_fire(svc, conductor_slot_key, item_id), running)
     except Exception:  # noqa: BLE001 - a push must never reach the worker's turn
         logger.debug("conductor wake: could not schedule an undelivered-report push")
+        return None
+
+
+def wake_for_unconfirmed_note(worker_slot_key: str, sender_slot_key: str) -> "Any | None":
+    """Pull the sender's work-ledger tick forward: its own worker's turn took a note of
+    its in and then failed without confirming it. The scheduled future, or ``None``.
+
+    The third trigger, the same push as :func:`wake_for_undelivered_report`'s, and only
+    for a sender that is the conductor *worker_slot_key* is bound to: the tick reads
+    the note off the worker's slot through the probe's unread resolver
+    (``queue_age.note_unconfirmed``) and wakes with ``reason=message_unconfirmed``. Any
+    other sender has only its notice row. Blocking file read (the worker's binding):
+    call it off the event loop. Never raises.
+    """
+    try:
+        from kiro_crew import work_ledger
+        from kiro_crew.session_ledger import ledger_key
+
+        binding = work_ledger.read_binding(ledger_key(worker_slot_key))
+        if binding is None:
+            return None
+        conductor_slot_key, item_id = binding
+        if ledger_key(conductor_slot_key) != ledger_key(sender_slot_key):
+            return None
+        return wake_for_undelivered_report(conductor_slot_key, item_id)
+    except Exception:  # noqa: BLE001 - a push must never reach the worker's teardown
+        logger.debug("conductor wake: could not schedule an unconfirmed-note push")
         return None
 
 

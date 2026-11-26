@@ -422,6 +422,17 @@ describe('steer pending / requeued treatments', () => {
     expect(screen.queryByText(BADGE)).not.toBeInTheDocument()
   })
 
+  // Another session's steer that went into a turn which then failed: not run
+  // again, so neither the badge nor "Steering…" nor the requeued line, but its own
+  // line, also while a later turn runs.
+  it('renders the may-not-have-run line for an unconfirmed steer', () => {
+    render(<UserMessage content="go north" meta={{ steer: true, steerState: 'unconfirmed' }} messageTs="unconf" slotRunning renderContent={renderContent} />)
+    expect(screen.getByText('Went into the turn, which then ended with an error — may not have run.')).toBeInTheDocument()
+    expect(screen.queryByText(BADGE)).not.toBeInTheDocument()
+    expect(screen.queryByText(PENDING)).not.toBeInTheDocument()
+    expect(screen.queryByText(REQUEUED)).not.toBeInTheDocument()
+  })
+
   // A surface without the shared turn grouping still draws a superseded row, so
   // it must keep the requeued line rather than read as a plain second send.
   it('keeps the requeued line on a superseded steer row', () => {

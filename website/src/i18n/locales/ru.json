@@ -14245,6 +14245,7 @@
         "delivery_pending": "Ожидание доставки...",
         "redirecting_the_running_turn_not_yet_confirmed": "Перенаправление выполняющегося хода — ещё не подтверждено.",
         "turn_ended_before_this_applied_runs_as_its_own_message": "Ход завершился до того, как это применилось, — сообщение выполняется отдельно.",
+        "went_in_turn_failed_may_not_have_run": "Попало в ход, но ход затем завершился ошибкой — возможно, не выполнено.",
         "quote_message": "Цитировать сообщение",
         "more_actions": "Другие действия",
         "edit_replaces_below": "Отправка заменит ответы ниже",

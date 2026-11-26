@@ -266,6 +266,7 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
     && steerState !== 'written'
     && steerState !== 'requeued'
     && steerState !== 'superseded'
+    && steerState !== 'unconfirmed'
     && !(steerOptimistic && !steerState)
   // The two honest intermediate states get their own MUTED treatment (#8069),
   // so a steer never looks identical to an ordinary send while unconfirmed.
@@ -285,6 +286,10 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
   // row, and a surface that still draws it shows what main showed.
   const requeuedSteer = !hideSteerBadge && steerMeta
     && (steerState === 'requeued' || steerState === 'superseded')
+  // Another session's steer that went into the turn, which then ended with an
+  // error before the harness confirmed it: it is not run again, so the row says
+  // it may not have run instead of claiming the redirect landed.
+  const unconfirmedSteer = !hideSteerBadge && steerMeta && steerState === 'unconfirmed'
   // These rows run as their own message, not as a steer into a running turn: a
   // steer the turn ended before confirming (`requeued`, then `superseded` once
   // its new row lands), or a row with no `meta.steer` that carries the receipt
@@ -982,6 +987,11 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
                states read as one indicator family (UX review on #9037). */
             <div className="inline-flex items-center gap-1 text-[12px] leading-5 text-muted mb-1 pr-1">
               <Target size={12} className="shrink-0" /> {i18nT('pages.chat.userMessage.turn_ended_before_this_applied_runs_as_its_own_message')}
+            </div>
+          )}
+          {unconfirmedSteer && (
+            <div className="inline-flex items-center gap-1 text-[12px] leading-5 text-muted mb-1 pr-1" data-testid="steer-unconfirmed">
+              <Target size={12} className="shrink-0" /> {i18nT('pages.chat.userMessage.went_in_turn_failed_may_not_have_run')}
             </div>
           )}
           {/* A queued send has no badge of its own here, so on this arm the line

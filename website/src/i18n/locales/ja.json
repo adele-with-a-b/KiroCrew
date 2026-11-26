@@ -13273,6 +13273,7 @@
         "delivery_pending": "送信確認待ち…",
         "redirecting_the_running_turn_not_yet_confirmed": "実行中のターンをリダイレクトしています — まだ確認されていません。",
         "turn_ended_before_this_applied_runs_as_its_own_message": "適用される前にターンが終了したため、別のメッセージとして実行されます。",
+        "went_in_turn_failed_may_not_have_run": "ターンに入りましたが、ターンはその後エラーで終了しました — 実行されていない可能性があります。",
         "quote_message": "メッセージを引用",
         "more_actions": "その他の操作",
         "edit_replaces_below": "送信すると下の返信が置き換わります",

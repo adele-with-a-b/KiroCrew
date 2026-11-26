@@ -123,6 +123,7 @@ class _ChatSlot:
         "_queued_as",
         "_broadcast_replaced",
         "_steered_at",
+        "_steer_unconfirmed_waits",
         "_approval_futures",
         "_approval_instances",
         "_approval_stopped",
@@ -378,6 +379,7 @@ class _ChatSlot:
         "_steer_admissions",
         "_steer_decision_strips",
         "_steer_possibly_delivered",
+        "_steer_taken_unconfirmed",
         "_steer_rpc_in_flight",
         "_native_steer_in_flight",
         "_steer_retract",
@@ -599,6 +601,7 @@ class _ChatSlot:
     _queued_as: dict[str, str]
     _broadcast_replaced: dict[str, int]
     _steered_at: dict[str, tuple[float, bool]]
+    _steer_unconfirmed_waits: dict[str, tuple[str, float]]
     _approval_futures: dict[str, asyncio.Future[str]]
     _approval_instances: dict[str, tuple[asyncio.Future[str], str]]
     _approval_stopped: set[str]
@@ -763,6 +766,9 @@ class _ChatSlot:
     _steer_admissions: dict[str, dict]
     _steer_decision_strips: dict[str, dict]
     _steer_possibly_delivered: set[str]
+    #: Pending steers the ending turn's agent took in without confirming them
+    #: (``steers_taken_unconfirmed``); read and emptied by the teardown requeue.
+    _steer_taken_unconfirmed: set[str]
     _steer_rpc_in_flight: set[str]
     #: Native-card ids with a /question/steer delivery in flight (handlers/slot_question).
     #: A SEPARATE set, never on the card's pending record, so a steer claim is never

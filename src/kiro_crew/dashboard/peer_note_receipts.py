@@ -39,8 +39,12 @@ take back. Nor does a steer the harness took where a read is reported only
 at a clean turn end (``steer_needs_loss_recovery``) and the turn did not end
 cleanly (``queue_age.steer_read_unreported``): the model may have read it. A
 steer such a harness held for a running tool and never wrote gets none either,
-and waits for a person. A carried note a refused steer puts back
-(``steer_carry``) gets its receipt again by :func:`note_appended`.
+and waits for a person. A ``session_send`` queued note a refused carry puts
+back (``steer_carry``) gets its receipt again by :func:`note_appended`. A
+requeued steer it puts back gets none: that function takes only a
+``session_send`` mark, and :func:`note_requeued` is not called again, because
+the requeue may have withheld the receipt on purpose and the carry has already
+taken the stamp that says why.
 
 REMOVED, before anything else happens, when the entry leaves the queue through
 the queue's own pop, remove or edit, when a drain consumes it, and when a hard

@@ -18,9 +18,12 @@ Whose entries move is decided by the entry's own stamp, never by its text:
   queued (the ``crew`` turn actor): only the conductor that opened that session
   can send to it.
 
-A person's entry, a cron card, an app message, another session's entry, a
-requeued steer and anything restored after a restart (the restore drops both
-stamps) never match, so they never move.
+A person's entry, a cron card, an app message, another session's entry and
+anything restored after a restart (the restore drops both stamps) never match,
+so they never move. The sender's own steer that a turn's teardown requeued
+(``Carry.waits``) goes in first too, and its old steer row is marked
+superseded; one marked possibly delivered stays for the drain, and the carry
+goes on past it, never refused as if the running turn had ended.
 
 The first entry that cannot go ends the carry, and it and the ones after it stay
 queued as they were: an editor open on its card, a row already written, a
@@ -70,9 +73,10 @@ class Carry:
 
     mine: "Callable[[dict[str, Any]], bool]"
     count: int = 0
-    #: The sender's entries that stay queued and that nothing of the sender's may
-    #: pass: a steer of theirs the teardown requeued. One ahead of the rest ends
-    #: the carry and keeps the new note out of the turn, so it queues behind.
+    #: The sender's steers the teardown requeued. They go in like the sender's
+    #: queued entries, in their place, and their old steer row is retired; one
+    #: marked possibly delivered stays queued for the drain and the carry goes on
+    #: past it.
     waits: "Callable[[dict[str, Any]], bool] | None" = None
 
 
@@ -149,8 +153,8 @@ def _queued_by_hub_conductor(entry: dict[str, Any]) -> bool:
     if not isinstance(meta, dict) or meta.get(TURN_ACTOR_META_KEY) != "crew":
         return False
     if _requeued_steer_of_hub_conductor(entry):
-        # A steer the teardown requeued: it already has a steer row, and the
-        # drain is what settles that row. It is never steered a second time.
+        # A steer the teardown requeued: ``Carry.waits`` carries it, retiring
+        # the steer row it already has.
         return False
     # shortcut: an entry fair admission parked work for stays queued, because
     # steering it would leave that work row unsettled; settle the row here once
@@ -270,6 +274,61 @@ def _discarded_by_hard_stop(
         logger.warning("could not tell the sender of a discarded carry", exc_info=True)
 
 
+def _possibly_delivered(entry: dict[str, Any]) -> bool:
+    """Whether the turn that requeued *entry* may already have read it."""
+    from kiro_crew.dashboard.chat_utils_injected_rows import STEER_POSSIBLY_DELIVERED_META
+
+    meta = entry.get("meta")
+    return isinstance(meta, dict) and bool(meta.get(STEER_POSSIBLY_DELIVERED_META))
+
+
+def _plain(entry: dict[str, Any]) -> bool:
+    """Whether *entry* is a plain text entry the carry may move: a requeued steer
+    is one, while a restored card, a typed entry (a recovery replay, an app
+    message) or one with consume callbacks is not, whatever stamp it carries."""
+    from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY
+
+    return not (
+        entry.get(RESTORED_QUEUE_KEY)
+        or entry.get("kind")
+        or "_on_consumed" in entry
+        or "_on_irreversibly_consumed" in entry
+    )
+
+
+def _retire_requeued_row(state: "DashboardState", slot: Any, entry: dict[str, Any]) -> None:
+    """Stop drawing the steer row of a requeued *entry* the carry just steered.
+
+    That row says the text runs as its own message; it went into the turn
+    instead (or was requeued again, as a new entry the drain writes a row for).
+    It is marked ``superseded`` by the newest steer row of the same text, as the
+    drain marks it for the turn it runs. Best-effort: a row not found keeps it.
+    """
+    from kiro_crew.dashboard.chat_turn.superseded_steer import (
+        _requeued_steer_row,
+        _retire_superseded_steer_row,
+    )
+
+    content = entry.get("content")
+    old = _requeued_steer_row(slot, [entry], content, "user") if isinstance(content, str) else None
+    if old is None:
+        return
+    successor = next(
+        (
+            row
+            for row in reversed(slot.messages)
+            if row is not old
+            and row.get("content") == content
+            and (row.get("meta") or {}).get("steer") is True
+        ),
+        None,
+    )
+    try:
+        _retire_superseded_steer_row(state, slot, old, successor)
+    except Exception:
+        logger.warning("could not retire a carried steer's old row on %s", slot.key, exc_info=True)
+
+
 def _put_back(slot: Any, entry: dict[str, Any], ahead: list[str], stamp: Any) -> None:
     """Return *entry* to *slot*'s queue behind the last survivor of *ahead*, the
     ids that were in front of it, with the wait stamp it had."""
@@ -281,8 +340,10 @@ def _put_back(slot: Any, entry: dict[str, Any], ahead: list[str], stamp: Any) ->
     queue.insert(at, entry)
     from kiro_crew.dashboard import peer_note_receipts
 
-    # Its receipt left with it (``queue_pop``); the steer was refused, so the note
-    # is proven again after a restart. A refusal can hide one written steer: a
+    # Its receipt left with it (``queue_pop``); the steer was refused, so a
+    # ``session_send`` queued note is proven again after a restart. A requeued
+    # steer is not (``note_appended`` takes only that mark): its requeue may have
+    # withheld the receipt on purpose. A refusal can hide one written steer: a
     # frame the turn ended before answering (``_send_steering_request`` returns
     # None) may have been read, and a restart can then send that note again.
     peer_note_receipts.note_appended(slot, entry)
@@ -364,19 +425,24 @@ async def take_earlier_in(
             # pressed; what is queued now arrived after it and stays for the
             # next turn, so nothing is carried into the turn being killed.
             return SteerUnavailable(steer_refusal.TURN_ENDED)
+        # The sender's requeued steer goes in in its place like any of their
+        # entries: the turn is running, so the note never waits a whole turn behind
+        # it. One the ending turn may already have read stays for the drain, which
+        # tells the model so, and the carry goes on past it.
         waits = carry.waits
         entry = next(
             (
                 e
                 for e in slot._queue
-                if isinstance(e, dict) and (carry.mine(e) or (waits is not None and waits(e)))
+                if isinstance(e, dict)
+                and (
+                    carry.mine(e)
+                    or (waits is not None and waits(e) and _plain(e) and not _possibly_delivered(e))
+                )
             ),
             None,
         )
-        if entry is not None and not carry.mine(entry):
-            # The sender's requeued steer is the oldest of theirs here. It runs
-            # as its own turn, so nothing of the sender's goes in ahead of it.
-            return SteerUnavailable(steer_refusal.TURN_ENDED)
+        requeued = entry is not None and not carry.mine(entry)
         if entry is None or entry.get("content") == ahead_of or not _may_go(state, slot, entry):
             return None
         queue_id = str(entry.get("id") or "")
@@ -406,6 +472,8 @@ async def take_earlier_in(
             else:
                 _put_back(slot, entry, ahead, stamp)
             raise
+        if requeued and outcome in (STEER_STEERED, STEER_REQUEUED):
+            _retire_requeued_row(state, slot, entry)
         if outcome == STEER_STEERED:
             carry.count += 1
             _left_the_queue(state, slot, queue_id)

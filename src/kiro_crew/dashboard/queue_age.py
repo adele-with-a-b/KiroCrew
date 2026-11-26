@@ -14,6 +14,7 @@ but gives no age, and nothing here says it is fresh.
 
 from __future__ import annotations
 
+import itertools
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -85,6 +86,81 @@ def note_steered(slot: Any, message: str, *, read_reported: bool = True) -> None
         slot._steered_at = kept
     except AttributeError:
         return
+
+
+#: Most unconfirmed notes one slot keeps a record of (:func:`note_unconfirmed`).
+#: Matches the slot's own cap on the steers it holds, which bounds how many one
+#: failed turn can settle; past it the oldest record goes.
+_MAX_UNCONFIRMED = 32
+
+#: Numbers each unconfirmed note's wait identity, so two settled at one clock
+#: reading stay two waits.
+_unconfirmed_serial = itertools.count(1)
+
+
+def note_unconfirmed(slot: Any, message: str, admission: Any) -> None:
+    """Record that *slot*'s failed turn took a session's steer in unconfirmed.
+
+    The steer is not requeued (``steer_queue._settle_taken_peer_steer``), so no
+    queue entry is left for :func:`waits` to count, and nothing runs it again.
+    This record keeps it counted for its sender as a message the worker has not
+    been seen to read, with an identity that starts
+    :data:`~kiro_crew.ledger_wake.UNCONFIRMED_WAIT_PREFIX`, so the sender's
+    work-ledger watch wakes at once (``reason=message_unconfirmed``) rather than
+    after the unread threshold. It counts whether or not the worker runs another
+    turn meanwhile (one queued behind the failed turn starts at once), until the
+    sender next sends to the worker (:func:`forget_unconfirmed`), which is its
+    answer. Settled oldest first, so past :data:`_MAX_UNCONFIRMED` the oldest
+    record goes. Best-effort like :func:`note_queued`.
+    """
+    from kiro_crew.dashboard.session_control_parts.delivery_containment import (
+        send_origin_slot,
+    )
+    from kiro_crew.ledger_wake import UNCONFIRMED_WAIT_PREFIX
+
+    origin = send_origin_slot(admission)
+    if not origin or not message:
+        return
+    stamps = getattr(slot, "_steered_at", None)
+    sent = _sent_at(stamps.get(message)) if isinstance(stamps, dict) else None
+    now = _clock()
+    records = getattr(slot, "_steer_unconfirmed_waits", None)
+    kept = dict(records) if isinstance(records, dict) else {}
+    token = f"{UNCONFIRMED_WAIT_PREFIX}{now!r}#{next(_unconfirmed_serial)}"
+    kept[token] = (ledger_key(origin), sent if sent is not None else now)
+    while len(kept) > _MAX_UNCONFIRMED:
+        kept.pop(next(iter(kept)))
+    try:
+        slot._steer_unconfirmed_waits = kept
+    except AttributeError:
+        return
+
+
+def forget_unconfirmed(slot: Any, sender: str) -> None:
+    """Drop *sender*'s :func:`note_unconfirmed` records on *slot*.
+
+    Called when *sender* sends to *slot* again: that send is its answer to the
+    "may not have run" notices, so they stop counting as unread.
+    """
+    records = getattr(slot, "_steer_unconfirmed_waits", None)
+    if not isinstance(records, dict) or not sender:
+        return
+    want = ledger_key(sender)
+    for token in [t for t, (origin, _sent) in records.items() if origin == want]:
+        records.pop(token, None)
+
+
+def _unconfirmed(slot: Any, want: str) -> list[tuple[str, float]]:
+    """``(identity, sent_at)`` of each unconfirmed note of *want*'s (every
+    sender's for ``""``), oldest first."""
+    records = getattr(slot, "_steer_unconfirmed_waits", None)
+    if not isinstance(records, dict):
+        return []
+    return [
+        (token, float(sent))
+        for token, (origin, sent) in records.items()
+        if not want or origin == want
+    ]
 
 
 def requeued_steer_meta(admission: Any) -> dict[str, bool]:
@@ -191,7 +267,8 @@ def waits(
     running turn (:data:`STEER_WANTED_META`). *steers* also counts the steers the
     running turn accepted and has not read (the ``_pending_steers`` whose
     :func:`note_steered` stamp counts, attributed by their admission's send
-    origin); each of those wanted the turn.
+    origin) and the steers a failed turn took in unconfirmed
+    (:func:`note_unconfirmed`); each of those wanted the turn.
     """
     if slot is None:
         return None
@@ -233,6 +310,16 @@ def waits(
             count += 1
             if oldest_at is None or sent < oldest_at:
                 oldest_at, oldest_id = sent, f"steer@{sent!r}"
+        # A note a failed turn took in unconfirmed (:func:`note_unconfirmed`). Its
+        # identity names the wait even when an older one exists: it is the one
+        # that needs the sender now, and each new failure is news.
+        lost = _unconfirmed(slot, want)
+        for _token, sent in lost:
+            count += 1
+            if oldest_at is None or sent < oldest_at:
+                oldest_at = sent
+        if lost:
+            oldest_id = lost[-1][0]
     if not count:
         return None
     return QueueWait(count, None if oldest_at is None else max(0.0, now - oldest_at), oldest_id)

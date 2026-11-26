@@ -697,13 +697,39 @@ def undelivered_wake_brief(*, item_id: str, tool: str) -> str:
 UNREAD_WAKE_SECS = 600.0
 
 
-def is_unread_overdue(oldest_secs: float | None) -> bool:
+#: How the wait identity of a note the worker's turn took in and then failed without
+#: confirming begins (``queue_age.note_unconfirmed``). Such a wait is overdue at
+#: once: the turn that could have read the note is over, so waiting longer tells the
+#: conductor nothing, and nothing will run the note again.
+UNCONFIRMED_WAIT_PREFIX = "unconfirmed@"
+
+
+def is_unconfirmed_wait(oldest_id: str) -> bool:
+    """Whether *oldest_id* names a note a failed turn took in unconfirmed."""
+    return isinstance(oldest_id, str) and oldest_id.startswith(UNCONFIRMED_WAIT_PREFIX)
+
+
+def is_unread_overdue(oldest_secs: float | None, oldest_id: str = "") -> bool:
     """Whether a message that has waited *oldest_secs* needs its sender woken.
 
     ``None`` -- no entry carries an enqueue stamp, as after a restart -- never wakes:
-    an age nobody measured must not be read as an old one.
+    an age nobody measured must not be read as an old one. A wait whose identity is
+    an unconfirmed note (:func:`is_unconfirmed_wait`) is overdue whatever its age.
     """
+    if is_unconfirmed_wait(oldest_id):
+        return True
     return oldest_secs is not None and oldest_secs >= UNREAD_WAKE_SECS
+
+
+def unconfirmed_wake_brief(*, item_id: str, count: int) -> str:
+    """Text for a worker whose failed turn took in its conductor's note unconfirmed.
+
+    The worker's turn ended with an error after the note went in, so the note may
+    not have run and nothing runs it again: the conductor decides whether to send
+    it again. *count* is every message of the conductor's the worker has not been seen
+    to read. Structural only, for the reason :func:`wake_brief` gives.
+    """
+    return f"[work-ledger wake] item={item_id} reason=message_unconfirmed count={int(count)}"
 
 
 def unread_wake_brief(*, item_id: str, count: int, waited_secs: float) -> str:

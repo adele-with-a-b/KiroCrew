@@ -356,7 +356,8 @@ export function preserveSettledUpsertRows(existing: ChatMessage[], merged: ChatM
   // back (`steer_queue.py`; a requeued steer runs later as its own NEW row, not a
   // rewrite of this one), so all three are safe anchors. `requeued` then moves to
   // `superseded` once that row lands (`queue_drain.py`), and nothing moves it back.
-  const STEER_SETTLED = new Set(['consumed', 'requeued', 'retracted', 'superseded'])
+  // `unconfirmed` (went into a turn that then failed) is final the same way.
+  const STEER_SETTLED = new Set(['consumed', 'requeued', 'retracted', 'superseded', 'unconfirmed'])
 
   // The `(role, mid, ts)` upsert key for a covered row, or undefined if the row
   // is not one this pass guards. Steer rows ride the `user` role (a person's or
