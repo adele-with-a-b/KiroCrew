@@ -182,10 +182,10 @@ def speech_preview(
 ) -> str:
     """The roster's one-line quote of a spoken message, built the ONE way.
 
-    Markdown is stripped first (:func:`strip_markdown_preview`), *sanitize* --
-    the caller's redaction chain -- runs on the stripped text, and only then is
-    the result cut to *max_chars* with a trailing ellipsis. Sanitization precedes
-    truncation so a boundary cannot hide a credential fragment from a
+    Markdown is stripped and *sanitize* -- the caller's redaction chain -- runs
+    before and after the lines are joined (:func:`masked_preview`), and only then
+    is the result cut to *max_chars* with a trailing ellipsis. Sanitization
+    precedes truncation so a boundary cannot hide a credential fragment from a
     pattern-based redactor. Returns ``""`` when nothing visible remains.
 
     Two writers spell a member's ``last_message``: the cold transcript read
@@ -195,14 +195,31 @@ def speech_preview(
     and would otherwise append a correction after every formatted message. Both
     call this and nothing else.
     """
-    preview = strip_markdown_preview(text)
+    preview = strip_markdown_preview(text) if sanitize is None else masked_preview(text, sanitize)
     if not preview:
         return ""
-    if sanitize is not None:
-        preview = sanitize(preview)
     if len(preview) > max_chars:
         preview = preview[:max_chars].rstrip() + "…"
     return preview
+
+
+def masked_preview(text: str, mask: Callable[[str], str]) -> str:
+    """:func:`strip_markdown_preview` of *text*, with *mask* run before and after the join.
+
+    The one way a one-line preview is masked. *mask* first reads the stripped
+    text with its line breaks kept, as the chat itself is masked, so a rule that
+    only matches at a line start (a ``key=value`` line under a sentence) still
+    sees one. The lines are joined only after that, and *mask* reads the joined
+    line once more, so a credential split over a line break (a header name above
+    its value) stays masked too. Masking each line on its own instead would
+    miss a key block spread over several lines. Markdown is stripped before
+    either pass, so markup cannot split a credential past the mask. Returns
+    ``""`` when nothing visible remains.
+    """
+    lines = _strip_markdown_lines(text)
+    if not lines.strip():
+        return ""
+    return mask(" ".join(mask(lines).split()))
 
 
 def strip_markdown_preview(text: str) -> str:
@@ -214,8 +231,13 @@ def strip_markdown_preview(text: str) -> str:
     (category Cf — the zero-width space and friends) are dropped first, so a
     message that renders as nothing yields an empty preview and downstream
     empty-preview fallbacks fire. Truncation is the caller's job — this only
-    cleans.
+    cleans. A preview that is masked goes through :func:`masked_preview`.
     """
+    return " ".join(_strip_markdown_lines(text).split())
+
+
+def _strip_markdown_lines(text: str) -> str:
+    """:func:`strip_markdown_preview` of *text* with its whitespace not yet collapsed."""
     t = drop_format_chars(text).replace("\x00", "")
     t = _CRON_ROW_MARKER_RE.sub(r"\1", t)
     t = _FENCE_RE.sub(_fence_placeholder, t)
@@ -241,5 +263,4 @@ def strip_markdown_preview(text: str) -> str:
     t = _BOLD_RE.sub(r"\2", t)
     t = _ITALIC_STAR_RE.sub(r"\1", t)
     t = _STRIKE_RE.sub(r"\1", t)
-    t = _CODE_TOKEN_RE.sub(lambda m: spans[int(m.group(1))], t)
-    return " ".join(t.split())
+    return _CODE_TOKEN_RE.sub(lambda m: spans[int(m.group(1))], t)

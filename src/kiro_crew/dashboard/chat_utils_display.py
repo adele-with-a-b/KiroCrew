@@ -760,7 +760,7 @@ def _remember_redacted(
 
 
 # The sidebar's one-line preview of a tab's last message, memoized beside the string
-# cache: ``_redact_for_display(strip_markdown_preview(text))`` cut to a limit. Every
+# cache: ``masked_preview(text, _redact_for_display)`` cut to a limit. Every
 # slot-list read and slots broadcast re-projects every open tab on the event loop,
 # and stripping and redacting each whole message is most of that cost while the
 # message rarely changes between two reads. The key is the string cache's keyed
@@ -806,16 +806,18 @@ def _cut_preview(text: str, limit: int) -> str:
 def _redacted_preview(text: str, limit: int) -> str:
     """*text* stripped of markdown, redacted for display, cut to *limit* characters plus "…".
 
-    Equal to ``_redact_for_display(strip_markdown_preview(text))`` cut that way,
-    which is what a hit returns. The strip runs before the redaction so markdown
-    cannot split a credential signature and rejoin it on the wire.
+    Equal to ``masked_preview(text, _redact_for_display)`` cut that way, which is
+    what a hit returns: the redaction runs before and after the lines are joined,
+    so a ``key=value`` line the chat masks is masked here too. The strip runs
+    before the redaction so markdown cannot split a credential signature and
+    rejoin it on the wire.
     """
-    # Imported here so the chat_utils facade does not forward the strip as its own name.
-    from kiro_crew.preview_text import strip_markdown_preview
+    # Imported here so the chat_utils facade does not forward the helper as its own name.
+    from kiro_crew.preview_text import masked_preview
 
     if _display_scope_changes_battery():
         # _redact_for_display runs the battery uncached here too.
-        return _cut_preview(_redact_for_display(strip_markdown_preview(text)), limit)
+        return _cut_preview(masked_preview(text, _redact_for_display), limit)
     _sync_cache_mark()
     # Every slots broadcast previews each tab's last message, and the same string
     # object comes back until that message changes. Matching on the object and on
@@ -869,8 +871,8 @@ def _remember_preview_by_object(text: str, limit: int, context: tuple, preview: 
 
 def _redacted_preview_by_digest(text: str, limit: int) -> str:
     """:func:`_redacted_preview` through the digest-keyed preview cache."""
-    # Imported here so the chat_utils facade does not forward the strip as its own name.
-    from kiro_crew.preview_text import strip_markdown_preview
+    # Imported here so the chat_utils facade does not forward the helper as its own name.
+    from kiro_crew.preview_text import masked_preview
 
     generation = _display_verdicts.published_generation()
     mark = _sync_cache_mark()
@@ -881,7 +883,7 @@ def _redacted_preview_by_digest(text: str, limit: int) -> str:
         if cached is not None:
             _display_preview_cache.move_to_end(key)
             return cached[0]
-    preview = _cut_preview(_redact_for_display(strip_markdown_preview(text)), limit)
+    preview = _cut_preview(masked_preview(text, _redact_for_display), limit)
     # Filed only when the set the key folds in did not change while it was
     # computed, nor the setting's publication (a round trip leaves the key the
     # same), so an entry never holds an answer from a context its key does not name.

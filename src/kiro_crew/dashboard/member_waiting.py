@@ -72,7 +72,7 @@ def _option_items(rows: list[dict[str, Any]], answered_at: float = 0.0) -> list[
         _redact,
     )
     from kiro_crew.dashboard.system_notices import is_system_notice
-    from kiro_crew.preview_text import strip_markdown_preview
+    from kiro_crew.preview_text import masked_preview
 
     brief_options: list[str] = []
     for row in reversed(rows):
@@ -113,7 +113,7 @@ def _option_items(rows: list[dict[str, Any]], answered_at: float = 0.0) -> list[
         if not own or not set(brief_options) <= set(own):
             return []
         options = brief_options or own
-        question = _redact(strip_markdown_preview(_OPTIONS_RE.sub("", text).strip()))
+        question = masked_preview(_OPTIONS_RE.sub("", text).strip(), _redact)
         return [
             {
                 "kind": "options",

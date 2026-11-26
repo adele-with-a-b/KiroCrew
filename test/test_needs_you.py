@@ -143,6 +143,35 @@ def test_options_words_mask_each_line_as_the_chat_masks_it():
     assert words.startswith("Use this one? ")
 
 
+def _key_block() -> tuple[str, list[str]]:
+    """A private-key block spread over lines, and its body lines (no literal key here)."""
+    from kiro_crew.testing.synthetic_credentials import B64, synth
+
+    kind = "PRIVATE" + " KEY"
+    body = [synth(64, B64, seed=n) for n in range(3)]
+    return "\n".join([f"-----BEGIN RSA {kind}-----", *body, f"-----END RSA {kind}-----"]), body
+
+
+def _shows_any(words: str, body: list[str]) -> bool:
+    # The words are cut short, so a leak shows only the start of a body line.
+    return any(line[:12] in words for line in body)
+
+
+def test_options_words_keep_a_key_block_masked():
+    # Masking each line on its own misses a key block spread over several lines.
+    from kiro_crew.dashboard.state import _redact
+
+    block, body = _key_block()
+    assert not _shows_any(_redact(f"Use this key?\n{block}"), body)  # the chat masks it
+    slot = _slot(
+        _person("Which key goes in the config?", NOW - 120),
+        _reply(f"Found one.\n\nUse this key?\n{block}\n[OPTIONS: Use it | Find another]", NOW - 60),
+    )
+    words = slot.to_dict()["needs_you"]["first_words"]
+    assert words.startswith("Use this key? ")
+    assert not _shows_any(words, body)
+
+
 def test_clean_words_strip_then_redact_then_cut():
     seen: list[str] = []
 
@@ -151,7 +180,8 @@ def test_clean_words_strip_then_redact_then_cut():
         return text.replace("secret", "[redacted]")
 
     assert needs_you.clean_words("**Use** the `secret`?", redact) == "Use the [redacted]?"
-    assert seen == ["Use the secret?"]
+    # preview_text.masked_preview: once with the lines kept, once on the joined line.
+    assert seen == ["Use the secret?", "Use the [redacted]?"]
     long = needs_you.clean_words("abcdefghij" * 10, lambda text: text)
     assert long == "abcdefghij" * 7 + "abcdefghi…"
     assert len(long) == needs_you.FIRST_WORDS_MAX
@@ -494,3 +524,20 @@ def test_approval_words_mask_what_the_approval_card_masks(loop: asyncio.Abstract
     masked = rows[1]["pending_approval_info"]["tool_purpose"]
     assert secret not in masked
     assert rows[0]["needs_you"]["first_words"] == f"Bash · {masked}"
+
+
+def test_approval_words_keep_a_key_block_masked(loop: asyncio.AbstractEventLoop):
+    block, body = _key_block()
+    purpose = f"write this key:\n{block}"
+    direct = _slot(_person("Deploy it.", NOW - 300))
+    direct.register_approval(
+        "r1", loop.create_future(), _permission(direct, "r1", NOW - 200, purpose=purpose)
+    )
+    coordinator = _slot(_person("Deploy it.", NOW - 300))
+    coordinator._coordinator_approvals = lambda key: [
+        {"id": "spawn:1", "tool": "Bash", "tool_purpose": purpose, "ts": NOW - 200}
+    ]
+    for slot in (direct, coordinator):
+        words = slot.to_dict()["needs_you"]["first_words"]
+        assert words.startswith("Bash · write this key: ")
+        assert not _shows_any(words, body)

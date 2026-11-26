@@ -2206,8 +2206,8 @@ The owners, lowest layer first:
   `GET /api/chat/slots` and each slots broadcast, so its per-tab text work is kept
   cheap without changing a byte of the payload (pinned by
   `test_slot_summary_hot_path.py`): the last-message preview
-  (`_last_message_preview`: markdown strip, display redaction, cut to 80
-  characters) is memoized by `chat_utils_display._redacted_preview` under the
+  (`_last_message_preview`: markdown strip, display redaction before and after
+  the lines are joined (`preview_text.masked_preview`), cut to 80 characters) is memoized by `chat_utils_display._redacted_preview` under the
   display cache's keyed digest of the raw text, holding only the redacted preview,
   and in front of that by the string OBJECT (`_display_preview_by_object`, at most
   4,096 entries and 4 Mi characters of held text, emptied past either; a longer

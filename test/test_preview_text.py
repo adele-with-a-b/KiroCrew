@@ -13,10 +13,51 @@ from __future__ import annotations
 from redaction_structured_cases import github_classic
 
 from conftest import assert_rejected_without_backtracking
+from kiro_crew import preview_text
 from kiro_crew.dashboard.state import _ChatSlot
-from kiro_crew.preview_text import strip_markdown_preview
+from kiro_crew.preview_text import speech_preview, strip_markdown_preview
+from kiro_crew.security import redact_credentials
+from kiro_crew.testing.synthetic_credentials import B64, synth
 
 TOKEN = github_classic(seed=148)
+
+
+def _mask(text: str) -> str:
+    return redact_credentials(text)[0]
+
+
+#: A ``key=value`` line under a sentence: the redactor masks it at a line start only.
+KEY_SECRET = synth(24, seed=5)
+KEY_LINE_TEXT = f"Found one.\n\nUse this one?\napi_key={KEY_SECRET}"
+CLEAN_TEXT = "**Done.**\n\nThe build is green:\n- tests pass\n- lint is clean"
+CLEAN_PREVIEW = "Done. The build is green: tests pass lint is clean"
+
+
+def test_speech_preview_masks_a_key_line_the_chat_masks():
+    assert KEY_SECRET not in _mask(KEY_LINE_TEXT)  # the chat, masked with its lines
+    preview = speech_preview(KEY_LINE_TEXT, _mask)
+    assert KEY_SECRET not in preview
+    assert preview.startswith("Found one. Use this one? ")
+
+
+def test_masked_preview_keeps_a_key_block_and_a_split_header_masked():
+    # A key block spread over lines (lost when each line is masked on its own) and a
+    # header whose value sits on the next line (lost when the lines are masked only
+    # before the join) both stay masked.
+    kind = "PRIVATE" + " KEY"
+    body = [synth(64, B64, seed=n) for n in range(3)]
+    block = "\n".join(["Here:", f"-----BEGIN RSA {kind}-----", *body, f"-----END RSA {kind}-----"])
+    bearer = synth(32, seed=7)
+    split = f"Sent with:\nAuthorization:\nBearer {bearer}\nok"
+    assert not any(line in preview_text.masked_preview(block, _mask) for line in body)
+    assert bearer not in preview_text.masked_preview(split, _mask)
+    assert preview_text.masked_preview(CLEAN_TEXT, _mask) == strip_markdown_preview(CLEAN_TEXT)
+    assert preview_text.masked_preview(chr(0x200B) + " \n", _mask) == ""
+
+
+def test_a_preview_without_a_secret_is_unchanged_by_the_mask():
+    assert speech_preview(CLEAN_TEXT, _mask) == CLEAN_PREVIEW
+    assert speech_preview(CLEAN_TEXT) == CLEAN_PREVIEW
 
 
 class TestStripMarkdownPreview:

@@ -3977,7 +3977,7 @@ completion envelope whose header parses (under the assistant role only — the
 same text pasted by the user is the user speaking), and a sub-agent completion envelope
 whose header (or the gateway's `meta` facts) parses — the Slack gateway writes
 that last one as `assistant` on its delivery-timeout and orphan paths. The roster's quote itself is spelled once:
-`speech_preview` (`preview_text.py`: strip markdown, redact, cap with `…`) builds
+`speech_preview` (`preview_text.py`: strip markdown, redact before and after the lines are joined, cap with `…`) builds
 it on the cold read and on the live `member/message` event alike, so the fold
 and the read agree and the read's correction (below) fires only for a stale
 pre-speech-only preview. That correction is a compare-and-append: it refuses

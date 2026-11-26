@@ -24,6 +24,7 @@ from kiro_crew.dashboard import state as dashboard_state
 from kiro_crew.dashboard.state_parts import slot_transcript as st
 from kiro_crew.security import redact_credentials
 from kiro_crew.security.redaction_switch import owner_view
+from kiro_crew.testing.synthetic_credentials import synth
 
 # A GitHub token with a valid checksum, which the plan redacts. An AWS key ID
 # stays visible as an identifier, so it cannot show that a value is redacted.
@@ -44,7 +45,7 @@ def _cut(text: str) -> str:
 
 
 def _direct_preview(text: str) -> str:
-    return _cut(_battery(preview_text.strip_markdown_preview(text)))
+    return _cut(preview_text.masked_preview(text, _battery))
 
 
 def _walk_drop_format_chars(text: str) -> str:
@@ -111,6 +112,21 @@ def test_the_preview_memo_returns_the_direct_composition_cold_and_warm(text):
     expected = _direct_preview(text)
     assert st._last_message_preview(text) == expected  # cold: computed and filed
     assert st._last_message_preview(text) == expected  # warm: served from the memo
+
+
+def test_the_sidebar_preview_masks_a_key_line_the_chat_masks():
+    secret = synth(24, seed=5)
+    text = f"Found one.\n\nUse this one?\napi_key={secret}"
+    assert secret not in cud._redact_for_display(text)  # the chat, masked with its lines
+    for _ in range(2):  # cold, then from the memo
+        preview = st._last_message_preview(text)
+        assert secret not in preview
+        assert preview.startswith("Found one. Use this one? ")
+
+
+def test_a_sidebar_preview_without_a_secret_is_unchanged():
+    text = "**Done.**\n\nThe build is green:\n- tests pass\n- lint is clean"
+    assert st._last_message_preview(text) == "Done. The build is green: tests pass lint is clean"
 
 
 def test_the_preview_memo_retains_no_raw_text():

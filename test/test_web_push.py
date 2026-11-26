@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from kiro_crew.notifications import vapid_keys, web_push
 from kiro_crew.notifications.push_store import PushSubscriptionError, PushSubscriptionStore
-from kiro_crew.testing.synthetic_credentials import github_classic
+from kiro_crew.testing.synthetic_credentials import github_classic, synth
 from kiro_crew.testing.wait import await_until
 
 
@@ -729,6 +729,21 @@ def test_flattening_never_reassembles_a_credential_into_the_push_body(splitter):
     ]["body"]
     assert token not in body
     assert "[REDACTED" in body
+
+
+def test_the_push_body_masks_a_key_line_before_its_lines_are_joined():
+    from kiro_crew.dashboard.state_parts.dashboard_services import _web_push_payload
+    from kiro_crew.dashboard.state_parts.notification_log import _redact_note_value
+
+    secret = synth(24, seed=5)
+    raw = f"Found one.\n\nUse this one?\napi_key={secret}"
+    assert secret not in _redact_note_value(raw)  # masked with its lines, as delivered
+    body = _web_push_payload({"ts": "t", "title": "x", "body": raw})["notification"]["body"]
+    assert secret not in body
+    assert body.startswith("Found one. Use this one? ")
+    clean = "**Done.**\n\nThe build is green:\n- tests pass"
+    plain = _web_push_payload({"ts": "t", "title": "x", "body": clean})["notification"]["body"]
+    assert plain == "Done. The build is green: tests pass"
 
 
 def test_web_push_payload_body_is_plain_text():

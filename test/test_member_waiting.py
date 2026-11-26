@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from kiro_crew.dashboard import member_waiting
 from kiro_crew.history import HUMAN_TURN_META_KEY
-from kiro_crew.testing.synthetic_credentials import github_classic
+from kiro_crew.testing.synthetic_credentials import github_classic, synth
 
 ASK = "Open a PR for the docs fix? [OPTIONS: Open the PR | Not yet]"
 
@@ -115,6 +115,23 @@ def test_the_list_is_bounded_and_redacted():
     assert items[0]["asked_at"] == "2026-10-18T18:09:00+00:00"
     # Only the newest reply's ask is listed; the nine older ones are not.
     assert [i["kind"] for i in items].count("options") == 1
+
+
+def test_a_key_line_under_the_question_is_masked_as_the_chat_masks_it():
+    from kiro_crew.dashboard.state import _redact
+
+    secret = synth(24, seed=5)
+    body = f"Found one.\n\nUse this one?\napi_key={secret}"
+    assert secret not in _redact(body)  # the chat, masked with its lines
+    (item,) = _items([_said(f"{body}\n[OPTIONS: Use it | Find another]", ASKED)])
+    assert secret not in item["text"]
+    assert item["text"].startswith("Found one. Use this one? ")
+
+
+def test_a_question_without_a_secret_reads_as_before():
+    text = "**Docs** are done.\n\nOpen the PR now?\n[OPTIONS: Yes | No]"
+    (item,) = _items([_said(text, ASKED)])
+    assert item["text"] == "Docs are done. Open the PR now?"
 
 
 def test_a_quiet_reply_retires_the_ask_as_the_sidebar_does():
