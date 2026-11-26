@@ -849,23 +849,22 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     </span>
   ) : null
 
-  // One story open: its own view in place of the Board, until its crumb goes back.
+  // One story open: its own view in place of the Board, until its crumb or Escape goes back.
   const storyItem = openStory.id ? items.find(i => i.item_id === openStory.id) : undefined
-  if (storyItem) {
-    const w = workers.find(x => x.ledger_item === storyItem.item_id)
-    return (
-      <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view="story">
-        {viewing && viewing !== root && <CrewPanelBack root={root} />}
-        <BoardStoryView root={root} item={storyItem} story={storyById.get(storyItem.item_id)} project={rootSlot?.title} worker={w ? w.title || w.agent || undefined : undefined}
-          facts={board.data?.pr_facts?.[storyItem.item_id]} plan={plan} onBack={openStory.back} onOpenChat={openItem(storyItem)} reopenFailed={reopenFailed} active={active} now={now} />
-      </div>
-    )
-  }
+  const storyWorker = storyItem ? workers.find(x => x.ledger_item === storyItem.item_id) : undefined
 
   return (
-    <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={view}>
+    <div className="h-full flex flex-col min-h-0" data-testid="conductor-mode-crew-panel" data-view={storyItem ? 'story' : view}>
       {/* A crew member on screen: one click back to its root. */}
       {viewing && viewing !== root && <CrewPanelBack root={root} />}
+      {storyItem && (
+        <BoardStoryView root={root} item={storyItem} story={storyById.get(storyItem.item_id)} project={rootSlot?.title} worker={storyWorker ? storyWorker.title || storyWorker.agent || undefined : undefined}
+          facts={board.data?.pr_facts?.[storyItem.item_id]} plan={plan} onBack={openStory.back} onOpenChat={openItem(storyItem)} reopenFailed={reopenFailed} active={active} now={now} />
+      )}
+      {/* The Board stays mounted under an open story, hidden (out of the tab order and
+          the accessibility tree), so back finds its view, Timeline window and scroll as
+          they were left. */}
+      <div hidden={!!storyItem} className={storyItem ? undefined : 'flex-1 min-h-0 flex flex-col'} data-testid="conductor-mode-board-pane">
       {/* A failed crew read, shown in both views; a gateway that does not serve
           the route is not a failure (the live rows stand in). */}
       {listed.isError && !crewRouteNotServed(listed.error) && <div className="shrink-0 px-3 pt-3"><ErrorNotice variant="inline" message={i18nT(live.length ? 'commandCenter.workers_error_live' : 'commandCenter.workers_error')} askAgent /></div>}
@@ -884,12 +883,12 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
             </p>
             {detail && <p className="text-[12px] text-text/85" data-testid="conductor-mode-run-detail">{detail}</p>}
           </section>
-          <SeatsStrip active={active} />
+          <SeatsStrip active={active && !storyItem} />
           {loaded && (view === 'moves'
             ? <BoardMovesView stories={moveStories} needsYouLead={needsYouLead} needsYouLeadCount={needsYouLeadCount} upNext={upNext} />
             : view === 'steps'
               ? <BoardStepsView steps={boardSteps(items, plan)} stories={storyById} upNext={upNext} />
-              : <BoardTimelineView root={root} stories={stories} closed={closedStories} active={active} />)}
+              : <BoardTimelineView root={root} stories={stories} closed={closedStories} active={active && !storyItem} />)}
           <OtherProjectsLine root={root} now={now} />
         </div>
       ) : (
@@ -921,6 +920,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
         </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

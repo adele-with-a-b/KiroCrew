@@ -1,6 +1,6 @@
 /** One story open in the right bar's Board: the steps left before it lands, who held
  *  it, its own lane over the last 12 hours, then its time, sub-tasks, epic and last
- *  report. A click on a story's title opens it; the crumb goes back to the Board, and
+ *  report. A click on a story's title opens it; the crumb or Escape goes back to the Board, and
  *  Open the chat opens the story's worker the way the click did before, a closed chat
  *  reopened from its saved transcript first (`useOpenCrewWorker`).
  *
@@ -54,7 +54,7 @@ const HEAD = 'text-[11px] font-semibold uppercase tracking-[1px] text-muted'
 /** The age in its row's tone: yellow when it waits on the person, red when stuck or late. */
 const AGE_TONE = { warn: 'crew-tone-warn', danger: 'crew-tone-danger', none: 'text-text' } as const
 
-/** A held time as the facts say it: none is a plain 0, never "1m". */
+/** A held or used time as the facts say it: none is a plain 0, never "1m". */
 function heldTime(minutes: number | null): string {
   if (minutes == null) return i18nT('components.crewMode.board_story_no_record')
   return minutes < 1 ? fmtNumber(0) : fmtMinutes(minutes)
@@ -191,7 +191,15 @@ export default function BoardStoryView({ root, item, story, project, worker, fac
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5" data-testid="board-story-view" data-item={item.item_id} data-step={step}>
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape here is a shortcut for the crumb, a real button inside; the listener catches it from whatever inside has the focus and adds no control a role could announce
+    <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3.5" data-testid="board-story-view" data-item={item.item_id} data-step={step}
+      onKeyDown={e => {
+        // Escape goes back as the crumb does; the panel behind it never sees this one.
+        if (e.key !== 'Escape' || e.defaultPrevented) return
+        e.preventDefault()
+        e.stopPropagation()
+        onBack()
+      }}>
       <Btn type="button" onClick={onBack} aria-label={i18nT('components.crewMode.board_story_back', { where: crumb })} data-testid="board-story-back"
         className="p-0 border-0 bg-transparent hover:bg-transparent active:scale-100 text-[12px] text-muted hover:text-text hover:underline">
         <ChevronLeft size={12} aria-hidden="true" />{crumb}
@@ -275,8 +283,8 @@ export default function BoardStoryView({ root, item, story, project, worker, fac
       <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[12.5px]" data-testid="board-story-facts">
         <Fact label={i18nT('components.crewMode.board_story_time')} testId="board-story-time">
           {estimate !== undefined
-            ? i18nT('components.crewMode.board_story_time_of', { used: fmtMinutes(used), estimate: fmtMinutes(estimate) })
-            : i18nT('components.crewMode.board_story_time_no_estimate', { used: fmtMinutes(used) })}
+            ? i18nT('components.crewMode.board_story_time_of', { used: heldTime(used), estimate: fmtMinutes(estimate) })
+            : i18nT('components.crewMode.board_story_time_no_estimate', { used: heldTime(used) })}
         </Fact>
         <Fact label={i18nT('components.crewMode.board_story_subtasks')} testId="board-story-subtasks">
           {subtasks.total > 0

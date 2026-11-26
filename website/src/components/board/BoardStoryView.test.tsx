@@ -5,11 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
 import { createTestStore } from '../../test/helpers'
 
-const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), resumeChatSlot: vi.fn(), crewBoard: vi.fn(), crewBoardTimeline: vi.fn(), sessionSummary: vi.fn() }))
+const api = vi.hoisted(() => ({ crewWorkers: vi.fn(), resumeChatSlot: vi.fn(), crewBoard: vi.fn(), crewBoardTimeline: vi.fn(), sessionSummary: vi.fn(), crewBoardCapacity: vi.fn() }))
 vi.mock('../../api/client', () => ({ api }))
 vi.mock('../../hooks/usePanelTabs', () => ({ openPanelView: vi.fn() }))
 
 import ConductorModeCrewPanel from '../../pages/chat/command-center/ConductorModeCrewPanel'
+import { crewBoardCapacityQueryKey } from '../../api/crewBoardCapacity'
 import { landSteps, storyHeld, storyMinutes } from './storyView'
 import type { WorkBoardItem } from '../../api/crewBoard'
 import type { TimelineLane } from '../../lib/boardTimeline'
@@ -53,8 +54,7 @@ const TIMELINE = {
   },
 }
 
-function renderPanel() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function renderPanel(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const store = createTestStore({ dashboard: { slots: [{ key: 'root-s', title: 'Lantern' }] } } as never)
   render(<QueryClientProvider client={qc}><Provider store={store}><ConductorModeCrewPanel root="root-s" viewing="root-s" active /></Provider></QueryClientProvider>)
   return store
@@ -96,6 +96,7 @@ describe('a click on a story opens its story view', () => {
     api.crewBoard.mockResolvedValue(BOARD)
     api.crewBoardTimeline.mockResolvedValue(TIMELINE)
     api.crewWorkers.mockResolvedValue({ root: 'root-s', workers: [W('w-g', 'Worker G', 'idle', 'it_g')] })
+    api.crewBoardCapacity.mockResolvedValue({ name: 'this-mac', available_gb: 12, posture: 'ample', tight_gb: 4, critical_gb: 2, pressure_held: false })
     api.sessionSummary.mockResolvedValue({ enabled: false, stale: false, intents: [], constraints: [], generated_at: null, user_turns: null, last_activity: null })
   })
   afterEach(() => {
@@ -107,7 +108,7 @@ describe('a click on a story opens its story view', () => {
     renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: 'Vignette rows' }))
     const view = await screen.findByTestId('board-story-view')
-    expect(screen.queryByTestId('conductor-mode-board')).toBeNull()
+    expect(screen.getByTestId('conductor-mode-board')).not.toBeVisible()
     expect(within(view).getByTestId('board-story-back')).toHaveTextContent('Lantern · Review')
     expect(within(view).getByTestId('board-story-state')).toHaveTextContent('Waits on GitHub')
     expect(within(view).getByTestId('board-story-worker')).toHaveTextContent('Worker G')
@@ -187,5 +188,71 @@ describe('a click on a story opens its story view', () => {
     // Back on the Board, on the row it left from.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Vignette rows' })).toHaveFocus())
     expect(screen.queryByTestId('board-story-view')).toBeNull()
+  })
+
+  it('back finds the Board as it was left: its view, its Timeline window and its scroll', async () => {
+    api.crewBoardTimeline.mockImplementation((_root: string, hours: number) => Promise.resolve({ ...TIMELINE, since: ago(hours * 60), hours }))
+    renderPanel()
+    fireEvent.click(await screen.findByTestId('conductor-mode-view-timeline'))
+    fireEvent.click(await screen.findByTestId('board-timeline-window-24'))
+    await waitFor(() => expect(screen.getByTestId('board-timeline')).toHaveAttribute('data-hours', '24'))
+    const box = screen.getByTestId('conductor-mode-board')
+    box.scrollTop = 400
+    fireEvent.click(await screen.findByRole('button', { name: 'Vignette rows' }))
+    await screen.findByTestId('board-story-view')
+    fireEvent.click(screen.getByTestId('board-story-back'))
+    expect(screen.queryByTestId('board-story-view')).toBeNull()
+    expect.soft(screen.getByTestId('conductor-mode-crew-panel')).toHaveAttribute('data-view', 'timeline')
+    expect.soft(screen.getByTestId('board-timeline')).toHaveAttribute('data-hours', '24')
+    expect.soft(screen.getByTestId('conductor-mode-board')).toBe(box)
+    expect.soft(screen.getByTestId('conductor-mode-board').scrollTop).toBe(400)
+  })
+
+  it('keeps the Board hidden under an open story: out of the tab order and named to no reader', async () => {
+    renderPanel()
+    fireEvent.click(await screen.findByRole('button', { name: 'Vignette rows' }))
+    await screen.findByTestId('board-story-view')
+    expect(screen.getByTestId('conductor-mode-board-pane')).toHaveAttribute('hidden')
+    expect(screen.getByTestId('conductor-mode-board-pane')).not.toBeVisible()
+    expect(screen.queryByRole('radio', { name: 'Timeline' })).toBeNull()
+    // The Board row behind the view is named to no reader: its title button is not found.
+    expect(screen.queryAllByRole('button', { name: 'Vignette rows' })).toHaveLength(0)
+  })
+
+  it('Escape goes back, the focus on the story title it was opened from, and reaches nothing behind it', async () => {
+    const user = userEvent.setup()
+    const behind = vi.fn()
+    document.addEventListener('keydown', behind)
+    try {
+      renderPanel()
+      await user.click(await screen.findByRole('button', { name: 'Vignette rows' }))
+      expect(await screen.findByRole('heading', { level: 2, name: 'Vignette rows' })).toHaveFocus()
+      await user.keyboard('{Escape}')
+      expect(screen.queryByTestId('board-story-view')).toBeNull()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Vignette rows' })).toHaveFocus())
+      expect(behind).not.toHaveBeenCalledWith(expect.objectContaining({ key: 'Escape' }))
+    } finally {
+      document.removeEventListener('keydown', behind)
+    }
+  })
+
+  it('a story made under a minute ago has used 0, never "1m"', async () => {
+    const NEW = ITEM({ item_id: 'it_n', title: 'New rows', status: null, last_report_at: null, has_worker: false, created_at: new Date(NOW - 20_000).toISOString(), plan: { level: 'story', step: 'todo' } })
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [...BOARD.items, NEW] })
+    renderPanel()
+    fireEvent.click(await screen.findByRole('button', { name: 'New rows' }))
+    expect(await screen.findByTestId('board-story-time')).toHaveTextContent(/^0 used · estimate: no record$/)
+  })
+
+  it('the hidden seats strip reads nothing under an open story, and reads again on back', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderPanel(qc)
+    const seats = () => qc.getQueryCache().find({ queryKey: crewBoardCapacityQueryKey })
+    await waitFor(() => expect(seats()?.isActive()).toBe(true))
+    fireEvent.click(await screen.findByRole('button', { name: 'Vignette rows' }))
+    await screen.findByTestId('board-story-view')
+    expect(seats()?.isActive()).toBe(false)
+    fireEvent.click(screen.getByTestId('board-story-back'))
+    expect(seats()?.isActive()).toBe(true)
   })
 })
