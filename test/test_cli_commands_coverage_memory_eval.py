@@ -488,21 +488,23 @@ class TestMemoryCli:
             "dim": embeddings._DEFAULT_DIM,
         }
 
-    def test_export_names_no_space_when_it_changed_during_the_read(
+    def test_export_reads_the_vector_space_once_inside_the_read_snapshot(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         from kiro_crew import embeddings
 
         with _MemHarness() as h:
-            h.store.recorded_embedding_space.side_effect = ["aaaa", "bbbb", "bbbb"]
+            snap = h.store.read_snapshot.return_value
+            h.store.recorded_embedding_space.side_effect = lambda: (
+                None if snap.__enter__.called and not snap.__exit__.called else "outside"
+            )
             h.store.get_all_semantic.return_value = [{"key": "a", "embedding": b"\x00" * 4}]
             h.store.get_episodic_list.return_value = []
             h.store.get_events.return_value = []
-            with patch.object(embeddings, "get_shared_embedder", side_effect=RuntimeError):
-                cc._memory_cmd(_ns(mem_action="export", output=None))
+            cc._memory_cmd(_ns(mem_action="export", output=None))
         data = json.loads(capsys.readouterr().out)
-        assert data["embedding_space_sig"] is None
-        assert data["embedding_model"] is None
+        assert h.store.recorded_embedding_space.call_count == 1
+        assert data["embedding_space_sig"] == embeddings.default_embedding_space_signature()
 
     def test_import_omits_embedding_note_when_nothing_pending(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

@@ -214,7 +214,7 @@ _MOVED: dict[str, tuple[str, ...]] = {
         _build_renameat2_via_syscall RENAME_NOREPLACE_AVAILABLE TCC_PROTECTED_HOME_DIRS
         rename_noreplace publish_dir_noreplace
         tcc_protected_dirs_for_walk tcc_prune_walk_dirs fchmod_safe dup_fd_at_or_above
-        chmod_safe
+        fd_opens_for_append chmod_safe
         claude_code_managed_settings_dir
         _clear_readonly_and_retry rmtree_force _WIN_FILE_SHARE_READ_WRITE_DELETE
         _SHARING_VIOLATION_WINERRORS _RMTREE_MAX_ATTEMPTS _RMTREE_BACKOFF_SECONDS

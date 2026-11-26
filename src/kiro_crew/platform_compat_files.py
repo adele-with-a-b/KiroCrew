@@ -490,6 +490,18 @@ def dup_fd_at_or_above(fd: int, floor: int) -> int:
     return fcntl.fcntl(fd, fcntl.F_DUPFD, floor)
 
 
+def fd_opens_for_append(fd: int) -> bool:
+    """Whether *fd*'s open file description writes at its end (``O_APPEND``).
+
+    POSIX only (``F_GETFL``): Windows has no ``fcntl``, so this answers False there.
+    """
+    if not IS_POSIX:
+        return False
+    import fcntl
+
+    return bool(fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_APPEND)
+
+
 def chmod_safe(path: str | os.PathLike, mode: int) -> None:
     """Apply ``mode`` to ``path``. Logs warning on failure.
     No-op on Windows.
