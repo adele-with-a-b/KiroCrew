@@ -5068,8 +5068,17 @@ of the turn carries that one mark. The owner's own turn announces none; the firs
 steer of another sender that joins it draws the mark, and that steer and every later
 one of another sender lead with the gateway's join note (`TURN_MARK_JOIN`), ahead of
 their text (`without_turn_mark`). So the owner's steers after it are framed with that
-mark and go in at the next step, in the order typed: nothing of his is refused or
-queued because a note joined his turn. A turn the owner did not start that announced
+mark and go in at the next step, in the order typed. In a Bot conversation (the
+responsive path) the steer seam still refuses his steer there
+(`steer_refusal.NOT_OWNERS_TURN`, the same arm as in a turn he did not start), and its
+queue arm stops the turn and runs his message at once as his own turn. The turn is
+still his (`OwnerSteers.owners_turn`, `owners_own_turn`): his row carries no
+`steerWithoutOwnerRights`, yet the steer is still recorded as taken without his
+rights (`note_taken`), so a step a gate refuses there for want of the owner's mark
+(the joined text ended `_turn_owner_sent`) gains `OWN_TURN_REFUSAL_NOTICE` instead of
+`REFUSAL_NOTICE`: it never tells the agent to end his turn nor calls it one he did not
+start, the turn runs to its own end, and `deliver_again` then runs his message once
+more as his own turn. A turn the owner did not start that announced
 none (a slash command, an agent-started turn, a nested prompt) gets no frame: the
 steer seam refuses the owner's steer (`steer_refusal.NOT_OWNERS_TURN`) and it runs
 next as the owner's own turn. Both notes say the mark counts only in a message to the model, never

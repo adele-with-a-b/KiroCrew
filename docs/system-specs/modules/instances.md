@@ -4119,14 +4119,19 @@ for the turn's duration, as `_turn_owner_sent` on the slot (`slot_ladder`):
   stays: the owner's words take nothing from the wake, so its remote work goes on.
   The row and its `steer_push` carry `meta.steerWithoutOwnerRights` (owner's own
   dashboard request, not through a channel, running turn without `_turn_owner_sent`,
-  slot not opened for another caller), and the transcript says under the bubble
-  that it runs there without their rights and runs again as their own turn if a step
+  slot not opened for another caller, turn not the owner's own: in his own turn that
+  another sender's text joined, `owners_own_turn`, his row says nothing, but the
+  steer is still recorded, so a refusal there adds `OWN_TURN_REFUSAL_NOTICE`, never
+  "end this turn", and his message runs again once at that turn's own end), and
+  the transcript says under the bubble that it runs there without their rights and
+  runs again as their own turn if a step
   needs them (it does not name `crew=`: a patrol wake the operator let use `crew=`
   is admitted to it). Every gate arm that refuses for want of the owner's or the
   person's mark completes its refusal through ONE helper,
   `chat_delivery_owner_steer.refused_for_owner_rights`, which, while such a steer is
   in the turn, adds `REFUSAL_NOTICE` (end this turn now, the owner's message comes
-  again as their own turn), records the turn as refused and starts the durable
+  again as their own turn; in the owner's own turn `OWN_TURN_REFUSAL_NOTICE`, finish
+  this turn, it comes again when it ends), records the turn as refused and starts the durable
   queue write. The arms are listed in `OWNER_RIGHTS_REFUSAL_SITES`:
   `_resolve_agent_caller`'s `not_user_turn` (guides, cards, `update_self`,
   `propose_self`, `request_server`, the crew reads), `member_self`'s own-thread
