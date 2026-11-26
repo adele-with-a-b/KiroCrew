@@ -312,3 +312,49 @@ class TestSessionControlWidth:
         errs = [e for e in self._manifest(width=bad).validate(None) if "width" in e]
         assert errs, f"expected {bad!r} to be refused"
         assert f"{SESSION_CONTROL_DEFAULT_WIDTH} to {SESSION_CONTROL_MAX_WIDTH}" in errs[0]
+
+
+class TestSessionControlDock:
+    """``dock`` draws the box above the message box; ``stayOpen`` keeps a docked box open."""
+
+    def _manifest(self, **ctl):
+        return AppManifest.from_dict(
+            {
+                **BASE,
+                "contributes": {
+                    "sessionControls": [{"id": "c", "entryPoint": "dist/c.mjs", **ctl}]
+                },
+            }
+        )
+
+    def test_absent_is_off_and_omitted_from_output(self):
+        # An installed app that names neither keeps the same manifest dict, and so
+        # the same signing payload.
+        m = self._manifest()
+        out = m.to_dict()["contributes"]["sessionControls"][0]
+        assert "dock" not in out and "stayOpen" not in out
+        assert m.validate(None) == []
+
+    @pytest.mark.parametrize(
+        "fields", [{"dock": True}, {"dock": True, "stayOpen": True}, {"dock": False}]
+    )
+    def test_a_valid_pair_validates_and_round_trips(self, fields):
+        m = self._manifest(**fields)
+        assert m.validate(None) == []
+        again = AppManifest.from_dict(m.to_dict()).contributes.sessionControls[0]
+        assert again.dock is fields.get("dock", False)
+        assert again.stayOpen is fields.get("stayOpen", False)
+
+    @pytest.mark.parametrize("field_name", ["dock", "stayOpen"])
+    @pytest.mark.parametrize("bad", ["true", 1, 0, None, [True], {"on": True}])
+    def test_anything_but_a_boolean_is_refused(self, field_name, bad):
+        fields = {"dock": True, field_name: bad}
+        errs = [e for e in self._manifest(**fields).validate(None) if field_name in e]
+        assert errs == [f"session control contribution c {field_name} must be true or false"]
+
+    @pytest.mark.parametrize("dock", [None, False])
+    def test_stay_open_without_dock_is_refused(self, dock):
+        # A popover that stayed open would float over the reply being read.
+        fields = {"stayOpen": True} if dock is None else {"stayOpen": True, "dock": dock}
+        errs = self._manifest(**fields).validate(None)
+        assert "session control contribution c stayOpen needs dock: true" in errs

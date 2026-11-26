@@ -58,6 +58,14 @@ export function dashboardSessionKey(slot: string | null | undefined): string {
   return slot ? `dashboard:${slot}` : ''
 }
 
+/** The drawn chip of control `key` (`<app>:<id>`), or null. */
+export function sessionControlChip(key: string): HTMLElement | null {
+  for (const el of document.querySelectorAll<HTMLElement>('[data-session-control-key]')) {
+    if (el.dataset.sessionControlKey === key && el.isConnected) return el
+  }
+  return null
+}
+
 export interface ResolvedSessionControl {
   /** Composite key, unique across apps: `${appName}:${control.id}`. */
   key: string
@@ -92,6 +100,11 @@ export interface ResolvedSessionControl {
   openFiles: boolean
   /** The keys that open this control's box (`keys`), read defensively. */
   keys: DeclaredSessionKey[]
+  /** `dock: true`: the box opens in the composer dock, above the message box,
+   *  instead of as a popover on the chip. Absent reads as false. */
+  dock?: boolean
+  /** `stayOpen: true` with `dock`: a press outside the docked box leaves it open. */
+  stayOpen?: boolean
   /** The app's install time (ISO), '' when unknown: the earlier app keeps a key two default to. */
   installedAt: string
 }
@@ -179,6 +192,8 @@ interface AppLike {
         statusPath?: string
         width?: number
         keys?: unknown
+        dock?: unknown
+        stayOpen?: unknown
       }[]
     }
     permissions?: { api?: string[]; events?: string[] }
@@ -250,6 +265,10 @@ export function resolveSessionControls(apps: AppLike[]): ResolvedSessionControl[
         openFiles: app.openFilesGrant?.approved === true,
         keys: parseDeclaredKeys(ctl.keys),
         installedAt: typeof app.installedAt === 'string' ? app.installedAt : '',
+        // Only the JSON `true`, and `stayOpen` only with `dock`, as the install
+        // check holds them: a stale manifest never gets a popover that stays open.
+        dock: ctl.dock === true,
+        stayOpen: ctl.dock === true && ctl.stayOpen === true,
       })
     }
   }

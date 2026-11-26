@@ -1,0 +1,23 @@
+{
+  "name": "docked-notes-example",
+  "version": "0.1.0",
+  "displayName": "Docked Notes Example",
+  "description": "A notes box docked above the message box that stays open while you read and scroll the chat.",
+  "author": "kirocrew",
+  "contributes": {
+    "sessionControls": [
+      {
+        "id": "notes",
+        "entryPoint": "dist/session-control.mjs",
+        "label": "Notes",
+        "icon": "Star",
+        "dock": true,
+        "stayOpen": true,
+        "keys": [
+          { "id": "notes", "label": "Open Notes", "default": "Alt+Shift+J" }
+        ]
+      }
+    ]
+  },
+  "tags": ["example"]
+}

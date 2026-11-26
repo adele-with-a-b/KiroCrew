@@ -142,11 +142,21 @@ class SessionControlContribution:
     keys: list[SessionControlKey] = field(default_factory=list)
     #: Whether ``keys`` was present but not a list, for ``validate`` to refuse.
     bad_keys: bool = False
+    # Optional: the box opens in the composer dock, between the chat and the
+    # message box, instead of as a popover on the chip. Only the JSON ``true``
+    # turns it on; anything but a boolean is kept as is for ``validate`` to refuse.
+    dock: Any = False
+    # Optional, with ``dock`` only: a press outside the docked box leaves it open.
+    stayOpen: Any = False  # noqa: N815
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"id": self.id, "entryPoint": self.entryPoint}
         if self.width:
             d["width"] = self.width
+        if self.dock is True:
+            d["dock"] = True
+        if self.stayOpen is True:
+            d["stayOpen"] = True
         if self.keys:
             d["keys"] = [k.to_dict() for k in self.keys]
         if self.label:
@@ -173,7 +183,26 @@ class SessionControlContribution:
                 else []
             ),
             bad_keys=not isinstance(raw_keys, list),
+            dock=data.get("dock", False),
+            stayOpen=data.get("stayOpen", False),  # noqa: N815
         )
+
+
+def session_control_dock_errors(ctl: SessionControlContribution) -> list[str]:
+    """Why a control's ``dock`` / ``stayOpen`` would be refused at install, one line each.
+
+    ``stayOpen`` needs ``dock``: a popover that stayed open would float over the
+    reply being read, since the transcript's bottom padding measures the dock only.
+    """
+    name = f"session control contribution {ctl.id or '<unnamed>'}"
+    errors = [
+        f"{name} {field_name} must be true or false"
+        for field_name, value in (("dock", ctl.dock), ("stayOpen", ctl.stayOpen))
+        if not isinstance(value, bool)
+    ]
+    if ctl.stayOpen is True and ctl.dock is not True:
+        errors.append(f"{name} stayOpen needs dock: true")
+    return errors
 
 
 def _session_control_width(raw: Any) -> int:

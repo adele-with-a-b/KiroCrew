@@ -10392,7 +10392,8 @@
       "retry_loading": "{{label}} लोड करने का पुनः प्रयास करें",
       "could_not_load": "{{label}} लोड नहीं हो सका",
       "loading": "{{label}} लोड हो रहा है…",
-      "dialog_label": "{{label}} — {{appName}}"
+      "dialog_label": "{{label}} — {{appName}}",
+      "close_named": "{{label}} बंद करें"
     },
     "markdownCard": {
       "formatted": "फ़ॉर्मैट",

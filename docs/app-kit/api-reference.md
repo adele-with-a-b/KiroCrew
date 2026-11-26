@@ -2232,7 +2232,9 @@ manifest's `permissions.openFiles` with the dashboard's
 [session control jump](#session-control-jump) (`useSessionControlJump`), and level 14
 adds `contributes.sessionControls[].keys` with a request's `via: 'key'`, and level 15
 adds a session control status answer's `replyChips` (the strings of the reply chips
-above the message box, [manifest reference](manifest-reference.md)); each level
+above the message box, [manifest reference](manifest-reference.md)), and level 16
+adds `contributes.sessionControls[].dock` and `stayOpen` (a box docked above the
+message box that may stay open, [manifest reference](manifest-reference.md#contributessessioncontrols--a-per-chat-control-in-the-composer)); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

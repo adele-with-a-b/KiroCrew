@@ -169,6 +169,22 @@ describe('an app key in the chat on screen', () => {
     expect(peekSessionControlRequestForTest('dashboard:chat-1', KEY)).toBeNull()
   })
 
+  it('the key that closes a docked box from inside it hands focus back to the chip', async () => {
+    const { result } = await mountComposer()
+    const chip = drawChip()
+    press('KeyQ')
+    // The box as the host draws a docked one, with focus in the app's own field.
+    const box = document.createElement('div')
+    box.setAttribute('data-session-control-dock', KEY)
+    const field = document.createElement('textarea')
+    box.appendChild(field)
+    document.body.appendChild(box)
+    field.focus()
+    press('KeyQ', field)
+    expect(result.current.openSessionControl).toBeNull()
+    expect(document.activeElement).toBe(chip)
+  })
+
   it('a box opened another way stays open on its key, with the new arg', async () => {
     const { result } = await mountComposer()
     drawChip()

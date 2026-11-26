@@ -41,12 +41,17 @@
  * ALONGSIDE a focused composer that never steals focus or claims Escape, so
  * the probe must not treat it as an owner (issue #22315, HOLD item 4).
  *
- * SessionControlHost deliberately stays in the `[role="dialog"]` set: it is a
+ * SessionControlHost's popover deliberately stays in the `[role="dialog"]` set: it is a
  * non-modal dialog that does NOT steal focus and lets Escape reach the
  * document unstopped (its onKeyDown is `if (e.key !== 'Escape')
  * e.stopPropagation()`, and its document Escape listener closes without
  * preventDefault), so it relies on THIS probe to keep one Escape from both
- * closing it and stopping the turn.
+ * closing it and stopping the turn. Its docked box (`dock`, a `role="region"`)
+ * carries `[data-escape-owner]` exactly while it will answer Escape: always
+ * without `stayOpen`, and with `stayOpen` only while focus is inside it (an
+ * Escape elsewhere is the composer's, and the box stays). A docked box also
+ * leaves alone an Escape that one of these claimants already took
+ * (`defaultPrevented`).
  */
 
 /** True when a surface other than the composer currently owns Escape. The

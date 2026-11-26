@@ -4224,7 +4224,8 @@
       "retry_loading": "Retry loading {{label}}",
       "could_not_load": "Could not load {{label}}",
       "loading": "Loading {{label}}…",
-      "dialog_label": "{{label}} — {{appName}}"
+      "dialog_label": "{{label}} — {{appName}}",
+      "close_named": "Close {{label}}"
     },
     "markdownCard": {
       "formatted": "Formatted",

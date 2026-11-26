@@ -10631,7 +10631,8 @@
       "retry_loading": "Réessayer de charger {{label}}",
       "could_not_load": "Impossible de charger {{label}}",
       "loading": "Chargement de {{label}}…",
-      "dialog_label": "{{label}} — {{appName}}"
+      "dialog_label": "{{label}} — {{appName}}",
+      "close_named": "Fermer {{label}}"
     },
     "markdownCard": {
       "formatted": "Formaté",

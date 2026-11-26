@@ -10347,7 +10347,8 @@
       "retry_loading": "[Ŕèţŕý ĺøàðìñğ {{label}} ·············]",
       "could_not_load": "[Çøùĺð ñøţ ĺøàð {{label}} ··············]",
       "loading": "[Ĺøàðìñğ {{label}}… ··············]",
-      "dialog_label": "[{{label}} — {{appName}} ·····]"
+      "dialog_label": "[{{label}} — {{appName}} ·····]",
+      "close_named": "[Çĺøşè {{label}} ·········]"
     },
     "markdownCard": {
       "formatted": "[Ƒøŕɱàţţèð ··············]",

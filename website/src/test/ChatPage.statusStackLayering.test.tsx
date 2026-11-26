@@ -55,6 +55,8 @@ const CHILDREN: Record<string, RegExp> = {
   SubagentProgressBar: /<div className="px-4 mx-auto w-full relative z-\[(\d+)\]" style=\{\{ maxWidth: 'var\(--mc-content-width, 900px\)' \}\}>/,
   WorkflowProgressBar: /<div className="px-4 mx-auto w-full relative z-\[(\d+)\]" style=\{\{ maxWidth: 'var\(--mc-content-width, 900px\)' \}\}>/,
   SubagentDeliveryProgress: /className="relative z-\[(\d+)\] mx-auto w-full px-4"/,
+  // Where an app's docked box (`dock`) is drawn: the host portals it into this slot.
+  SessionControlDockSlot: /<div ref=\{ref\} className="px-4 mx-auto w-full relative z-\[(\d+)\] min-h-0 flex flex-col" style=\{\{ maxWidth: 'var\(--mc-content-width, 900px\)' \}\}/,
   QueueStack: /className="px-4 mx-auto w-full relative" style=\{\{ maxWidth: 'var\(--mc-content-width, 900px\)', zIndex: (\d+) \}\}/,
 }
 const FILES: Record<keyof typeof CHILDREN | string, string> = {
@@ -63,6 +65,7 @@ const FILES: Record<keyof typeof CHILDREN | string, string> = {
   SubagentProgressBar: 'pages/chat/SubagentProgressBar.tsx',
   WorkflowProgressBar: 'pages/chat/WorkflowProgressBar.tsx',
   SubagentDeliveryProgress: 'components/QueueStack.tsx',
+  SessionControlDockSlot: 'components/SessionControlHost.tsx',
   QueueStack: 'components/QueueStack.tsx',
 }
 

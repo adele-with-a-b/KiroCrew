@@ -56,7 +56,7 @@ import ModelEffortDropdown from '../../../components/ModelEffortDropdown'
 import ChatInput from '../../../components/ChatInput'
 import { useStableCallbackProps } from '../useStableCallbackProps'
 import type { ComposerTypingLock } from '../shared-crew/useComposerTypingLock'
-import SessionControlHost from '../../../components/SessionControlHost'
+import SessionControlHost, { SessionControlDockSlot } from '../../../components/SessionControlHost'
 import ErrorNotice from '../../../components/ErrorNotice'
 import { pinIsWithheld } from '../../../lib/model'
 import FollowUpCard, { type FollowupStartMode } from '../../../components/FollowUpCard'
@@ -340,7 +340,7 @@ interface ComposerDockViewProps {
 }
 
 /**
- * The floating composer dock, the next positioned sibling after the scroller (that DOM order is what paints it over the transcript), and its contents: the jump-to-bottom pill, the status stack (task, sub-agent and workflow bars, queued messages), the flying quote, and the input area (refused-press notice, history suggestions, knowledge picker, question and follow-up cards, memory-mode and Crew Mode chips, the composer), and the composer toolbar's popovers (the agent and model dropdowns, the project picker, the open app session control).
+ * The floating composer dock, the next positioned sibling after the scroller (that DOM order is what paints it over the transcript), and its contents: the jump-to-bottom pill, the status stack (task, sub-agent and workflow bars, an app's docked session control, queued messages), the flying quote, and the input area (refused-press notice, history suggestions, knowledge picker, question and follow-up cards, memory-mode and Crew Mode chips, the composer), and the composer toolbar's popovers (the agent and model dropdowns, the project picker, the open app session control).
  *
  * Its body is not re-indented: `ChatPage.statusStackLayering.test.tsx` finds the status stack's end by its closing tag's depth (14 spaces).
  */
@@ -402,6 +402,21 @@ export default function ComposerDockView({
   // keyboard, a screen reader and a touch reader all reach it, not only a mouse
   // hovering the title. It says, while a reply runs, when the chip works again.
   const crewModeNote = crewModeOffered && crewModeBusy ? i18nT('components.crewMode.chip_hint_busy') : null
+  // The open app session control. Only the open one is mounted, so an app's
+  // control costs nothing while closed. Gated on the slot the control was
+  // opened in: on a chat switch the committed render where activeSlot has
+  // already moved would otherwise mount a fresh control (the host keys on
+  // session) bound to the NEW chat, and a control that writes per-session
+  // state on mount would write to the wrong chat. The clearing effect in
+  // `useComposerSessionControls` runs too late to prevent that render — this
+  // gate is the correctness guard. The host is rendered in one place whatever
+  // its form, so a box crossing the wide/narrow breakpoint keeps its module: a
+  // docked one (`dock`, wide form) is drawn into the status stack's slot, any
+  // other as a popover on its chip.
+  const openControl = openSessionControl && openSessionControl.slot === activeSlot
+    ? sessionControls.find(c => c.key === openSessionControl.key) ?? null
+    : null
+  const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null)
   return (
     <>
             {/* Composer dock. Floats over the bottom of the transcript scroller
@@ -446,7 +461,10 @@ export default function ComposerDockView({
                   the wrapper's contribution to the column unchanged, so the seam
                   still fuses. Layout-neutral when the queue is empty: the pair
                   cancels. */}
-              <div ref={composerBandRef} className="max-h-[50svh] overflow-y-auto overscroll-contain pb-[11px] mb-[-11px] dock-inert" data-testid="composer-status-stack">
+              {/* While an app's box is docked here the stack is a flex column, so
+                  under the 50svh cap the box alone gives way (it scrolls inside
+                  itself) instead of the stack scrolling it out of view. */}
+              <div ref={composerBandRef} className="max-h-[50svh] overflow-y-auto overscroll-contain pb-[11px] mb-[-11px] dock-inert has-[[data-session-control-dock]]:flex has-[[data-session-control-dock]]:flex-col" data-testid="composer-status-stack">
               {/* Topmost, furthest from the composer: it is about the session's
                   setup, not about the work in hand, and is gone once every MCP
                   server has connected. */}
@@ -468,6 +486,10 @@ export default function ComposerDockView({
               {!(activityOpen && !search.isOpen && tabsCtl.tabs.find(t => t.id === tabsCtl.activeId)?.kind === 'subagents') && <SubagentProgressBar slot={activeSlot} />}
               {!(activityOpen && !search.isOpen && tabsCtl.tabs.find(t => t.id === tabsCtl.activeId)?.kind === 'workflows') && <WorkflowProgressBar slot={activeSlot} />}
               <SubagentDeliveryProgress count={systemDeliveryCount} />
+              {/* Where an app's docked box is drawn: below Crew's bars, above the
+                  person's own queue, which fuses into the composer. Empty, and no
+                  height, while no docked box is open. */}
+              <SessionControlDockSlot ref={setDockSlot} />
               <QueueStack key={activeSlot} messages={queuedMessages} onCancel={handleCancelQueued} onInterrupt={handleInterruptQueued} onEdit={handleEditQueued} onEditOpen={handleEditOpenQueued} onReorder={handleReorderQueued} pendingIds={queuePendingIds} fuseBelow={followUpOptions.length === 0 && !knowledgeFetch.pendingKnowledge} />
               </div>
               {flyingQuote && <FlyingQuote text={flyingQuote.text} from={flyingQuote.from} targetRef={inputAreaRef} onComplete={endQuoteFlight} />}
@@ -960,46 +982,33 @@ export default function ComposerDockView({
                 ? <ProjectAwsProfileSection project={_slotProject} errorHandoff onHandoff={() => setProjectPickerOpen(false)} />
                 : undefined}
             />
-            {/* App-contributed session control popover — triggered from input bar.
-                Only the open one is mounted, so an app's control costs nothing
-                while closed. Render is gated on the slot the control was opened
-                in: on a chat switch the committed render where activeSlot has
-                already moved would otherwise mount a fresh control (the host
-                keys on session) bound to the NEW chat, and a control that
-                writes per-session state on mount would write to the wrong
-                chat. The clearing effect above runs too late to prevent that
-                render — this gate is the correctness guard. */}
-            {(() => {
-              const sc =
-                openSessionControl && openSessionControl.slot === activeSlot
-                  ? sessionControls.find(c => c.key === openSessionControl.key)
-                  : null
-              if (!sc) return null
-              return (
-                <SessionControlHost
-                  /* Keyed on the control, and load-bearing: the host's error
-                     boundary holds `state.error`, and nothing clears it on a
-                     prop change. Unkeyed, React reuses the one instance across
-                     controls, so opening B after A crashed would show B the
-                     stale error and never mount it. The key makes switching
-                     controls a remount, which is the only thing that resets the
-                     boundary. Do not remove it. */
-                  key={sc.key}
-                  control={sc}
-                  anchorRect={sessionControlRect}
-                  onClose={() => {
-                    setOpenSessionControl(null)
-                    refreshSessionControlStatuses()
-                  }}
-                  session={{
-                    sessionKey: sessionControlKey,
-                    folderId: currentSlot?.folder_id || '',
-                    folderName: activeFolderName,
-                    cwd: currentSlot?.project || '',
-                  }}
-                />
-              )
-            })()}
+            {/* App-contributed session control — triggered from input bar (see
+                `openControl` above for the slot gate and the two forms). */}
+            {openControl && (
+              <SessionControlHost
+                /* Keyed on the control, and load-bearing: the host's error
+                   boundary holds `state.error`, and nothing clears it on a
+                   prop change. Unkeyed, React reuses the one instance across
+                   controls, so opening B after A crashed would show B the
+                   stale error and never mount it. The key makes switching
+                   controls a remount, which is the only thing that resets the
+                   boundary. Do not remove it. */
+                key={openControl.key}
+                control={openControl}
+                anchorRect={sessionControlRect}
+                dockSlot={dockSlot}
+                onClose={() => {
+                  setOpenSessionControl(null)
+                  refreshSessionControlStatuses()
+                }}
+                session={{
+                  sessionKey: sessionControlKey,
+                  folderId: currentSlot?.folder_id || '',
+                  folderName: activeFolderName,
+                  cwd: currentSlot?.project || '',
+                }}
+              />
+            )}
             </div>
     </>
   )

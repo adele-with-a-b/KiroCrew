@@ -10870,7 +10870,8 @@
       "retry_loading": "Повторить загрузку {{label}}",
       "could_not_load": "Не удалось загрузить {{label}}",
       "loading": "Загрузка {{label}}…",
-      "dialog_label": "{{label}} — {{appName}}"
+      "dialog_label": "{{label}} — {{appName}}",
+      "close_named": "Закрыть {{label}}"
     },
     "markdownCard": {
       "formatted": "Форматировано",

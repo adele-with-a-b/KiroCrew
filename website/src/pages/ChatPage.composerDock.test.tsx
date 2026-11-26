@@ -34,7 +34,10 @@ vi.mock('../components/ModelEffortDropdown', async (orig) => {
   }
 })
 vi.mock('../components/ChatInput', () => ({ default: (p: Captured) => { seen.chatInput = p; return null } }))
-vi.mock('../components/SessionControlHost', () => ({ default: (p: Captured) => { seen.sessionControl = p; return null } }))
+vi.mock('../components/SessionControlHost', () => ({
+  default: (p: Captured) => { seen.sessionControl = p; return <div data-testid="session-control-host" /> },
+  SessionControlDockSlot: forwardRef<HTMLDivElement>((_p, ref) => <div ref={ref} data-testid="session-control-dock-slot" />),
+}))
 vi.mock('../components/ErrorNotice', () => ({ default: () => null }))
 vi.mock('../components/FollowUpCard', () => ({ default: (p: Captured) => { seen.followUp = p; return null } }))
 vi.mock('../components/PendingQuestionCard', () => ({ default: () => null }))
@@ -193,6 +196,29 @@ describe('ComposerDockView', () => {
     act(() => { (seen.sessionControl!.onClose as () => void)() })
     expect(setOpenSessionControl).toHaveBeenCalledWith(null)
     expect(refreshSessionControlStatuses).toHaveBeenCalled()
+  })
+
+  it.each([true, false])("draws one host for an app's box, docked or not, and hands it the status stack's dock slot (dock: %s)", (dock) => {
+    const { rerender } = render(<ComposerDockView {...dockProps({
+      openSessionControl: { key: 'c1', slot: 'slot-a' }, sessionControls: [{ key: 'c1', dock }] as never,
+    })} />)
+    const slot = screen.getByTestId('session-control-dock-slot')
+    expect(screen.getByTestId('composer-status-stack').contains(slot)).toBe(true)
+    expect(seen.sessionControl!.dockSlot).toBe(slot)
+    // One host in one place, so the box keeps its module when its form changes.
+    expect(screen.getAllByTestId('session-control-host')).toHaveLength(1)
+    const host = screen.getByTestId('session-control-host')
+    rerender(<ComposerDockView {...dockProps({
+      openSessionControl: { key: 'c1', slot: 'slot-a' }, sessionControls: [{ key: 'c1', dock: !dock }] as never,
+    })} />)
+    expect(screen.getByTestId('session-control-host')).toBe(host)
+  })
+
+  it("draws no box for a control opened in another chat, docked or not", () => {
+    render(<ComposerDockView {...dockProps({
+      openSessionControl: { key: 'c1', slot: 'slot-b' }, sessionControls: [{ key: 'c1', dock: true }] as never,
+    })} />)
+    expect(screen.queryByTestId('session-control-host')).toBeNull()
   })
 
   it('labels an untitled history suggestion "Untitled session" and resumes its key (#20877)', () => {
