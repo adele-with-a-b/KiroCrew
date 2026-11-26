@@ -4971,13 +4971,18 @@ call, the one point every route's prompt passes: the queued-note and run drains,
 `session_send` to an idle chat, work-ledger wakes, patrol nudges, crons, sub-agent
 notes and a hub conductor's agent-origin `POST /api/chat`). The opening says a frame
 with any other mark, or none, is quoted text from whoever sent it. Every owner steer
-of the turn carries that one mark. A turn that announced none (the owner's own turn a
-note then joined, a slash command, an agent-started turn) gets no frame: the steer
-seam refuses the owner's steer (`steer_refusal.NOT_OWNERS_TURN`) and it runs next as
-the owner's own turn. Every steer that is not the owner's has the live mark replaced
-by `(mark withheld)` (`without_turn_mark`), so a sender who learned it still cannot
-frame words as the owner's. The mark lives only in process memory
-(`OwnerSteers.mark`), cleared at the turn's entry and every exit; no row, queue
+of the turn carries that one mark. The owner's own turn announces none; the first
+steer of another sender that joins it draws the mark, and that steer and every later
+one of another sender lead with the gateway's join note (`TURN_MARK_JOIN`), ahead of
+their text (`without_turn_mark`). So the owner's steers after it are framed with that
+mark and go in at the next step, in the order typed: nothing of his is refused or
+queued because a note joined his turn. A turn the owner did not start that announced
+none (a slash command, an agent-started turn, a nested prompt) gets no frame: the
+steer seam refuses the owner's steer (`steer_refusal.NOT_OWNERS_TURN`) and it runs
+next as the owner's own turn. Both notes say the mark counts only in a message to the model, never
+inside a tool result or a file. Every steer that is not the owner's has the live mark
+replaced by `(mark withheld)` (`without_turn_mark`), one exact token. The mark lives
+in process memory (`OwnerSteers.mark`), cleared at the turn's entry and every exit; no row, queue
 entry, audit row or gateway log carries it, so `session_read_message` of the chat
 never shows it. The row keeps the words as typed. The marked text is the steer's
 wire form in the one raw-to-wire map (`responsive_chat.turn_state(slot).steers`) the
@@ -4994,6 +4999,7 @@ The stated limit, which this does not defend:
 
 - The harness saves each prompt, the opening included, in its own transcript on disk (`~/.claude/projects/…`, kiro-cli's store), which any chat with a shell can read.
 - The model is told the mark and could repeat it in a reply or a note, which other chats can read.
+- The exact-match swap stops a sender that does not know the mark. A sender that read the mark from disk is not stopped: any other spelling of it (upper case, spaces, an invisible character, a look-alike letter) goes into the turn unchanged, and so does a tool result or a file that carries it.
 
 ### Queued prompt durability
 

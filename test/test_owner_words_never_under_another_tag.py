@@ -27,14 +27,9 @@ from kiro_crew.agent_sdk.backends_turns import wrap_user_message
 from kiro_crew.dashboard import chat_delivery_owner_steer, chat_runner, relay_spans
 from kiro_crew.dashboard import session_control as sc
 from kiro_crew.dashboard import session_deliver
-from kiro_crew.dashboard.chat_delivery import (
-    STEER_STEERED,
-    steer_into_running_turn,
-    steer_refusal_of,
-)
+from kiro_crew.dashboard.chat_delivery import STEER_STEERED, steer_into_running_turn
 from kiro_crew.dashboard.chat_utils import slot_history_key
 from kiro_crew.dashboard.session_control_parts import session_messaging
-from kiro_crew.steer_refusal import NOT_OWNERS_TURN
 
 OWNER = "Q12a go. Q32a go."
 MARK = "0a1b2c3d4e5f6a7b"
@@ -255,27 +250,17 @@ def test_a_second_note_then_the_owner_steered_into_a_notes_turn():
     assert record.successors == ()
 
 
-def test_the_owners_words_after_a_note_steered_into_their_own_turn_are_not_framed():
+def test_the_owners_words_after_a_note_steered_into_their_own_turn_carry_the_notes_mark():
     """The owner's own turn announced no mark; a note joins it; the owner types again.
 
-    Nothing frames their words there: the steer seam refuses them, and the composer
-    runs them next as their own turn. Nothing passes as theirs.
+    The note drew the turn's mark and leads with the gateway's join note, ahead of its
+    own text; the owner's words go in at the next step, framed with that mark.
     """
     agent = _Agent()
-    outcomes: list = []
 
     async def _note_then_owner(ctx) -> None:
         await _note_steered(ctx, agent, NOTE, "worker-a")
-        outcomes.append(
-            await steer_into_running_turn(
-                ctx.state,
-                ctx.slot,
-                OWNER,
-                user_origin=True,
-                owner_origin=True,
-                admission=sc.containment_meta(ctx.state, ctx.slot),
-            )
-        )
+        await _owner_types(ctx, agent)
 
     record = _run(
         [Do(_note_then_owner), _echo(agent), AcpEvent(kind=EVENT_TEXT_CHUNK, text="on it")],
@@ -285,10 +270,11 @@ def test_the_owners_words_after_a_note_steered_into_their_own_turn_are_not_frame
     )
 
     assert _prompts(record) == ["what is the status?"], "the owner's own turn announces nothing"
-    assert agent.wires == [NOTE], "the owner's words never went in"
-    (refused,) = outcomes
-    assert steer_refusal_of(refused) == NOT_OWNERS_TURN
-    assert record.successors == ()
+    assert len(agent.wires) == 2, f"the owner's words went in at the next step: {agent.wires}"
+    note_wire, owner_wire = agent.wires
+    assert note_wire == chat_delivery_owner_steer.TURN_MARK_JOIN.format(mark=MARK) + NOTE
+    _assert_owners_own(owner_wire)
+    assert record.successors == (), "the echo settles both; nothing runs again"
 
 
 def test_the_owners_steer_into_their_own_turn_goes_as_typed():

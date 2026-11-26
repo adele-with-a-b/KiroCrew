@@ -158,8 +158,10 @@ async def test_a_steer_into_the_owners_own_turn_says_nothing_new(tmp_path, monke
 async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
     tmp_path, monkeypatch
 ) -> None:
-    """A peer's steer ended the mark; their own turn announced no owner mark to frame
-    their next message with, so it waits and runs next as their own turn."""
+    """A peer's steer ended the mark; their next message still goes in, and says so.
+
+    The peer's steer drew the turn's mark and led with the gateway's join note, so the
+    owner's words go in framed with that mark, at the next step."""
     from kiro_crew.dashboard import session_deliver
 
     live = _Live(tmp_path, monkeypatch)
@@ -175,12 +177,42 @@ async def test_an_owners_turn_a_peers_steer_joined_takes_the_next_message_too(
 
     receipt = await live.type("Q1a Go.")
 
-    assert receipt.get("queued") is True and "steered" not in receipt
-    assert receipt.get("steerRefusal") == steer_refusal.NOT_OWNERS_TURN
-    live.agent.steer.assert_awaited_once()  # the peer's steer, never the owner's words
+    assert receipt.get("steered") is True
+    assert _row(live.slot, "Q1a Go.")["meta"][STEER_WITHOUT_OWNER_RIGHTS_META] is True
+    peer_wire, owner_wire = [call.args[0] for call in live.agent.steer.await_args_list]
+    assert _marked_as_the_owners(owner_wire, "Q1a Go."), owner_wire
+    mark = owner_wire.split(":", 1)[0].rsplit(" ", 1)[1]
+    join = chat_delivery_owner_steer.TURN_MARK_JOIN.format(mark=mark)
+    assert peer_wire == join + "a peer's steer", peer_wire
     live.slot._pending_steers.clear()
     await live.finish()
-    assert live.turns[1][:2] == ("Q1a Go.", True), "next, as the owner's own turn"
+
+
+@pytest.mark.asyncio
+async def test_the_owners_messages_keep_their_typed_order_after_a_peer_joined_his_turn(
+    tmp_path, monkeypatch
+) -> None:
+    """He types twice into his own turn with a peer's steer between, and the turn ends
+    before reading any of them: his two run next in the order he typed them."""
+    from kiro_crew.dashboard import session_deliver
+
+    live = _Live(tmp_path, monkeypatch)
+    await live.open_with("owner")
+    assert (await live.type("Q1a Go.")).get("steered") is True
+    outcome = await session_deliver.deliver(
+        live.state,
+        live.slot,
+        "a peer's steer",
+        session_deliver.peer(steer=True, sender="dashboard:other"),
+        admission=sc.containment_meta(live.state, live.slot),
+    )
+    assert outcome == session_deliver.DELIVERED_STEERED
+    second = await live.type("Q2a Go.")
+    await live.finish()
+
+    later = [str(message) for message, _, _ in live.turns[1:]]
+    assert later[:2] == ["Q1a Go.", "Q2a Go."], later
+    assert second.get("steered") is True and "steerRefusal" not in second
 
 
 @pytest.mark.asyncio
