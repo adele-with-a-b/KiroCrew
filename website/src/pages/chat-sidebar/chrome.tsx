@@ -137,6 +137,12 @@ export const BOARD_FOLDER_BODY_CLS = 'relative border-l border-border ml-3 pl-1'
  *  margins stay per row: the toggle's `px-3` 12 puts its chevron 2px left of the
  *  session rows' 14px content column, the same relation as the pinned divider,
  *  in the root lane and inside every folder body alike. */
+/** The unread dot, wherever the list draws unread (a row, a folder's rollup, a
+ *  folded crew): small and grey, the quiet signal. The loud one is a chat that
+ *  waits on the person (`needsYouOf`); a bright dot on most busy rows would bury
+ *  the few that need an answer. */
+export const UNREAD_DOT_CLS = 'w-[5px] h-[5px] rounded-full shrink-0 bg-muted opacity-55'
+
 export const SIDEBAR_TEXT_CONTROL_CLS = 'text-left text-[12px] text-muted hover:text-accent hover:bg-accent-subtle rounded-md cursor-pointer bg-transparent border-none transition-colors'
 /** The dormant toggle: the shared look plus a full-width flex row for the chevron. */
 export const STALE_TOGGLE_CLS = `w-full flex items-center gap-1.5 px-3 py-0.5 leading-4 ${SIDEBAR_TEXT_CONTROL_CLS}`

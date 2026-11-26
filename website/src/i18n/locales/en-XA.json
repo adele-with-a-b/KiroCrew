@@ -14169,6 +14169,8 @@
       "your_crewmate": "[Ýøùŕ ƀøţ ············]"
     },
     "chatSidebar": {
+      "filter_needs_you": "[Ñèèðş ýøù ··············]",
+      "filter_needs_you_description": "[Çĥàţş ẁàìţìñğ øñ ýøùŕ àþþŕøṽàĺ øŕ àñşẁèŕ ····················]",
       "needsMeCard": {
         "card_label": "[{{title}}: ñèèðş ýøù ··········]",
         "recap": "[Ŕèçàþ ········]",
@@ -14267,6 +14269,19 @@
       "more_options": "[Ṁøŕè øþţìøñş ···········]",
       "move_folder_to": "[Ṁøṽè ƒøĺðèŕ ţø ·············]",
       "needs_approval": "[Ñèèðş àþþŕøṽàĺ ·············]",
+      "needs_you_everything_else": "[Èṽèŕýţĥìñğ èĺşè ··············]",
+      "needs_you_group": "[Ñèèðş ýøù ··············]",
+      "needs_you_group_count_one": "[Ñèèðş ýøù: {{count}} çĥàţ ẁàìţş øñ ýøù ····················]",
+      "needs_you_group_count_other": "[Ñèèðş ýøù: {{count}} çĥàţş ẁàìţ øñ ýøù ····················]",
+      "needs_you_hidden_by_filter_one": "[{{count}} øţĥèŕ çĥàţ ĥìððèñ ƀý ţĥè Ñèèðş ýøù ƒìĺţèŕ ·····················]",
+      "needs_you_hidden_by_filter_other": "[{{count}} øţĥèŕ çĥàţş ĥìððèñ ƀý ţĥè Ñèèðş ýøù ƒìĺţèŕ ······················]",
+      "needs_you_more_one": "[+{{count}} ɱøŕè ·········]",
+      "needs_you_more_other": "[+{{count}} ɱøŕè ·········]",
+      "needs_you_oldest_first": "[øĺðèşţ ƒìŕşţ ···········]",
+      "needs_you_open_count_one": "[{{count}} øþèñ àşķ ··············]",
+      "needs_you_open_count_other": "[{{count}} øþèñ àşķş ···············]",
+      "needs_you_status": "[Ñèèðş ýøù ··············]",
+      "needs_you_waited": "[Ẁàìţìñğ {{age}} ············]",
       "running_marker": "[Ŕùññìñğ ···········]",
       "switch_to_conductor_view_nested_by_creator": "[Şẁìţçĥ ţø çøñðùçţøŕ ṽìèẁ (şèşşìøñş ñèşţèð ùñðèŕ ţĥè şèşşìøñ ţĥàţ øþèñèð ţĥèɱ) ·······················]",
       "collapse_sessions_this_one_opened": "[Çøĺĺàþşè ţĥè şèşşìøñş ţĥìş øñè øþèñèð ···················]",

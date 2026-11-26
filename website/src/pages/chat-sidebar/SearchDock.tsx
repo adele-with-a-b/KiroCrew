@@ -29,7 +29,7 @@ import { STALE_COLLAPSE_PRESETS_MS } from '../staleCollapse'
 import { SORT_LABEL_KEY, type SortKey } from '../chat/sessionOrder'
 import { i18nT } from '../../i18n/t'
 import { sessionDisplayTitle } from '../../utils/sessionDisplayTitle'
-import { fmtList } from '../../i18n/format'
+import { fmtList, fmtNumber } from '../../i18n/format'
 import type { SessionFilterKey } from './types'
 import { SESSION_FILTERS } from './filters'
 import { modelFilterLabel } from './models'
@@ -109,6 +109,7 @@ function DurationChip({ label, selected, onSelect }: { label: string; selected: 
  * is a key it cannot verify exists.
  */
 export const FILTER_LABEL_KEY: Record<SessionFilterKey, string> = {
+  needs_you: 'pages.chatSidebar.filter_needs_you',
   unread: 'pages.chatSidebar.filter_unread',
   running: 'pages.chatSidebar.filter_running',
   pinned: 'pages.chatSidebar.filter_pinned',
@@ -116,6 +117,7 @@ export const FILTER_LABEL_KEY: Record<SessionFilterKey, string> = {
   crew: 'pages.chatSidebar.filter_crew',
 }
 export const FILTER_DESCRIPTION_KEY: Record<SessionFilterKey, string> = {
+  needs_you: 'pages.chatSidebar.filter_needs_you_description',
   unread: 'pages.chatSidebar.filter_unread_description',
   running: 'pages.chatSidebar.filter_running_description',
   pinned: 'pages.chatSidebar.filter_pinned_description',
@@ -287,7 +289,9 @@ export function renderSearchDock(shell: SidebarScope): { field: React.ReactNode;
                     ? i18nT('pages.chatSidebar.sort_filter_sessions_hidden', { count: hiddenFolderCount })
                     : i18nT('pages.chatSidebar.sort_filter_sessions')}
                   aria-label={i18nT('pages.chatSidebar.sort_and_filter_sessions')}
-                  badge={filterCounts['unread']}
+                  // The chats that wait on the person, in their colour; with none, unread as before.
+                  badge={filterCounts['needs_you'] > 0 ? filterCounts['needs_you'] : filterCounts['unread']}
+                  badgeTone={filterCounts['needs_you'] > 0 ? 'needs' : undefined}
                   className={hiddenFolderCount > 0 ? 'text-warn' : undefined}
                   data-folder-hide-active={hiddenFolderCount > 0 ? String(hiddenFolderCount) : undefined}
                 />
@@ -449,10 +453,12 @@ export function renderSearchDock(shell: SidebarScope): { field: React.ReactNode;
                       // Keep the menu open so multiple filters can be toggled.
                       onSelect={e => { e.preventDefault(); toggleFilter(filterDef.key) }}
                       className={canHide ? 'flex-1 min-w-0' : undefined}
+                      {...(filterDef.key === 'needs_you' ? { role: 'menuitemcheckbox', 'aria-checked': active, 'data-testid': 'filter-needs-you' } : {})}
                     >
                       {filterDef.icon(active)}
-                      <span className="flex-1 truncate">{filterLabel}{slotCount > 0 ? ` (${slotCount})` : ''}{active && pausedFilters.has(filterDef.key) && <span className="text-muted"> · {i18nT('pages.chatSidebar.filter_paused_suffix')}</span>}</span>
-                      {active && (pausedFilters.has(filterDef.key) ? <Pause size={14} className="text-muted shrink-0" aria-hidden="true" /> : <Check size={14} className="text-accent shrink-0" />)}
+                      {/* An active "Needs you" row reads in the Needs-you colour, as its rows do. */}
+                      <span className={`flex-1 truncate${active && filterDef.key === 'needs_you' ? ' text-needs font-semibold' : ''}`}>{filterLabel}{slotCount > 0 ? ` (${slotCount})` : ''}{active && pausedFilters.has(filterDef.key) && <span className="text-muted"> · {i18nT('pages.chatSidebar.filter_paused_suffix')}</span>}</span>
+                      {active && (pausedFilters.has(filterDef.key) ? <Pause size={14} className="text-muted shrink-0" aria-hidden="true" /> : <Check size={14} className={`${filterDef.key === 'needs_you' ? 'text-needs' : 'text-accent'} shrink-0`} />)}
                     </DropdownMenuItem>
                   )
                   if (!canHide) return showRow
@@ -1168,9 +1174,25 @@ export function renderSearchDock(shell: SidebarScope): { field: React.ReactNode;
           </div>
         )
       })()}
-      {SESSION_FILTERS.some(filterDef => filterDef.key !== 'crew' && activeFilters.has(filterDef.key)) && (
+      {/* "Needs you" leads the shelf, in its own row for the same reason. */}
+      {SESSION_FILTERS.filter(filterDef => filterDef.key === 'needs_you' && activeFilters.has(filterDef.key)).map(filterDef => {
+        const filterLabel = i18nT(FILTER_LABEL_KEY[filterDef.key])
+        return (
+          <div key={filterDef.key} className="px-3 pb-1">
+            <FilterChip
+              testId={`filter-chip-${filterDef.key}`}
+              label={`${filterLabel} · ${fmtNumber(filterCounts[filterDef.key] ?? 0)}`}
+              color={filterDef.color}
+              pause={chipPause(filterDef.key, filterLabel)}
+              clearLabel={i18nT('pages.chatSidebar.clear_named_filter', { filter: filterLabel })}
+              onClear={() => toggleFilter(filterDef.key)}
+            />
+          </div>
+        )
+      })}
+      {SESSION_FILTERS.some(filterDef => filterDef.key !== 'crew' && filterDef.key !== 'needs_you' && activeFilters.has(filterDef.key)) && (
         <div className={FILTER_CHIP_ROW_CLS}>
-          {SESSION_FILTERS.filter(filterDef => filterDef.key !== 'crew' && activeFilters.has(filterDef.key)).map(filterDef => {
+          {SESSION_FILTERS.filter(filterDef => filterDef.key !== 'crew' && filterDef.key !== 'needs_you' && activeFilters.has(filterDef.key)).map(filterDef => {
             const slotCount = filterCounts[filterDef.key] ?? 0
             const filterLabel = i18nT(FILTER_LABEL_KEY[filterDef.key])
             // The label goes in as-is. It used to be `.toLowerCase()`d to read as

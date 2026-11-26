@@ -88,6 +88,7 @@ Object.defineProperty(window, 'matchMedia', {
 })
 
 import ChatSidebar from '../pages/ChatSidebar'
+import { UNREAD_DOT_CLS } from '../pages/chat-sidebar/chrome'
 import type { RootState } from '../store'
 import type { ChatSlot } from '../types'
 
@@ -201,22 +202,22 @@ describe('chat sidebar — status marker leads the secondary line', () => {
     expect(container.querySelector('.session-row .absolute.right-1\\.5.rounded-full')).toBeNull()
   })
 
-  it('paints the unread dot with the semantic status token, not the brand accent', () => {
-    // The dot signals STATE (agent finished, result unread), so it reads
-    // `--ok` like the sidebar's `recent` filter and the connection-status
-    // dot -- never `--accent`, which a theme cannot separate from
+  it('paints the unread dot small and grey, never the brand accent', () => {
+    // Unread is the quiet signal: the loud one is a chat that waits on the person
+    // (`needsYouOf`). Never `--accent`, which a theme cannot separate from
     // links/chips/buttons (#10479).
     const { container } = renderSidebar([slot({ last_message: 'done' })], ['k1'])
     const dot = markerOf(container)!
     expect(dot).toBeTruthy()
-    expect(dot.style.background).toBe('var(--ok)')
+    expect(dot.className).toBe(UNREAD_DOT_CLS)
+    expect(dot.style.background).toBe('')
   })
 
-  it('paints the collapsed-folder unread rollup dot with the status token too', () => {
+  it('paints the collapsed-folder unread rollup dot the same way', () => {
     // Same unread state rolled up onto the folder header; it is a separate
     // render site, so the session-row assertion above cannot catch a
     // regression here. This fixture renders both markers (the folder rollup
-    // and the child row's own dot), so pin them BOTH to the token.
+    // and the child row's own dot), so pin them BOTH.
     const { container } = renderSidebar(
       [slot({ folder_id: 'f1', last_message: 'done' })], ['k1'], {},
       [{ id: 'f1', name: 'Work', order: 0, collapsed: true }],
@@ -224,7 +225,7 @@ describe('chat sidebar — status marker leads the secondary line', () => {
     const dots = container.querySelectorAll('span[role="img"].rounded-full')
     expect(dots).toHaveLength(2)
     for (const dot of Array.from(dots)) {
-      expect((dot as HTMLElement).style.background).toBe('var(--ok)')
+      expect((dot as HTMLElement).className).toBe(UNREAD_DOT_CLS)
     }
   })
 

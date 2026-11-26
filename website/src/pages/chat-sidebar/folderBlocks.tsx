@@ -29,7 +29,7 @@ import { detectFolderConductor } from './folderConductor'
 import { crewSignalsFrom, foldCodeChannelCrews } from './codeChannelCrew'
 import { CodeChannelCrewWorkers } from './CodeChannelCrewWorkers'
 import { sessionRowIdentity } from './rowIdentity'
-import { DisclosureChevron, FOLDER_BODY_CLS, FOLDER_BODY_OPEN_PADDING, FOLDER_ROW_STICKY_Z, PinnedSessionDivider, createTabModeForClick, folderNameTitle } from './chrome'
+import { DisclosureChevron, FOLDER_BODY_CLS, FOLDER_BODY_OPEN_PADDING, FOLDER_ROW_STICKY_Z, PinnedSessionDivider, UNREAD_DOT_CLS, createTabModeForClick, folderNameTitle } from './chrome'
 import type { LaneRows } from './laneRows'
 import type { SidebarScope } from './scope'
 import { KindSectionHeader, sectionHeaders, sectionRankOf, sectionRows } from './kindSections'
@@ -633,11 +633,9 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
                 // a screen reader and indistinguishable from decoration, and this
                 // one sits beside a count where that reads as styling. Like the
                 // session row's marker, it is `role="img"` with that label.
-                // `--ok` for the same reason as the session row's dot: it is the
-                // SAME unread state rolled up, so it reads the same semantic
-                // status token rather than the brand accent, matching the
-                // `recent` filter and the connection-status dot.
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--ok)' }}
+                // The same quiet dot as the session row's: it is the SAME unread
+                // state rolled up.
+                <span className={UNREAD_DOT_CLS}
                   role="img"
                   aria-label={i18nT('pages.chatSidebar.agent_finished_your_turn')}
                   title={i18nT('pages.chatSidebar.agent_finished_your_turn')} />

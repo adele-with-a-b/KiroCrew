@@ -575,5 +575,9 @@
   "pages.allProjectsBoard.approvals_wait",
   "components.queueStack.held_count",
   "components.queueStack.send_all_held_title",
-  "components.queueStack.send_all_held_failed"
+  "components.queueStack.send_all_held_failed",
+  "pages.chatSidebar.needs_you_more",
+  "pages.chatSidebar.needs_you_open_count",
+  "pages.chatSidebar.needs_you_group_count",
+  "pages.chatSidebar.needs_you_hidden_by_filter"
 ]

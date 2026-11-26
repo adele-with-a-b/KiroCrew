@@ -6,7 +6,9 @@ import { useAppSelector, useAppDispatch, useAppStore } from '../store'
 import { fetchSlots, sseStatus, setEnabledAppIds } from '../store/dashboardSlice'
 import { isRelayCrewWindow, isRelayRetrying, offlineReason } from '../utils/offlineReason'
 import { prefillCrewAddForm, setActiveId } from '../store/instancesSlice'
-import { selectAllSurfacesAttention, surfaceLabel, surfaceMachineValue } from '../surfaces/registry'
+import { surfaceLabel, surfaceMachineValue } from '../surfaces/registry'
+import { selectChatsWaitingOnYou } from '../lib/needsYouCount'
+import { fmtNumber } from '../i18n/format'
 import { switchSlot, selectActiveSlotProject, stageToMainComposer, setPendingInput } from '../store/chatSlice'
 import { setNavIntentHandler as setArtifactNavIntentHandler } from '../utils/artifactPopout'
 import { setNavIntentHandler as setAppNavIntentHandler } from '../utils/appPopout'
@@ -297,12 +299,9 @@ export function useAppShell() {
       window.removeEventListener('mc-auth-cleared', onCleared)
     }
   }, [])
-  // Sum across every registered built-in surface — Chat (slot-based),
-  // Notifications (notifications slice), Secretary
-  // (attention slice), etc. App badges (dynamic, via `mc:app:badge` and the
-  // global-approvals query below) are added below since they live outside
-  // the Redux store and outside the registry.
-  const builtinAttention = useAppSelector(selectAllSurfacesAttention)
+  // The browser tab's number: the chats that wait on the person (lib/needsYouCount).
+  // The rail badges keep their own counts; none of them, unread included, reaches the tab.
+  const chatsWaitingOnYou = useAppSelector(selectChatsWaitingOnYou)
   const approvalCount = useGlobalApprovalCount()
   const terminalEnabled = useTerminalRestoreProbe()
   // True while the terminal panel lives in its own popped-out window: the
@@ -1008,11 +1007,6 @@ export function useAppShell() {
   const updateFlow = useUpdateFlow()
   const { updating, setUpdating, showUpdateModal, setShowUpdateModal, showChangelog, updateError, setUpdateError } = updateFlow
 
-  // Browser tab title badge — sums every built-in surface's badge (chat,
-  // orchestrated, notifications, secretary, ...) plus the orthogonal
-  // `mc:app:badge`-driven dynamic app counts. Secretary's badge flows through
-  // the surface registry.
-  const totalAttention = builtinAttention + Object.values(appBadges).reduce((a, b) => a + b, 0)
   // The active session's title, for the tab title below. A slot whose title
   // is still its key has no real title yet (same rule as the chat popout).
   const activeSessionTitle = useAppSelector(s => {
@@ -1093,10 +1087,12 @@ export function useAppShell() {
     enabled: activeInstanceId !== null,
   })
   const tabLabel = instancesData?.instances.find(i => i.id === activeInstanceId)?.name || titleLabel
+  // The count is the chats that wait on the person (`selectChatsWaitingOnYou`), not
+  // the unread ones: with none waiting, the tab carries no number.
   useEffect(() => {
     const base = tabLabel ? i18nT('app.tab_title', { label: tabLabel, productName: botName }) : botName
-    document.title = totalAttention > 0 ? `(${totalAttention}) ${base}` : base
-  }, [totalAttention, botName, tabLabel])
+    document.title = chatsWaitingOnYou > 0 ? `(${fmtNumber(chatsWaitingOnYou)}) ${base}` : base
+  }, [chatsWaitingOnYou, botName, tabLabel])
   // Name the history entry on screen for the Back/Forward arrows' history
   // menu (#17453): the session on chat, the page anywhere else, and nothing on
   // a route with no rail row, so that entry is left out of the list. Re-run on

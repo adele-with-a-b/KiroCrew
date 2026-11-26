@@ -5,7 +5,7 @@
  *  markup lives here so the row file stays one readable unit. */
 import { ShieldCheck, CircleCheck, Loader2, TriangleAlert } from 'lucide-react'
 import { i18nT } from '../../i18n/t'
-import { DisclosureChevron } from './chrome'
+import { DisclosureChevron, UNREAD_DOT_CLS } from './chrome'
 import type { CodeChannelCrewView, CrewAttention, CrewState } from './codeChannelCrew'
 import { CodeChannelBadge } from '../../components/CodeChannelBadge'
 import type { CodeChannelInfo } from '../../types'
@@ -83,8 +83,8 @@ export function CodeChannelCrewToggle({ workers, expanded, onToggle }: { workers
 }
 
 /** The most pressing thing a folded worker wants: an owed decision (shield), an
- *  interrupted turn (warning triangle), or an unread result (a small ok-coloured
- *  dot, named as an unread row's dot is). Each kind has the shape the crew line
+ *  interrupted turn (warning triangle), or an unread result (the list's quiet
+ *  unread dot, named as an unread row's dot is). Each kind has the shape the crew line
  *  draws for that state, so the kind never rests on colour alone. */
 export function CodeChannelCrewAttentionMark({ attention, interrupted, iconPx }: { attention: CrewAttention; interrupted: number; iconPx: number }) {
   const label = attention === 'needs_you'
@@ -99,7 +99,7 @@ export function CodeChannelCrewAttentionMark({ attention, interrupted, iconPx }:
   if (attention === 'interrupted') {
     return <span className="inline-flex shrink-0" {...testProps}><TriangleAlert size={iconPx} className="shrink-0 text-danger" aria-hidden /></span>
   }
-  return <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--ok)' }} {...testProps} />
+  return <span className={UNREAD_DOT_CLS} {...testProps} />
 }
 
 

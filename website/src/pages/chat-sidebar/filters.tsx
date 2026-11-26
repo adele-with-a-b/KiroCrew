@@ -1,7 +1,7 @@
 /** The session filter chips: the `SESSION_FILTERS` table, the persisted chip, folder
  *  and tag filter state, the Recent window, the status sets the chips count, and the
  *  unread auto-drain. */
-import { Circle, Zap, Pin, Clock } from 'lucide-react'
+import { Circle, Zap, Pin, Clock, Hand } from 'lucide-react'
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { shallowEqual } from 'react-redux'
 import type { SessionFilterKey, Slot } from './types'
@@ -30,9 +30,15 @@ interface SessionFilterDef {
 
 export const SESSION_FILTERS: SessionFilterDef[] = [
   {
+    // First: the chats that wait on the person (`needsYouOf`), drawn in the one
+    // colour only those rows wear. No hide: a waiting chat is never put away by a chip.
+    key: 'needs_you', storageKey: 'mc-session-needs-you-only',
+    color: 'var(--needs)',
+    icon: (active) => <Hand size={12} className={active ? 'text-needs' : 'text-muted'} aria-hidden="true" />,
+  },
+  {
     key: 'unread', storageKey: 'mc-session-unread-only', hideStorageKey: UNREAD_HIDDEN_LS_KEY,
-    // Status token, not brand accent: this chip is the legend/toggle for the
-    // same unread state whose row dot reads `var(--ok)` in SessionRow (#10479).
+    // Status token, not brand accent: the unread state is a status (#10479).
     color: 'var(--ok)',
     icon: (active) => <Circle size={12} className={active ? 'text-[var(--ok)]' : 'text-muted'} {...(active ? { strokeWidth: 0, fill: 'var(--ok)' } : {})} />,
   },

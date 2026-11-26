@@ -81,7 +81,7 @@ export function prepareLocalSidebar(params: URLSearchParams): void {
  * the lane renders rather than waiting. `data-capture-ready` is what the Playwright
  * harness waits for.
  */
-export function mountLocalSidebar(rows: LocalSidebarRow[], agents: string[]): void {
+export function mountLocalSidebar(rows: LocalSidebarRow[], agents: string[], unread: string[] = []): void {
   const slots = rows as unknown as ChatSlot[]
   function Harness() {
     useEffect(() => {
@@ -93,7 +93,7 @@ export function mountLocalSidebar(rows: LocalSidebarRow[], agents: string[]): vo
         <ChatSidebar
           slots={slots}
           activeSlot={null}
-          unreadSlots={[]}
+          unreadSlots={unread}
           history={[]}
           historyHasMore={false}
           defaultAgent="kirocrew"

@@ -14556,6 +14556,8 @@
       "could_not_repair_images": "छवियाँ ठीक नहीं की जा सकीं"
     },
     "chatSidebar": {
+      "filter_needs_you": "तुम्हारी ज़रूरत",
+      "filter_needs_you_description": "वे चैट जो तुम्हारी स्वीकृति या उत्तर की प्रतीक्षा में हैं",
       "needsMeCard": {
         "card_label": "{{title}}: तुम्हारी ज़रूरत है",
         "recap": "सारांश",
@@ -14595,6 +14597,19 @@
         "unknown_tool": "अज्ञात टूल"
       },
       "1_skipped_currently_selected": "(1 छोड़ा गया — अभी चुना हुआ)",
+      "needs_you_everything_else": "बाकी सब",
+      "needs_you_group": "तुम्हारी ज़रूरत",
+      "needs_you_group_count_one": "तुम्हारी ज़रूरत: {{count}} चैट तुम्हारा इंतज़ार कर रहा है",
+      "needs_you_group_count_other": "तुम्हारी ज़रूरत: {{count}} चैट तुम्हारा इंतज़ार कर रहे हैं",
+      "needs_you_hidden_by_filter_one": "{{count}} अन्य चैट “तुम्हारी ज़रूरत” फ़िल्टर से छिपी है",
+      "needs_you_hidden_by_filter_other": "{{count}} अन्य चैट “तुम्हारी ज़रूरत” फ़िल्टर से छिपी हैं",
+      "needs_you_more_one": "+{{count}} और",
+      "needs_you_more_other": "+{{count}} और",
+      "needs_you_oldest_first": "सबसे पुराना पहले",
+      "needs_you_open_count_one": "{{count}} खुला अनुरोध",
+      "needs_you_open_count_other": "{{count}} खुले अनुरोध",
+      "needs_you_status": "तुम्हारी ज़रूरत",
+      "needs_you_waited": "{{age}} से प्रतीक्षा में",
       "no_sessions_match_folders": "कोई सेशन मेल नहीं खाता — केवल एक फ़ोल्डर का नाम मिला",
       "history_search_failed": "खोज विफल रही। केवल शीर्षक से मेल खाने वाले दिखाए जा रहे हैं।",
       "search_results_count_one": "{{count}} मेल, सबसे अच्छा पहले",

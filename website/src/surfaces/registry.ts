@@ -398,14 +398,16 @@ export function selectSurfaceActivityCount(navId: string): (state: RootState) =>
 }
 
 /**
- * Sum every built-in surface's badge count. Drives the browser tab title
- * attention number alongside dynamic app badges. Composes the per-surface
+ * Sum every built-in surface's badge count: the unread-led attention number.
+ * The browser tab title shows a different one by default, the chats that wait
+ * on the person (`selectChatsWaitingOnYou`, lib/needsYouCount), so unread does
+ * not reach the tab. Composes the per-surface
  * selectors directly (no `.find()` per call) so it's O(surfaces) on each
  * Redux state change rather than O(surfaces²); the per-surface inner
  * selectors are themselves memoized via `selectUnreadByMode`.
  *
  * A preview-gated surface is skipped while its flag is off, which is a
- * user-visible correctness point rather than tidiness: the tab title is an
+ * user-visible correctness point rather than tidiness: a shown sum is an
  * ADVERTISEMENT too. A gated surface has no rail row and no Search Everywhere
  * entry, so a count it contributes shows the user a `(1)` they cannot trace to
  * anything or clear — and slots for a hidden surface really do exist, since

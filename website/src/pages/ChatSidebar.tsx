@@ -118,6 +118,10 @@ const NO_FOLDERS: ChatFolder[] = []
 
 import { SIDEBAR_MIN } from './chat/sidebarWidth'
 import { askAppConfirm } from '../lib/appConfirm'
+import { crewWaitingApprovals } from './chat/command-center/model'
+import { useNeedsGroupRows, type NeedsGroup } from './chat-sidebar/needsGroup'
+import { landOnAsk } from './chat-sidebar/needsYouLanding'
+import { codeChannelCrews } from './chat-sidebar/codeChannelCrew'
 export { SIDEBAR_MIN, SIDEBAR_MAX } from './chat/sidebarWidth'
 
 /**
@@ -513,11 +517,13 @@ function ChatSidebar({
   // memoized output keeps its identity while the inputs it reads hold still; the
   // result, its `lanes`, `staleSplit` and `views` are fresh per build.
   const previousRowsRef = useRef<SidebarRows | null>(null)
+  // What `needsYouOf` reads from the other rows: over every row, crew members included.
+  const crewApprovals = useMemo(() => crewWaitingApprovals(slotsProp), [slotsProp])
   const sidebarRows = buildSidebarRows({
     rows: allRows,
     local: {
       folderOf: slotFolders, pinned, pinnedRank, unread: unreadSet, running: runningSet, recent: recentSet,
-      searchRanks: searchRanked, manualRank, drawnIndex,
+      searchRanks: searchRanked, manualRank, drawnIndex, crewApprovals,
     },
     filters: {
       tags: { resolved: activeTagIds, raw: filterTagIds },
@@ -611,6 +617,29 @@ function ChatSidebar({
   // where no folder is drawn. The folder order itself is read and offered in
   // every lane.
   const folderRowsDrawn = shownLane === 'tree' || shownLane === 'board'
+  // The "Needs you" group on top of the list lanes (./chat-sidebar/needsGroup). Not on
+  // the board, whose columns are the grouping, nor while a search ranks the list.
+  // A code-channel crew's worker stays folded under its conductor, whose line speaks
+  // for it (`foldCodeChannelCrews`, which folds only while nothing narrows the list).
+  const needsCandidates = useMemo(() => {
+    if (listNarrowed || slotFilter.trim() !== '') return flatSlots
+    const folded = new Set<string>()
+    for (const workers of codeChannelCrews(flatSlots).values()) {
+      for (const w of workers) if (w.key !== activeSlot && !pinned.has(w.key)) folded.add(sessionRowIdentity(w))
+    }
+    return folded.size ? flatSlots.filter(s => !folded.has(sessionRowIdentity(s))) : flatSlots
+  }, [flatSlots, listNarrowed, slotFilter, activeSlot, pinned])
+  const needsGroupRows = useNeedsGroupRows({
+    rows: needsCandidates, needsOf: sidebarRows.needsOf, enabled: !boardLaneActive && !searchRanked,
+    frozen: listHovered || dragFrozen || nativeSessionDrag !== null,
+  })
+  const needsNarrows = activeFilters.has('needs_you') && !pausedFilters.has('needs_you')
+  const needsGroup: NeedsGroup = {
+    rows: needsGroupRows,
+    ids: new Set(needsGroupRows.map(sessionRowIdentity)),
+    headed: !needsNarrows,
+    hiddenByFilter: needsNarrows ? allRows.length - filterCounts.needs_you : 0,
+  }
 
   // Scroll memory for the session lane. Collapsing the sessions sidebar (or
   // closing the mobile drawer) UNMOUNTS ChatSidebar — OverlayDrawer gates its
@@ -869,13 +898,25 @@ function ChatSidebar({
   // Rows only ever CALL it, so they get a stable forwarder to the latest one;
   // an absent handler stays undefined, which the chips read as "cannot reveal".
   const { onOpenSource: stableOpenSource } = useStableCallbackProps({ onOpenSource })
+  // A row opened while its chat waits on the person lands on the ask
+  // (./chat-sidebar/needsYouLanding). Read through refs, so the forwarder keeps
+  // one identity and `rowActions` does not rebuild on every slots push.
+  const landingRowsRef = useRef(allRows)
+  landingRowsRef.current = allRows
+  const landingNeedsOfRef = useRef(sidebarRows.needsOf)
+  landingNeedsOfRef.current = sidebarRows.needsOf
+  const selectSlotAtAsk = useCallback((key: string) => {
+    onSelectSlot?.(key)
+    const row = landingRowsRef.current.find(s => !isPeerRow(s) && s.key === key)
+    landOnAsk(key, row ? landingNeedsOfRef.current(row) : null)
+  }, [onSelectSlot])
   // What every session row can do, built once: the row's memo compares this one
   // reference, so none of these may take a new identity per render.
   const rowActions = useMemo(() => ({
     renameInputRef, onRenameStart, onRenameChange, onRenameCommit, onRenameCancel, onAutoTitle, slotRenameEnterRef,
     renameOfflineSlot, renameOfflineScope,
     onDuplicate: sessionActions.duplicate, onCloseSession: sessionActions.close,
-    onMenuCloseAutoFocus, onSelectSlot, onOpenSlotInNewTab, onOpenSource: stableOpenSource,
+    onMenuCloseAutoFocus, onSelectSlot: selectSlotAtAsk, onOpenSlotInNewTab, onOpenSource: stableOpenSource,
     onOpenPeerSession: openPeerSession,
     onNativeDragStart: startBoardCardDrag, onNativeDragEnd: endNativeSessionDrag,
     onPinnedKeyboardReorder: reorderPinnedByKeyboard, onManualKeyboardReorder: reorderManualByKeyboard,
@@ -884,7 +925,7 @@ function ChatSidebar({
   }), [
     renameInputRef, onRenameStart, onRenameChange, onRenameCommit, onRenameCancel, onAutoTitle, slotRenameEnterRef,
     renameOfflineSlot, renameOfflineScope,
-    sessionActions.duplicate, sessionActions.close, onMenuCloseAutoFocus, onSelectSlot, onOpenSlotInNewTab,
+    sessionActions.duplicate, sessionActions.close, onMenuCloseAutoFocus, selectSlotAtAsk, onOpenSlotInNewTab,
     stableOpenSource, openPeerSession, startBoardCardDrag, endNativeSessionDrag, reorderPinnedByKeyboard,
     reorderManualByKeyboard, openElsewhere, toggleConductorExpanded,
     onDropSessionRef, canStageSessionRef,
@@ -1030,7 +1071,7 @@ function ChatSidebar({
     historySearchScan, hoverPinRef, ime, installedAgents, instanceSessions, instantCloseId, isActiveRow, isFolderFilteredOut,
     isFolderHidden, isMobile, isStaleExempt, lane, laneRowWindow, laneScrollMemory, laneSlots,
     laneSwitchLabel, lineage, listNarrowed, localSlots, missingLanes, modelFilterInverted, modelFilterRows,
-    moveByDrag, moveFolderTo, nativeSessionDrag, navigate, newChatError, newChatMenuOpen, nextLane, prStatusRefreshError,
+    moveByDrag, moveFolderTo, nativeSessionDrag, navigate, needsGroup, newChatError, newChatMenuOpen, nextLane, prStatusRefreshError,
     onDropSessionRef, canStageSessionRef, onMenuCloseAutoFocus, onOpenSlotInNewTab, onSelectSlot,
     openHistoryPane, orderedColumns, paintedSidebarWidth, pinned, pinnedBandCaption, pinnedOrderError, popoverPos, queryClient, rawColumns,
     recentAmountDraft, recentUnitDraft, recentWindowMs, refetchColumns, refetchFolders, refetchTags,

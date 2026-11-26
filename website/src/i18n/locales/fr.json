@@ -14906,6 +14906,8 @@
       "could_not_repair_images": "Impossible de réparer les images"
     },
     "chatSidebar": {
+      "filter_needs_you": "Vous attend",
+      "filter_needs_you_description": "Discussions en attente de votre approbation ou de votre réponse",
       "needsMeCard": {
         "card_label": "{{title}} : a besoin de toi",
         "recap": "Résumé",
@@ -14945,6 +14947,23 @@
         "unknown_tool": "Outil inconnu"
       },
       "1_skipped_currently_selected": "(1 ignorée — actuellement sélectionnée)",
+      "needs_you_everything_else": "Tout le reste",
+      "needs_you_group": "Vous attend",
+      "needs_you_group_count_many": "Vous attend : {{count}} discussions",
+      "needs_you_group_count_one": "Vous attend : {{count}} discussion",
+      "needs_you_group_count_other": "Vous attend : {{count}} discussions",
+      "needs_you_hidden_by_filter_many": "{{count}} autres discussions masquées par le filtre « Vous attend »",
+      "needs_you_hidden_by_filter_one": "{{count}} autre discussion masquée par le filtre « Vous attend »",
+      "needs_you_hidden_by_filter_other": "{{count}} autres discussions masquées par le filtre « Vous attend »",
+      "needs_you_more_many": "+{{count}} de plus",
+      "needs_you_more_one": "+{{count}} de plus",
+      "needs_you_more_other": "+{{count}} de plus",
+      "needs_you_oldest_first": "le plus ancien d’abord",
+      "needs_you_open_count_many": "{{count}} demandes en attente",
+      "needs_you_open_count_one": "{{count}} demande en attente",
+      "needs_you_open_count_other": "{{count}} demandes en attente",
+      "needs_you_status": "Vous attend",
+      "needs_you_waited": "En attente depuis {{age}}",
       "no_sessions_match_folders": "Aucune session ne correspond — seul un nom de dossier",
       "history_search_failed": "La recherche a échoué. Seuls les titres correspondants sont affichés.",
       "search_results_count_one": "{{count}} correspondance, la meilleure d’abord",

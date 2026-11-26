@@ -122,6 +122,14 @@
    would silence the alarm exactly for the users who asked for less motion. */
 .session-row.session-loop-stalled{background-color:var(--danger-subtle);animation:kc-loop-stalled-flash 1.6s ease-in-out infinite}
 @keyframes kc-loop-stalled-flash{0%,100%{background-color:var(--danger-subtle)}50%{background-color:transparent}}
+/* A chat that waits on the person (chat-sidebar/SessionRow.tsx, `needsYouOf`): the
+   loudest row in the list. The Needs-you wash and a solid bar down the left edge,
+   and a strong title. Two-class specificity outranks the hover and selected fills;
+   the open row keeps the wash and is told apart by a Needs-you outline instead. */
+.session-row.session-needs-you{background-color:var(--needs-subtle);box-shadow:inset 3px 0 0 var(--needs);color:var(--text)}
+.session-row.session-needs-you:hover{background-color:color-mix(in srgb, var(--needs) 20%, transparent)}
+.session-row.session-needs-you.session-active{outline:1px solid var(--needs-line);outline-offset:-1px}
+.session-row.session-needs-you [data-session-title]{color:var(--text-strong)}
 /* Live session dot (chat-sidebar/SessionRow.tsx `showLiveDot`): leads the session name while the
    row's state resolver says the session is working. A filled accent disc, so it
    claims none of the row chrome other states own: the background (selection,

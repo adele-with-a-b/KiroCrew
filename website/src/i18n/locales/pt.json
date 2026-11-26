@@ -14906,6 +14906,8 @@
       "could_not_repair_images": "Não foi possível reparar as imagens"
     },
     "chatSidebar": {
+      "filter_needs_you": "Precisa de você",
+      "filter_needs_you_description": "Conversas que aguardam sua aprovação ou resposta",
       "needsMeCard": {
         "card_label": "{{title}}: precisa de você",
         "recap": "Resumo",
@@ -14945,6 +14947,23 @@
         "unknown_tool": "Ferramenta desconhecida"
       },
       "1_skipped_currently_selected": "(1 ignorada — atualmente selecionada)",
+      "needs_you_everything_else": "Todo o resto",
+      "needs_you_group": "Precisa de você",
+      "needs_you_group_count_many": "Precisa de você: {{count}} conversas esperam por você",
+      "needs_you_group_count_one": "Precisa de você: {{count}} conversa espera por você",
+      "needs_you_group_count_other": "Precisa de você: {{count}} conversas esperam por você",
+      "needs_you_hidden_by_filter_many": "{{count}} outras conversas ocultas pelo filtro “Precisa de você”",
+      "needs_you_hidden_by_filter_one": "{{count}} outra conversa oculta pelo filtro “Precisa de você”",
+      "needs_you_hidden_by_filter_other": "{{count}} outras conversas ocultas pelo filtro “Precisa de você”",
+      "needs_you_more_many": "+{{count}} a mais",
+      "needs_you_more_one": "+{{count}} a mais",
+      "needs_you_more_other": "+{{count}} a mais",
+      "needs_you_oldest_first": "mais antigo primeiro",
+      "needs_you_open_count_many": "{{count}} pedidos em aberto",
+      "needs_you_open_count_one": "{{count}} pedido em aberto",
+      "needs_you_open_count_other": "{{count}} pedidos em aberto",
+      "needs_you_status": "Precisa de você",
+      "needs_you_waited": "Aguardando há {{age}}",
       "no_sessions_match_folders": "Nenhuma sessão corresponde — apenas o nome de uma pasta",
       "history_search_failed": "A busca falhou. Mostrando apenas correspondências no título.",
       "search_results_count_one": "{{count}} correspondência, a melhor primeiro",

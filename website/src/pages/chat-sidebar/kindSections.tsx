@@ -1,6 +1,7 @@
 /** "Group by kind": the filter menu's view option that splits each session list into
  *  sections -- Crew Mode, Normal, From Mates. View only: it reorders and labels the
  *  rows a list already draws, and never changes a session's folder, tags or order. */
+import type { HTMLAttributes, ReactNode } from 'react'
 import type { Slot } from './types'
 import { i18nT } from '../../i18n/t'
 import { isCrewmateChat } from '../../lib/agentMemorySource'
@@ -118,17 +119,22 @@ export function kindSectionLabel(kind: SessionKind): string {
   return i18nT(KIND_LABEL_KEY[kind])
 }
 
-/** One section header. A heading, so a screen reader can jump between sections. */
+/** The heading of one section of a session list: a heading, so a screen reader can
+ *  jump between sections. `tone` is its colour class (muted by default). */
+export function ListSectionHeading({ tone = 'text-muted', children, ...attrs }: { tone?: string; children: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'className' | 'role'>) {
+  return (
+    <div role="heading" aria-level={3} {...attrs}
+      className={`px-3 pt-3 pb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[.06em] select-none first:pt-1 ${tone}`}>
+      {children}
+    </div>
+  )
+}
+
+/** One section header. */
 export function KindSectionHeader({ kind }: { kind: SessionKind }) {
   return (
-    <div
-      role="heading"
-      aria-level={3}
-      data-kind-section={kind}
-      data-testid="kind-section-header"
-      className="px-3 pt-3 pb-1 text-[11px] font-semibold text-muted uppercase tracking-[.06em] select-none first:pt-1"
-    >
+    <ListSectionHeading data-kind-section={kind} data-testid="kind-section-header">
       {kindSectionLabel(kind)}
-    </div>
+    </ListSectionHeading>
   )
 }

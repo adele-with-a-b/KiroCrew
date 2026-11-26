@@ -1,6 +1,6 @@
 /** View types the sidebar's owners share. `Slot` is the sidebar's narrowed view of a
  *  chat slot; the wire type is `ChatSlot` in ../../types. */
-import type { CodeChannelInfo, CrewWorkFacts, SessionLink, SourceProviderId, WorkAggregate } from '../../types'
+import type { CodeChannelInfo, CrewWorkFacts, NeedsYou, SessionLink, SourceProviderId, WorkAggregate } from '../../types'
 import type { PublicPrincipal, SessionAttribution } from '../../api/sharedCrew'
 
 export interface Slot {
@@ -79,6 +79,13 @@ export interface Slot {
   // Newest-reply-only by construction — any later turn that talks over the
   // marker clears it, so a superseded ask can never be resurrected (#10615).
   has_options?: boolean
+  /** The choices that `[OPTIONS:]` ask offers (`ChatSlot.options`). */
+  options?: string[]
+  /** When the newest reply's `[OPTIONS:]` ask was written (`ChatSlot.options_ts`). */
+  options_ts?: string
+  /** What this chat waits on the person for (`ChatSlot.needs_you`). Read only
+   *  through `needsYouOf` (lib/needsYou). */
+  needs_you?: NeedsYou | null
   /** This session's work ledger in brief (`ChatSlot.crew_work`). */
   crew_work?: CrewWorkFacts
   // The transcript shows the last turn ending without a reply (trailing error
@@ -213,7 +220,7 @@ export interface AgentInfo {
   display_name?: string
 }
 
-export type SessionFilterKey = 'unread' | 'running' | 'pinned' | 'recent' | 'crew'
+export type SessionFilterKey = 'needs_you' | 'unread' | 'running' | 'pinned' | 'recent' | 'crew'
 
 /**
  * Which session lane the list renders. One persisted preference, three values.

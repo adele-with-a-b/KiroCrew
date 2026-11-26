@@ -32,6 +32,8 @@ import type { MemorySourceRow } from '../../lib/agentMemorySource'
 import { sameCrewView, type CodeChannelCrewView } from './codeChannelCrew'
 import type { AgentInfo, FilterDimension, RevealBlockingFilter, SessionFilterKey, SidebarSourceLink, Slot } from './types'
 import { sessionDisplayTitle } from '../../utils/sessionDisplayTitle'
+import type { NeedsYou } from '../../types'
+import { needsYouOf } from '../../lib/needsYou'
 
 /** What the chip prints. The serializer decides it; this only covers its absence,
  * which means a bundle newer than the gateway it is talking to.
@@ -66,6 +68,9 @@ export interface LocalRowIndex {
   /** Each unpinned row's position in the order it is drawn in now, whatever the
    *  sort: where a manual drop's insertion line goes. */
   drawnIndex: ReadonlyMap<string, number>
+  /** Each Crew Mode root's crew members waiting on a tool approval
+   *  (`crewWaitingApprovals`), the one fact `needsYouOf` reads from other rows. */
+  crewApprovals: Readonly<Record<string, number>>
 }
 
 export interface SidebarRowFilters {
@@ -433,6 +438,9 @@ export interface SidebarRows {
   isPinned: (slot: Slot) => boolean
   /** A peer row's own `running`, else the widened local running set. */
   isRunning: (slot: Slot) => boolean
+  /** What this row waits on the person for (`needsYouOf`), or null. A peer row is
+   *  read from its own fields only. */
+  needsOf: (slot: Slot) => NeedsYou | null
   /** The dormant-session split of one container's rows. Inert while the list is
    *  narrowed (a filter must reach every match) and under any sort but newest-first,
    *  which is the only order whose stale rows form a truthful contiguous tail. */
@@ -457,6 +465,7 @@ interface BuildMemos {
   folderOf: Memo<SidebarRows['folderOf']>
   isPinned: Memo<SidebarRows['isPinned']>
   isRunning: Memo<SidebarRows['isRunning']>
+  needsOf: Memo<SidebarRows['needsOf']>
   laneOrder: Memo<SidebarRows['laneOrder']>
   statusMatches: Memo<Record<SessionFilterKey, (slot: Slot) => boolean>>
   isRowStatusHidden: Memo<SidebarRows['isRowStatusHidden']>
@@ -502,6 +511,13 @@ function makeIsRunning(running: ReadonlySet<string>): SidebarRows['isRunning'] {
   return slot => {
     const key = localKeyOf(slot)
     return key === null ? slot.running === true : running.has(key)
+  }
+}
+
+function makeNeedsOf(crewApprovals: Readonly<Record<string, number>>): SidebarRows['needsOf'] {
+  return slot => {
+    const key = localKeyOf(slot)
+    return needsYouOf(slot, key === null ? 0 : crewApprovals[key] ?? 0)
   }
 }
 
@@ -557,8 +573,10 @@ function makeStatusMatches(
   recent: ReadonlySet<string>,
   recentWindowMs: number,
   clock: () => number,
+  needsOf: SidebarRows['needsOf'],
 ): StatusMatches {
   return {
+    needs_you: slot => needsOf(slot) !== null,
     unread: slot => { const key = localKeyOf(slot); return key !== null && unread.has(key) },
     running: isRunning,
     pinned: slot => localKeyOf(slot) !== null && !!slot.pinned,
@@ -625,6 +643,8 @@ function makeDimensions(
     return !!folderId && folderFilter.pinnedSubtree.has(folderId)
   }
   const pinnedBypass = (slot: Slot): boolean => matches.pinned(slot) || inPinnedFolder(slot)
+  const needsNarrows = activeStatus.includes('needs_you')
+  const statusBypass = (slot: Slot): boolean => !needsNarrows && pinnedBypass(slot)
   return [
     {
       // Tags. Unlike the folder filter this does NOT go inert while searching: it
@@ -672,15 +692,18 @@ function makeDimensions(
     },
     {
       // Status chips. Active chips OR together: a row passes when any active chip
-      // matches it. A pinned row passes whatever the chips say (see `pinnedBypass`).
-      // `hides` restates the exemption too: `excluded` is list membership, not this
-      // dimension's verdict, so a pinned row the SEARCH dropped would otherwise read as
-      // hidden by the chips and a reveal would clear them.
-      filtersRow: slot => activeStatus.length === 0 || pinnedBypass(slot) || activeStatus.some(key => matches[key](slot)),
+      // matches it. A pinned row passes whatever the chips say (see `pinnedBypass`),
+      // except while "Needs you" narrows: that chip is the short list of chats that
+      // wait on the person, and its count is the rows it shows, so a pinned chat that
+      // waits on nobody does not ride into it. `hides` restates the exemption too:
+      // `excluded` is list membership, not this dimension's verdict, so a pinned row
+      // the SEARCH dropped would otherwise read as hidden by the chips and a reveal
+      // would clear them.
+      filtersRow: slot => activeStatus.length === 0 || statusBypass(slot) || activeStatus.some(key => matches[key](slot)),
       narrows: () => activeStatus.length > 0,
-      exemptsPinned: true,
+      exemptsPinned: !needsNarrows,
       isSearch: false,
-      hides: (slot, excluded) => activeStatus.length > 0 && !pinnedBypass(slot) && excluded(slot),
+      hides: (slot, excluded) => activeStatus.length > 0 && !statusBypass(slot) && excluded(slot),
       clear: () => clears.status(),
     },
     {
@@ -870,7 +893,7 @@ function makeViews(model: ViewModel): SidebarRows['views'] {
 export function buildSidebarRows(inputs: SidebarRowInputs, previous?: SidebarRows | null): SidebarRows {
   const prev = previous ? memosOf.get(previous) : undefined
   const { rows, local, filters, clears, crewGroups, sortKey, clock, frozen } = inputs
-  const { folderOf: slotFolders, pinned, pinnedRank, unread, running, recent, searchRanks, manualRank, drawnIndex } = local
+  const { folderOf: slotFolders, pinned, pinnedRank, unread, running, recent, searchRanks, manualRank, drawnIndex, crewApprovals } = local
   const { tags, search, status, folders: folderFilter } = filters
   // Read here, outside every compute: the drag freeze is the one place a build reads
   // the previous one's output.
@@ -879,14 +902,16 @@ export function buildSidebarRows(inputs: SidebarRowInputs, previous?: SidebarRow
   const folderOfMemo = reuse(prev?.folderOf, [slotFolders], () => makeFolderOf(slotFolders))
   const isPinnedMemo = reuse(prev?.isPinned, [pinned], () => makeIsPinned(pinned))
   const isRunningMemo = reuse(prev?.isRunning, [running], () => makeIsRunning(running))
+  const needsOfMemo = reuse(prev?.needsOf, [crewApprovals], () => makeNeedsOf(crewApprovals))
   const folderOf = folderOfMemo.value
   const isPinned = isPinnedMemo.value
   const isRunning = isRunningMemo.value
+  const needsOf = needsOfMemo.value
 
   const laneOrder = reuse(prev?.laneOrder, [searchRanks, sortKey, pinned, pinnedRank, manualRank], () =>
     makeLaneOrder(searchRanks, sortKey, pinned, pinnedRank, isPinned, manualRank))
-  const statusMatches = reuse(prev?.statusMatches, [unread, running, recent, status.recentWindowMs, clock], () =>
-    makeStatusMatches(unread, isRunning, recent, status.recentWindowMs, clock))
+  const statusMatches = reuse(prev?.statusMatches, [unread, running, recent, status.recentWindowMs, clock, needsOf], () =>
+    makeStatusMatches(unread, isRunning, recent, status.recentWindowMs, clock, needsOf))
   const isRowStatusHidden = reuse(prev?.isRowStatusHidden, [status.hidden, statusMatches.value], () =>
     makeIsRowStatusHidden(status.hidden, statusMatches.value))
   const dimensions = reuse(prev?.dimensions, [
@@ -955,11 +980,12 @@ export function buildSidebarRows(inputs: SidebarRowInputs, previous?: SidebarRow
     folderOf,
     isPinned,
     isRunning,
+    needsOf,
     staleSplit: makeStaleSplit(listNarrowed, sortKey, clock),
     views: makeViews({ pinned, pinnedRank, unread, isRunning, searchRanks, drawnIndex }),
   }
   memosOf.set(result, {
-    folderOf: folderOfMemo, isPinned: isPinnedMemo, isRunning: isRunningMemo,
+    folderOf: folderOfMemo, isPinned: isPinnedMemo, isRunning: isRunningMemo, needsOf: needsOfMemo,
     laneOrder, statusMatches, isRowStatusHidden, dimensions, statusCounts, filteredSlots, revealBlockingFilters,
     isRowFolderHidden, crewRows, main, crew, crewRowCount, flat, ungrouped, board, boardPeerCount, folderTree,
   })

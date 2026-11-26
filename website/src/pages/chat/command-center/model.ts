@@ -125,7 +125,7 @@ export function openedSessionRunning(slots: readonly ChatSlot[], key: string): b
 }
 
 /** `{root: n}` for each Crew Mode root with n workers whose tool approval waits. */
-export function crewWaitingApprovals(slots: readonly ChatSlot[]): Record<string, number> {
+export function crewWaitingApprovals(slots: readonly Pick<ChatSlot, 'crew_root' | 'pending_approval'>[]): Record<string, number> {
   const out: Record<string, number> = {}
   for (const s of slots) {
     const root = crewRootOf(s)

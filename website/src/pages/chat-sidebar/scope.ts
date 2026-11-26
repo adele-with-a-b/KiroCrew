@@ -11,6 +11,7 @@ import type { ScrollEdges } from '../../hooks/useScrollEdges'
 import type { RootState, useAppDispatch } from '../../store'
 import type { ChatFolder } from '../../types'
 import type { KindSections } from './kindSections'
+import type { NeedsGroup } from './needsGroup'
 import type { SortKey } from '../chat/sessionOrder'
 import type { useSessionRowWindowRoot } from '../chat/sessionRowWindow'
 import type { useCollapsedCrewSpaces, useCollapsedCrews, useCrewEnable } from './CrewGroups'
@@ -475,6 +476,8 @@ export interface SidebarScope {
   hoverPinRef: ReturnType<typeof useHoverHold>['hoverPinRef']
   heldDisplacedRef: ReturnType<typeof useHoverHold>['heldDisplacedRef']
   heldLane: ReturnType<typeof useHoverHold>['heldLane']
+  /** The "Needs you" group on top of the list lanes (./needsGroup). */
+  needsGroup: NeedsGroup
 
   // From `usePreviewFlag`
   folderConductorPin: ReturnType<typeof usePreviewFlag>
