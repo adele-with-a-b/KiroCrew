@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import ShortcutsModal from '../components/ShortcutsModal'
 import type { ChatSection } from '../hooks/useChatNavigation'
 import { SHORTCUTS_ENABLED_KEY, useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { sayStepLine } from '../pages/chat/turnStep'
 import { useTurnStepper } from '../pages/chat/useTurnStepper'
 import type { RootState } from '../store'
 import { createTestStore, renderHookWithProviders, renderWithProviders } from './helpers'
@@ -137,6 +138,18 @@ describe('Alt+↑ / Alt+↓ step through the turns of the open chat', () => {
     const { hook } = setup({ offset: 300 })
     press('ArrowDown')
     expect(hook.result.current).toBe('Turn 3 of 4: prompt 3')
+  })
+
+  it('speaks a card\'s step line in the same live region, and the next Alt+arrow reads the screen again', () => {
+    const { hook, jump } = setup({ offset: 300 })
+    press('ArrowUp')
+    expect(jumpedTo(jump)).toEqual([3])
+    act(() => { sayStepLine('[A2] · 2 of 5') })
+    expect(hook.result.current).toBe('[A2] · 2 of 5')
+    // From the remembered turn at 3, Alt+↓ would go to 6 as well; Alt+↑ from it
+    // would go to 0, but from the screen (row 5 is below the line) it goes to 3.
+    press('ArrowUp')
+    expect(jumpedTo(jump)).toEqual([3, 3])
   })
 
   it('flashes the landed prompt with the jump highlight, and clears only its own', () => {

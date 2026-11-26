@@ -58,6 +58,15 @@
  * - `jump { invocation, ts, id? }` scroll the chat that show came from to one of its
  *   messages and light it, with a Back pill. Only for an app approved for
  *   `sessionKey`, while that chat is on screen, right after a click in the card.
+ * - `step { invocation, ts, id?, text, line?, request? }` move this PINNED card to
+ *   another of this provider's labels in the same chat: the span whose text is
+ *   `text` in message `{ ts, id? }`, paged in and scrolled into view when it is
+ *   far up. The card is shown again there (a new `show`, `trigger: 'step'`), and
+ *   `line`, the app's own words, is spoken by the transcript's live region. The
+ *   same rules as `jump`, and the card must be pinned. Answered `stepped`.
+ *
+ * Dashboard to frame, for a step: `stepped { request, ok, reason? }`, with a
+ * `StepRefusal` when it did not land.
  * - `regions { rects }` overlay mode, for a provider that manages several windows
  *   of its own (pinned cards, a dock, dialogs): the frame covers the viewport and
  *   is clipped to these rects, so everywhere else the page stays clickable. Its
@@ -74,7 +83,7 @@
  * @module linkPreview/linkPreviewProtocol
  */
 
-import { finite, readTagged, tagged } from '../appFrame/frameProtocol'
+import { displaySafe, finite, readTagged, tagged } from '../appFrame/frameProtocol'
 import type { OpenRefusal } from './linkPreviewNav'
 
 export { BURST_CAPACITY, BURST_PER_SECOND, messageBytes } from '../appFrame/frameProtocol'
@@ -99,8 +108,25 @@ export interface MessageRef {
   id?: string
 }
 
-/** How a card was asked for: the hover delay ran out, a mouse click, a touch tap. */
-export type ShowTrigger = 'hover' | 'click' | 'tap'
+/** How a card was asked for: the hover delay ran out, a mouse click, a touch tap,
+ *  or the card's own `step` moved it to this label. */
+export type ShowTrigger = 'hover' | 'click' | 'tap' | 'step'
+
+/** Why a card's `step` did not land:
+ *  - `no_click`: no click or key in the card just before;
+ *  - `not_shown`: the card is not showing, is an overlay, or the step is for an earlier show;
+ *  - `not_pinned`: the card is not pinned (a step scrolls the chat, which closes an unpinned card);
+ *  - `not_approved`: the owner did not approve this app for `sessionKey`;
+ *  - `not_on_screen`: the chat is not the one on screen (another chat, split view);
+ *  - `not_found`: the chat has no such message, or no such label of this provider in it;
+ *  - `load_failed`: a page of older history failed to load;
+ *  - `replaced`: a newer step (or another jump) took its place.
+ *  The bootstrap adds `no_answer` when the host never answers. */
+export type StepRefusal = 'no_click' | 'not_shown' | 'not_pinned' | 'not_approved' | 'not_on_screen' | 'not_found' | 'load_failed' | 'replaced'
+
+/** Longest label text a step may name (a span's whole text), and longest spoken line. */
+export const MAX_STEP_TEXT_CHARS = 128
+export const MAX_STEP_LINE_CHARS = 160
 
 /** Which side of its link the dashboard put the card on. */
 export type Placement = 'above' | 'below'
@@ -126,6 +152,7 @@ export type ToFrame =
   | { type: 'key'; key: string; code: string; shift: boolean }
   | { type: 'placement'; invocation: number; placement: Placement }
   | { type: 'opened'; request: number; ok: boolean; reason?: OpenRefusal }
+  | { type: 'stepped'; request: number; ok: boolean; reason?: StepRefusal }
 
 export type FromFrame =
   | { type: 'ready' }
@@ -143,6 +170,7 @@ export type FromFrame =
   | { type: 'openPanelTab'; invocation: number; tab: string; payload: unknown; request?: number }
   | { type: 'openSessionControl'; invocation: number; control: string; payload: unknown; request?: number }
   | { type: 'jump'; invocation: number; target: MessageRef }
+  | { type: 'step'; invocation: number; target: MessageRef; text: string; line?: string; request?: number }
 
 /** Longest message `ts` or `mid` a frame may name, and longest tab or control id. */
 const MAX_ID_CHARS = 128
@@ -231,6 +259,16 @@ export function readFrameMessage(data: unknown): FromFrame | null {
     case 'jump': {
       const target = readMessageRef(m.ts, m.id)
       return target ? { type: 'jump', invocation, target } : null
+    }
+    case 'step': {
+      const target = readMessageRef(m.ts, m.id)
+      const text = typeof m.text === 'string' && m.text && m.text.length <= MAX_STEP_TEXT_CHARS ? m.text : null
+      if (!target || text === null) return null
+      // The spoken line is the app's own words, shown as nothing but speech: cleaned,
+      // and dropped whole when blank or too long, never cut to say less than it did.
+      const line = typeof m.line === 'string' ? displaySafe(m.line).trim() : ''
+      const spoken = line && line.length <= MAX_STEP_LINE_CHARS ? { line } : {}
+      return { type: 'step', invocation, target, text, ...spoken, ...requestOf(m.request) }
     }
     default:
       return null

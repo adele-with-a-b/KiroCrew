@@ -125,6 +125,11 @@ export function useTurnStepper({ active, turns, windowed, scrollerRef, landingIn
         prompt: turn.label,
       }))
       return true
+    }, (line) => {
+      // Another step moved the view (a card's step to a label): the next Alt+arrow
+      // starts from where the reader is now, not from the turn it last landed on.
+      forget()
+      setAnnouncement(line)
     })
     return () => {
       unregister()

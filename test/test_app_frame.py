@@ -343,6 +343,80 @@ def test_a_card_can_open_its_tab_and_jump_and_learns_how_and_where_it_was_shown(
     ]
 
 
+_STEP_DRIVER = r"""
+const deliver = (data) => (listeners.message || []).forEach((f) => f({ source: parent, data: { 'kirocrew-app-frame': 1, ...data } }));
+deliver({ type: 'init', capability: 'c' });
+for (let i = 0; i < 50 && !posted.some((m) => m.type === 'ready'); i++) await new Promise((r) => setTimeout(r, 10));
+const rect = { left: 0, top: 0, width: 1, height: 1 };
+deliver({ type: 'show', invocation: 3, text: '[A1]', rect, theme: 'light', sessionKey: 'dashboard:s', message: { ts: 't' } });
+const [a] = shows;
+const answers = [
+  a.card.step({ message: { ts: 't9', id: 'm9' }, text: '[A9]', line: '[A9] · 9 of 9' }),
+  a.card.step({ message: { ts: 't2' }, text: '[A2]', line: 7 }),
+  a.card.step({ message: { ts: 't3' }, text: '' }),
+  a.card.step({ text: '[A4]' }),
+  a.card.step({ message: { ts: 't5' }, text: 'x'.repeat(129) }),
+];
+const asked = posted.filter((m) => m.type === 'step');
+deliver({ type: 'stepped', request: asked[0].request, ok: true });
+deliver({ type: 'stepped', request: asked[1].request, ok: false, reason: 'not_pinned' });
+const results = await Promise.all(answers);
+deliver({ type: 'show', invocation: 4, text: '[A9]', rect, theme: 'light', trigger: 'step', sessionKey: 'dashboard:s', message: { ts: 't9', id: 'm9' } });
+console.log(JSON.stringify({
+  sent: asked.map(({ type, invocation, ts, id, text, line, request }) => ({ type, invocation, ts, id, text, line, request })),
+  results,
+  trigger: shows[1].trigger,
+}));
+"""
+
+
+def test_a_pinned_card_steps_to_another_label_and_hears_the_answer() -> None:
+    """``card.step`` posts one numbered ``step`` for this show, resolves with the
+    dashboard's ``stepped`` answer to that number, and refuses unsent a step with no
+    message or a label text that is empty or over 128 characters. The show it lands
+    on says ``trigger: 'step'``.
+
+    The dashboard checks the pin, the click and the chat (``linkPreviewFrames.ts``);
+    the frame only shapes what it sends.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    out = subprocess.run(
+        [node, "--input-type=module", "-e", _BOOTSTRAP_HARNESS + lp._BOOTSTRAP + _STEP_DRIVER],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=FALLBACK_TIMEOUT_SECS,
+        check=True,
+    )
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    assert result["sent"] == [
+        {
+            "type": "step",
+            "invocation": 3,
+            "ts": "t9",
+            "id": "m9",
+            "text": "[A9]",
+            "line": "[A9] · 9 of 9",
+            "request": 1,
+        },
+        {"type": "step", "invocation": 3, "ts": "t2", "text": "[A2]", "request": 2},
+    ]
+    assert result["results"] == [
+        {"ok": True},
+        {"ok": False, "reason": "not_pinned"},
+        {"ok": False, "reason": "not_found"},
+        {"ok": False, "reason": "not_found"},
+        {"ok": False, "reason": "not_found"},
+    ]
+    assert result["trigger"] == "step"
+
+
 def test_the_frame_embeds_the_installed_name_not_the_request_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
