@@ -430,6 +430,8 @@
   "components.crewMode.conductor_mode_row_count_working",
   "components.crewMode.conductor_mode_row_count_waiting",
   "components.crewMode.conductor_mode_row_count_needs_you",
+  "components.crewMode.conductor_mode_row_count_on_crew",
+  "components.crewMode.conductor_mode_row_count_working_where",
   "components.crewMode.conductor_mode_done_line_merged",
   "components.crewMode.conductor_mode_done_line_merged_rest",
   "components.crewMode.conductor_mode_done_line_green",

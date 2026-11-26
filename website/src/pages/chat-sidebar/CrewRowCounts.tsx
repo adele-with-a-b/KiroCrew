@@ -11,7 +11,7 @@ import { Check, Circle, Hand, Pause } from 'lucide-react'
 import { i18nT } from '../../i18n/t'
 import { fmtList } from '../../i18n/format'
 import { fmtMinutes } from '../../lib/crewWork'
-import type { CrewRowCount } from '../../lib/crewWorkers'
+import type { CrewRemoteCount, CrewRowCount } from '../../lib/crewWorkers'
 
 /** The glyph size of the row's other status marks. */
 const ICON_PX = 11
@@ -23,13 +23,21 @@ const COUNT_KEY: Record<CrewRowCount['bucket'], string> = {
   needs_you: 'components.crewMode.conductor_mode_row_count_needs_you',
 }
 
-/** The tooltip: every count the row no longer draws, the session total first. */
-export function crewRowTooltip(total: number, counts: readonly CrewRowCount[], stalled: number, needsYou: number): string {
+/** "2 on Second Mac": how many running workers one other crew holds. */
+function onCrew(r: CrewRemoteCount): string {
+  return i18nT('components.crewMode.conductor_mode_row_count_on_crew', { count: r.count, name: r.name })
+}
+
+/** The tooltip: every count the row does not draw, the session total first.
+ *  The working count names how many of its workers run on each other crew. */
+export function crewRowTooltip(total: number, counts: readonly CrewRowCount[], stalled: number, needsYou: number, remoteRunning: readonly CrewRemoteCount[] = []): string {
   // The needs-you entry is the row's own total (the main chat's asks and the
   // ledger's included), so the tooltip never says less than the row.
   const parts = [i18nT('pages.chatSidebar.session', { count: total })]
   if (needsYou > 0) parts.push(i18nT(COUNT_KEY.needs_you, { count: needsYou }))
-  parts.push(...counts.filter(c => c.bucket !== 'needs_you').map(c => i18nT(COUNT_KEY[c.bucket], { count: c.count })))
+  parts.push(...counts.filter(c => c.bucket !== 'needs_you').map(c => (c.bucket === 'working' && remoteRunning.length > 0
+    ? i18nT('components.crewMode.conductor_mode_row_count_working_where', { count: c.count, where: fmtList(remoteRunning.map(onCrew)) })
+    : i18nT(COUNT_KEY[c.bucket], { count: c.count }))))
   if (stalled > 0) parts.push(i18nT('components.crewMode.conductor_mode_row_count_stalled', { count: stalled }))
   return fmtList(parts)
 }
@@ -69,13 +77,16 @@ export interface CrewRowAttentionProps {
   /** The longest-stalled crew member and how long it has been quiet, in ms. */
   stalledName?: string
   stalledForMs?: number
+  /** How many of the running workers run on each other crew: after the running
+   *  count, in muted words ("· 2 on Second Mac"). Nothing when none do. */
+  remoteRunning?: readonly CrewRemoteCount[]
   title: string
 }
 
 const PART_CLS = 'inline-flex items-center gap-1 h-4 text-[12px] whitespace-nowrap tabular-nums'
 
-export function CrewRowAttention({ needsYou, stalled, running, done, paused, stalledName, stalledForMs, title }: CrewRowAttentionProps) {
-  const { ref, hidden } = useWrappedAwayCount<HTMLSpanElement>(`${needsYou}/${stalled}/${running}`)
+export function CrewRowAttention({ needsYou, stalled, running, done, paused, stalledName, stalledForMs, remoteRunning = [], title }: CrewRowAttentionProps) {
+  const { ref, hidden } = useWrappedAwayCount<HTMLSpanElement>(`${needsYou}/${stalled}/${running}/${remoteRunning.map(onCrew).join()}`)
   if (paused) {
     // What needs the person still comes first: the pause leaves a member that
     // waits on them as it is, so the row keeps saying so.
@@ -124,6 +135,11 @@ export function CrewRowAttention({ needsYou, stalled, running, done, paused, sta
             <Circle size={ICON_PX} aria-hidden="true" fill="currentColor" className="inline-block shrink-0" />{i18nT('components.crewMode.conductor_mode_row_count_running', { count: running })}
           </span>
         )}
+        {running > 0 && remoteRunning.map(r => (
+          <span key={r.name} className={`${PART_CLS} -ml-1 text-muted`} data-testid="crew-root-remote">
+            <span aria-hidden="true">&middot;</span>{onCrew(r)}
+          </span>
+        ))}
       </span>
       {hidden > 0 && <span aria-hidden="true" className="shrink-0 pl-1 text-[12px] text-muted" data-testid="crew-root-hidden">…</span>}
       </span>

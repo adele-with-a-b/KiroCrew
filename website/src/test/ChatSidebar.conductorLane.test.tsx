@@ -324,6 +324,29 @@ describe('chat sidebar — conductor lane', () => {
     expect(screen.queryByTestId('crew-root-counts')).toBeNull()
   })
 
+  it('counts the crew members on another crew in "running" and says how many run there', async () => {
+    const R = (key: string, group: string, remote_crew?: string) => ({ key, title: key, agent: '', status: group === 'working' ? 'working' : 'idle', group, last_activity: '', ledger_item: '', created_by: 'k-root', remote_crew })
+    mocks.crewWorkersRows = [R('k-w1', 'working'), R('remote:it_1', 'working', 'Second Mac'), R('remote:inst-1:chat-9', 'working', 'Second Mac'), R('remote:inst-1:chat-8', 'waiting', 'Second Mac')]
+    const slots = [{ key: 'k-root', title: 'Crew root', agent: 'kirocrew-conductor', messages: 1, running: false, modified: 4000, crew_mode_root: true }]
+    const { getByTestId } = renderSidebar(slots, [], null, {}, [], slots)
+    await waitFor(() => expect(within(getByTestId('crew-root-attention')).getByTestId('crew-root-count')).toHaveTextContent(/^3 running$/))
+    expect(getByTestId('crew-root-remote')).toHaveTextContent(/^·2 on Second Mac$/)
+    expect(getByTestId('crew-root-remote').className).toContain('text-muted')
+    expect(getByTestId('crew-root-attention')).toHaveAttribute('title', '4 sessions, 3 working (2 on Second Mac), and 1 waiting')
+  })
+
+  it('says nothing about another crew when every running crew member is local', async () => {
+    mocks.crewWorkersRows = [
+      { key: 'k-w1', title: 'W1', agent: '', status: 'working', group: 'working', last_activity: '', ledger_item: '', created_by: 'k-root' },
+      { key: 'remote:it_2', title: 'R', agent: '', status: 'idle', group: 'waiting', last_activity: '', ledger_item: 'it_2', created_by: 'k-root', remote_crew: 'Second Mac' },
+    ]
+    const slots = [{ key: 'k-root', title: 'Crew root', agent: 'kirocrew-conductor', messages: 1, running: false, modified: 4000, crew_mode_root: true }]
+    const { getByTestId, queryByTestId } = renderSidebar(slots, [], null, {}, [], slots)
+    await waitFor(() => expect(getByTestId('crew-root-attention')).toHaveTextContent(/^1 running$/))
+    expect(queryByTestId('crew-root-remote')).toBeNull()
+    expect(getByTestId('crew-root-attention')).toHaveAttribute('title', '2 sessions, 1 working, and 1 waiting')
+  })
+
   it('shows only what needs attention on the root row, needs you before running', async () => {
     mocks.crewWorkersNotServed = true
     const slots = [

@@ -15,6 +15,7 @@ import { ApiError } from '../../../api/apiError'
 import { CREW_WORKERS_PUSH_COALESCE_MS, CrewWorkersTab, reopenCrewSession } from './CrewWorkerList'
 import ConductorModeCrewPanel, { CREW_BOARD_EXPANDED_KEY } from './ConductorModeCrewPanel'
 import { setCrewModeCatalog } from '../../../lib/crewMode'
+import { closeCrewWindow, currentCrewWindow } from '../crew-window/crewWindowStore'
 
 const W = (key: string, title: string, status: string, group: string) =>
   ({ key, title, agent: 'kirocrew-worker', status, group, last_activity: '', ledger_item: '', created_by: 'root-1' })
@@ -85,10 +86,14 @@ describe('Conductor mode Crew tab', () => {
     expect(within(finished).getByText('Old one')).toBeInTheDocument()
   })
 
-  it('List: each row says where its worker runs, and a remote row opens nothing here', async () => {
+  it('List: each row says where its worker runs, and a remote row opens its chat in the crew window', async () => {
+    onTestFinished(() => closeCrewWindow())
     api.crewWorkers.mockResolvedValue({ root: 'root-1', workers: [
       D('local', 'Local one', 'root-1'),
-      { ...D('remote:it_r', 'Remote one', 'root-1'), ledger_item: 'it_r', remote_crew: 'Build box' },
+      { ...D('remote:it_r', 'Remote one', 'root-1'), ledger_item: 'it_r', remote_crew: 'Build box', remote_instance: 'inst-1', remote_slot: 'chat-7' },
+      { ...D('remote:inst-1:chat-9', 'No task one', 'root-1'), remote_crew: 'Build box', remote_instance: 'inst-1', remote_slot: 'chat-9' },
+      { ...D('remote:it_old', 'Old remote', 'root-1'), ledger_item: 'it_old', remote_crew: 'Build box' },
+      { ...W('remote:it_done', 'Done remote', 'closed', 'done'), created_by: 'root-1', dispatched_by: 'root-1', ledger_item: 'it_done', remote_crew: 'Build box', remote_instance: 'inst-1', remote_slot: 'chat-5' },
     ] })
     const store = renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
     await toList()
@@ -96,10 +101,21 @@ describe('Conductor mode Crew tab', () => {
     const remote = rowOf('Remote one')
     expect(within(local).getByTestId('conductor-mode-member-location')).toHaveTextContent('This machine')
     expect(within(remote).getByTestId('conductor-mode-member-location')).toHaveTextContent('Build box')
-    const open = within(remote).getByText('Remote one').closest('button') as HTMLButtonElement
-    expect(open).toBeDisabled()
-    fireEvent.click(open)
+    // One click lands in that chat on its crew; the main pane keeps its own chat.
+    fireEvent.click(within(remote).getByText('Remote one').closest('button') as HTMLButtonElement)
+    expect(currentCrewWindow()).toEqual({ instanceId: 'inst-1', key: 'chat-7' })
     expect(store.getState().chat.activeSlot).not.toBe('remote:it_r')
+    // A chat with no task opens the same way and says it has none.
+    const untied = rowOf('No task one')
+    expect(within(untied).getByTestId('conductor-mode-member-no-task')).toHaveTextContent('No task linked')
+    expect(within(remote).queryByTestId('conductor-mode-member-no-task')).toBeNull()
+    fireEvent.click(within(untied).getByText('No task one').closest('button') as HTMLButtonElement)
+    expect(currentCrewWindow()).toEqual({ instanceId: 'inst-1', key: 'chat-9' })
+    // A finished task whose chat its crew still holds opens that chat from Finished.
+    fireEvent.click(within(screen.getByTestId('conductor-mode-finished')).getByText('Done remote').closest('button') as HTMLButtonElement)
+    expect(currentCrewWindow()).toEqual({ instanceId: 'inst-1', key: 'chat-5' })
+    // A remote row that names no chat on its crew still opens nothing.
+    expect(within(rowOf('Old remote')).getByText('Old remote').closest('button')).toBeDisabled()
     expect(within(local).getByText('Local one').closest('button')).not.toBeDisabled()
   })
 
