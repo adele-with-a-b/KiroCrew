@@ -138,6 +138,12 @@ RESTORED_SEND_CHOSEN_KEY = "_restored_send_chosen"
 #: drain's attempt ends (:func:`_release_boot_acceptance`).
 RESTORED_BOOT_ACCEPTED_KEY = "_restored_boot_accepted"
 
+#: Marks a restored card of the owner's that a limit stopped at the drain
+#: (``steer_queue._keep_restored_held``). No drain picks or judges it again, the
+#: startup drain's accepted ids included, so it runs only once a person's Send all
+#: or Send now clears the mark. Process-local like the keys above.
+RESTORED_HELD_AGAIN_KEY = "_restored_held_again"
+
 
 def is_owner_queue_entry(item: Any) -> bool:
     """Whether *item* is the owner's own words: the owner typed it on the
@@ -251,13 +257,54 @@ def broadcast_queue_order(state: Any, slot: Any, order: list[str]) -> None:
         logger.warning("queue_reorder broadcast failed (slot %s)", slot.key, exc_info=True)
 
 
-def is_held_queue_entry(item: dict[str, Any]) -> bool:
-    """Whether *item* waits for a person: a restored card nobody chose, and not a
-    parked send the startup drain accepted. The slot frame's ``queue_held_depth``
-    and the session status count these as no work coming."""
-    return bool(item.get(RESTORED_QUEUE_KEY)) and not (
-        item.get(RESTORED_SEND_CHOSEN_KEY) or item.get(RESTORED_BOOT_ACCEPTED_KEY)
+def restored_card_waits(item: Any) -> bool:
+    """Whether *item* is a restored card no send has let go: nobody chose it, or a
+    limit held it again after a choice (``RESTORED_HELD_AGAIN_KEY``). No drain
+    runs it, so no reader counts it as work coming or as a person's follow-up."""
+    return (
+        isinstance(item, dict)
+        and bool(item.get(RESTORED_QUEUE_KEY))
+        and (not item.get(RESTORED_SEND_CHOSEN_KEY) or bool(item.get(RESTORED_HELD_AGAIN_KEY)))
     )
+
+
+def is_held_queue_entry(item: dict[str, Any]) -> bool:
+    """Whether *item* waits for a person: a restored card no send has let go
+    (:func:`restored_card_waits`), and not a parked send the startup drain
+    accepted. The slot frame's ``queue_held_depth`` and the session status count
+    these as no work coming."""
+    return restored_card_waits(item) and (
+        bool(item.get(RESTORED_HELD_AGAIN_KEY)) or not item.get(RESTORED_BOOT_ACCEPTED_KEY)
+    )
+
+
+def retire_held_parked_work(state: Any, entries: list[dict[str, Any]]) -> None:
+    """Retire the parked work rows of restored *entries* a limit held again
+    (``admission_parked.retire_parked``), so no later start resumes them on its
+    own: only the person's Send all or Send now lets them go. Run off the drain,
+    which must not await between its check and its pop."""
+    from kiro_crew.shared_crew import admission_parked
+    from kiro_crew.shared_crew.admission_entry import queued_work_ids
+    from kiro_crew.shared_crew.admission_gate import installed_service
+
+    work_ids = queued_work_ids(entries)
+    service = installed_service()
+    if not work_ids or service is None or not service.enabled:
+        return
+
+    async def _retire() -> None:
+        try:
+            await admission_parked.retire_parked(service, work_ids)
+        except Exception:
+            logger.warning("held restored cards' parked work not retired", exc_info=True)
+
+    try:
+        task = asyncio.get_running_loop().create_task(_retire())
+    except RuntimeError:
+        logger.warning("held restored cards' parked work not retired: no running loop")
+        return
+    state._background_tasks.add(task)
+    task.add_done_callback(state._background_tasks.discard)
 
 
 _DURABLE_QUEUE_KEYS: tuple[str, ...] = (

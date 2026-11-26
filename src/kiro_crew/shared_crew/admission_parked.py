@@ -163,6 +163,30 @@ async def cancel_disabled_queue(service: AdmissionService) -> None:
             await service._end(live, S.CANCELLED, reason=ReasonCode.POLICY_CHANGED)
 
 
+async def retire_parked(service: AdmissionService, work_ids: list[str]) -> None:
+    """Take *work_ids* out of the parked sends a start resumes on its own.
+
+    A restored card whose words a drain-time limit held again keeps its queue
+    entry, so its row would still prove an accepted send at the next start
+    (``slot_queue_repository._drain_restored_parked_work``). Writing the row
+    unparked leaves the card to the person's own send, across any restart. A
+    row that is gone or not parked is left as it is.
+    """
+    from kiro_crew.shared_crew.admission_gate import PARKED_KEY
+
+    store = service._store
+    if store is None:
+        return
+    for work_id in work_ids:
+        live = service._live.get(work_id)
+        work = live.work if live is not None else await store.get(work_id)
+        if work is None or not work.extra.get(PARKED_KEY):
+            continue
+        retired = await store.annotate(work, {PARKED_KEY: False})
+        if live is not None:
+            live.work = retired
+
+
 async def sweep_parked(service: AdmissionService, at: float) -> int:
     """End parked messages past their expiry whose queue entry is gone.
 
@@ -204,6 +228,7 @@ __all__ = [
     "PERSON_STOPS",
     "cancelled_parked",
     "end_unstarted",
+    "retire_parked",
     "settle_followers",
     "stop_late_start",
 ]

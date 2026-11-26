@@ -324,6 +324,10 @@ export function createChatEndpoints({ post, put, del, patch, j, jAccepted, jfetc
     /** Hold a queued message while its card's editor is open (`editing: true`), or
      *  release it unsaved (`false`), so the drain never sends the words being edited. */
     holdQueuedMessageEdit: (slot: string, queueId: string, editing: boolean) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/queue/' + encodeURIComponent(queueId) + '/editing', { editing }).then(j),
+    /** Send the held queued messages named (the stack's "Send all held…"). They go
+     *  in queue order, one turn each, after any running turn ends. `sent` names the
+     *  ones that will go, `refused` each one that stays held and why. */
+    sendHeldQueuedMessages: (slot: string, queueIds: readonly string[]) => post('/api/chat/slots/' + encodeURIComponent(slot) + '/queue/send-held', { queue_ids: queueIds }).then(j) as Promise<{ sent?: string[]; refused?: { queue_id: string; code?: string; error?: string }[]; started?: boolean }>,
     reorderQueuedMessages: (slot: string, order: string[]) => put('/api/chat/slots/' + encodeURIComponent(slot) + '/queue/order', { order }).then(j),
     /** Take back a steer the running turn has not read yet (the row's `meta.mid`).
      *  Resolves once the take-back is armed; what became of the steer lands on its

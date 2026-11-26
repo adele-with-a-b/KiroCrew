@@ -745,6 +745,7 @@ export default function ChatPane({
   const {
     onCancel: onCancelQueued,
     onInterrupt: onInterruptQueued,
+    onSendAllHeld: onSendAllHeldQueued,
     onEdit: onEditQueued,
     onEditOpen: onEditOpenQueued,
     onReorder: onReorderQueued,
@@ -1126,7 +1127,7 @@ export default function ChatPane({
             bubble in the thread instead (`withQueuedAsBubbles`), all but a
             held entry, which waits here for the person to act on it. */}
         {(crewmate ? crewmateHeldQueue : queuedMessages).length > 0 && (
-          <QueueStack key={slotKey} messages={crewmate ? crewmateHeldQueue : queuedMessages} onCancel={onCancelQueued} onInterrupt={onInterruptQueued} onEdit={onEditQueued} onEditOpen={onEditOpenQueued} onReorder={onReorderQueued} pendingIds={queuePendingIds} />
+          <QueueStack key={slotKey} messages={crewmate ? crewmateHeldQueue : queuedMessages} onCancel={onCancelQueued} onInterrupt={onInterruptQueued} onSendAllHeld={onSendAllHeldQueued} onEdit={onEditQueued} onEditOpen={onEditOpenQueued} onReorder={onReorderQueued} pendingIds={queuePendingIds} />
         )}
 
         {/* The pending ask_question card shares the message column's gutter and

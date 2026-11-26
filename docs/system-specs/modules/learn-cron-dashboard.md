@@ -3705,6 +3705,32 @@ longer matches the mark, or that has none, shows the whole text. The mark has it
 own key because the drain copies entry meta onto the user row, and a row's
 `meta.knowledge` draws the knowledge chip from the full record.
 
+**Send all held queued messages.** With two or more cards and at least one
+held (`meta.held`, a card restored after a restart that waits for the person),
+the collapsed `QueueStack` shows a Send all held button beside the count, and
+the count reads "N queued · M held" (`queued_held_count`, one message holding
+the two counts) whenever a card is held. The button shows the ListChecks icon
+and a visible "Send all held…" label, which is also its accessible name; its
+tooltip is "Send every held message, in order". On a card narrower than 360 px
+only the icon shows, as for the knowledge chip. The button is shown only when
+the host passes `onSendAllHeld`: `ChatPage` and `ChatPane` pass it, `SideChat`,
+`ChatEmbed` and the crew chat window do not. It opens a `useConfirm` dialog that
+names the count, with Cancel and a primary "Send all". The ids are the held
+cards shown and not in flight when the button is pressed, so a card held while
+the dialog is open stays held. On confirm, `useQueuedMessageActions.onSendAllHeld`
+posts them in one `POST /api/chat/slots/{slot}/queue/send-held` (the server half
+is in [session](session.md), "Send all held"). Each card the answer names in
+`sent` loses its held mark (`releaseHeldQueued`, which the `queue_release` frame
+also drives in every other tab) and stays queued until its turn. When the server
+keeps cards held (`refused`: a card whose editor is open, `queue_item_editing`,
+or one the chat's channel link or limits stop, `queue_item_contained`) or the
+request fails, an inline `ErrorNotice` above the stack names how many of those
+cards are still shown and held and each distinct reason (the catalog's words for
+those two codes, else the gateway's message), and it goes when dismissed
+or once none is left; the button stays for another try. It offers no hand-off,
+because the composer below holds an unsent draft. The expanded stack has no
+Send all held, because each of its cards has its own Send now.
+
 **An open queue editor holds the queue.** Opening a card's editor posts
 `{"editing": true}` to `/api/chat/slots/{slot}/queue/{queue_id}/editing`, which
 stamps the in-memory entry with `_edit_hold_until` (`queue_edit_hold`, 90 s,

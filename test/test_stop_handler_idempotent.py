@@ -66,6 +66,9 @@ class _FakeState:
     def __init__(self, slot):
         self._slots = {"test-slot": slot}
         self.sessions = MagicMock()
+        # No mirror link, as an unlinked chat's store answers; a MagicMock
+        # accessor would read as a mirror the drain refuses restored cards under.
+        self.sessions.get_mirror_link = MagicMock(return_value=None)
         self.sessions.stop_turn = AsyncMock(return_value="idle")
         self._push_count = 0
 

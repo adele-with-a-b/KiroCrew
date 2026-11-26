@@ -87,7 +87,7 @@ const WS_SLOT_SCOPED_EVENTS = new Set([
   'chat.side_result', 'chat.thread_reply', 'heartbeat', 'context_usage',
   // Tool / queue
   'tool_call', 'tool_result',
-  'queue_push', 'queue_cancel', 'queue_edit', 'queue_pop', 'queue_reorder',
+  'queue_push', 'queue_cancel', 'queue_edit', 'queue_pop', 'queue_reorder', 'queue_release',
   'steer_push',
   // Slot metadata / lifecycle
   'slot_title', 'slot_clear', 'slot_agent_switch', 'todo_update', 'mcp_report_update',

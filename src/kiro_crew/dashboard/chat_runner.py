@@ -254,10 +254,13 @@ from kiro_crew.dashboard.chat_turn.slash_commands import (  # noqa: F401
     _turn_slash_gate,
 )
 from kiro_crew.dashboard.chat_turn.steer_queue import (  # noqa: F401
+    CONTAINED_CODE,
+    CONTAINED_ERROR,
     _has_user_queued_followup,
     _on_steer_consumed,
     _on_steer_dropped,
     _requeue_unconsumed_steers,
+    drain_would_drop,
 )
 from kiro_crew.dashboard.chat_turn.stop_recovery import (
     _turn_persist_and_settle,

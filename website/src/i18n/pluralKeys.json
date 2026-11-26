@@ -574,5 +574,8 @@
   "components.crewMode.board_count_late",
   "pages.allProjectsBoard.approvals_wait",
   "pages.allProjectsBoard.worker_chats",
-  "pages.allProjectsBoard.running"
+  "pages.allProjectsBoard.running",
+  "components.queueStack.held_count",
+  "components.queueStack.send_all_held_title",
+  "components.queueStack.send_all_held_failed"
 ]

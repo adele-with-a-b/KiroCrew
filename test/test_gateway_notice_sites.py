@@ -210,6 +210,8 @@ def test_every_tokenized_kind_maps_its_wording_to_its_token() -> None:
         # steer_queue
         "⚠️ Queued message dropped: a mirror became unverified after it was queued, so the "
         "authorization that admitted it no longer holds.": "queued_message_dropped",
+        "⚠️ Not sent, kept held: the session was linked to a channel. The words stay in the "
+        "queue for you to send, edit or delete.": "held_message_kept",
         # delivery_containment, both sender notices
         "⚠️ Message you sent to s2 was dropped before it ran: a constraint changed after it "
         "was queued, so the authorization that admitted it no longer holds. It was not "

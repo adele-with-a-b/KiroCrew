@@ -228,7 +228,10 @@ async def drain_held_queue(state: Any, slot: Any, *, send_restored: bool = False
     every entry, was judged stale and is gone, so nothing will send it).
     """
     from kiro_crew.dashboard import chat_handlers
-    from kiro_crew.dashboard.slot_queue_repository import RESTORED_SEND_CHOSEN_KEY
+    from kiro_crew.dashboard.slot_queue_repository import (
+        RESTORED_HELD_AGAIN_KEY,
+        RESTORED_SEND_CHOSEN_KEY,
+    )
 
     async with slot._lock:
         if (
@@ -241,7 +244,12 @@ async def drain_held_queue(state: Any, slot: Any, *, send_restored: bool = False
         ):
             return "running"
         chosen = None
-        if send_restored and _queue_is_restored(slot):
+        # A card a limit held again waits for the person's own Send all or Send now.
+        if (
+            send_restored
+            and _queue_is_restored(slot)
+            and not slot._queue[0].get(RESTORED_HELD_AGAIN_KEY)
+        ):
             chosen = slot._queue[0].get("id")
             slot._queue[0][RESTORED_SEND_CHOSEN_KEY] = True
         slot._turn_admission_reserved = True

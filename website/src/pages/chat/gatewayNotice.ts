@@ -120,6 +120,7 @@ const NOTICE_FAMILIES = {
   remote_crew_read_only: { role: 'error', card: 'error' },
   archive_failed_turn_cancelled: { role: 'error', card: 'error' },
   queued_message_dropped: { role: 'notice', card: 'notice', tone: 'warn' },
+  held_message_kept: { role: 'notice', card: 'notice', tone: 'warn' },
   send_dropped: { role: 'notice', card: 'notice', tone: 'warn' },
   send_discarded: { role: 'notice', card: 'notice', tone: 'warn' },
   eager_spawn_stopped: { role: 'error', card: 'error' },
@@ -218,6 +219,7 @@ const COPY_KEY = {
   remote_crew_read_only: 'pages.chat.gatewayNotice.remote_crew_read_only',
   archive_failed_turn_cancelled: 'pages.chat.gatewayNotice.archive_failed_turn_cancelled',
   queued_message_dropped: 'pages.chat.gatewayNotice.queued_message_dropped',
+  held_message_kept: 'pages.chat.gatewayNotice.held_message_kept',
   send_dropped: 'pages.chat.gatewayNotice.send_dropped',
   send_discarded: 'pages.chat.gatewayNotice.send_discarded',
   eager_spawn_stopped: 'pages.chat.gatewayNotice.eager_spawn_stopped',
@@ -573,6 +575,10 @@ const LEGACY: readonly Legacy[] = [
   {
     re: /^⚠\uFE0F? Queued message dropped: (?<change>.+?) after it was queued, so the authorization that admitted it no longer holds\.$/u,
     token: 'queued_message_dropped',
+  },
+  {
+    re: /^⚠\uFE0F? Not sent, kept held: (?<change>.+?)\. The words stay in the queue for you to send, edit or delete\.$/u,
+    token: 'held_message_kept',
   },
   {
     re: /^⚠\uFE0F? Message you sent to (?<target>.+?) was dropped before it ran: (?<change>.+?) after it was queued, so the authorization that admitted it no longer holds\. It was not delivered and will not run\.(?<excerpt>.*)$/u,

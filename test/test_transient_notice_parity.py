@@ -271,6 +271,7 @@ _TOKENIZED_SITES = (
     "chat_turn/session_events.py agent_switch_blocked_channel",
     "chat_turn/session_events.py agent_switch_blocked_crew_mode",
     "chat_turn/session_events.py agent_switch_blocked_pinned",
+    "chat_turn/steer_queue.py held_message_kept",
     "chat_turn/steer_queue.py queued_message_dropped",
     "chat_turn/stop_recovery.py compaction_retrying",
     "chat_turn/turn_admission.py channel_message_not_run",

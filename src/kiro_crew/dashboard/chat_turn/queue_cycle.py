@@ -13,7 +13,11 @@ from kiro_crew.dashboard.chat_delivery_owner_steer import (
     deliver_again as deliver_owner_steers_again,
 )
 from kiro_crew.dashboard.chat_utils import SYNTHESIS_HELD, SYNTHESIS_UNKNOWN
-from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY, RESTORED_SEND_CHOSEN_KEY
+from kiro_crew.dashboard.slot_queue_repository import (
+    RESTORED_HELD_AGAIN_KEY,
+    RESTORED_QUEUE_KEY,
+    RESTORED_SEND_CHOSEN_KEY,
+)
 from kiro_crew.dashboard.state import SUBAGENT_FINAL_COMPLETION_NOTE, SUBAGENT_SYNTHESIS_PROMPT
 
 if TYPE_CHECKING:
@@ -268,14 +272,17 @@ def _arm_synthesis_recheck(state: DashboardState, slot: _ChatSlot) -> None:
 
 
 def _chosen_restored_head(slot: _ChatSlot) -> Any:
-    """The queue head's id when it is a restored card a "Run now" chose, else ``None``."""
-    head = slot._queue[0] if slot._queue else None
-    if (
-        isinstance(head, dict)
-        and head.get(RESTORED_QUEUE_KEY)
-        and head.get(RESTORED_SEND_CHOSEN_KEY)
-    ):
-        return head.get("id")
+    """The id of the first entry the drain would send, when it is a restored card a
+    person chose, else ``None``. Restored cards nobody chose are passed over, as the
+    drain passes them: "Send all held…" marks cards that may stand behind one."""
+    for item in slot._queue or ():
+        if not isinstance(item, dict):
+            return None
+        if item.get(RESTORED_QUEUE_KEY) and (
+            not item.get(RESTORED_SEND_CHOSEN_KEY) or item.get(RESTORED_HELD_AGAIN_KEY)
+        ):
+            continue
+        return item.get("id") if item.get(RESTORED_QUEUE_KEY) else None
     return None
 
 

@@ -8778,7 +8778,17 @@
         "not_owners_turn": "次にご自身のターンとして実行されます: 実行中のターンはご自身が開始したものではありません"
       },
       "sub_agent_results_ready_other": "{{count}} 個のサブエージェント結果が準備完了 — 現在のターンの後で処理します",
-      "queued_count_other": "{{count}} 件がキュー内"
+      "queued_count_other": "{{count}} 件がキュー内",
+      "held_count_other": "{{count}} 件が保留中",
+      "queued_held_count": "{{queued}} · {{held}}",
+      "send_all_held_open": "保留中をすべて送信…",
+      "send_all_held_tooltip": "保留中のメッセージを順番にすべて送信",
+      "send_all_held_title_other": "保留中のメッセージ {{count}} 件を送信しますか？",
+      "send_all_held_body": "古いものから順に、ひとつずつ送信されます。それぞれが個別のターンになります。キュー内のほかのメッセージは動きません。",
+      "send_all_held_confirm": "すべて送信",
+      "send_all_held_failed_other": "保留中のメッセージ {{count}} 件を送信できませんでした",
+      "send_all_held_editing": "編集のために開かれています。",
+      "send_all_held_contained": "このチャットのチャンネル連携または制限により送信できません。内容はキューに残ります。"
     },
     "readingWidthToggle": {
       "title_full": "全幅",
@@ -13123,6 +13133,7 @@
         "turn_timeout_hint_global": "より長いターンを許可するには、設定 → チャット → 詳細 でターンの制限時間を引き上げるか、セッションメニューからこのセッションに独自の制限を設定してください。",
         "turn_timeout_hint_session": "このセッションには独自の制限があります。ここでより長いターンを許可するには、このカードのターンの制限時間を変更、またはセッションメニューのターンの制限時間でより長いものを選んでください。",
         "queued_message_dropped": "キューに入っていたメッセージを破棄しました: {{change}}。これはキューに入った後に起きたため、それを許可した認可はもう有効ではありません。",
+        "held_message_kept": "送信せず、保留のままにしました: {{change}}。内容はキューに残り、送信・編集・削除できます。",
         "send_dropped": "{{target}} に送信したメッセージが実行前に破棄されました: {{change}}。これはキューに入った後に起きたため、それを許可した認可はもう有効ではありません。配信されず、実行もされません。{{excerpt}}",
         "send_discarded": "{{target}} に送信したメッセージが実行前に破棄されました: {{reason}}。配信されず、実行もされません。{{excerpt}}",
         "eager_spawn_stopped_other": "このチャットのエージェントが {{count}} 回連続で起動に失敗したため、バックグラウンドでは再起動されません。メッセージを送信して再試行してください。直近のエラー: {{detail}}",

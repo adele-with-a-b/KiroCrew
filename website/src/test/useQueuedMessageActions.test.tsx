@@ -3,7 +3,7 @@ import { StrictMode } from 'react'
 import { render, act, waitFor } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
-import chatReducer from '../store/chatSlice'
+import chatReducer, { releaseHeldQueued } from '../store/chatSlice'
 import dashboardReducer from '../store/dashboardSlice'
 import notificationsReducer from '../store/notificationsSlice'
 import type { RootState } from '../store'
@@ -38,6 +38,7 @@ const apiMocks = vi.hoisted(() => ({
   holdQueuedMessageEdit: vi.fn(),
   interruptSlot: vi.fn(),
   reorderQueuedMessages: vi.fn(),
+  sendHeldQueuedMessages: vi.fn(),
 }))
 vi.mock('../api/client', () => ({ api: apiMocks }))
 
@@ -388,6 +389,67 @@ describe('useQueuedMessageActions — interrupt', () => {
   })
 })
 
+describe('useQueuedMessageActions — send all held', () => {
+  const heldRow = (queueId: string, content: string): ChatMessage =>
+    ({ role: 'queued', content, cls: 'msg msg-queued', ts: '', meta: { queueId, restored: true, held: true } }) as ChatMessage
+  const heldIdsIn = (store: ReturnType<typeof makeStore>) =>
+    (store.getState() as RootState).chat.messages.filter(m => m.role === 'queued' && m.meta?.held === true).map(m => m.meta?.queueId)
+  const ROWS = [heldRow('h1', 'first'), queued('q1', 'typed since'), heldRow('h2', 'second'), heldRow('h3', 'third')]
+
+  it('names the held cards shown in one request, and each one the server let go stops being held but stays queued', async () => {
+    apiMocks.sendHeldQueuedMessages.mockResolvedValueOnce({
+      ok: true,
+      sent: ['h1', 'h3'],
+      refused: [{ queue_id: 'h2', code: 'queue_item_editing', error: 'It is open for editing.' }],
+      started: false,
+    })
+    const { get, store } = renderActions({ rows: ROWS })
+    let failed: unknown
+    await act(async () => { failed = await get().onSendAllHeld(['h1', 'q1', 'h2', 'h3', 'gone']) })
+    expect(apiMocks.sendHeldQueuedMessages).toHaveBeenCalledTimes(1)
+    expect(apiMocks.sendHeldQueuedMessages).toHaveBeenCalledWith('chat-1', ['h1', 'h2', 'h3'])
+    expect(failed).toEqual([{ queueId: 'h2', code: 'queue_item_editing', reason: 'It is open for editing.' }])
+    expect(heldIdsIn(store)).toEqual(['h2'])
+    expect(queueIdsIn(store)).toEqual(['h1', 'q1', 'h2', 'h3'])
+    expect(apiMocks.interruptSlot).not.toHaveBeenCalled()
+  })
+
+  it('latches the cards for the request only', async () => {
+    const pending = deferred()
+    apiMocks.sendHeldQueuedMessages.mockReturnValueOnce(pending.promise)
+    const { get } = renderActions({ rows: ROWS })
+    let done: Promise<unknown> | undefined
+    act(() => { done = get().onSendAllHeld(['h1', 'h2']) })
+    expect([...get().pendingIds]).toEqual(['h1', 'h2'])
+    await act(async () => { pending.resolve({ ok: true, sent: ['h1', 'h2'], refused: [] }); await done })
+    expect(get().pendingIds.size).toBe(0)
+  })
+
+  it('reports every card named when the request fails, and they stay held', async () => {
+    const err = new Error('network down')
+    apiMocks.sendHeldQueuedMessages.mockRejectedValueOnce(err)
+    const { get, store } = renderActions({ rows: ROWS })
+    let failed: unknown
+    await act(async () => { failed = await get().onSendAllHeld(['h1', 'h3']) })
+    expect(failed).toEqual([{ queueId: 'h1', reason: err }, { queueId: 'h3', reason: err }])
+    expect(heldIdsIn(store)).toEqual(['h1', 'h2', 'h3'])
+    expect(get().pendingIds.size).toBe(0)
+  })
+
+  it('sends nothing when no named card is still held', async () => {
+    const { get } = renderActions({ rows: ROWS })
+    await act(async () => { await get().onSendAllHeld(['q1', 'gone']) })
+    expect(apiMocks.sendHeldQueuedMessages).not.toHaveBeenCalled()
+  })
+
+  it('the queue_release frame drops the held mark in a tab that did not press', () => {
+    const store = makeStore('chat-1', ROWS)
+    store.dispatch(releaseHeldQueued({ slot: 'chat-1', queue_ids: ['h2', 'q1'] }))
+    expect(heldIdsIn(store)).toEqual(['h1', 'h3'])
+    expect(queueIdsIn(store)).toEqual(['h1', 'q1', 'h2', 'h3'])
+  })
+})
+
 describe('useQueuedMessageActions — reorder', () => {
   it('submits the FULL order so a hidden system delivery is not demoted', () => {
     // The delivery sits between the two cards and is never drawn. Submitting only
@@ -551,6 +613,7 @@ describe('useQueuedMessageActions — callback identity', () => {
     // memo-compared on these, and a fresh identity repaints the stack mid-animation.
     expect(after.onCancel).toBe(before.onCancel)
     expect(after.onInterrupt).toBe(before.onInterrupt)
+    expect(after.onSendAllHeld).toBe(before.onSendAllHeld)
     expect(after.onEdit).toBe(before.onEdit)
     expect(after.onReorder).toBe(before.onReorder)
   })

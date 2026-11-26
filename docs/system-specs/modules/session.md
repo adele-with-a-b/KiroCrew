@@ -5133,6 +5133,63 @@ so absence clears it.
   sidebar row, board lane and command center count only
   `queue_depth - queue_held_depth` (`readyQueueDepth`), and a restored card's
   hourglass stands still, chosen or not.
+- **Send all held lets every held card the person counted go, and stops no
+  turn.** `POST /api/chat/slots/{slot}/queue/send-held` (`queue_send_held`)
+  takes `{"queue_ids": [...]}`, the held cards the stack's confirm box counted.
+  Owner only (`require_owner_dashboard_request`): no app token, agent tool or
+  other signed-in person lets a held card go. A relay archive is refused as
+  Send now refuses it. Each named entry still held (`is_held_queue_entry`) gets
+  the "run this next" mark (`RESTORED_SEND_CHOSEN_KEY`), except one whose open
+  editor holds it (`edit_held`), which stays held and is answered in `refused`
+  with `queue_item_editing`, and one the drain would drop if it ran now, which
+  stays held, words and all, and is answered with `queue_item_contained`. That
+  test is the drain's own (`steer_queue.drain_would_drop`, the containment
+  re-check `_drop_stale_admissions` runs), asked before the mark. A restore
+  strips each card's admission snapshot, so in a chat linked or mirrored to a
+  channel (or incognito, or app-scoped) every held card is such a card and none
+  is let go. Send now asks the same test before it stops, promotes or starts
+  anything, and answers 409 `queue_item_contained` with the card left queued
+  and the running turn left running. An entry gone, already chosen or never held
+  is skipped. The marked ids go to open tabs in one `queue_release` frame. A
+  running turn is never stopped: its end drains the queue, which runs the marked
+  cards where they stand, in queue order, one per turn, rows queued since the
+  restart in their places, and judges each against the slot's constraints when
+  its turn comes. A restored card of the owner's that judgement stops is never
+  removed, whenever its limit came (after Send all or Send now, or a mirror-store
+  read that did not answer): `_drop_stale_admissions` clears its send marks and
+  sets `RESTORED_HELD_AGAIN_KEY`, so it is held again in its place with its words,
+  and the next card goes. One `held_message_kept` notice and one SEL row
+  (`audit_queued_keep`, outcome `held`) cover the cards one pass keeps; the
+  startup drain's accepted cards are judged in one pass. The mark outlives every
+  later drain, the startup drain's chain of accepted ids included, and a limit
+  that lifts: no drain judges, notices or picks a marked card again (the sweep,
+  the accepted-id pick, the chosen pick, the sub-agent hold's dequeue and
+  `_chosen_restored_head` pass over it, a drain asked for it refuses, and Resume
+  does not mark it chosen). Only the owner's own Send all or Send now clears it,
+  and the card then goes as any card they send; an app's press leaves it held.
+  The readers that count queued work (`restored_card_waits` in
+  `slot_queue_repository.py`: `is_held_queue_entry`, the completion sound's
+  "work continues", `_has_user_queued_followup`) treat a marked card as held
+  even when a press marked it chosen. A held card has one way out, the owner's
+  press, across a restart too: the keep retires the card's parked work row
+  (`admission_parked.retire_parked`, which writes the row unparked), so the
+  startup scan (`_drain_restored_parked_work`) no longer accepts it and the card
+  comes back as an ordinary held card. The mark is for this process's drains,
+  the startup drain's accepted ids among them. A restored peer's note (it
+  carries its sender's address) and a card queued since the restart are still
+  dropped with the drop notice, the sender told. Known limit: Send now on a
+  running chat promotes its card to the front, and a card held again there stays
+  at the front. A drain whose opening pass holds chosen cards and whose accepted-id
+  pick then holds the startup drain's cards posts two notices, one per pass. The
+  row is retired off the drain (a background task), so a gateway stopped in the
+  moment between the keep and that write still finds the row parked at its next
+  start. On an
+  idle slot the route starts the drain through Send now's own start (`turn_stop.start_queued_card`, its checks
+  under the slot's lock) with no card named, so the queue's holds still apply.
+  The marked cards keep their restored provenance. A mark set while the
+  ending turn reads its done payload is found after the slot is released
+  (`queue_cycle._chosen_restored_head` passes over held cards nobody chose). The
+  marks live only in this process, so a restart holds every unsent card again.
 - **A peer's note is the one restored card sent without a person, and only on
   proof the line cannot hold.** A `session_send` note that queued behind a turn
   has nobody at its card, so held like the rest it was never delivered and its
