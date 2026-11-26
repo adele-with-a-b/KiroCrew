@@ -1672,6 +1672,13 @@ _PERMITTED_STORE_IMPORTERS = frozenset(
         # open crew-bound item (``boards_with_open_remote``) and hands each to
         # ``remote_ingest.ingest_board``, which files exactly as on a read.
         "dashboard/handlers/remote_puller.py",
+        # The hub's ``crew=`` target fence (wave 1). It reads and writes ONE record,
+        # the crew-session record under ``work-ledger/remote/``, and never an item or
+        # a binding. The caller key it files under is the one the owner-only caller
+        # rule resolved from an attested session (``authorize_remote_dispatch``),
+        # never a supplied value, and a load keeps an entry only from the directory
+        # its own key resolves to.
+        "dashboard/handlers/remote_dispatch_routes.py",
         # The Crew board's rank write (Board A): a person's drag on a backlog row. It
         # resolves no supplied identity (the board route already resolved the key and
         # checked the caller owns it, as for ``dismiss``), and writes one key only,

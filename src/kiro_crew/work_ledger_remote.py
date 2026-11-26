@@ -19,17 +19,22 @@ fetches and calls these.
   is a gateway observation like the undelivered record, kept outside the
   conductor's directory so a rebuild never prunes it. With none yet, both
   liveness answers read ``False``.
+* The crew-session record (``work-ledger/remote/<board>/crew-sessions.json``)
+  holds which peer slots a chat opened with a plain ``session_create(crew=)``,
+  the hub's target fence (``remote_dispatch_routes``), so a hub restart keeps it.
 """
 
 from __future__ import annotations
 
+import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from kiro_crew.session_ledger import _store_name, resolved_within
+from kiro_crew.session_ledger import _store_name, is_link, ledger_key, resolved_within
 from kiro_crew.work_ledger_plan import refuse_unbindable
 from kiro_crew.work_ledger_records import (
     BLOCKED_REASONS,
@@ -38,6 +43,7 @@ from kiro_crew.work_ledger_records import (
     CODE_INVALID_VALUE,
     CODE_ITEM_CLOSED,
     CODE_UNKNOWN_ITEM,
+    MAX_RECORD_BYTES,
     MAX_SUMMARY_CHARS,
     WORKER_STATUSES,
     WorkItem,
@@ -219,6 +225,125 @@ def write_remote_state(board: str, item_id: str, state: RemoteState) -> None:
 
     mkdirs_owner_only(path.parent)
     _write_record(path, state.to_dict())
+
+
+#: The crew-session record's file name inside a board's remote directory. Item
+#: records there are named by item id (``it_<hex>.json``), so the two never meet.
+CREW_SESSIONS_FILE = "crew-sessions.json"
+
+
+def crew_sessions_path(caller: str) -> Path:
+    """Where *caller*'s crew-session record lives: its board's remote directory.
+
+    The board is ``ledger_key(caller)``, so the conductor purge that drops the
+    board's remote records drops this one too. Raises on an unusable key.
+    """
+    board = ledger_key(caller)
+    if not board or "\0" in board:
+        raise WorkLedgerError(f"invalid slot key: {caller!r}", code=CODE_INVALID_VALUE)
+    resolved = resolved_within(remote_dir(), f"{_store_name(board)}/{CREW_SESSIONS_FILE}")
+    if resolved is None:
+        raise WorkLedgerError(f"path traversal blocked for {caller!r}", code=CODE_INVALID_VALUE)
+    return resolved
+
+
+def _crew_session_pairs(raw: Any) -> list[tuple[str, str]]:
+    """The ``(crew, peer slot)`` pairs one stored entry holds, at the pair's own caps."""
+    pairs: list[tuple[str, str]] = []
+    for row in raw if isinstance(raw, list) else []:
+        if not (isinstance(row, list) and len(row) == 2):
+            continue
+        crew, slot = row
+        if (
+            isinstance(crew, str)
+            and isinstance(slot, str)
+            and 0 < len(crew) <= MAX_INSTANCE_ID_CHARS
+            and 0 < len(slot) <= MAX_PEER_SLOT_CHARS
+        ):
+            pairs.append((crew, slot))
+    return pairs
+
+
+def _read_crew_sessions_file(path: Path) -> dict[str, list[tuple[str, str]]]:
+    """``caller -> pairs`` from one record file. Absent or torn content reads as empty.
+
+    STRICT, because both readers act on the answer: the load admits what it returns
+    and the write stores it back. A file that is present but could not be read (an
+    I/O error) raises ``OSError``, and one over the store's size ceiling raises
+    :class:`WorkLedgerError`, so neither is mistaken for "no record" and overwritten.
+    """
+    try:
+        oversized = path.stat().st_size > MAX_RECORD_BYTES
+    except FileNotFoundError:
+        return {}
+    if oversized:
+        raise WorkLedgerError(
+            f"crew-session record over the size ceiling: {path.name}", code=CODE_INVALID_VALUE
+        )
+    raw = _read_json_record(path, strict=True)
+    callers = raw.get("callers") if isinstance(raw, dict) else None
+    if not isinstance(callers, dict):
+        return {}
+    return {
+        caller: _crew_session_pairs(pairs)
+        for caller, pairs in callers.items()
+        if isinstance(caller, str) and caller
+    }
+
+
+def read_crew_sessions() -> dict[str, list[tuple[str, str]]]:
+    """Every stored crew-session record here, ``caller -> [(crew, peer slot)]``.
+
+    A caller is kept only from the directory its own key resolves to, so a record
+    copied into another board's directory grants nothing. BLOCKING. Raises
+    ``OSError`` or :class:`WorkLedgerError` when a record, or the directory that
+    holds them, is there but cannot be read: an unreadable store is not an empty one.
+    """
+    found: dict[str, list[tuple[str, str]]] = {}
+    try:
+        # ``os.scandir`` rather than ``Path.glob``: glob skips a directory it may not
+        # read, which would load as "no record" for every caller filed under it.
+        with os.scandir(remote_dir()) as entries:
+            boards = sorted(entry.name for entry in entries)
+    except FileNotFoundError:
+        return found
+    for name in boards:
+        path = remote_dir() / name / CREW_SESSIONS_FILE
+        if is_link(path.parent) or not path.parent.is_dir() or is_link(path):
+            continue
+        for caller, pairs in _read_crew_sessions_file(path).items():
+            if path.parent.name == _store_name(ledger_key(caller)):
+                found[caller] = pairs
+    return found
+
+
+def write_crew_sessions(caller: str, pairs: Iterable[tuple[str, str]]) -> None:
+    """Store *caller*'s crew-session record whole; an empty one drops its entry.
+
+    Only the gateway writes it: the work-ledger root is hidden from sandboxed
+    processes. Within a gateway every write runs under the dispatch record's cap
+    lock (``remote_dispatch_routes.cap_lock``), so the read-modify-write of a file
+    two spellings of one board share never interleaves; two gateways on one data
+    home are not serialised here. The merge read is strict, so a record that is
+    there but unreadable is never replaced by one that misses its other entries.
+    BLOCKING; raises :class:`WorkLedgerError` or ``OSError``.
+    """
+    path = crew_sessions_path(caller)
+    callers: dict[str, list[list[str]]] = {
+        key: [list(pair) for pair in held]
+        for key, held in _read_crew_sessions_file(path).items()
+        if key != caller
+    }
+    kept = sorted(set(pairs))
+    if kept:
+        callers[caller] = [list(pair) for pair in kept]
+    if not callers:
+        path.unlink(missing_ok=True)
+        return
+    from kiro_crew.owner_only_files import mkdirs_owner_only
+
+    mkdirs_owner_only(path.parent)
+    _write_record(path, {"callers": callers})
 
 
 def remote_liveness(board: str, item: WorkItem) -> tuple[bool, bool] | None:

@@ -38,7 +38,7 @@ from session_control_helpers import (  # noqa: F401 -- the autouse fixtures regi
 )
 
 import kiro_crew
-from kiro_crew import crew_mode, mcp_dashboard
+from kiro_crew import crew_mode, mcp_dashboard, platform_compat, work_ledger
 from kiro_crew.config.section_builders import _build_work_ledger_config
 from kiro_crew.dashboard import session_control as sc
 from kiro_crew.dashboard.handlers import remote_dispatch_routes as crew
@@ -143,7 +143,38 @@ def env(tmp_path, monkeypatch):
     # The verb tests stand in an admitting owner check so the rest of the path
     # can be driven; the real one is pinned by the ``*_owner_*`` tests below.
     monkeypatch.setattr(crew, "owner_unverifiable_reason", lambda state: "")
-    return SimpleNamespace(state=state, peer=peer, caller=caller)
+    return SimpleNamespace(state=state, peer=peer, caller=caller, tmp_path=tmp_path)
+
+
+def _restart(env) -> None:
+    """A hub restart: a fresh gateway state over the same data home and crews.
+
+    Nothing held in memory crosses; the caller's tab comes back under its key,
+    as a resumed chat does.
+    """
+    key = _key(env.caller)
+    state = _make_state(env.tmp_path)
+    state.instances_manager = env.peer
+    state.instances_registry = env.state.instances_registry
+    env.caller = _conductor_mode(_busy(_slot(state, "chat-1")))
+    assert _key(env.caller) == key
+    env.state = state
+
+
+def _no_item_names_it(monkeypatch) -> None:
+    """No work item admits the slot, so only the dispatch record can."""
+    from kiro_crew.dashboard.handlers import remote_ingest
+
+    async def never(board, inst, slot):
+        return False
+
+    monkeypatch.setattr(remote_ingest, "holds_peer_slot", never)
+    monkeypatch.setattr(remote_ingest, "holds_finished_slot", never)
+
+
+def _drop_the_record(env) -> None:
+    """Remove the caller's stored dispatch record, as for a slot opened before it was kept."""
+    work_ledger.crew_sessions_path(_key(env.caller)).unlink(missing_ok=True)
 
 
 def _request(state, key: str, *, body: dict | None = None, query: dict | None = None, path=""):
@@ -343,12 +374,14 @@ def test_a_create_with_work_item_is_born_bound_on_the_callers_ledger(env, monkey
 
 
 def test_after_a_restart_the_item_pair_still_fences_the_slot(env, monkeypatch):
-    """The in-memory record is gone after a hub restart; an open item bound to the
-    slot on that crew still admits the verbs, and nothing else does."""
+    """A slot the dispatch record does not hold after a restart (one opened before
+    the record was kept on disk) is admitted by an open item bound to it on that
+    crew, and by nothing else."""
     from kiro_crew.dashboard.handlers import remote_ingest
 
     target = _create(env)
-    crew._DISPATCHED.clear()
+    _restart(env)
+    _drop_the_record(env)
 
     async def never(board, inst, slot):
         return False
@@ -365,13 +398,14 @@ def test_after_a_restart_the_item_pair_still_fences_the_slot(env, monkeypatch):
 
 
 def test_after_a_restart_a_finished_items_worker_can_only_be_closed(env, monkeypatch):
-    """A worker is closed after its item is finished. With the in-memory record gone
+    """A worker is closed after its item is finished. With no dispatch record for it
     no open item names its slot, so the finished item is what admits the close, and
     it admits nothing else."""
     from kiro_crew.dashboard.handlers import remote_ingest
 
     target = _create(env)
-    crew._DISPATCHED.clear()
+    _restart(env)
+    _drop_the_record(env)
 
     async def never(board, inst, slot):
         return False
@@ -396,6 +430,148 @@ def test_after_a_restart_a_finished_items_worker_can_only_be_closed(env, monkeyp
     assert [(c["method"], c["path"]) for c in env.peer.calls] == [
         ("DELETE", f"api/chat/slots/{target}")
     ]
+
+
+def test_a_hub_restart_keeps_the_openers_right_to_its_crew_session(env, monkeypatch):
+    """The dispatch record is on disk: after a restart the chat that opened a crew
+    session with plain ``crew=`` still reads, sends to, stops and closes it, and a
+    close it made is not undone by the next restart."""
+    target = _create(env)
+    _restart(env)
+    _no_item_names_it(monkeypatch)
+    env.peer.calls.clear()
+    env.peer.reply("GET", f"api/chat/slots/{target}", 200, {"title": "w", "messages": []})
+    assert _call(env, "read", crew="lab", target=target, limit=5)[0] == 200
+    assert _call(env, "send", crew="lab", target=target, message="go on")[0] == 200
+    assert _call(env, "stop", crew="lab", target=target)[0] == 200
+    assert _call(env, "close", crew="lab", target=target)[0] == 200
+    assert [(c["method"], c["path"]) for c in env.peer.calls] == [
+        ("GET", f"api/chat/slots/{target}"),
+        ("POST", "api/chat"),
+        ("POST", f"api/chat/slots/{target}/stop"),
+        ("DELETE", f"api/chat/slots/{target}"),
+    ]
+    _restart(env)
+    status, body = _call(env, "send", crew="lab", target=target, message="again")
+    assert (status, body["code"]) == (403, "crew_target_not_dispatched")
+
+
+def test_after_a_hub_restart_another_session_is_still_refused(env, monkeypatch):
+    """The record keeps the opener's key: no other chat, and not the same slot key
+    on another crew, reaches the session after a restart."""
+    target = _create(env)
+    _restart(env)
+    _no_item_names_it(monkeypatch)
+    other = _conductor_mode(_busy(_slot(env.state, "chat-2")))
+    env.peer.calls.clear()
+    for verb, fields in (
+        ("read", {"limit": 5}),
+        ("send", {"message": "x"}),
+        ("stop", {}),
+        ("close", {}),
+    ):
+        status, body = _call(env, verb, key=_key(other), crew="lab", target=target, **fields)
+        assert (status, body["code"]) == (403, "crew_target_not_dispatched"), verb
+        status, body = _call(env, verb, crew="other", target=target, **fields)
+        assert (status, body["code"]) == (403, "crew_target_not_dispatched"), verb
+    assert env.peer.calls == []
+
+
+def test_after_a_hub_restart_the_cap_still_counts_the_openers_sessions(env, monkeypatch):
+    monkeypatch.setattr(crew, "MAX_CREW_SLOTS_PER_CALLER", 1)
+    _create(env)
+    _restart(env)
+    env.peer.calls.clear()
+    status, body = _call(env, "create", crew="lab")
+    assert (status, body["code"]) == (409, "crew_dispatch_limit")
+    assert env.peer.calls == []
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        lambda caller: "{torn",
+        lambda caller: json.dumps({"callers": {caller: [[INSTANCE, "../etc"]]}}),
+        lambda caller: json.dumps({"callers": {caller: f"{INSTANCE}/chat-77"}}),
+        lambda caller: json.dumps({"callers": {caller: [[INSTANCE, "chat-77", "x"]]}}),
+        lambda caller: json.dumps({"callers": {"chat-9": [[INSTANCE, "chat-77"]]}}),
+    ],
+    ids=["torn", "hostile-key", "wrong-shape", "wrong-arity", "another-callers-entry"],
+)
+def test_a_damaged_or_foreign_record_admits_nothing(env, monkeypatch, damage):
+    """What the store holds is checked again on load: a torn file, a key that is not
+    one plain segment, a wrong shape and another caller's entry all admit nothing."""
+    target = _create(env)
+    path = work_ledger.crew_sessions_path(_key(env.caller))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    callers = json.loads(path.read_text(encoding="utf-8"))["callers"] if path.exists() else {}
+    (caller,) = callers or ["chat-1"]
+    path.write_text(damage(caller), encoding="utf-8")
+    _restart(env)
+    _no_item_names_it(monkeypatch)
+    for slot in (target, "../etc"):
+        status, body = _call(env, "send", crew="lab", target=slot, message="x")
+        assert (status, body["code"]) == (403, "crew_target_not_dispatched"), slot
+    assert crew._record(env.state) == {}
+    # Content that cannot be trusted reads as no record, so the hub goes on.
+    assert env.state in crew._LOADED
+
+
+@pytest.mark.parametrize("fault", ["io-error", "oversized"])
+def test_an_unreadable_record_is_never_read_as_empty(env, monkeypatch, fault):
+    """A record that is there but cannot be read is not "no record". The restarted
+    hub refuses a create before any peer call, stores nothing over the file, answers
+    the fence from memory alone, and loads every slot once the file reads again."""
+    from kiro_crew import work_ledger_store
+    from kiro_crew.work_ledger_records import MAX_RECORD_BYTES
+
+    first = _create(env)
+    env.peer.reply("POST", "api/chat/slots", 200, {"key": "chat-78"})
+    assert _call(env, "create", crew="lab")[0] == 200
+    path = work_ledger.crew_sessions_path(_key(env.caller))
+    good = path.read_text(encoding="utf-8")
+    broken = {"on": True}
+    if fault == "oversized":
+        padded = {**json.loads(good), "pad": "x" * (MAX_RECORD_BYTES + 1)}
+        path.write_text(json.dumps(padded), encoding="utf-8")
+    else:
+        real = work_ledger_store.read_bytes_with_retry
+
+        def failing(p, **kw):
+            if broken["on"] and str(p).endswith(work_ledger.CREW_SESSIONS_FILE):
+                raise OSError(5, "Input/output error")
+            return real(p, **kw)
+
+        monkeypatch.setattr(work_ledger_store, "read_bytes_with_retry", failing)
+    kept = path.read_bytes()
+    _restart(env)
+    _no_item_names_it(monkeypatch)
+    env.peer.calls.clear()
+    status, body = _call(env, "create", crew="lab")
+    assert (status, body["code"]) == (503, crew.DISPATCH_RECORD_UNREADABLE)
+    status, body = _call(env, "send", crew="lab", target=first, message="x")
+    assert (status, body["code"]) == (403, "crew_target_not_dispatched")
+    assert env.peer.calls == [] and path.read_bytes() == kept
+    assert env.state not in crew._LOADED
+    # The store reads again: the next call loads it, and nothing was lost.
+    broken["on"] = False
+    path.write_text(good, encoding="utf-8")
+    assert _call(env, "send", crew="lab", target=first, message="x")[0] == 200
+    env.peer.reply("POST", "api/chat/slots", 200, {"key": "chat-79"})
+    assert _call(env, "create", crew="lab")[0] == 200
+    (held,) = json.loads(path.read_text(encoding="utf-8"))["callers"].values()
+    assert sorted(slot for _crew, slot in held) == ["chat-77", "chat-78", "chat-79"]
+
+
+def test_the_record_is_an_owner_only_file_under_the_work_ledger(env):
+    _create(env)
+    path = work_ledger.crew_sessions_path(_key(env.caller))
+    assert path.is_relative_to(work_ledger.remote_dir().resolve())
+    if platform_compat.IS_POSIX:
+        # Mode bits mean owner-only on POSIX only; Windows keeps it in the ACL.
+        assert path.stat().st_mode & 0o777 == 0o600
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    assert list(stored["callers"].values()) == [[[INSTANCE, "chat-77"]]]
 
 
 def test_a_crew_create_refuses_local_only_fields(env):

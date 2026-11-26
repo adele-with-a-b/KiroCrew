@@ -524,7 +524,7 @@ ones.
 | Peer restart | The peer slot and its ledger are on the peer's disk and rehydrate. A turn in flight dies, so the slot is not `running` and `stale` follows the window. The conductor nudges with `session_send(crew=)`. The worker resumes from its pushed branch. The next `api/chat/headroom` read replaces the stored snapshot. |
 | `crew_busy` | The hub stores the reply's snapshot and tries the next eligible crew. With none left, the item stays unbound and the next patrol retries. Nothing is created on a refusing crew. |
 | Worker stuck on a login | `blocked`, `needs_human`. The conductor redispatches to another crew first; it asks the person only when none works. |
-| Hub restart | Nothing in flight lives on the hub. The item, with its binding history, is on disk; the next read resumes. Snapshots are refetched from `api/chat/headroom`. |
+| Hub restart | Nothing in flight lives on the hub. The item, with its binding history, is on disk; the next read resumes. The record of which crew sessions a chat opened with a plain `session_create(crew=)` is on disk too (`work-ledger/remote/<board>/crew-sessions.json`), so that chat still reaches them. Snapshots are refetched from `api/chat/headroom`. |
 | Version skew | Every call with a crew checks `versions_compatible` first (`major.minor`). A create whose reply lacks `work_item_id` (a peer that ignored the field) is closed at once and refused as `crew_peer_lacks_work_items`, so a worker never runs unbound. |
 
 ### 5b. Retire and redispatch
