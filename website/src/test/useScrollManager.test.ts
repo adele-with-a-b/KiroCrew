@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, onTestFinished } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useScrollManager } from '../pages/chat/useScrollManager'
 
@@ -47,6 +47,41 @@ describe('useScrollManager.scrollToDisplayIndex', () => {
     expect(scrolled).toBe(true)
     expect(scrollTo).toHaveBeenCalledTimes(1)
     expect(scrollTo.mock.calls[0][0]).toMatchObject({ behavior: 'auto' })
+  })
+
+  /** A turn item at y=1000 holding the message row at y=3000, in a 900px
+   *  scroller whose bottom 400px the dock covers. */
+  function rowInTurn(rowHeight: number) {
+    const { result } = renderHook(() => useScrollManager())
+    const { el, scrollTo } = makeScroller()
+    const item = document.createElement('div')
+    item.setAttribute('data-display-index', '3')
+    const row = document.createElement('div')
+    row.setAttribute('data-msg-ts', '2026-11-26T15:11:00Z')
+    item.appendChild(row)
+    el.appendChild(item)
+    // Attached, so its computed style carries the padding.
+    document.body.appendChild(el)
+    onTestFinished(() => el.remove())
+    el.style.paddingBottom = '400px'
+    Object.defineProperty(el, 'clientHeight', { value: 900 })
+    Object.defineProperty(el, 'scrollHeight', { value: 10000 })
+    Object.defineProperty(row, 'offsetHeight', { value: rowHeight })
+    el.getBoundingClientRect = () => ({ top: 0 }) as DOMRect
+    item.getBoundingClientRect = () => ({ top: 1000 }) as DOMRect
+    row.getBoundingClientRect = () => ({ top: 3000 }) as DOMRect
+    ;(result.current.scrollerRef as { current: HTMLDivElement | null }).current = el
+    result.current.scrollToDisplayIndex(3, { behavior: 'auto', rowTs: '2026-11-26T15:11:00Z', topInset: 60 })
+    return scrollTo.mock.calls[0][0].top as number
+  }
+
+  it('lands a message jump on its own row, centred in the band between the pinned prompt and the dock', () => {
+    // band = 900 - 60 - 400 = 440, so the 200px row's top sits 120px into it.
+    expect(rowInTurn(200)).toBe(3000 - 60 - 120)
+  })
+
+  it('shows the start of a row taller than that band', () => {
+    expect(rowInTurn(600)).toBe(3000 - 60)
   })
 
   it('returns false when there is no scroller element at all', () => {

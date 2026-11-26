@@ -3,6 +3,7 @@ import type { AppDispatch } from '../../../store'
 import { loadOlderMessages, isSupersededPagingRejection, openActivityPanel } from '../../../store/chatSlice'
 import type { MessageQuote } from '../../../chat-core/composer/messageQuote'
 import type { DisplayItem } from '../types'
+import type { ScrollToDisplayIndexOptions } from '../useScrollManager'
 import type { useChatPageResourcesController } from '../useChatPageResourcesController'
 import { inspectorOn, devLog } from '../../../dev/scrollInspector'
 import { useTurnStepper } from '../useTurnStepper'
@@ -90,7 +91,7 @@ interface TranscriptPinsOptions {
   activeSlotRemoteBound: boolean
   scrollerRef: RefObject<HTMLDivElement>
   search: ReturnType<typeof useChatPageResourcesController>['search']
-  navToDisplayIndex: (idx: number, opts?: { behavior?: ScrollBehavior; align?: ScrollLogicalPosition; offset?: number; }) => void
+  navToDisplayIndex: (idx: number, opts?: ScrollToDisplayIndexOptions) => void
   pinnedJumpChrome: () => number
   scrollToPinnedPrompt: (target: number) => void
   setHighlightTs: Dispatch<SetStateAction<string | null>>
@@ -208,14 +209,15 @@ export function useTranscriptPins({
     if (di === undefined) return false
     setPinNotice(null)
     setPinLoadError(null)
-    navToDisplayIndex(di, { behavior: 'smooth', align: 'center' })
-    setHighlightTs(messages[msgIdx].ts ?? messageTs)
+    const rowTs = messages[msgIdx].ts ?? messageTs
+    navToDisplayIndex(di, { behavior: 'smooth', align: 'center', rowTs, topInset: pinnedJumpChrome() })
+    setHighlightTs(rowTs)
     setTimeout(() => setHighlightTs(null), 3000)
     // A legacy pin resolves by ts, which can land on a same-tick reply: fill from user rows only.
     const m = messages[msgIdx]
     if (fill && m.role === 'user') insertIntoComposer(userResendText(m.content, m.meta))
     return true
-  }, [messagesRef, navToDisplayIndex, setHighlightTs, insertIntoComposer])
+  }, [messagesRef, navToDisplayIndex, pinnedJumpChrome, setHighlightTs, insertIntoComposer])
   // ⌘↑ / Ctrl+Up target resolution, placed next to the virtualizer seam it
   // depends on: the transcript is virtualized, so the newest user message can
   // sit OUTSIDE the mounted window (a long agent reply just streamed past it)

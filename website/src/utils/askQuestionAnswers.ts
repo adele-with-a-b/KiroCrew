@@ -13,13 +13,19 @@ export function isAskAnsweredOutput(output: string): boolean {
   return (output || '').trimStart().startsWith(ASK_ANSWERED_HEADER)
 }
 
-/** True for a tool row whose meta carries the user's ask_question answers, the same identity gate ToolCallLine applies before rendering the chip. */
-export function isAskAnsweredToolMessage(m: ChatMessage): boolean {
-  if (m.role !== 'tool' || !m.content?.startsWith('🔧')) return false
+/** True for a tool row of Crew's own `ask_question`, judged by the backend-recorded tool identity, never the title. */
+export function isAskQuestionToolMessage(m: ChatMessage): boolean {
+  if (m.role !== 'tool') return false
   const meta = m.meta as Record<string, unknown> | undefined
   return meta?.mcp_server === ASK_QUESTION_SERVER
     && isAskQuestionToolName(typeof meta.tool_name === 'string' ? meta.tool_name : '')
-    && isAskAnsweredOutput(typeof meta.output === 'string' ? meta.output : '')
+}
+
+/** True for a tool row whose meta carries the user's ask_question answers, the same identity gate ToolCallLine applies before rendering the chip. */
+export function isAskAnsweredToolMessage(m: ChatMessage): boolean {
+  if (!m.content?.startsWith('🔧') || !isAskQuestionToolMessage(m)) return false
+  const output = (m.meta as Record<string, unknown>).output
+  return isAskAnsweredOutput(typeof output === 'string' ? output : '')
 }
 
 /**

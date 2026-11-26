@@ -592,6 +592,8 @@ export default function ComposerDockView({
                     slotKey={activeSlot}
                     onFallbackSend={keepQuestionAnswer}
                     onDirectSend={answerQuestionCard}
+                    messages={messages}
+                    onJumpToSubject={onJumpToQuote}
                   />
                 </div>
               )}

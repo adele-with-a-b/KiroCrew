@@ -4,6 +4,8 @@ import { useImeGuard } from '../hooks/useImeGuard'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Check, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react'
 import { Glass } from './Glass'
+import QuoteCard from '../pages/chat/QuoteCard'
+import type { MessageQuote } from '../chat-core/composer/messageQuote'
 
 import { i18nT } from '../i18n/t'
 import { ASK_MAX_ANSWER_LEN, NATIVE_MAX_ANSWER_LEN } from '../utils/askQuestionTool'
@@ -40,6 +42,10 @@ interface QuestionCardProps {
   submitLabel?: string
   /** Publishes the unsent answers so owners can restore them if authority disappears. */
   onDraftChange?: (answers: Record<string, string>) => void
+  /** The transcript row the question is about, quoted above the question. */
+  subject?: MessageQuote | null
+  /** Scroll the transcript to `subject`; without it the quote is a plain box. */
+  onJumpToSubject?: (quote: MessageQuote) => void
 }
 
 function seedDraft(questions: Question[], answers: Record<string, string> | undefined) {
@@ -66,7 +72,7 @@ function seedDraft(questions: Question[], answers: Record<string, string> | unde
   return { selections, customInputs }
 }
 
-function QuestionCard({ questions, askId, onSubmit, draftAnswers, onDismiss, busy = false, onDraftChange, submitLabel }: QuestionCardProps) {
+function QuestionCard({ questions, askId, onSubmit, draftAnswers, onDismiss, busy = false, onDraftChange, submitLabel, subject, onJumpToSubject }: QuestionCardProps) {
   useLanguageGeneration() // memo() bails out of the provider-level repaint; subscribe directly
   const ime = useImeGuard()
   const answerLimit = askId ? ASK_MAX_ANSWER_LEN : NATIVE_MAX_ANSWER_LEN
@@ -352,6 +358,11 @@ function QuestionCard({ questions, askId, onSubmit, draftAnswers, onDismiss, bus
           it so Submit / Dismiss are reachable without scrolling to the end. */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="px-4 py-2.5">
+          {/* Inside the scroller, so the quote never pushes Submit / Dismiss
+              off a short window; above the pages, so it stays put while paging.
+              The jump pages older history in, and the transcript's jump-to-bottom
+              pill is the way back. A row with no ts cannot be jumped to. */}
+          {subject && <QuoteCard quote={subject} variant="sent" onJump={subject.ts ? onJumpToSubject : undefined} />}
           {/* Narrow-first: the row wraps, and the pager takes a full row of its
               own under the text until `md:` hands it back its corner. The badge
               (up to 50 chars) and the pager (two 36px arrows plus "N/M") are both

@@ -1,5 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import QuestionCard from './QuestionCard'
+import type { ChatMessage } from '../types'
+import type { MessageQuote } from '../chat-core/composer/messageQuote'
+import { questionSubject } from '../pages/chat/questionSubject'
 import ErrorNotice from './ErrorNotice'
 import StatusNotice from './StatusNotice'
 import { i18nT } from '../i18n/t'
@@ -31,6 +34,12 @@ interface PendingQuestionCardProps {
    * tests that pass only ``onFallbackSend`` keep working unchanged.
    */
   onDirectSend?: (text: string) => void
+  /** This slot's transcript. When given, the card quotes the row its question
+   *  is about (`questionSubject`); without it the card shows no quote. */
+  messages?: ChatMessage[]
+  /** Jump to the quoted row (the transcript's quote jump, which pages older
+   *  history in). Without it the quote is a plain box. */
+  onJumpToSubject?: (quote: MessageQuote) => void
 }
 
 /**
@@ -42,7 +51,7 @@ interface PendingQuestionCardProps {
  * silently start a second turn and strand the blocked tool call. One
  * implementation means a pane cannot drift from the main view.
  */
-export default function PendingQuestionCard({ slotKey, onFallbackSend, onDirectSend }: PendingQuestionCardProps) {
+export default function PendingQuestionCard({ slotKey, onFallbackSend, onDirectSend, messages, onJumpToSubject }: PendingQuestionCardProps) {
   const dispatch = useAppDispatch()
   const chatStore = useAppStore()
   // Optional-chained: existing tests build partial preloaded chat state without
@@ -93,6 +102,12 @@ export default function PendingQuestionCard({ slotKey, onFallbackSend, onDirectS
   // on screen: a request for card A that rejects after card B has replaced it
   // in the slot must not paint A's failure under B.
   const [failure, setFailure] = useState<{ id: string; message: string } | null>(null)
+  const hasPending = pending !== undefined && pending !== null
+  const pendingNative = pending?.native === true
+  const subject = useMemo(
+    () => (hasPending && messages ? questionSubject(messages, pendingNative) : null),
+    [hasPending, messages, pendingNative],
+  )
   if (!pending) return durableNotice
 
   const cardSlot = pending.slot
@@ -242,6 +257,8 @@ export default function PendingQuestionCard({ slotKey, onFallbackSend, onDirectS
       askId={askId}
       draftAnswers={pending.draftAnswers}
       busy={busy}
+      subject={subject}
+      onJumpToSubject={onJumpToSubject}
       onDraftChange={(answers) => dispatch(setQuestionDraft({ slot: cardSlot, answers }))}
       // Always offered. A blocked card resolves the wait with no answer; a
       // legacy card blocks nothing, so dismiss only has its needs_input status

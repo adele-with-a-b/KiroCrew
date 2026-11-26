@@ -1,6 +1,6 @@
 import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 'react'
 
-import type { useScrollManager } from './useScrollManager'
+import type { ScrollToDisplayIndexOptions, useScrollManager } from './useScrollManager'
 import { usePinnedPrompt } from './usePinnedPrompt'
 import { jumpAnchorIdx } from '../../utils/pinnedPrompt'
 import { attachUserScrollIntent, glideOnceStep, pollRowSettled } from '../../utils/searchScroll'
@@ -161,7 +161,7 @@ export function useChatPageTranscriptEarlyController({
   const navPollCancelRef = useRef<(() => void) | null>(null)
   const navToDisplayIndex = useCallback((
     idx: number,
-    opts?: { behavior?: ScrollBehavior; align?: ScrollLogicalPosition; offset?: number },
+    opts?: ScrollToDisplayIndexOptions,
   ) => {
     cancelAnimationFrame(navScrollRafRef.current)
     // Signal WidgetFrames that a jump is starting so the span of widgets

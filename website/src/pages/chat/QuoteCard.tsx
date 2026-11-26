@@ -93,7 +93,8 @@ export default function QuoteCard({ quote, variant, onJump, onRemove }: {
       <span aria-hidden="true" className="w-[3px] self-stretch rounded-full bg-accent shrink-0" />
       <span className="min-w-0 block text-left">
         {head}
-        <span className="block text-[13px] leading-5 text-muted line-clamp-2">{excerpt}</span>
+        {/* No `block` here: it outranks the clamp's own `display: -webkit-box`, which leaves the excerpt unclamped. */}
+        <span className="text-[13px] leading-5 text-muted line-clamp-2">{excerpt}</span>
       </span>
     </>
   )

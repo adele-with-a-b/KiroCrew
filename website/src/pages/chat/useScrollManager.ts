@@ -1,5 +1,16 @@
 import { useCallback, useRef } from 'react'
 
+export interface ScrollToDisplayIndexOptions {
+  behavior?: ScrollBehavior
+  align?: ScrollLogicalPosition
+  offset?: number
+  /** Land on the row drawn for the message with this ts (`data-msg-ts`)
+   *  inside the item; the item itself when that row is not drawn. */
+  rowTs?: string
+  /** With `rowTs`: the strip at the scroller's top that chrome covers. */
+  topInset?: number
+}
+
 /**
  * Scroll management hook for chat — provides scroller ref, isAtBottom
  * tracking, scroll-to-bottom, and scroll-to-display-index.
@@ -33,12 +44,16 @@ export function useScrollManager() {
    * cause a visible "scroll past then snap back". */
   const scrollToDisplayIndex = useCallback((
     index: number,
-    options: { behavior?: ScrollBehavior; align?: ScrollLogicalPosition; offset?: number } = {}
+    options: ScrollToDisplayIndexOptions = {}
   ): boolean => {
-    const { behavior = 'smooth', align = 'center', offset = 0 } = options
+    const { behavior = 'smooth', align = 'center', offset = 0, rowTs, topInset = 0 } = options
     const container = scrollerRef.current
     if (!container) return false
-    const el = container.querySelector(`[data-display-index="${index}"]`) as HTMLElement | null
+    const item = container.querySelector(`[data-display-index="${index}"]`) as HTMLElement | null
+    // A message jump lands on the message's own row, not on the middle of the
+    // turn that holds it: a long turn's middle is its tool calls.
+    const row = rowTs && item ? item.querySelector<HTMLElement>(`[data-msg-ts="${CSS.escape(rowTs)}"]`) : null
+    const el = row ?? item
     if (!el) {
       // Row not committed to the DOM yet. Report the miss so the caller can
       // retry on a later frame, and do NOTHING here. We deliberately do NOT
@@ -54,7 +69,13 @@ export function useScrollManager() {
     const elTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
     const max = Math.max(0, container.scrollHeight - container.clientHeight)
     let top: number
-    if (align === 'center') top = elTop - container.clientHeight / 2 + el.offsetHeight / 2
+    if (row) {
+      // Land in the band the reader can see: the floating dock covers the
+      // scroller's bottom padding, the pinned prompt `topInset`. A row taller
+      // than the band shows its start rather than its middle.
+      const band = container.clientHeight - topInset - (parseFloat(getComputedStyle(container).paddingBottom) || 0)
+      top = el.offsetHeight > band ? elTop - topInset : elTop - topInset - band / 2 + el.offsetHeight / 2
+    } else if (align === 'center') top = elTop - container.clientHeight / 2 + el.offsetHeight / 2
     else if (align === 'end') top = elTop - container.clientHeight + el.offsetHeight
     else top = elTop + offset // 'start' — offset is usually negative to clear the header
     top = Math.max(0, Math.min(max, top))
