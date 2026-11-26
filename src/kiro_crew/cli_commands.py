@@ -997,8 +997,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _lesson_scope_suffix,
     )
     from kiro_crew.cli_commands_memory import (  # noqa: F401
-        _EXPORT_EPISODIC_LIMIT,
-        _EXPORT_EVENTS_LIMIT,
+        _EXPORT_PAGE_ROWS,
         _IMPORT_EMBED_NOTE,
         _IMPORT_FACET_KEYS,
         _IMPORTED_COLLECTIONS,

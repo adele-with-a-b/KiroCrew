@@ -17,10 +17,13 @@ import argparse
 import contextlib
 import json
 import logging
+import os
+import stat
 import sys
 from datetime import datetime
 from pathlib import Path
 from sqlite3 import Error as StdlibSQLiteError
+from typing import TYPE_CHECKING
 
 from kiro_crew._sqlite_compat import sqlite3
 from kiro_crew.config.loader import KiroCrewConfig
@@ -45,6 +48,9 @@ from kiro_crew.memory_stores import (
 from kiro_crew.security import scan_memory
 from kiro_crew.terminal_safe import _TERMINAL_CTRL_RE, safe_terminal_line
 from kiro_crew.vector_memory import VectorMemoryStore, _lesson_display_text, declared_store
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Iterator
 
 
 def _finding_store_suffix(finding: dict) -> str:
@@ -89,12 +95,19 @@ _IMPORT_EMBED_NOTE = (
 )
 
 
-#: Most rows ``memory export`` writes per collection. A cut collection is named on
-#: stderr with its full count, so a short file never reads as a complete one.
-_EXPORT_EPISODIC_LIMIT = 10_000
+#: Rows ``memory export`` reads per query. Each collection is read to its end a page
+#: at a time, so the file holds every live row while memory holds one page of rows.
+_EXPORT_PAGE_ROWS = 1_000
 
 
-_EXPORT_EVENTS_LIMIT = 1_000
+#: Printed on stderr by every ``memory export`` that completes. The payload holds
+#: the live rows of three collections; this names, by kind, what else a store keeps,
+#: so the file is not taken for a copy of the whole store.
+_EXPORT_LEFT_OUT_NOTE = (
+    "Note: the export holds every live semantic, episodic and events row. Not in it: "
+    "revisions, record metadata, deleted facts, retired episodes, episode vectors, "
+    "consolidation receipts, V2 history and its index, and the lessons JSONL file."
+)
 
 
 def _markdown_memory_store() -> MemoryStore:
@@ -110,6 +123,178 @@ def _markdown_memory_store() -> MemoryStore:
     ``memory export`` refuses ``--include-markdown`` for a named store.
     """
     return MemoryStore()
+
+
+def _export_rows(read: Callable[..., list[dict]]) -> Iterator[dict]:
+    """Every row *read* returns, fetched ``_EXPORT_PAGE_ROWS`` at a time to the end."""
+    # shortcut: each OFFSET page re-walks the rows before it, so the reads grow with
+    # the square of the row count; page by key instead if exports of far more than
+    # ~100,000 rows turn slow.
+    offset = 0
+    while True:
+        page = read(limit=_EXPORT_PAGE_ROWS, offset=offset)
+        yield from page
+        if len(page) < _EXPORT_PAGE_ROWS:
+            return
+        offset += len(page)
+
+
+def _export_text(store: VectorMemoryStore, *, include_markdown: bool) -> list[str]:
+    """*store*'s payload as pieces of ``json.dumps(payload, indent=2, default=str)``.
+
+    The rows are read inside one read snapshot, so the payload holds every row live
+    when the export began, each once. The snapshot is closed before this returns:
+    whoever reads the text afterwards (a pager on stdout) cannot hold it open, which
+    would stall another connection's WAL checkpoint. Memory holds the text once, as
+    pieces, and one page of rows. Indented JSON has no raw newline inside a value,
+    so a row nests by re-indenting its lines.
+    """
+    from kiro_crew.vector_memory_runtime import bulk_ingest
+
+    encoder = json.JSONEncoder(indent=2, default=str)
+    pieces: list[str] = []
+    write = pieces.append
+    vectors = False
+
+    def semantic_rows() -> Iterator[dict]:
+        nonlocal vectors
+        for row in _export_rows(store.get_all_semantic):
+            if row.get("embedding") is not None:
+                # Each vector BLOB ships as base64 of its float32 bytes
+                # (`default=str` would write an unreadable repr).
+                vectors = True
+                row["embedding"] = bulk_ingest.encode_embedding_blob(row["embedding"])
+            yield row
+
+    def collection(name: str, rows: Iterable[dict]) -> None:
+        write(f"\n  {json.dumps(name)}: [")
+        count = 0
+        for row in rows:
+            write(("," if count else "") + "\n    " + encoder.encode(row).replace("\n", "\n    "))
+            count += 1
+        write("\n  ]" if count else "]")
+
+    def value(name: str, obj: object) -> None:
+        write(f",\n  {json.dumps(name)}: " + encoder.encode(obj).replace("\n", "\n  "))
+
+    write("{")
+    with store.read_snapshot():
+        # In the snapshot, so it names the space of the vectors read beside it.
+        space = store.recorded_embedding_space()
+        collection("semantic", semantic_rows())
+        write(",")
+        collection("episodic", _export_rows(store.get_episodic_list))
+        write(",")
+        collection("events", _export_rows(store.get_events))
+    if vectors:
+        # The two keys name the source space and model, so an importer carries
+        # vectors only into a store using the same model.
+        sig, model = bulk_ingest.export_embedding_space(space)
+        value("embedding_space_sig", sig)
+        value("embedding_model", model)
+    if include_markdown:
+        # Opt-in so the default payload shape stays byte-identical for existing
+        # consumers. Only reachable for the DEFAULT store (see the export verb).
+        value("markdown", _markdown_memory_store().markdown_snapshot())
+    write("\n}")
+    return pieces
+
+
+def _replaced_by_rename(target: Path, real: Path) -> bool:
+    """Whether a rename over *real* replaces the one file *target* names, or no file."""
+    try:
+        st = os.stat(target)
+    except FileNotFoundError:
+        return True
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+        return False
+    try:
+        # What the name opens, not what it stats as: macOS stats /dev/fd/1 as a
+        # file of its own, but opening it opens the file behind the descriptor.
+        # A regular file opens without blocking, and nothing is written here.
+        fd = os.open(target, os.O_WRONLY)
+        try:
+            opened = os.fstat(fd)
+        finally:
+            os.close(fd)
+        return (
+            os.path.samestat(opened, os.stat(real)) and os.stat(real.parent).st_dev == opened.st_dev
+        )
+    except OSError:
+        return False
+
+
+def _open_in_place(target: Path) -> int:
+    """A descriptor that writes *target* in place, checked before anything is cut.
+
+    Refused unless this user owns what the name opens or it is a character device
+    (``/dev/null``, a terminal): a FIFO or a file another user planted at the name
+    in a shared folder would hand them the export. Windows has no euid, so the
+    check is skipped there. The name must exist: nothing is created here. A
+    regular file is cut at the handle's own offset, which is 0 for a file opened
+    afresh; ``/dev/stdout`` on macOS shares the offset of the shell's descriptor,
+    so what the shell wrote before stays. A handle that appends (``>> file``
+    behind ``/dev/stdout``) is not cut, since its writes land after what the file
+    held.
+    """
+    # Here, not at the top: `cli_commands` star-imports this module, so a new
+    # module-level name would become one more name the facade serves.
+    import errno
+
+    from kiro_crew.platform_compat import fd_opens_for_append
+
+    fd = os.open(target, os.O_WRONLY | getattr(os, "O_BINARY", 0))
+    try:
+        st = os.fstat(fd)
+        if hasattr(os, "geteuid") and not stat.S_ISCHR(st.st_mode) and st.st_uid != os.geteuid():
+            raise OSError(errno.EPERM, "it is owned by another user, so it is not written")
+        # Only a name that hands back a descriptor this process inherited can give an
+        # appending handle here (``/dev/stdout`` on macOS); Windows has no such name.
+        if stat.S_ISREG(st.st_mode) and not fd_opens_for_append(fd):
+            os.ftruncate(fd, os.lseek(fd, 0, os.SEEK_CUR))
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _write_export_file(target: Path, pieces: Iterable[str]) -> None:
+    """Write *pieces* to the file named *target*, replacing it only once whole.
+
+    A regular file, or no file, is replaced by renaming a partial file written in
+    its folder, so an export that fails part way leaves the path as it was. The
+    partial is created ``0600``, exclusively and never through a link at its name,
+    and its name has one length whatever *target*'s is. A symlink at *target* is
+    followed, so the file it points to is the one replaced. Any other target is
+    written in place, as a rename would replace the name and not the file: a FIFO,
+    a device, a file with another hard link, or a name the kernel resolves past what
+    ``realpath`` sees (``/dev/stdout``). A file this process may not open for
+    writing goes the same way and fails to open, untouched. An in-place target
+    keeps its own mode, and a failure part way leaves it cut: its old content is
+    lost, unless the handle appends (see :func:`_open_in_place`).
+    """
+    from kiro_crew.atomic_write import replace_with_retry
+    from kiro_crew.owner_only_files import owner_only_opener
+
+    # A missing parent folder is created, as `perf` and `manifest` do for their
+    # own output path.
+    target.parent.mkdir(parents=True, exist_ok=True)
+    real = Path(os.path.realpath(target))
+    if not _replaced_by_rename(target, real):
+        with open(_open_in_place(target), "w", encoding="utf-8") as fh:
+            fh.writelines(pieces)
+        return
+    partial = real.parent / f".memory-export.{os.getpid():010d}.partial"
+    # Outside the cleanup below: a name already taken is someone else's to remove.
+    fh = open(partial, "x", encoding="utf-8", opener=owner_only_opener)
+    try:
+        with fh:
+            fh.writelines(pieces)
+        replace_with_retry(partial, real)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            partial.unlink(missing_ok=True)
+        raise
 
 
 def _memory_search_history(args: argparse.Namespace) -> None:
@@ -1058,71 +1243,33 @@ def _memory_verb(args: argparse.Namespace) -> None:
                         file=sys.stderr,
                     )
                     sys.exit(1)
-                episodic = store.get_episodic_list(limit=_EXPORT_EPISODIC_LIMIT)
-                events = store.get_events(limit=_EXPORT_EVENTS_LIMIT)
-                # A full page may hide more rows. Reading past the limit counts
-                # them through the same query the export used, on V1 and V2 alike.
-                for collection, rows, limit, rest in (
-                    ("episodes", episodic, _EXPORT_EPISODIC_LIMIT, store.get_episodic_list),
-                    ("events", events, _EXPORT_EVENTS_LIMIT, store.get_events),
-                ):
-                    if len(rows) >= limit:
-                        omitted = len(rest(limit=-1, offset=limit))
-                        if omitted:
-                            print(
-                                f"warning: exported {len(rows)} of {len(rows) + omitted} "
-                                f"{collection}; {omitted} omitted",
-                                file=sys.stderr,
-                            )
-                # Read on both sides of the row read; see the vector block below.
-                space_before = store.recorded_embedding_space()
-                semantic = store.get_all_semantic()
-                data: dict[str, object] = {
-                    "semantic": semantic,
-                    "episodic": episodic,
-                    "events": events,
-                }
-                if any(row.get("embedding") is not None for row in semantic):
-                    # Each vector BLOB ships as base64 of its float32 bytes
-                    # (`default=str` would write an unreadable repr). The two
-                    # top-level keys name the source space and model, so an importer
-                    # carries vectors only into a store using the same model.
-                    from kiro_crew.vector_memory_runtime import bulk_ingest
-
-                    for row in semantic:
-                        row["embedding"] = bulk_ingest.encode_embedding_blob(row.get("embedding"))
-                    space_after = store.recorded_embedding_space()
-                    if space_after == space_before:
-                        data["embedding_space_sig"], data["embedding_model"] = (
-                            bulk_ingest.export_embedding_space(space_after)
-                        )
-                    else:
-                        # A model swap committed while the rows were read: their
-                        # vectors may belong to either space, so name neither.
-                        data["embedding_space_sig"], data["embedding_model"] = None, None
-                if getattr(args, "include_markdown", False):
-                    # Opt-in so the default payload shape stays byte-identical
-                    # for existing consumers. Only reachable for the DEFAULT store,
-                    # per the refusal above.
-                    data["markdown"] = _markdown_memory_store().markdown_snapshot()
-                output = json.dumps(data, indent=2, default=str)
+                include_markdown = bool(getattr(args, "include_markdown", False))
+                # Read whole before the first byte goes out; a read error exits 1
+                # through `_memory_cmd` with nothing written.
+                pieces = _export_text(store, include_markdown=include_markdown)
                 out_file = getattr(args, "output", None)
                 if out_file:
                     try:
-                        # A missing parent folder is created, as `perf` and
-                        # `manifest` do for their own output path.
-                        Path(out_file).parent.mkdir(parents=True, exist_ok=True)
-                        Path(out_file).write_text(output, encoding="utf-8")
+                        _write_export_file(Path(out_file), pieces)
                     except OSError as exc:
-                        # A directory at the path, a file where a folder should be
-                        # or a read-only target: one line, not a traceback.
+                        # A directory at the path, a file where a folder should be,
+                        # a read-only target, a partial name already taken or an
+                        # in-place target another user owns: one line naming the
+                        # file, not a traceback.
                         shown = safe_terminal_line(str(out_file))
-                        reason = safe_terminal_line(str(exc.strerror or exc))
-                        print(f"Error: could not write {shown}: {reason}", file=sys.stderr)
+                        reason = str(exc.strerror or exc)
+                        if exc.filename is not None and str(exc.filename) != str(out_file):
+                            reason += f": {exc.filename}"
+                        print(
+                            f"Error: could not write {shown}: {safe_terminal_line(reason)}",
+                            file=sys.stderr,
+                        )
                         sys.exit(1)
                     print(f"Exported to {out_file}")
                 else:
-                    print(output)
+                    sys.stdout.writelines(pieces)
+                    sys.stdout.write("\n")
+                print(_EXPORT_LEFT_OUT_NOTE, file=sys.stderr)
 
             elif action == "migrate":
                 counts = store.migrate_from_markdown()

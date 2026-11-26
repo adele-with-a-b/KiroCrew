@@ -9,6 +9,7 @@ identical bytes.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -77,13 +78,16 @@ class _EmptyVectorStore:
     def recorded_embedding_space(self) -> None:
         return None
 
-    def get_all_semantic(self) -> list:
+    def read_snapshot(self) -> contextlib.nullcontext[None]:
+        return contextlib.nullcontext()
+
+    def get_all_semantic(self, limit: int = 0, offset: int = 0) -> list:
         return []
 
-    def get_episodic_list(self, limit: int = 0) -> list:
+    def get_episodic_list(self, limit: int = 0, offset: int = 0) -> list:
         return []
 
-    def get_events(self, limit: int = 0) -> list:
+    def get_events(self, limit: int = 0, offset: int = 0) -> list:
         return []
 
     def import_memory(self, data: dict) -> dict:

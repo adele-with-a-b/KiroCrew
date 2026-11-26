@@ -78,7 +78,7 @@ _KNOWN_SEAMS = frozenset(
         "_internal_secret",
         "_locked_config_write",
         "_markdown_memory_store",
-        "_EXPORT_EVENTS_LIMIT",
+        "_EXPORT_PAGE_ROWS",
         "_interactive_terminal",
         "_memory_verb",
         "importlib",

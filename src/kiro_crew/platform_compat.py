@@ -302,6 +302,7 @@ if TYPE_CHECKING:  # the forwarded names, visible to type checkers and IDEs
         dup_fd_at_or_above,
         ensure_owner_rwx_dirs,
         fchmod_safe,
+        fd_opens_for_append,
         is_executable_file,
         is_readonly_filesystem,
         mount_identity,

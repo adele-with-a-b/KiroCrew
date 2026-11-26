@@ -244,7 +244,7 @@ _STORE_MEMBERS = {
         invalidate_episode_content invalidate_semantic_content list_by_facets load_faiss_index log_reject_event
         memory_stats migrate_from_markdown promote_episodic_patterns
         propose_semantic_delete read_counters read_editable_history read_history_entries
-        rebuild_memory_index recall reconcile_embedding_space reconfigure
+        read_snapshot rebuild_memory_index recall reconcile_embedding_space reconfigure
         recorded_embedding_space recorded_rebuild_generation replace_today_history
         restore_episodic rotate_events save_faiss_index search_episodic search_memory
         search_semantic seed_item_if_absent set_embedding_dim set_semantic
@@ -387,6 +387,7 @@ _STORE_SIGNATURES = {
     "read_counters": "(self) -> 'dict[str, int]'",
     "read_editable_history": "(self) -> 'str'",
     "read_history_entries": "(self, *, since: 'str | None' = None, limit: 'int' = 366, max_bytes: 'int' = 8388608) -> 'list[dict]'",
+    "read_snapshot": "(self) -> 'Iterator[None]'",
     "rebuild_memory_index": "(self) -> 'int'",
     "recall": "(self, query_text: 'str', *, cap: 'int' = 3000, project_dir: 'str | Path | None' = None, keep: 'Callable[[list[dict]], list[dict] | None] | None' = None, conversation_id: 'str' = '', filters: 'RecallFilters | None' = None) -> 'dict'",
     "reconcile_embedding_space": "(self, signature: 'str', *, clear_when_unknown: 'bool' = False, force: 'bool' = False, rebuild_generation: 'str' = '') -> 'int'",

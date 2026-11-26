@@ -6,7 +6,8 @@ schema ladder of its lineage. It binds the lineage, applies the migrations and t
 record metadata, and restricts every memory-bearing file to its owner. ``close`` drops the
 connection, every pooled read-only connection and every population derived from
 them. ``StoreDbLock`` (the writer lock) and ``ReaderPool`` (the read-only
-connections the fetch helpers use in WAL mode) live here too. The V1 schema (``_SCHEMA_V1``,
+connections the fetch helpers use in WAL mode) live here too, with ``read_snapshot``,
+which holds the lock and one read transaction so a run of reads sees one state. The V1 schema (``_SCHEMA_V1``,
 ``_migrate_v2``, ``_MEMORY_META_TABLE``, ``_MIGRATIONS``) lives here with the code that
 applies it, and :mod:`kiro_crew.vector_memory` re-exports it.
 
@@ -22,6 +23,7 @@ attributes of the same name and take the store as ``self``. Store fields written
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import logging
 import sys
@@ -38,6 +40,7 @@ from kiro_crew.boot_timing import timed_step
 from kiro_crew.owner_only_files import prepare_owner_only_sqlite
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from types import FrameType
     from typing import Callable
 
@@ -229,6 +232,26 @@ class ReaderPool:
     def open_count(self) -> int:
         with self._mutex:
             return len(self._idle) + len(self._busy)
+
+
+@contextlib.contextmanager
+def read_snapshot(self: VectorMemoryStore) -> Iterator[None]:
+    """Every read inside sees the one committed state the first of them saw.
+
+    Holds ``_db_lock`` (so the read helpers stay on the shared connection) and one
+    read transaction on that connection. A writer on another connection goes on
+    committing, but a reader that pages through a table by offset sees none of it:
+    no row another writer retired or added between two pages is skipped or read
+    twice. For reads only; the transaction is rolled back. Keep it short: while it
+    is open, another connection's TRUNCATE checkpoint (the one ``close`` runs) waits
+    on it, so read what is needed and leave before handing it to anything slow.
+    """
+    with self._db_lock:
+        self.db.execute("BEGIN")
+        try:
+            yield
+        finally:
+            self.db.rollback()
 
 
 def _open_reader(uri: str) -> sqlite3.Connection:

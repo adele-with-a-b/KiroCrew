@@ -792,6 +792,7 @@ class VectorMemoryStore:
     _stamp_crew_lineage = _lifecycle._stamp_crew_lineage
     close = _lifecycle.close
     _release_store_use_lock = _lifecycle._release_store_use_lock
+    read_snapshot = _lifecycle.read_snapshot
 
     # ── bound from vector_memory_member.py ──
     _write_history = _member_db._write_history
