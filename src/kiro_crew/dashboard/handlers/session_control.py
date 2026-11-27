@@ -1222,7 +1222,11 @@ async def api_session_control_status(request: web.Request) -> web.Response:
         )
     except sc.SessionControlError as exc:
         return _refusal(exc)
-    return web.json_response(result)
+    # The chats this caller opened on other crews (remote dispatch preview), added
+    # once the roster above has verified the caller and returned.
+    from kiro_crew.dashboard.handlers import crew_workers_remote
+
+    return web.json_response(await crew_workers_remote.with_crew_sessions(state, result))
 
 
 @_counted("adopt")

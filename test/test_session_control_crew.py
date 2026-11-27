@@ -247,7 +247,11 @@ def test_switch_on_adds_crew_to_the_five_tools_only(monkeypatch):
     for name, tool in listed.items():
         has = "crew" in tool["inputSchema"].get("properties", {})
         assert has is (name in CREW_TOOLS), name
-        if name not in CREW_TOOLS:
+        if name == "session_status":
+            # Takes no ``crew``; its description gains the note on its crew rows.
+            assert tool == {**base[name], "description": tool["description"]}
+            assert tool["description"].startswith(base[name]["description"])
+        elif name not in CREW_TOOLS:
             assert tool == base[name]
     # The table's own descriptors are not mutated by the overlay.
     assert all(

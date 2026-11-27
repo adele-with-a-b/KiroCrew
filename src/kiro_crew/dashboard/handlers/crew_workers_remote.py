@@ -83,6 +83,8 @@ class _Crew:
         self.asked: frozenset[str] = frozenset()
         #: Crew slot -> its redacted row, for the asked chats that are open.
         self.rows: dict[str, dict[str, object]] = {}
+        #: Whether the crew answered the last read that settled.
+        self.answered = False
         self.task: asyncio.Future[None] | None = None
 
 
@@ -93,10 +95,13 @@ async def _read(state: Any, instance_id: str, crew: _Crew, wanted: frozenset[str
     try:
         got = await read_peer_slots(state, instance_id)
     except PeerSlotsUnavailable as exc:
+        crew.answered = False
         logger.info("crew workers: %s's session list unread (%s)", instance_id, exc.code)
     except Exception:
+        crew.answered = False
         logger.debug("crew workers: %s's session list unread", instance_id, exc_info=True)
     else:
+        crew.answered = True
         rows: dict[str, dict[str, object]] = {}
         for raw in got.rows:
             key = raw.get("key") if isinstance(raw, Mapping) else None
@@ -191,6 +196,121 @@ async def untied_rows(
             }
         )
     return out
+
+
+#: A chat whose close the hub holds until its crew settles it (``remote_kept_closes``).
+STATUS_CLOSING = "closing"
+#: A chat whose state on its crew is not known: open or gone.
+STATUS_UNKNOWN = "unknown"
+
+#: ``crew_state`` on a ``session_status`` answer: the crews were asked, or the
+#: turn is not one that may read a crew and the rows are the hub's record alone.
+CREW_STATE_READ = "read"
+CREW_STATE_OWNER_TURN_ONLY = "owner_turn_only"
+
+
+async def _may_read_crews(state: Any, caller: str) -> bool:
+    """Whether *caller*'s running turn may read another crew: the ``crew=`` owner arm.
+
+    The rule every crew-scoped read keeps (``authorize_remote_dispatch``, arm 8):
+    a turn the owner sent, or one the owner's patrol-wake or granted-turns setting
+    admits, audited as that arm audits it. Nothing is refused here: a turn that
+    may not read a crew still gets its rows, without their state.
+    """
+    from kiro_crew.dashboard.handlers import remote_dispatch_routes as routes
+
+    slot = state.get_slot(caller)
+    if slot is None:
+        return False
+    if not routes.owner_unverifiable_reason(slot):
+        return True
+    if await routes._patrol_wake_admitted(slot):
+        routes._audit_patrol_wake(caller, "status")
+        return True
+    if await routes._granted_turn_admitted(state, slot, caller):
+        routes._audit_granted_turn(caller, "status")
+        return True
+    return False
+
+
+async def status_rows(state: Any, caller: str) -> tuple[list[dict[str, Any]], str]:
+    """``(rows, crew_state)``: the chats *caller* opened on other crews, for ``session_status``.
+
+    The rows are the dispatch record's chats plus the closes still kept for
+    *caller*: the hub's own record, listed in any turn. Their state is read from
+    each crew through the road the worker list uses (:func:`_crew_rows`), and only
+    in a turn that may read a crew (:func:`_may_read_crews`); otherwise no crew is
+    asked and ``crew_state`` says so.
+
+    ``status`` is ``closing`` for a kept close, else the chat's state on its crew
+    (``working``, ``idle``, ``needs_approval``, ``asking``), ``closed`` when the
+    crew answered and holds no such chat, ``unknown`` when its list was not read.
+    ``crew_answered`` is ``False`` when the crew did not answer the latest read, so
+    the state is the last one read. Nothing the crew wrote crosses: a row is the
+    key the caller already holds, the crew's id and registry name, and these words.
+    """
+    from kiro_crew.dashboard.handlers import remote_kept_closes
+
+    closing = {(i, s) for _c, i, s in await remote_kept_closes.kept_closes(state, (caller,))}
+    mine = sorted({(i, s) for _c, i, s in await dispatched_slots(state, (caller,))} | closing)
+    if not mine:
+        return [], CREW_STATE_READ
+    names = await asyncio.to_thread(crew_workers._crew_names, state)
+    seen: dict[str, tuple[dict[str, dict[str, object]], frozenset[str]]] = {}
+    read = await _may_read_crews(state, caller)
+    if read:
+        wanted: dict[str, set[str]] = {}
+        for _caller, instance_id, slot in await dispatched_slots(state):
+            wanted.setdefault(instance_id, set()).add(slot)
+        for instance_id, slot in mine:
+            wanted.setdefault(instance_id, set()).add(slot)
+        crews = sorted(wanted.keys() & {instance_id for instance_id, _slot in mine})
+        reads = await asyncio.gather(*(_crew_rows(state, i, frozenset(wanted[i])) for i in crews))
+        seen = dict(zip(crews, reads))
+    unread: tuple[dict[str, dict[str, object]], frozenset[str]] = ({}, frozenset())
+    out: list[dict[str, Any]] = []
+    for instance_id, slot in mine:
+        rows, asked = seen.get(instance_id, unread)
+        row = rows.get(slot)
+        if (instance_id, slot) in closing:
+            status = STATUS_CLOSING
+        elif row is not None:
+            status = crew_workers._status(row)
+        elif slot in asked:
+            status = crew_workers.STATUS_CLOSED
+        else:
+            status = STATUS_UNKNOWN
+        out.append(
+            {
+                "target": slot,
+                "crew": instance_id,
+                "crew_name": names.get(instance_id) or instance_id,
+                "status": status,
+                "crew_answered": read and _CACHE[state][instance_id].answered,
+            }
+        )
+    return out, CREW_STATE_READ if read else CREW_STATE_OWNER_TURN_ONLY
+
+
+async def with_crew_sessions(state: Any, result: dict[str, Any]) -> dict[str, Any]:
+    """A ``session_status`` answer plus ``crew_sessions``, while the preview is on.
+
+    Added after the roster is built, for the caller that roster verified. A fault
+    here leaves the answer as it was: the local roster never fails on a crew.
+    """
+    from kiro_crew.remote_dispatch import remote_dispatch_enabled
+
+    try:
+        if not await asyncio.to_thread(remote_dispatch_enabled):
+            return result
+        caller = result.get("caller")
+        if not isinstance(caller, str) or not caller:
+            return result
+        rows, crew_state = await status_rows(state, caller)
+    except Exception:  # noqa: BLE001 - the local roster stands on its own
+        logger.warning("session status: crew sessions unread", exc_info=True)
+        return result
+    return {**result, "crew_sessions": rows, "crew_state": crew_state}
 
 
 def open_fields(instance_id: str, slot: str, gone: bool) -> dict[str, str]:

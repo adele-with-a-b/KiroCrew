@@ -5240,7 +5240,10 @@ so absence clears it.
 - **An agent-origin send is not a person's.** A `POST /api/chat` body that
   carries the key `turn_origin` (`dashboard/agent_origin.py`; `"agent"` is the one defined value
   and any other value reads the same) is how a hub conductor's send to a remote
-  worker arrives (rfc-conductor-remote-dispatch §4). `chat_send` folds it into
+  worker arrives (rfc-conductor-remote-dispatch §4). It reaches only a chat that
+  is open: a `slot` key this crew does not hold answers 404 `slot_not_found` and
+  mints no chat, where a person's send by key still opens one, so a conductor's
+  message never brings back a worker chat this crew closed. `chat_send` folds it into
   one `_person_send` value with the app-token test, so the send is handled as
   a send no person typed: `_directive_user_origin` False on the started turn,
   the queued entry and the sub-agent hold, the `crew` actor on the turn, the

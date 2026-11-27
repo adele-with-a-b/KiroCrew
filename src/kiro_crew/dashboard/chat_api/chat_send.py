@@ -554,6 +554,11 @@ async def _api_chat_send(request: web.Request) -> web.StreamResponse:
         if denied is not None:
             return denied
     created_in_send = slot_name is None or _normalize_slot_key(slot_name) not in state._slots
+    if created_in_send and _agent_origin:
+        # A hub conductor's send reaches a chat that is open here and never mints
+        # one: a chat this crew closed would come back on the conductor's next
+        # message, with nobody left who would close it again.
+        return slot_not_found()
     if created_in_send and not message:
         # Refused before the mint, so an empty send leaves no new chat behind.
         return message_required_error()

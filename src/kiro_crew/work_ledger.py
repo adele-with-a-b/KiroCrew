@@ -1083,6 +1083,7 @@ from kiro_crew.work_ledger_records import (  # noqa: E402, F401
 from kiro_crew.work_ledger_remote import (  # noqa: E402, F401
     _EVENT_ID_SHAPE,
     CODE_RETIRED_HISTORY_FULL,
+    CREW_CLOSES_FILE,
     CREW_SESSIONS_FILE,
     CREW_STATES,
     MAX_INSTANCE_ID_CHARS,
@@ -1111,6 +1112,7 @@ from kiro_crew.work_ledger_remote import (  # noqa: E402, F401
     is_peer_event_id,
     item_liveness,
     open_remote_bindings,
+    read_crew_closes,
     read_crew_sessions,
     read_remote_state,
     remote_dir,
@@ -1118,6 +1120,7 @@ from kiro_crew.work_ledger_remote import (  # noqa: E402, F401
     remote_liveness_map,
     remote_pull_fresh,
     remote_state_path,
+    write_crew_closes,
     write_crew_sessions,
     write_remote_state,
 )
