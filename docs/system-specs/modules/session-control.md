@@ -557,10 +557,16 @@ harness that reports a steer read only when its turn ends (`_session/steering`,
 spoken for claude and codex) keeps each written steer pending until then, so a
 count of everything held refused a long turn's 33rd note though the turn had read
 the first 32. Only a client of a backend named in
-`steer_carry.WRITTEN_STEERS_STAY_PENDING` (claude, codex) leaves its written
-steers out. goose and pi report each read as it happens, so their pending steers
+`steer_carry.WRITTEN_STEERS_STAY_PENDING` (claude) leaves its written
+steers out, and only its per-chat client (`ClaudeAcpClient`) reports the count.
+goose and pi report each read as it happens, so their pending steers
 are unread, and they, kiro-cli and a client that reports no `held_steer_count`
-count every pending steer, as before. The memory those records hold keeps its own bound: at most
+count every pending steer, as before. codex is one of those: it is driven only
+by the shared runtime's session handle (`AcpSessionProvider`), which reports no
+count and refuses a turn's 17th accepted steer itself (`MAX_STEERING_ANSWERS`
+counts its proven steers until the turn ends), so a long codex turn still queues
+that note. A claude chat on a shared runtime is driven by the same handle and
+does the same. The memory those records hold keeps its own bound: at most
 `MAX_RETAINED_STEERS` (256) records and `MAX_RETAINED_STEER_CHARS` of text (32
 full-size steers, what the old count allowed); one failed turn can therefore settle
 up to 256 notes unconfirmed, and `queue_age` keeps a record of each. The client
@@ -2925,7 +2931,11 @@ wait is overdue at once and wakes with `reason=message_unconfirmed`, spending it
 own key (`unconfirmed:<id>`) so an older note's spent `unread:<id>` wake is never
 re-armed, and the settle pulls the conductor's tick forward
 (`conductor_wake.wake_for_unconfirmed_note`). Both cases write that reason through
-one brief, `ledger_wake.unconfirmed_wake_brief`.
+one brief, `ledger_wake.unconfirmed_wake_brief`, which names the case because the
+two ask the opposite of the conductor: `turn=failed` for the failed turn's note
+(nothing runs it again, so the conductor sends it again) and `turn=running` for a
+steer a live turn took (most likely read, so sending it again on the wake alone
+would land a second copy). The `goal-conductor` skill branches on that field.
 
 The same resolver reads the other way, with the keys swapped: what the item's
 worker sent its conductor that sits unread in the conductor's own queue. A

@@ -344,10 +344,10 @@ class TestThePolicy:
         )
         assert live == (
             f"[work-ledger wake] item=it_1 reason=message_unconfirmed count=2 target={WORKER} "
-            "oldest_waited_secs=600"
+            "turn=running oldest_waited_secs=600"
         )
         assert live == ledger_wake.unconfirmed_wake_brief(
-            item_id="it_1", count=2, target=WORKER, waited_secs=600
+            item_id="it_1", count=2, target=WORKER, waited_secs=600, running=True
         )
         assert ledger_wake.unread_wake_brief(
             item_id="it_1", target=WORKER, count=1, unconfirmed=2, waited_secs=600
@@ -355,6 +355,19 @@ class TestThePolicy:
             f"[work-ledger wake] item=it_1 reason=message_unread count=1 unconfirmed=2 "
             f"target={WORKER} oldest_waited_secs=600"
         )
+
+    def test_the_unconfirmed_brief_says_whether_its_turn_failed_or_still_runs(self):
+        """One reason word, two cases that ask the opposite of the conductor: a
+        failed turn's note is sent again, a running turn's steer was likely read."""
+        failed = ledger_wake.unconfirmed_wake_brief(item_id="it_1", count=2, target=WORKER)
+        assert failed == (
+            f"[work-ledger wake] item=it_1 reason=message_unconfirmed count=2 target={WORKER} "
+            "turn=failed"
+        )
+        running = ledger_wake.unread_wake_brief(
+            item_id="it_1", target=WORKER, count=0, unconfirmed=2, waited_secs=600
+        )
+        assert " turn=running " in running and "turn=failed" not in running
 
 
 def _bound_item() -> str:

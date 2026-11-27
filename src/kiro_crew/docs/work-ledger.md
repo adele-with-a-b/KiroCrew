@@ -342,7 +342,9 @@ the watch is holding because every item waits on a person. On a harness that
 reports a steer read only when its turn ends (Claude), a steer the worker's turn
 took is not called unread: the model may have read it at its next step. It is
 counted as `unconfirmed=<n>` beside the unread count, and a wake with nothing
-proven unread says `reason=message_unconfirmed` instead. Such a turn keeps its
+proven unread says `reason=message_unconfirmed` with `turn=running` instead: the
+worker has most likely read it, so the conductor checks the worker before it
+sends anything again. Such a turn keeps its
 steers until it ends, so on a long turn they wake the conductor once per worker
 turn; a message that queues later in that turn still wakes on its own. A message restored
 from the queue after a gateway restart carries no age, so it never causes this
@@ -350,7 +352,8 @@ wake. Neither does a remote worker, whose queue is on its peer. A message the
 worker's turn took in and then ended with an error, before the harness could
 confirm it was read, is not queued to run again: it counts in `messages_unread`
 until the conductor next sends to that worker, and it wakes the conductor at once
-with `reason=message_unconfirmed`, because only the conductor can send it again.
+with `reason=message_unconfirmed` and `turn=failed`, because only the conductor
+can send it again.
 That holds whether the worker is idle or already running its next turn.
 
 The other way round works the same. A worker's `session_send` to its conductor

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from kiro_crew import ledger_wake
 from kiro_crew.skills import _BUILTIN_SKILLS_DIR
 
 GOAL_SKILL = Path(_BUILTIN_SKILLS_DIR) / "goal-conductor" / "SKILL.md"
@@ -53,3 +54,23 @@ def test_pipeline_conductor_forwards_a_live_mode_change_as_a_steer():
     )
     assert "`steer: true` for a busy session you do not manage" in section
     assert "A steer does not withdraw messages already queued" in section
+
+
+def test_goal_conductor_resends_an_unconfirmed_message_only_when_its_turn_failed():
+    """``reason=message_unconfirmed`` covers a failed turn (send again) and a turn
+    still running (most likely read): the skill branches on the wake's ``turn=``,
+    in the words the one writer of that wake emits."""
+    section = _section(
+        _flat(GOAL_SKILL),
+        "A wake with `reason=message_unconfirmed`",
+        "A wake with `reason=report_unread`",
+    )
+    assert "`turn=running`:" in section, "the skill names the case it must not resend"
+    failed, running = section.split("`turn=running`:")
+    assert "`turn=failed`:" in failed and "send again what still matters" in failed
+    assert "Do not send it again on the wake alone" in running
+    assert "send again only if that shows it missed the message" in running
+
+    brief = ledger_wake.unconfirmed_wake_brief
+    assert brief(item_id="it_1", count=1).endswith(" turn=failed")
+    assert " turn=running" in brief(item_id="it_1", count=1, running=True)

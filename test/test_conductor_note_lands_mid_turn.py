@@ -463,6 +463,7 @@ async def test_a_settled_note_wakes_its_conductor_at_once(tmp_path, monkeypatch)
     item.worker_session_key = worker.key
     (wake,) = probe._unread_observations(conductor.key, item)
     assert "reason=message_unconfirmed count=2" in wake.brief
+    assert wake.brief.endswith(" turn=failed"), "nothing runs it again: the Conductor resends"
     # The next tick reads the same wait and the real spend refuses it: one wake.
     assert probe._unread_observations(conductor.key, item) == []
 

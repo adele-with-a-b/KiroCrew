@@ -499,10 +499,14 @@ Each cycle:
    queue, unread; one that has waited long wakes you with `reason=message_unread`.
    Its turn could not take the message, so read the worker's `session_status`
    before you send again. A wake with `reason=message_unconfirmed` means the
-   worker's turn took your message in and no read is confirmed: either that turn
-   ended with an error, so it may not have run and nothing will run it again, or
-   it still runs on a harness that confirms a read only at turn end. Read its
-   `session_status`, then send again what still matters. A wake with
+   worker's turn took your message in and no read is confirmed, and its `turn=`
+   says which of two cases it is. `turn=failed`: that turn ended with an error,
+   so the message may not have run and nothing will run it again. Read its
+   `session_status`, then send again what still matters. `turn=running`: the turn
+   still runs on a harness that confirms a read only at turn end, so the worker
+   has most likely read the message at its next step. Do not send it again on the
+   wake alone, because a second copy lands in the same turn: read its
+   `session_status`, and send again only if that shows it missed the message. A wake with
    `reason=report_unread` and `from=<worker>` is the other way round: that worker's note
    has waited that long in YOUR queue, and it runs only when your turn ends, so end
    the turn to read it unless the work in hand must finish first. An item whose
