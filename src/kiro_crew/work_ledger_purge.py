@@ -378,7 +378,8 @@ def _remove_remote_records(slot_key: str) -> None:
 
     Gateway observations about items the purge removed, and the board's
     crew-session record (``crew-sessions.json``): the peer slots the board's chat
-    opened with a plain ``session_create(crew=)``. This purge is the only thing
+    opened with a plain ``session_create(crew=)``, with the closes it keeps for
+    them (``crew-closes.json``). This purge is the only thing
     that removes that record when its chat is gone; a chat closed without a purged
     ledger leaves it, naming only that chat's own key. Best effort: a leftover item
     record names nothing a reader can reach, and a leftover crew-session record

@@ -1110,11 +1110,17 @@ def _run_session_status(args: dict[str, Any], ctx: ToolContext) -> str:
                 "Sessions you created may be missing: this reply reported a "
                 "roster overflow without a readable count."
             )
+    # The sessions this caller opened on other crews (remote dispatch preview).
+    from kiro_crew.mcp_session_crew import crew_status_lines
+
+    crew_lines = crew_status_lines(resp)
     if not rows:
         empty = "\U0001f4cb You have no sessions open or on record."
+        if crew_lines:
+            empty = "\U0001f4cb You have no sessions open or on record on this machine."
         if quality_notes:
             empty += " " + " ".join(quality_notes)
-        return empty
+        return redact("\n".join([empty, *crew_lines])) if crew_lines else empty
     status_lines = [f"\U0001f4cb {len(rows)} session(s) you stood up:"]
     for row in rows:
         target = str(row.get("target", ""))
@@ -1174,6 +1180,7 @@ def _run_session_status(args: dict[str, Any], ctx: ToolContext) -> str:
             f"  {mark} `{target}` ({title}) — {status}{queued}{looping}{released}{extra}"
         )
     status_lines.extend(quality_notes)
+    status_lines.extend(crew_lines)
     return redact("\n".join(status_lines))
 
 

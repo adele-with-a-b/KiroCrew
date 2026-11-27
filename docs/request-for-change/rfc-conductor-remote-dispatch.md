@@ -519,12 +519,12 @@ ones.
 
 | Event | What happens |
 |---|---|
-| Tunnel down, short | The peer keeps running; it owns the session. Calls with a crew return the proxy's typed code (`proxy_peer_not_connected`) after one retry. Ledger reads keep the last ingested state and show `crew_state` and `crew_down_since`. On reconnect the next read ingests every report the peer copy holds. |
+| Tunnel down, short | The peer keeps running; it owns the session. Calls with a crew return the proxy's typed code (`proxy_peer_not_connected`) after one retry; a `session_close` is kept instead (HTTP 202 with that code as `why_code`, stored in `crew-closes.json` beside the record) and the puller makes it again once the crew answers. Ledger reads keep the last ingested state and show `crew_state` and `crew_down_since`. On reconnect the next read ingests every report the peer copy holds. |
 | Crew down 30 minutes | The conductor retires the binding and redispatches the item (§5b). The timeout is configurable. |
 | Peer restart | The peer slot and its ledger are on the peer's disk and rehydrate. A turn in flight dies, so the slot is not `running` and `stale` follows the window. The conductor nudges with `session_send(crew=)`. The worker resumes from its pushed branch. The next `api/chat/headroom` read replaces the stored snapshot. |
 | `crew_busy` | The hub stores the reply's snapshot and tries the next eligible crew. With none left, the item stays unbound and the next patrol retries. Nothing is created on a refusing crew. |
 | Worker stuck on a login | `blocked`, `needs_human`. The conductor redispatches to another crew first; it asks the person only when none works. |
-| Hub restart | Nothing in flight lives on the hub. The item, with its binding history, is on disk; the next read resumes. The record of which crew sessions a chat opened with a plain `session_create(crew=)` is on disk too (`work-ledger/remote/<board>/crew-sessions.json`), so that chat still reaches them. Snapshots are refetched from `api/chat/headroom`. |
+| Hub restart | Nothing in flight lives on the hub. The item, with its binding history, is on disk; the next read resumes. The record of which crew sessions a chat opened with a plain `session_create(crew=)` is on disk too (`work-ledger/remote/<board>/crew-sessions.json`), so that chat still reaches them, and so are the closes kept for them. Snapshots are refetched from `api/chat/headroom`. |
 | Version skew | Every call with a crew checks `versions_compatible` first (`major.minor`). A create whose reply lacks `work_item_id` (a peer that ignored the field) is closed at once and refused as `crew_peer_lacks_work_items`, so a worker never runs unbound. |
 
 ### 5b. Retire and redispatch

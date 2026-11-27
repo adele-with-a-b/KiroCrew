@@ -37,6 +37,12 @@ under the work-ledger root, which is ``HIDDEN`` in every sandbox mode
 that could write the file could name any slot for any caller. The work item's
 ``worker_session_key`` + ``worker_instance_id`` pair also survives a restart (wave
 4): an open item admits every verb for its slot, a finished one admits ``close`` only.
+
+**A close.** The record forgets a slot only when its crew closed it or says it
+holds no such slot. A close no crew settled (not connected, version unread or
+different, a broken reply, the crew's own failure) is kept and made again
+(``remote_kept_closes``); until it lands the slot stays on the record and takes
+no ``send``.
 """
 
 from __future__ import annotations
@@ -1085,20 +1091,41 @@ async def _stop(mgr: Any, instance_id: str, slot: str) -> dict[str, Any]:
 
 async def _forget_locked(state: "DashboardState", caller: str, instance_id: str, slot: str) -> None:
     """:func:`_forget_dispatch` under the cap lock, so no retire restore undoes it."""
+    from kiro_crew.dashboard.handlers import remote_kept_closes
+
     async with cap_lock(state):
         _forget_dispatch(state, caller, instance_id, slot)
         await _persist(state, caller)
+        await remote_kept_closes.forget(state, caller, instance_id, slot)
 
 
 async def _close(
     state: "DashboardState", mgr: Any, caller: str, instance_id: str, slot: str, board: str = ""
 ) -> dict[str, Any]:
-    status, payload = await peer_call(
-        mgr, instance_id, "DELETE", f"api/chat/slots/{quote(slot, safe='')}"
-    )
-    from kiro_crew.dashboard.handlers import remote_ingest
+    """Close *slot* on its crew: closed, an error the caller reads, or a kept close.
 
-    closed = bool(board) and (200 <= status < 300 or remote_ingest.slot_gone(status, payload))
+    The record forgets the chat only on an answer that settles it: the crew closed
+    it, or says it holds no such chat (``slot_not_found``). An answer that settles
+    nothing because no close ran (the crew is not connected, its version cannot be
+    read or differs, the reply broke off, or the crew failed on its own side) is
+    kept and made again by the background puller (``remote_kept_closes``); its
+    receipt says ``kept``, never ``closed``. A refusal the crew chose is raised
+    and the chat stays on the record.
+    """
+    from kiro_crew.dashboard.handlers import remote_ingest, remote_kept_closes
+
+    what = "could not close the crew session"
+    try:
+        await check_version(mgr, instance_id)
+        status, payload = await peer_call(
+            mgr, instance_id, "DELETE", f"api/chat/slots/{quote(slot, safe='')}"
+        )
+    except CrewCallError as exc:
+        if exc.status < 500 and exc.code != "crew_version_mismatch":
+            raise
+        return await remote_kept_closes.kept_or_raise(state, caller, instance_id, slot, exc)
+    gone = remote_ingest.slot_gone(status, payload)
+    closed = bool(board) and (200 <= status < 300 or gone)
     if closed:
         # No pull reads a finished item again, so this write is what records the close.
         await remote_ingest.mark_slot_closed(board, instance_id, slot)
@@ -1107,12 +1134,25 @@ async def _close(
         await _forget_locked(state, caller, instance_id, slot)
         destroyed = await remote_ingest.mark_destroyed(state, board, instance_id, slot)
         return {"target": slot, "crew": instance_id, "closed": True, "destroyed": destroyed}
-    if status == 404:
+    if gone:
         # Already gone on the crew: nothing left to drive, so the record goes too.
         await _forget_locked(state, caller, instance_id, slot)
-        raise _peer_error(status, payload, "could not close the crew session")
+        raise _peer_error(status, payload, what)
+    if status == 404:
+        # A 404 that names no session is a route the answering side does not
+        # serve. It says nothing about the chat, which may still be open.
+        raise CrewCallError(
+            502,
+            "crew_peer_refused",
+            f"{what}: the crew answered 404 without naming the session, so it is "
+            "still listed as open",
+        )
+    if status >= 500:
+        return await remote_kept_closes.kept_or_raise(
+            state, caller, instance_id, slot, _peer_error(status, payload, what)
+        )
     if not 200 <= status < 300:
-        raise _peer_error(status, payload, "could not close the crew session")
+        raise _peer_error(status, payload, what)
     await _forget_locked(state, caller, instance_id, slot)
     return {"target": slot, "crew": instance_id, "closed": True}
 
@@ -1183,7 +1223,13 @@ async def handle_crew_call(request: web.Request, verb: str, body: dict[str, Any]
             slot = await _fenced_target_or_item(
                 state, caller, board, instance_id, body.get("target"), verb
             )
-        await check_version(mgr, instance_id)
+        if verb == "send":
+            from kiro_crew.dashboard.handlers import remote_kept_closes
+
+            await remote_kept_closes.refuse_send_while_closing(state, caller, instance_id, slot)
+        if verb != "close":
+            # A close reads the version itself: one it cannot read is a kept close.
+            await check_version(mgr, instance_id)
         if verb == "create" and body.get("work_item") is not None:
             # Counted in flight so a placement running meanwhile sees it (wave 5).
             from kiro_crew.dashboard.handlers import remote_placement
@@ -1211,5 +1257,9 @@ async def handle_crew_call(request: web.Request, verb: str, body: dict[str, Any]
             error=exc.code,
         )
         return _response(exc)
+    if result.get("kept") is True:
+        # Not closed: the hub holds the close and makes it again (202, no ``code``).
+        _audit(declared, verb, "failure", crew=instance_id, error=str(result.get("why_code")))
+        return web.json_response({**result, "crew_name": name}, status=202)
     _audit(declared, verb, "success", crew=instance_id)
     return web.json_response({**result, "crew_name": name})

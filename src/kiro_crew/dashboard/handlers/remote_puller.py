@@ -109,7 +109,8 @@ def _next_window(boards: list[str]) -> list[str]:
 async def run_once(state: "DashboardState") -> list[str]:
     """Pull every ledger here holding an open crew-bound item, once. Never raises.
 
-    Answers the boards it pulled, for tests and the debug log.
+    Then make each kept crew close again (``remote_kept_closes.retry``). Answers
+    the boards it pulled, for tests and the debug log.
     """
     from kiro_crew.dashboard.handlers import remote_ingest
 
@@ -131,6 +132,10 @@ async def run_once(state: "DashboardState") -> list[str]:
                 logger.warning("remote puller: pull failed for one board", exc_info=True)
 
     await asyncio.gather(*(_one(board) for board in boards))
+    # A close no crew had settled is made again here, with nobody watching.
+    from kiro_crew.dashboard.handlers import remote_kept_closes
+
+    await remote_kept_closes.retry(state)
     return boards
 
 

@@ -99,6 +99,27 @@ it again to retry. A remote row adds `worker_instance_id`, `crew_state`,
 `remote_reports_skipped`. While remote dispatch is on, every bound row carries
 `runs_on`: the crew's name for a remote worker, `local` for one on this machine.
 
+**Closing, and what is still open there.** `session_close` with `crew=` has
+three answers. `Closed`: the session is gone from that crew. `Error`: it is
+still open and still yours; read the reason. `NOT closed yet`: the crew gave no
+answer that settles it (not connected, being installed, on another version, or
+its own close failed), so the hub kept your close and makes it again by itself
+once that crew answers, also after a hub restart. Do not report that worker
+closed and do not send the close again. A session whose close is kept takes no
+`session_send` (`crew_target_closing`): open a new one for new work. A message
+to a session its crew already closed is refused (`crew_slot_not_found`) and
+never opens it again.
+
+`session_status` lists, under your local sessions, every session you opened on
+another crew and have not closed, with its crew and its state there: `working`,
+`idle`, `needs_approval`, `asking`, `closing` (your close is kept: wait),
+`closed` (that crew no longer holds it: `session_close` it once with `crew=` to
+drop the row) or `unknown` (that crew's list was not read). The list is the
+hub's own record and comes in any turn; the state is read only in a turn that
+may use `crew=` (above), and the answer says when it was not. Read it before
+you say nothing of yours runs on another machine: a finished worker left `idle`
+there is yours to close.
+
 **Reports reach you by a pull.** The hub pulls every report the worker filed
 since the last pull from each open remote item's crew, in order, and files each
 as an ordinary report, so

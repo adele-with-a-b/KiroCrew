@@ -63,12 +63,80 @@ _WORK_ITEM_PROPERTY: dict[str, Any] = {
 }
 
 
+#: What ``session_status`` says about its crew rows, only while the preview is on.
+_STATUS_NOTE = (
+    " Preview: below those, the sessions you opened on OTHER crews with "
+    "session_create(crew=), each with its crew and its state there: `working`, "
+    "`idle`, `needs_approval`, `asking`, `closing` (you closed it while that crew "
+    "gave no answer; the hub holds the close and makes it again by itself, so wait), "
+    "`closed` (that crew no longer holds it; session_close it once with crew to drop "
+    "the row) or `unknown` (that crew's list was not read). A row that says the "
+    "crew is not answering shows the last state read. The list is this hub's own "
+    "record and comes in any turn; the state is read only in a turn that may use "
+    "crew=, and the answer says when it was not. Pass crew and the row's key as "
+    "target to the other session tools."
+)
+
+#: How each crew row's state reads in the ``session_status`` answer.
+_CREW_STATUS_MARKS = {
+    "working": "\U0001f503",
+    "needs_approval": "✋",
+    "asking": "❓",
+    "closing": "⏳",
+    "closed": "✅",
+    "unknown": "❓",
+}
+
+_CREW_STATUS_NOTES = {
+    "needs_approval": " (parked on a tool approval a person must answer on that crew)",
+    "asking": " (a question card is open on that crew)",
+    "closing": " (the hub holds your close and makes it again once that crew answers: wait)",
+    "closed": " (that crew no longer holds it; session_close it with crew to drop this row)",
+    "unknown": " (that crew's session list could not be read)",
+}
+
+
+def crew_status_lines(resp: dict[str, Any]) -> list[str]:
+    """The ``session_status`` lines for the caller's sessions on other crews, if any."""
+    rows = [r for r in resp.get("crew_sessions") or [] if isinstance(r, dict)]
+    if not rows:
+        return []
+    unread = resp.get("crew_state") == "owner_turn_only"
+    lines = [f"\U0001f310 {len(rows)} session(s) you opened on other crews:"]
+    for row in rows:
+        status = str(row.get("status") or "unknown")
+        mark = _CREW_STATUS_MARKS.get(status, "\U0001f4a4")
+        note = _CREW_STATUS_NOTES.get(status, "")
+        if unread and status == "unknown":
+            note = " (state not read in this turn)"
+        elif row.get("crew_answered") is False and status not in ("closing", "unknown"):
+            note += " (last state read; that crew is not answering now)"
+        lines.append(
+            f"  {mark} `{row.get('target', '')}` {_on(row)} (crew=`{row.get('crew', '')}`) — "
+            f"{status}{note}"
+        )
+    if unread:
+        lines.append(
+            "This turn may not read another crew, so no crew was asked: the list is "
+            "this hub's own record of what you opened and have not closed. Their "
+            "state is read in a turn the owner sent, or one the owner's patrol "
+            "settings admit."
+        )
+    return lines
+
+
 def with_crew_schema(tools: list[dict[str, Any]], enabled: bool) -> list[dict[str, Any]]:
-    """*tools* with ``crew`` added to the five schemas when *enabled*, else unchanged."""
+    """*tools* with ``crew`` added to the five schemas when *enabled*, else unchanged.
+
+    ``session_status`` takes no ``crew``; its description gains the crew rows' note.
+    """
     if not enabled:
         return tools
     out = []
     for tool in tools:
+        if tool.get("name") == "session_status":
+            tool = copy.deepcopy(tool)
+            tool["description"] = str(tool.get("description") or "") + _STATUS_NOTE
         if tool.get("name") in CREW_TOOLS:
             tool = copy.deepcopy(tool)
             props = tool.setdefault("inputSchema", {}).setdefault("properties", {})
@@ -242,6 +310,14 @@ def run_crew_close(args: dict[str, Any], ctx: ToolContext) -> str:
         )
     except DashboardError as refused:
         return redact(f"Error: could not close that crew session: {refused.error}")
+    if resp.get("kept") is True:
+        return redact(
+            f"⏳ NOT closed yet: `{resp.get('target')}` {_on(resp)} is still open "
+            f"there ({resp.get('why') or 'that crew gave no answer'}). The hub kept this "
+            "close and makes it again by itself once that crew answers; session_status "
+            "lists the chat as `closing` until it is gone. Do not report it closed, and "
+            "do not send the close again."
+        )
     return redact(
         f"\U0001f5d1\ufe0f Closed `{resp.get('target')}` {_on(resp)}; that crew archives it "
         "to its own history."

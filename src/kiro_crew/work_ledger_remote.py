@@ -22,6 +22,8 @@ fetches and calls these.
 * The crew-session record (``work-ledger/remote/<board>/crew-sessions.json``)
   holds which peer slots a chat opened with a plain ``session_create(crew=)``,
   the hub's target fence (``remote_dispatch_routes``), so a hub restart keeps it.
+  Beside it, ``crew-closes.json`` holds the closes no crew has settled yet
+  (``remote_kept_closes``), in the same shape.
 """
 
 from __future__ import annotations
@@ -231,8 +233,12 @@ def write_remote_state(board: str, item_id: str, state: RemoteState) -> None:
 #: records there are named by item id (``it_<hex>.json``), so the two never meet.
 CREW_SESSIONS_FILE = "crew-sessions.json"
 
+#: The closes a crew has not answered yet, kept beside the crew-session record in
+#: the same shape (``caller -> [(crew, peer slot)]``) and under the same rules.
+CREW_CLOSES_FILE = "crew-closes.json"
 
-def crew_sessions_path(caller: str) -> Path:
+
+def crew_sessions_path(caller: str, name: str = CREW_SESSIONS_FILE) -> Path:
     """Where *caller*'s crew-session record lives: its board's remote directory.
 
     The board is ``ledger_key(caller)``, so the conductor purge that drops the
@@ -241,7 +247,7 @@ def crew_sessions_path(caller: str) -> Path:
     board = ledger_key(caller)
     if not board or "\0" in board:
         raise WorkLedgerError(f"invalid slot key: {caller!r}", code=CODE_INVALID_VALUE)
-    resolved = resolved_within(remote_dir(), f"{_store_name(board)}/{CREW_SESSIONS_FILE}")
+    resolved = resolved_within(remote_dir(), f"{_store_name(board)}/{name}")
     if resolved is None:
         raise WorkLedgerError(f"path traversal blocked for {caller!r}", code=CODE_INVALID_VALUE)
     return resolved
@@ -291,7 +297,7 @@ def _read_crew_sessions_file(path: Path) -> dict[str, list[tuple[str, str]]]:
     }
 
 
-def read_crew_sessions() -> dict[str, list[tuple[str, str]]]:
+def read_crew_sessions(name: str = CREW_SESSIONS_FILE) -> dict[str, list[tuple[str, str]]]:
     """Every stored crew-session record here, ``caller -> [(crew, peer slot)]``.
 
     A caller is kept only from the directory its own key resolves to, so a record
@@ -307,8 +313,8 @@ def read_crew_sessions() -> dict[str, list[tuple[str, str]]]:
             boards = sorted(entry.name for entry in entries)
     except FileNotFoundError:
         return found
-    for name in boards:
-        path = remote_dir() / name / CREW_SESSIONS_FILE
+    for board in boards:
+        path = remote_dir() / board / name
         if is_link(path.parent) or not path.parent.is_dir() or is_link(path):
             continue
         for caller, pairs in _read_crew_sessions_file(path).items():
@@ -317,7 +323,9 @@ def read_crew_sessions() -> dict[str, list[tuple[str, str]]]:
     return found
 
 
-def write_crew_sessions(caller: str, pairs: Iterable[tuple[str, str]]) -> None:
+def write_crew_sessions(
+    caller: str, pairs: Iterable[tuple[str, str]], name: str = CREW_SESSIONS_FILE
+) -> None:
     """Store *caller*'s crew-session record whole; an empty one drops its entry.
 
     Only the gateway writes it: the work-ledger root is hidden from sandboxed
@@ -328,7 +336,7 @@ def write_crew_sessions(caller: str, pairs: Iterable[tuple[str, str]]) -> None:
     there but unreadable is never replaced by one that misses its other entries.
     BLOCKING; raises :class:`WorkLedgerError` or ``OSError``.
     """
-    path = crew_sessions_path(caller)
+    path = crew_sessions_path(caller, name)
     callers: dict[str, list[list[str]]] = {
         key: [list(pair) for pair in held]
         for key, held in _read_crew_sessions_file(path).items()
@@ -344,6 +352,16 @@ def write_crew_sessions(caller: str, pairs: Iterable[tuple[str, str]]) -> None:
 
     mkdirs_owner_only(path.parent)
     _write_record(path, {"callers": callers})
+
+
+def read_crew_closes() -> dict[str, list[tuple[str, str]]]:
+    """Every close a crew has not answered yet, as :func:`read_crew_sessions` reads."""
+    return read_crew_sessions(CREW_CLOSES_FILE)
+
+
+def write_crew_closes(caller: str, pairs: Iterable[tuple[str, str]]) -> None:
+    """Store *caller*'s unanswered closes whole, as :func:`write_crew_sessions` stores."""
+    write_crew_sessions(caller, pairs, CREW_CLOSES_FILE)
 
 
 def remote_liveness(board: str, item: WorkItem) -> tuple[bool, bool] | None:
