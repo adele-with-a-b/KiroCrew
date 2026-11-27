@@ -1164,6 +1164,15 @@ def _build_session_config(session_data: dict) -> SessionConfig:
             "autocompact_pct", _safe_float, lo=AUTOCOMPACT_PCT_MIN, hi=AUTOCOMPACT_PCT_MAX
         ),
         context_cap=bool(section.get("context_cap")),
+        # Clamped at the read: a hand-edited negative or oversized value loads as
+        # a bound, and 0 stays 0 (nothing is sent to Claude Code). The bound comes
+        # through the module handle: this module's names are a frozen facade.
+        conductor_context_window=section.read(
+            "conductor_context_window",
+            _safe_int,
+            lo=0,
+            hi=_sections.CONDUCTOR_CONTEXT_WINDOW_MAX,
+        ),
         # Opt-in and costs model calls, so only a real ``true`` turns it on:
         # a hand-edited "false" or 0 reads as the declared ``False``.
         idle_compaction=section.read("idle_compaction", _safe_bool),

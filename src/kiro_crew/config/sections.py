@@ -389,6 +389,8 @@ from kiro_crew.config.sections_session import (  # noqa: F401
     BOT_MAX_WORKERS_DEFAULT,
     BOT_MAX_WORKERS_MAX,
     BOT_MAX_WORKERS_MIN,
+    CONDUCTOR_CONTEXT_WINDOW_DEFAULT,
+    CONDUCTOR_CONTEXT_WINDOW_MAX,
     DEFAULT_KIRO_TEMPLATE,
     STAR_ORDER_MAX,
     KiroCrewAgentConfig,

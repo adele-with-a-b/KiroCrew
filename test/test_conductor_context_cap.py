@@ -83,8 +83,14 @@ class _Sessions:
     """
 
     def __init__(
-        self, provider: _Provider | None, *, idle_secs: float = 0.0, sid: str = "sid-1"
+        self,
+        provider: _Provider | None,
+        *,
+        idle_secs: float = 0.0,
+        sid: str = "sid-1",
+        key: str = KEY,
     ) -> None:
+        self.key = key
         self.provider = provider
         self.sid = sid
         self.busy = False
@@ -95,10 +101,10 @@ class _Sessions:
         self.set_idle(idle_secs)
 
     def set_idle(self, idle_secs: float) -> None:
-        self._sessions[KEY] = SimpleNamespace(last_used=time.monotonic() - idle_secs)
+        self._sessions[self.key] = SimpleNamespace(last_used=time.monotonic() - idle_secs)
 
     def get_provider(self, key: str) -> _Provider | None:
-        return self.provider if key == KEY else None
+        return self.provider if key == self.key else None
 
     def mapped_sid(self, key: str) -> str:
         return self.sid
@@ -134,8 +140,8 @@ class _Sessions:
         self.set_idle(idle_secs)
 
 
-def _cfg(on: bool = True) -> Any:
-    return SimpleNamespace(session=SimpleNamespace(context_cap=on))
+def _cfg(on: bool = True, *, window: int = 600_000) -> Any:
+    return SimpleNamespace(session=SimpleNamespace(context_cap=on, conductor_context_window=window))
 
 
 def _conductor(tmp_path, sessions: _Sessions) -> tuple[Any, Any]:
@@ -145,9 +151,9 @@ def _conductor(tmp_path, sessions: _Sessions) -> tuple[Any, Any]:
     return state, slot
 
 
-async def _check(state, slot, *, cfg: Any = None, is_slash: bool = False) -> str:
+async def _check(state, slot, *, cfg: Any = None, is_slash: bool = False, key: str = KEY) -> str:
     return await chat_runner._cap_conductor_context(
-        state, slot, KEY, _cfg() if cfg is None else cfg, is_slash=is_slash
+        state, slot, key, _cfg() if cfg is None else cfg, is_slash=is_slash
     )
 
 
@@ -238,6 +244,114 @@ async def test_rule_a_trims_a_session_over_400k_at_a_turn_start(tmp_path):
     assert sessions.discards == [(KEY, True, True)]
     assert slot.messages == []
     assert chat_runner._take_context_cap_seed(KEY) is True
+
+
+# ── a Conductor chat's own window (``session.conductor_context_window``) ─────
+#
+# Every test above runs on ``KEY``, a Bot's thread: a Bot carrying a conductor's
+# name is that Bot, has no Conductor window, and keeps Rule A at 400K.
+
+#: A dashboard chat on the Conductor: the session Crew gives the window to.
+CONDUCTOR_CHAT = "dashboard:chat-7"
+
+
+def _conductor_chat(tmp_path, provider: _Provider, **kw) -> tuple[Any, Any, _Sessions]:
+    sessions = _Sessions(provider, key=CONDUCTOR_CHAT, **kw)
+    state, slot = _state(tmp_path), _slot("chat-7")
+    state.sessions = sessions
+    slot.agent = CONDUCTOR
+    return state, slot, sessions
+
+
+@pytest.mark.asyncio
+async def test_a_conductor_chat_on_claude_is_not_trimmed_under_its_window(tmp_path, monkeypatch):
+    """At 450K with the 600K window Claude Code has not compacted yet: Rule A's line
+    is the window, so the chat reaches it. Past the window Rule A trims as before."""
+    monkeypatch.delenv("CLAUDE_CODE_PROMPT_CACHE_TTL", raising=False)
+    state, slot, sessions = _conductor_chat(tmp_path, _claude(450_000), idle_secs=24 * 3_600.0)
+
+    assert await _check(state, slot, key=CONDUCTOR_CHAT) == "below_marks"
+    assert sessions.discards == []
+
+    sessions.provider = _claude(600_000)
+    assert await _check(state, slot, key=CONDUCTOR_CHAT) == "below_marks"
+    sessions.provider = _claude(600_001)
+    assert await _check(state, slot, key=CONDUCTOR_CHAT) == "trimmed"
+    assert sessions.discards == [(CONDUCTOR_CHAT, True, True)]
+
+
+@pytest.mark.asyncio
+async def test_the_window_is_read_from_the_one_setting(tmp_path, monkeypatch):
+    """Rule A's line follows ``session.conductor_context_window``; a window under
+    400K, or 0 (off), leaves the line at 400K."""
+    monkeypatch.delenv("CLAUDE_CODE_PROMPT_CACHE_TTL", raising=False)
+    state, slot, sessions = _conductor_chat(tmp_path, _claude(450_000))
+
+    assert await _check(state, slot, key=CONDUCTOR_CHAT, cfg=_cfg(window=500_000)) == "below_marks"
+    sessions.provider = _claude(399_000)
+    assert await _check(state, slot, key=CONDUCTOR_CHAT, cfg=_cfg(window=300_000)) == "below_marks"
+    sessions.provider = _claude(401_000)
+    assert await _check(state, slot, key=CONDUCTOR_CHAT, cfg=_cfg(window=300_000)) == "trimmed"
+
+    sessions.provider = _claude(450_000)
+    assert await _check(state, slot, key=CONDUCTOR_CHAT, cfg=_cfg(window=0)) == "trimmed"
+
+
+def _on_kas(sessions: _Sessions, slot) -> str:
+    sessions.provider = _Provider(450_000)
+    return CONDUCTOR_CHAT
+
+
+def _a_bots_thread(sessions: _Sessions, slot) -> str:
+    """A Bot carrying the conductor's name, on claude: the key every test above uses."""
+    sessions.key = KEY
+    sessions.set_idle(0.0)
+    return KEY
+
+
+def _a_bots_worker(sessions: _Sessions, slot) -> str:
+    from kiro_crew import members
+
+    members.note_crewmate_worker_session(CONDUCTOR_CHAT, "ada")
+    return CONDUCTOR_CHAT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("other", [_on_kas, _a_bots_thread, _a_bots_worker])
+async def test_a_chat_without_a_conductor_window_is_trimmed_at_450k_as_before(
+    tmp_path, monkeypatch, other
+):
+    """The other side: the Conductor on KAS, a Bot's thread and a Bot's worker have
+    no Conductor window, so Rule A cuts them past 400K with the setting at 600K."""
+    from kiro_crew import members
+
+    monkeypatch.delenv("CLAUDE_CODE_PROMPT_CACHE_TTL", raising=False)
+    state, slot, sessions = _conductor_chat(tmp_path, _claude(450_000))
+    try:
+        key = other(sessions, slot)
+        assert await _check(state, slot, key=key) == "trimmed"
+    finally:
+        members.forget_crewmate_worker_session(CONDUCTOR_CHAT)
+    assert sessions.discards == [(key, True, True)]
+
+
+@pytest.mark.asyncio
+async def test_rule_b_still_trims_a_conductor_chat_under_its_window(tmp_path, monkeypatch):
+    """Only Rule A's line moves: a cold cache past 200K trims a Conductor chat too."""
+    monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
+    state, slot, sessions = _conductor_chat(tmp_path, _claude(250_000), idle_secs=59 * 60.0)
+    assert await _check(state, slot, key=CONDUCTOR_CHAT) == "below_marks"
+
+    sessions.set_idle(60 * 60.0)
+    assert await _check(state, slot, key=CONDUCTOR_CHAT) == "trimmed"
+
+
+@pytest.mark.parametrize(
+    ("tokens", "high", "rule"),
+    [(600_000, 600_000, None), (600_001, 600_000, "A"), (450_000, 600_000, None)],
+)
+def test_rule_a_fires_past_the_line_it_is_given(tokens, high, rule):
+    assert chat_runner._context_cap_rule(tokens, 0.0, None, high_tokens=high) == rule
 
 
 @pytest.mark.asyncio

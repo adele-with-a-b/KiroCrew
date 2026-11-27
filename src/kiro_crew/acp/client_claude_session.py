@@ -35,6 +35,7 @@ from kiro_crew.acp.claude_agent_options import (
     apply_crewmate_claude_options,
     apply_spec_claude_options,
 )
+from kiro_crew.acp.claude_conductor_window import apply_conductor_window
 from kiro_crew.acp.claude_guards import claude_guards_setting_on
 from kiro_crew.acp.claude_settings_sources import (
     CLAUDE_SETTINGS_MAX_BYTES,
@@ -704,6 +705,11 @@ def _claude_session_meta(self: ClaudeAcpClient) -> dict[str, Any]:
     applies after the user, project and local tiers' ``env``, so none of those
     can set the switch back.
 
+    A Conductor chat gets ``CLAUDE_CODE_AUTO_COMPACT_WINDOW`` in the same two
+    places, set to ``session.conductor_context_window``
+    (``acp.claude_conductor_window``), so it compacts at that window and not at
+    the ``autoCompactWindow`` every other session reads from Claude Code's settings.
+
     Beside ``options``, a backend in ``ACP_BACKENDS_RAW_SDK_TASKS`` asks for the raw SDK
     messages of its background tasks and API retries, ``emitRawSDKMessages``
     (``acp.raw_sdk_tasks.RAW_SDK_MESSAGE_FILTER``).
@@ -850,6 +856,11 @@ def _claude_session_meta(self: ClaudeAcpClient) -> dict[str, Any]:
         flag = dict(options.get("settings") or {})
         flag["env"] = {**dict(flag.get("env") or {}), _CLAUDE_DISABLE_AUTO_MEMORY_ENV: "1"}
         options["settings"] = flag
+    # A Conductor chat's own context window (``session.conductor_context_window``),
+    # in the same two places: every other session keeps Claude Code's own setting.
+    apply_conductor_window(
+        options, getattr(self, "_agent", None), getattr(self, "_session_key", None), self.backend
+    )
     # What this envelope ships, recorded as it is built: the session freezes
     # these deny and ask rules at creation, and a later re-seed (``_reseed_after_capture``)
     # moves the live inline settings without reaching the session.

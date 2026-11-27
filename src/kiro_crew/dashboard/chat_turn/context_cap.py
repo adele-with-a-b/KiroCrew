@@ -153,6 +153,7 @@ async def _context_cap_trim(
         tokens,
         _context_cap_idle_secs(state, session_key),
         _context_cap_cache_secs(provider, backend),
+        high_tokens=_context_cap_high_tokens(slot, session_key, backend, cfg),
     )
     if rule is None:
         return "below_marks"
@@ -191,15 +192,40 @@ async def _context_cap_trim(
     return "trimmed"
 
 
-def _context_cap_rule(tokens: int, idle_secs: float | None, cache_secs: float | None) -> str | None:
+def _context_cap_high_tokens(
+    slot: _ChatSlot, session_key: str, backend: str, cfg: KiroCrewConfig | None
+) -> int:
+    """Rule A's line for *slot*'s chat, in tokens.
+
+    ``CONTEXT_CAP_HIGH_TOKENS``, or the chat's Conductor window when that is larger
+    (``session.conductor_context_window``, the one number its Claude session was
+    started with): Claude Code compacts such a chat at that window, so a trim
+    under it would end the session before the window the setting names is used.
+    A chat Crew gives no window (``conductor_window_tokens`` answers 0) keeps
+    ``CONTEXT_CAP_HIGH_TOKENS``.
+    """
+    from kiro_crew.acp.claude_conductor_window import conductor_window_tokens
+
+    window = conductor_window_tokens(str(slot.agent or ""), session_key, backend, cfg)
+    return max(CONTEXT_CAP_HIGH_TOKENS, window)
+
+
+def _context_cap_rule(
+    tokens: int,
+    idle_secs: float | None,
+    cache_secs: float | None,
+    *,
+    high_tokens: int = CONTEXT_CAP_HIGH_TOKENS,
+) -> str | None:
     """The rule that trims a session at *tokens* whose previous turn ended *idle_secs* ago.
 
-    Rule A: over HIGH. Rule B: over the Rule B line once *cache_secs*, the backend's
+    Rule A: over *high_tokens* (:func:`_context_cap_high_tokens`). Rule B: over the
+    Rule B line once *cache_secs*, the backend's
     cache life, has passed, when the next request writes a new cache either way.
     ``None``: neither holds. An unknown cache life never fires Rule B: guessing it
     short trims a chat whose cache is still warm, and the trim drops detail.
     """
-    if tokens > CONTEXT_CAP_HIGH_TOKENS:
+    if tokens > high_tokens:
         return "A"
     if idle_secs is not None and cache_secs is not None and idle_secs >= cache_secs:
         if tokens > CONTEXT_CAP_IDLE_TOKENS:

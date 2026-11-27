@@ -1541,6 +1541,57 @@ server) still inherit the gateway's own value; an app backend's allowlisted env
 on a shared runtime names the agent its stored skill-view name was built from, as a new
 one does (`_load_session_with_harness_state` maps it through `_source_agent`).
 
+### A Conductor chat's context window
+
+Claude Code compacts a session on its own against its auto-compact window and
+reports that window as the `size` of every `usage_update`, so the context meter
+reads a percent of it. It compacts some way under the window: in
+`acp_frames/claude/auto-compaction-live.jsonl`, with the window at 100000, it
+compacted at readings of 39880 and 45306. The window comes from Claude Code's own settings
+(`autoCompactWindow`), which every session on the host shares.
+`session.conductor_context_window` (600000 by default, 0 to 2000000, 0 off) gives a
+Conductor chat its own: `acp.claude_conductor_window.apply_conductor_window`, called
+from `_claude_session_meta`, writes `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to
+`options.env` and to the flag tier's `settings.env`, on `session/new` and
+`session/load` alike. The envelope belongs to one session; the
+`settings.local.json` seed belongs to a folder, which a worker in the same folder
+reads, so the window is not in the seed. No other session's envelope carries the
+variable, so a worker chat, a Bot and Claude Code in a terminal keep the window
+their settings name.
+
+A Conductor chat is named positively (`is_conductor_session`): the session's agent
+is in `crew_mode.conductor_agents()` (the shipped conductors, the configured
+`agent.crew_mode_agent` and its aliases), and its key is neither a Bot's thread
+(`members.is_member_session_key`) nor a Bot's worker
+(`members.is_crewmate_worker_session`): a Bot carrying a conductor's name is that
+Bot, as `crew_mode.runs_crew_mode` rules. A chat that turned Crew Mode on with a
+custom conductor `agent.crew_mode_agent` no longer names is known only by its
+slot's stamp, which the session client does not hold, so it gets no window.
+
+The order, measured on Claude Code 2.1.331 through claude-agent-acp 0.109.0
+against a user `autoCompactWindow` of 300000, by the `size` the running session
+reported: nothing sent, 300000; the variable in `options.env`, 600000;
+`options.settings.autoCompactWindow` alone, 600000; the variable at 450000 beside
+that setting, 450000; the variable in `options.env` at 600000 against the user
+tier's `env` naming 350000, 350000; the same with the flag tier's `settings.env`
+at 600000, 600000. So the variable outranks the setting key, a settings tier's
+`env` outranks the process env, and the flag tier's `env` is read last, which is
+why both tiers carry it. The setting is the one number for these chats: it
+replaces a value the agent spec's own `claudeCode.env` names, and at 0 that value
+stands.
+
+The number is read when the envelope is built (the live config snapshot, else a
+load), so a change needs no restart of Crew. A session keeps the window it
+started with: Claude Code reads the variable once, at the `claude` child's start.
+A chat already running when the setting changes, or when a build with this
+setting is installed, takes the new window at its next `session/new` or
+`session/load` (a gateway restart resumes it through `session/load`; a reset, a
+compaction restart and the idle timeout start a new session). The conductor
+context cap reads the same setting for its 400K line
+([context-management](../../architecture/context-management.md), "The conductor
+context cap"). Contract tests: `test_claude_conductor_window.py`,
+`test_conductor_context_cap.py`.
+
 It is a label from Crew's own session record, not a credential: it names the agent
 template the session runs, not who started it. Any chat able to create a session
 (`session_create`, a sub-agent spawn) can create one that runs `kirocrew-conductor`, and

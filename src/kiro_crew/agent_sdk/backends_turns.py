@@ -388,7 +388,8 @@ ACP_BACKENDS_COMPACT = frozenset(
 # both frames with no client request (acp_frames/kas/auto-compaction-live.jsonl).
 #
 # claude is a member. Claude Code compacts on its own at its ``autoCompactWindow``
-# (``~/.claude/settings.json``, the same number its terminal sessions use), and
+# (``~/.claude/settings.json``, the same number its terminal sessions use; a
+# Conductor chat at ``session.conductor_context_window``, ``acp.claude_conductor_window``), and
 # claude-agent-acp reports it as a ``compaction_update`` (``context-compaction.js``);
 # a ``completed`` one calls ``reset_after_compaction()`` (``acp/client_claude_turn.py``).
 # Left to Crew's global threshold, Crew would ``/compact`` first, at that share of
