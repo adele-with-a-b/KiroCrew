@@ -30,6 +30,7 @@ import stat
 from collections.abc import Iterator
 from pathlib import Path
 
+from kiro_crew import sandbox_launch_mark
 from kiro_crew.atomic_write import atomic_write, fsync_dir
 from kiro_crew.config.paths import data_home
 from kiro_crew.platform_compat import is_link_or_junction
@@ -73,9 +74,9 @@ MIGRATION_MARKER = ".moved-from-trust"
 #: Held by a pass from its marker check to its marker write.
 LOCK_NAME = ".moving"
 
-#: Set by the sandbox launcher in every child (``sandbox_tiers._IN_SANDBOX_MARKER``).
-#: Spelled here so this module needs no sandbox import; a test pins the two.
-_IN_SANDBOX_MARKER = "KIROCREW_SANDBOX_ACTIVE"
+#: Set by the sandbox launcher in every child (``sandbox_tiers._IN_SANDBOX_MARKER``);
+#: a test pins the two.
+_IN_SANDBOX_MARKER = sandbox_launch_mark.SANDBOX_MARKER
 
 _O_NOFOLLOW: int = getattr(os, "O_NOFOLLOW", 0)
 _O_NONBLOCK: int = getattr(os, "O_NONBLOCK", 0)
@@ -142,7 +143,15 @@ last_failure: str = ""
 
 
 def _inside_sandbox() -> bool:
-    return bool(os.environ.get(_IN_SANDBOX_MARKER))
+    """Whether the sandbox launcher marked this process, at its entry point or now.
+
+    ``cli.main`` and ``mcp_entry.slim_server`` drop the marker from the environment
+    before anything else runs, so the environment alone answers False in every
+    ``kirocrew`` command and MCP server a sandbox holds. There the records directory
+    is hidden: an empty stand-in on Linux, a denied path on macOS, where a ``stat``
+    inside it raises ``PermissionError`` instead of finding nothing.
+    """
+    return sandbox_launch_mark.launched_in_sandbox()
 
 
 def ensure_migrated() -> bool:

@@ -21,6 +21,7 @@ from kiro_crew import (
     members,
     platform_compat,
     sandbox,
+    sandbox_launch_mark,
     sandbox_tiers,
     security,
 )
@@ -397,6 +398,23 @@ def test_the_move_never_runs_inside_a_sandbox(home, monkeypatch) -> None:
     contents = _write_all_three()
     _as_old_layout(home, contents)
     monkeypatch.setenv(member_records._IN_SANDBOX_MARKER, "1")
+
+    assert member_records.ensure_migrated() is False
+    for kind in contents:
+        assert (home / "trust" / kind / f"{_SLUG}.json").exists(), kind
+
+
+def test_the_move_never_runs_after_an_entry_point_dropped_the_marker(home, monkeypatch) -> None:
+    """``cli.main`` and ``mcp_entry.slim_server`` note the marker, then drop it.
+
+    So a ``kirocrew`` command or MCP server a sandbox holds has no marker left in its
+    environment, and is inside the sandbox all the same.
+    """
+    contents = _write_all_three()
+    _as_old_layout(home, contents)
+    monkeypatch.setenv(member_records._IN_SANDBOX_MARKER, "1")
+    sandbox_launch_mark.note()
+    monkeypatch.delenv(member_records._IN_SANDBOX_MARKER)
 
     assert member_records.ensure_migrated() is False
     for kind in contents:

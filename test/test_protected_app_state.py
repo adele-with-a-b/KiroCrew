@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import logging
 import os
 
 import pytest
 
-from kiro_crew import member_records, sandbox_leaves
+from kiro_crew import member_records, sandbox_launch_mark, sandbox_leaves
 from kiro_crew.apps import bot_grant_store
 from kiro_crew.apps import manager as manager_mod
 from kiro_crew.apps import protected_app_state
@@ -133,6 +134,49 @@ def test_a_missing_store_record_approves_nothing(tmp_path, app_home):
     protected_app_state.grants_path(APP).unlink()
 
     assert _granted() == []
+
+
+@pytest.fixture()
+def hidden_store(tmp_path, app_home, monkeypatch):
+    """The store as a sandboxed ``kirocrew`` command or MCP server meets it on macOS.
+
+    The entry point noted the launcher's marker and dropped it from the environment,
+    and every path under the records directory is refused (``PermissionError``), where
+    Linux shows an empty directory.
+    """
+    _install(tmp_path)
+    monkeypatch.setenv(member_records._IN_SANDBOX_MARKER, "1")
+    sandbox_launch_mark.note()
+    monkeypatch.delenv(member_records._IN_SANDBOX_MARKER)
+    root = member_records.records_root()
+    root.chmod(0)
+    yield root
+    root.chmod(0o700)
+
+
+_needs_a_refusing_directory = pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="mode 000 refuses nothing to root or on Windows",
+)
+
+
+@_needs_a_refusing_directory
+def test_a_sandboxed_process_reads_an_enabled_apps_record(hidden_store):
+    with pytest.raises(PermissionError):
+        (hidden_store / member_records.MIGRATION_MARKER).stat()
+
+    # Unreadable, this is what left an MCP server with no first-party app at all.
+    assert manager_mod._read_installed(APP) is not None
+
+
+@_needs_a_refusing_directory
+def test_a_sandboxed_process_opens_no_approved_set_and_reports_no_fault(hidden_store, caplog):
+    with caplog.at_level(logging.WARNING, logger="kiro_crew.apps"):
+        grants = manager_mod._read_approved_grants(APP)
+
+    assert grants is not None and not any(grants.values())
+    assert _granted() == []
+    assert "approved set" not in caplog.text
 
 
 def _legacy_home(tmp_path, *, stored, legacy):
