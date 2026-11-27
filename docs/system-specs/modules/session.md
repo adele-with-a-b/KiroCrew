@@ -225,6 +225,33 @@ before they are joined into one line, as an approval's tool and purpose are, so
 a credential the redactor matches at a line's start is masked in `first_words`
 as it is in the chat.
 
+### Not now: setting a reply ask aside
+
+The owner can set the open reply ask (`options` or `labelled`) aside without
+answering it. Each row carries `reply_ask`: `null`, or
+`{row_id, first_words, set_aside}` for the reply ask the rule above counts,
+whether or not it is set aside; `dashboard/needs_you_aside.py` owns it. While
+`set_aside` is true that ask is left out of `needs_you`, so the row, the "Needs
+you" group, its count and every badge read it as settled; approvals and question
+cards are never part of `reply_ask` and keep counting. The chat draws "Not now"
+under the reply `row_id` names, and, once pressed, "Not now · set aside by you."
+with "Bring back"; the sidebar row shows a muted "Not now · <first words>" line
+in place of its waiting line. A Crew Mode worker's `reply_ask` is `null`, as its
+reply asks are not the person's.
+
+`PATCH /api/chat/slots/{slot}/set-aside` with `{row_id, set_aside}` is the only
+writer. It is a dashboard-user action behind the same fences as the per-row mute
+(`chat_folders.user_owned_slot`): an app, an agent's tool call or another chat
+gets `403 set_aside_user_only`. Setting aside lands only while the row's
+`reply_ask.row_id` is still the one named, checked under the slot-metadata lock;
+otherwise `409 not_waiting`, and the client draws the row it has. Bring back
+clears the mark only when it names that row. The mark is the slot field
+`needs_you_set_aside` (the row id), saved in the slot metadata before the
+`slots` frame is pushed, so it survives a reload and a restart and reaches every
+window. A newer reply has a new `row_id`, so a new ask lights again even with
+the same label; the old mark then matches nothing. The press sends the agent
+nothing, writes no transcript row and changes nothing the agent reads.
+
 ## Return-triggered warm task brief
 
 The owner-only `slot_focused` WebSocket frame also drives the warm task brief.

@@ -63,7 +63,7 @@ export { crewRowOwnState, type CrewRowOwnState } from './CrewRowState'
 import { CrewRootSummaryLine } from './CrewRootSummaryLine'
 import { crewWaitingApprovals, openedSessionRunning } from '../chat/command-center/model'
 import { needsYouOf } from '../../lib/needsYou'
-import { NeedsYouLine, NeedsYouPulse, NeedsYouSide } from './NeedsYouRow'
+import { NeedsYouLine, NeedsYouPulse, NeedsYouSide, SetAsideLine } from './NeedsYouRow'
 import { MemberRowHead } from './MemberRowFace'
 import { useCrewMode } from '../../hooks/usePreviewFlag'
 import { useInterruptedRowLabel } from './interruptedRowLabel'
@@ -1125,8 +1125,10 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
         role="img" aria-label={i18nT('pages.chatSidebar.agent_finished_your_turn')}
         title={i18nT('pages.chatSidebar.agent_finished_your_turn')} />
       : null
-    // What a waiting chat waits on, said where its status goes (a crew root's when its summary has nothing to say).
-    const needsLine = needs ? <NeedsYouLine needs={needs} lastMessage={s.last_message} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} /> : null
+    // What a waiting chat waits on, said where its status goes (a crew root's when its summary has nothing to say);
+    // once its ask is set aside ("Not now"), the calm line that says so.
+    const needsLine = needs ? <NeedsYouLine needs={needs} lastMessage={s.last_message} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} />
+      : s.reply_ask?.set_aside ? <SetAsideLine ask={s.reply_ask} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} /> : null
     // The row's tail line when no state claims it: the last message, led by the
     // unread dot. A crew card shows it too until its workers summary has an answer.
     const lastMessageLine = (s.last_message || unreadDot) ? (

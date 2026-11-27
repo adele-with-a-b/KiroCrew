@@ -382,6 +382,8 @@ _CAP_REGISTER: dict[str, tuple[str, str]] = {
         "_MAX_REORDER_BODY_BYTES",
         _BOUNDED_EXPLICIT,
     ),
+    # "Not now" carries a row id (capped at ROW_ID_MAX) and a boolean.
+    "needs_you_aside.py::api_chat_slot_set_aside": ("<default>", _BOUNDED_CONTROL_FIELDS),
     # The two mute toggles (mutes_opened, muted) share one body that carries a
     # boolean and an optional expected_created stamp -- a fixed set of control
     # fields, so the shared default cap is right.

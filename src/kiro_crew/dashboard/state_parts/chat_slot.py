@@ -180,6 +180,7 @@ class _ChatSlot:
         "_telemetry_notice_shown",
         "_project_hook_files_notice_shown",
         "_session_notice_marks",
+        "_needs_you_set_aside",
         "_on_message",
         "_on_row",
         "_on_card_event",
@@ -519,6 +520,8 @@ class _ChatSlot:
     # Marks of the session-start spec notices this chat showed, oldest first
     # (``dashboard.session_notice_marks``); saved on the metadata line.
     _session_notice_marks: list[str]
+    # The reply ask the owner set aside ("Not now"), by row id; "" for none.
+    _needs_you_set_aside: str
     _pending_reset_history_key: str | None
     _pending_reset_clears_cwd: bool
     _pending_discard_conversation_key: str | None

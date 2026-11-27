@@ -119,6 +119,9 @@ export function createChatOrganizationEndpoints({ post, del, patch, j, jfetch: f
     setSlotMutesOpened: (slot: string, mutesOpened: boolean) => patch('/api/chat/slots/' + encodeURIComponent(slot) + '/mutes-opened', { mutes_opened: mutesOpened }).then(j),
     // Toggle the per-row mute of this session.
     setSlotMuted: (slot: string, muted: boolean) => patch('/api/chat/slots/' + encodeURIComponent(slot) + '/muted', { muted }).then(j),
+    /** "Not now" (`setAside` true) or "Bring back" on the reply ask in row `rowId`.
+     *  A 409 `not_waiting` means a newer reply replaced that ask before the press. */
+    setReplyAskAside: (slot: string, rowId: string, setAside: boolean) => patch('/api/chat/slots/' + encodeURIComponent(slot) + '/set-aside', { row_id: rowId, set_aside: setAside }).then(j) as Promise<{ ok: boolean; set_aside: boolean; changed: boolean }>,
     /** Set the order of pinned sessions in one atomic write; answers the stored order.
      *  `onlyIfUnset` lands the write only while no order is stored (a 409
      *  otherwise), which is how the sidebar's first-load seed lands. */

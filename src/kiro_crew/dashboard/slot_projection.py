@@ -17,6 +17,8 @@ from kiro_crew.dashboard.needs_you import (
     question_asks,
     reply_asks,
 )
+from kiro_crew.dashboard.needs_you_aside import FIELD as REPLY_ASK_FIELD
+from kiro_crew.dashboard.needs_you_aside import split_set_aside
 from kiro_crew.dashboard.slot_preparing import is_preparing, preparing_caption
 from kiro_crew.dashboard.slot_queue_repository import is_held_queue_entry
 from kiro_crew.dashboard.slot_row_memo import memo_redacted, memo_row_summary, summarize_rows
@@ -496,6 +498,10 @@ class SlotProjection:
             and not options_ending_is_stale(reply.ts, time.time())
         )
         fallback_ts = ask_epoch(last_activity_ts) or 0.0
+        # A reply ask the owner pressed "Not now" on stays out (``needs_you_aside``).
+        open_reply_asks, reply_ask = split_set_aside(
+            slot, reply_asks(rows, reply, open_now=reply_open, is_system_notice=is_system_notice)
+        )
         needs_you = needs_you_of(
             [
                 *approval_asks(
@@ -506,7 +512,7 @@ class SlotProjection:
                     redact=redact,
                 ),
                 *question_asks(slot, fallback_ts=fallback_ts, redact=redact),
-                *reply_asks(rows, reply, open_now=reply_open, is_system_notice=is_system_notice),
+                *open_reply_asks,
             ]
         )
 
@@ -614,6 +620,9 @@ class SlotProjection:
             # ``None``, or what waits on the owner: ``count``, ``oldest_ts``,
             # ``first_words``, ``row_id``, ``kinds`` (see ``dashboard/needs_you.py``).
             "needs_you": needs_you,
+            # ``None``, or the newest reply's own ask: ``row_id``, ``first_words``,
+            # ``set_aside`` (see ``dashboard/needs_you_aside.py``).
+            REPLY_ASK_FIELD: reply_ask,
             "interrupted": interrupted,
             "interrupted_stale": interrupted_stale,
             "stop_state": slot._stop_state,

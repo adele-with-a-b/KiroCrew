@@ -1,6 +1,6 @@
 /** View types the sidebar's owners share. `Slot` is the sidebar's narrowed view of a
  *  chat slot; the wire type is `ChatSlot` in ../../types. */
-import type { CodeChannelInfo, CrewWorkFacts, NeedsYou, SessionLink, SourceProviderId, WorkAggregate } from '../../types'
+import type { CodeChannelInfo, CrewWorkFacts, NeedsYou, ReplyAsk, SessionLink, SourceProviderId, WorkAggregate } from '../../types'
 import type { PublicPrincipal, SessionAttribution } from '../../api/sharedCrew'
 
 export interface Slot {
@@ -86,6 +86,8 @@ export interface Slot {
   /** What this chat waits on the person for (`ChatSlot.needs_you`). Read only
    *  through `needsYouOf` (lib/needsYou). */
   needs_you?: NeedsYou | null
+  /** The newest reply's ask the person can set aside (`ChatSlot.reply_ask`). */
+  reply_ask?: ReplyAsk | null
   /** This session's work ledger in brief (`ChatSlot.crew_work`). */
   crew_work?: CrewWorkFacts
   // The transcript shows the last turn ending without a reply (trailing error

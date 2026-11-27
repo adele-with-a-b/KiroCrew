@@ -70,6 +70,7 @@ _TO_DICT_KEYS = (
     "waiting_for_input",
     "needs_input",
     "needs_you",
+    "reply_ask",
     "interrupted",
     "interrupted_stale",
     "stop_state",
