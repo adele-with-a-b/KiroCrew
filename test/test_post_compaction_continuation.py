@@ -418,26 +418,42 @@ def test_an_ordinary_chunk_is_not_flagged_a_control_notice() -> None:
     assert AcpEvent(kind="text_chunk", text="Here is the answer").control_notice is False
 
 
-def test_the_dispatch_path_flags_the_notice_chunk_it_forwards() -> None:
+@pytest.mark.asyncio
+async def test_the_dispatch_path_flags_the_notice_chunk_it_forwards() -> None:
     """The forwarded notice chunk must carry ``control_notice``.
 
     This is the seam that replaced dropping the chunk. Without the flag the
     dashboard cannot tell a notice from an answer and has only two bad options:
     delete the text, or count it as the turn's reply and shadow the continuation.
-    Pinned in source because the yield sits inside a very long async generator,
-    and the regression is exactly the flag going missing from the call.
+    Driven through the real dispatch, so it holds however the yield is spelled:
+    the notice chunk comes out flagged, beside its status event, and the answer
+    after it does not.
     """
-    acp_dir = pathlib.Path(__file__).resolve().parents[1] / "src" / "kiro_crew" / "acp"
-    src = "".join(p.read_text(encoding="utf-8") for p in sorted(acp_dir.glob("client*.py")))
-    assert re.search(
-        r"yield AcpEvent\(\s*kind=kind,\s*text=chunk,\s*control_notice=_notice_chunk\b", src
-    ), "the forwarded chunk must carry the notice flag"
-    assert re.search(
-        r"if _compaction_event is not None:\s*\n"
-        r"\s*yield _compaction_event\s*\n"
-        r"\s*_notice_chunk = True",
-        src,
-    ), "the notice chunk must be marked where the compaction event is emitted"
+    from kiro_crew.acp.types import EVENT_COMPLETE, EVENT_TEXT_CHUNK, JsonRpcMessage
+
+    def _chunk(text: str) -> JsonRpcMessage:
+        update = {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}}
+        return JsonRpcMessage(
+            method="session/update", params={"sessionId": "sess-1", "update": update}
+        )
+
+    async def _prompt_loop(req_id, timeout):
+        yield ("update", _chunk("Compacting..."))
+        yield ("update", _chunk("Here is the answer"))
+        yield ("complete", JsonRpcMessage(id=1, result={"stopReason": STOP_REASON_END_TURN}))
+
+    client = AcpClient(acp_backend=ACP_BACKEND_CLAUDE)
+    client._session_id = "sess-1"
+    client._prompt_loop = _prompt_loop  # type: ignore[assignment]
+    events = [event async for event in client._dispatch_events(req_id=1, timeout=30.0)]
+
+    chunks = [(e.text, e.control_notice) for e in events if e.kind == EVENT_TEXT_CHUNK]
+    assert chunks == [("Compacting...", True), ("Here is the answer", False)]
+    # The status event is a side effect beside the chunk, never instead of it.
+    kinds = [e.kind for e in events]
+    assert kinds.index(EVENT_COMPACTION_STATUS) < kinds.index(EVENT_TEXT_CHUNK)
+    assert events[kinds.index(EVENT_COMPACTION_STATUS)].text == "started"
+    assert events[-1].kind == EVENT_COMPLETE
 
 
 def _runner_source() -> str:
