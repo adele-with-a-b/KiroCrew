@@ -191,6 +191,22 @@ export function isSelfScroll(
 }
 
 /**
+ * Whether a smooth pin to `top` has anywhere to go from where the reader is,
+ * read BEFORE the write. The engine clamps a target past the end, so distance
+ * is measured to the position it can reach. A glide with no distance animates
+ * nothing and dispatches no scroll event, so nothing would ever report its
+ * arrival: the smooth-pin guard is armed only for one that returns true.
+ */
+export function smoothPinHasDistance(
+  geom: ScrollGeom,
+  top: number,
+  epsilon: number = SELF_SCROLL_EPSILON,
+): boolean {
+  const reach = Math.max(0, Math.min(top, bottomTarget(geom)))
+  return Math.abs(reach - geom.scrollTop) > epsilon
+}
+
+/**
  * How far a reader must be moved to stay put when a row ABOVE them is repriced.
  *
  * The height INDEX learns a mounted row's real height only when the debounced
