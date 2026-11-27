@@ -14250,12 +14250,10 @@
         "unknown_tool": "알 수 없는 도구"
       },
       "1_skipped_currently_selected": "(1개 건너뜀 — 현재 선택됨)",
-      "needs_you_everything_else": "나머지",
-      "needs_you_group": "응답 필요",
       "needs_you_group_count_other": "응답 필요: 채팅 {{count}}개",
       "needs_you_hidden_by_filter_other": "‘응답 필요’ 필터로 숨긴 다른 채팅 {{count}}개",
+      "needs_you_more_in_folder_other": "{{name}}에 {{count}}개 더",
       "needs_you_more_other": "외 {{count}}개",
-      "needs_you_oldest_first": "오래된 순",
       "needs_you_open_count_other": "열린 요청 {{count}}개",
       "needs_you_status": "응답 필요",
       "needs_you_waited": "{{age}} 대기 중",

@@ -14250,12 +14250,10 @@
         "unknown_tool": "未知工具"
       },
       "1_skipped_currently_selected": "（跳过 1 个 — 当前已选中）",
-      "needs_you_everything_else": "其他",
-      "needs_you_group": "需要你",
       "needs_you_group_count_other": "需要你：{{count}} 个会话在等你",
       "needs_you_hidden_by_filter_other": "另有 {{count}} 个会话被“需要你”筛选隐藏",
+      "needs_you_more_in_folder_other": "{{name}} 中另有 {{count}} 个",
       "needs_you_more_other": "另有 {{count}} 个",
-      "needs_you_oldest_first": "最早的在前",
       "needs_you_open_count_other": "{{count}} 个待处理请求",
       "needs_you_status": "需要你",
       "needs_you_waited": "已等待 {{age}}",

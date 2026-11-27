@@ -39,6 +39,7 @@ import { RadioChipGroup, radioChip } from '../../components/RadioChipGroup'
 import { renderResumeAllRow } from './resumeAll'
 import type { SidebarScope } from './scope'
 import RemoveMergedCrChips from './RemoveMergedCrChips'
+import { NeedsYouOffChip } from './needsGroup'
 
 /**
  * The menu's Folders section, its separator included. Opened for it (`reveal`, the board
@@ -289,9 +290,9 @@ export function renderSearchDock(shell: SidebarScope): { field: React.ReactNode;
                     ? i18nT('pages.chatSidebar.sort_filter_sessions_hidden', { count: hiddenFolderCount })
                     : i18nT('pages.chatSidebar.sort_filter_sessions')}
                   aria-label={i18nT('pages.chatSidebar.sort_and_filter_sessions')}
-                  // The chats that wait on the person, in their colour; with none, unread as before.
-                  badge={filterCounts['needs_you'] > 0 ? filterCounts['needs_you'] : filterCounts['unread']}
-                  badgeTone={filterCounts['needs_you'] > 0 ? 'needs' : undefined}
+                  // Unread. The wait count is on the "Needs you" chip below
+                  // (NeedsYouOffChip), so it is drawn once.
+                  badge={filterCounts['unread']}
                   className={hiddenFolderCount > 0 ? 'text-warn' : undefined}
                   data-folder-hide-active={hiddenFolderCount > 0 ? String(hiddenFolderCount) : undefined}
                 />
@@ -1174,7 +1175,11 @@ export function renderSearchDock(shell: SidebarScope): { field: React.ReactNode;
           </div>
         )
       })()}
-      {/* "Needs you" leads the shelf, in its own row for the same reason. */}
+      {/* "Needs you" leads the shelf, in its own row for the same reason: while the
+          filter is off, how many chats wait, one click from the oldest-first list. */}
+      {!activeFilters.has('needs_you') && (
+        <NeedsYouOffChip count={filterCounts['needs_you'] ?? 0} onShow={() => toggleFilter('needs_you')} />
+      )}
       {SESSION_FILTERS.filter(filterDef => filterDef.key === 'needs_you' && activeFilters.has(filterDef.key)).map(filterDef => {
         const filterLabel = i18nT(FILTER_LABEL_KEY[filterDef.key])
         return (

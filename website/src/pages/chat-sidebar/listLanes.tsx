@@ -80,10 +80,12 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
     rootFolders, rowAnimEnabled, searchHeader, searchLaneActive, searchRanked, setLaneScrollEl, shownCrewGroups, shownCrewRowCount,
     sidebarRows, slotFilter, slotFolders, sortKey, splitStale, staleExpanded, startsAutomaticSection,
     subagentApprovalCounts, unfiledAboveFolders, ungroupedSlots: ungroupedAll, unreadSet, visibleRootFolders, pinnedBandCaption } = shell
-  // The "Needs you" group draws on top of every list lane; an unfiled waiting chat is
-  // drawn there instead of in the root bucket, a filed one in its folder as well, and a
-  // code-channel worker the root bucket's fold hides stays folded under its conductor too.
+  // While the "Needs you" filter narrows the list, its oldest-first list draws on top
+  // of every list lane and the lane leaves those rows out; otherwise a waiting chat is
+  // drawn in its place (./needsGroup). A code-channel worker the root bucket's fold
+  // hides stays folded under its conductor too.
   const { renderNeedsGroup, withoutGroup } = createNeedsGroup(shell)
+  const { drawnElsewhere } = shell.needsGroup
   const rootFoldsCrews = !(listNarrowed || slotFilter.trim() !== '')
   const keepShownWorker = (w: Slot) => isActiveRow(w) || pinned.has(w.key)
   const ungroupedSlots = withoutGroup(ungroupedAll)
@@ -218,7 +220,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
             {folderCreateError && renderFolderCreateError(folderCreateError.folderId, folderCreateError.columnId)}
             {searchHeader}
             {localGroupHeader}
-            {renderNeedsGroup(flatSlots.length)}
+            {renderNeedsGroup()}
             {(() => {
               const tree = lineage
               if (!tree) return null
@@ -234,7 +236,9 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
               // and scattered to the top level, which is what switching on Unread did.
               const kept = new Set<string>()
               for (const id of conductorMatching) {
-                if (!byKey.has(id)) continue
+                // The "Needs you" list on top draws it, so the nesting does not, nor
+                // hangs an ancestor in for it.
+                if (!byKey.has(id) || drawnElsewhere.has(id)) continue
                 kept.add(id)
                 for (const up of ancestorsOf(id, tree.parentOf)) kept.add(up)
               }
@@ -428,7 +432,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
               {folderCreateError && renderFolderCreateError(folderCreateError.folderId, folderCreateError.columnId)}
               {searchHeader}
               {localGroupHeader}
-              {renderNeedsGroup(flatSlots.length)}
+              {renderNeedsGroup()}
               {/* Caption header before the pinned band when a property filter narrows the list. */}
               {pinnedBandCaption && flatRest.length > 0 && sidebarRows.isPinned(flatRest[0]) && (
                 <PinnedSessionDivider caption={pinnedBandCaption} />
@@ -544,7 +548,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
                 {({ setNodeRef }) => (
                   <div ref={setNodeRef} className="flex flex-col flex-1 min-h-0">
                     {localGroupHeader}
-                    {renderNeedsGroup(laneSlots.length)}
+                    {renderNeedsGroup()}
                     {/* Unfiled sessions ABOVE the folders (dashboard.unfiled_sessions_above_folders).
                      *  The bucket renders first, at natural height, and only when it has
                      *  rows. The lane tail below the folders is then the whole-lower-area
