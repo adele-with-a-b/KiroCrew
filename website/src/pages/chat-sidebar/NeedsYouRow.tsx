@@ -6,8 +6,8 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useMinuteClock } from '../chat/command-center/ConductorModeCrewPanel'
-import { Hand, ListChecks, MessageCircleQuestionMark, ShieldCheck, Tag } from 'lucide-react'
-import type { NeedsYou, NeedsYouKind } from '../../types'
+import { Hand, ListChecks, MessageCircleQuestionMark, Moon, ShieldCheck, Tag } from 'lucide-react'
+import type { NeedsYou, NeedsYouKind, ReplyAsk } from '../../types'
 import { needsYouAge } from '../../lib/needsYou'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 import { ROW_META_CLS } from '../../components/listShell'
@@ -66,6 +66,21 @@ export function NeedsYouLine({ needs, lastMessage, lineCls, iconPx }: { needs: N
         </div>
       )}
     </>
+  )
+}
+
+/** The row's status line once the person pressed "Not now" on its ask: calm and
+ *  muted, "Not now · <first words>", so the row says why it no longer waits. */
+export function SetAsideLine({ ask, lineCls, iconPx }: { ask: ReplyAsk; lineCls: string; iconPx: number }) {
+  const status = i18nT('pages.chatPage.not_now')
+  return (
+    <div className={`${lineCls} text-muted`} title={ask.first_words ? `${status} · ${ask.first_words}` : status} data-testid="session-set-aside">
+      <Moon size={iconPx} className="shrink-0" aria-hidden />
+      <span className="truncate min-w-0">
+        <span className="font-bold whitespace-nowrap">{status}</span>
+        {ask.first_words ? <span>{` · ${ask.first_words}`}</span> : null}
+      </span>
+    </div>
   )
 }
 

@@ -801,6 +801,14 @@ def _read_session_notice_marks(r: _Read) -> None:
         r.slot._session_notice_marks = kept[-SESSION_NOTICE_MARKS:]
 
 
+def _read_needs_you_set_aside(r: _Read) -> None:
+    from kiro_crew.dashboard.needs_you_aside import ROW_ID_MAX
+
+    row_id = r.meta.get("needs_you_set_aside")
+    if isinstance(row_id, str) and 0 < len(row_id) <= ROW_ID_MAX:
+        r.slot._needs_you_set_aside = row_id
+
+
 def _read_deferred_notes(r: _Read) -> None:
     # Sanitized and bounded by the DURABLE CEILING; entries whose delivered row
     # is already committed are dropped by ``settle``, against the loaded rows.
@@ -1407,6 +1415,16 @@ FIELDS: tuple[Field, ...] = (
         merge=_truthy(lambda s: s._session_notice_marks),
         read=_read_session_notice_marks,
     ),
+    # The reply ask the owner set aside with "Not now" (``dashboard.needs_you_aside``).
+    # Slot-owned: "Bring back" writes no key, and the merge writes "" to clear it.
+    Field(
+        "needs_you_set_aside",
+        _ALL,
+        attr="_needs_you_set_aside",
+        line=_truthy(lambda s: s._needs_you_set_aside),
+        merge=_or_cleared(lambda s: s._needs_you_set_aside, ""),
+        read=_read_needs_you_set_aside,
+    ),
     Field(
         "last_user_at",
         frozenset(),
@@ -1593,6 +1611,7 @@ LINE_ORDER: tuple[str, ...] = (
     "telemetry_notice_shown",
     "project_hook_files_notice_shown",
     "session_notice_marks",
+    "needs_you_set_aside",
     "last_user_at",
     "deferred_notes",
     "queued_prompts",
@@ -1655,6 +1674,7 @@ MERGE_ORDER: tuple[str, ...] = (
     "telemetry_notice_shown",
     "project_hook_files_notice_shown",
     "session_notice_marks",
+    "needs_you_set_aside",
     "channel_folder_filed",
     "closed",
     "closed_at",

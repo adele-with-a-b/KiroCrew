@@ -420,6 +420,7 @@ def _settle_crew_rows(state: Any, rows: list[dict[str, Any]]) -> None:
     # circular imports: the state facade and slot_projection import this module,
     # and crew_mode is loaded here as late as slots_frame loads it.
     from kiro_crew import crew_mode
+    from kiro_crew.dashboard.needs_you_aside import FIELD as REPLY_ASK_FIELD
     from kiro_crew.dashboard.slot_projection import summary_rows
     from kiro_crew.dashboard.state import _redact, parse_cls_meta
 
@@ -450,6 +451,8 @@ def _settle_crew_rows(state: Any, rows: list[dict[str, Any]]) -> None:
         row[FIELD] = needs_you_of(
             [*approvals, *question_asks(slot, fallback_ts=fallback, redact=_redact)]
         )
+        # Nor can a worker's reply ask be set aside: it never asked the person.
+        row[REPLY_ASK_FIELD] = None
 
 
 def _record_epoch(value: Any) -> float | None:

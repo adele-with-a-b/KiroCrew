@@ -644,6 +644,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _slot_holds_delivery,
         background_wake_absent,
         background_wake_pending,
+        background_wake_pending_now,
         chat_done_payload,
         chunk_generation,
         idle_compaction_blocker,

@@ -343,6 +343,27 @@ describe('AllProjectsBoardPage', () => {
     expect(screen.getByTestId('where')).toHaveTextContent(/^\/chat$/)
   })
 
+  it("gives each row its worker's door: Open the chat, or why a chat closed on a linked Crew cannot be opened from here", async () => {
+    crewWorkers.mockImplementation((root: string) => Promise.resolve(root === 'root-a' ? {
+      root,
+      workers: [
+        { key: 'w-build', title: 'Builder', agent: 'kirocrew-worker', status: 'working', group: 'working', last_activity: '', ledger_item: 'Building it', created_by: root },
+        // Closed on its crew: the crew list names no chat there.
+        { key: 'r-1', title: 'Reviewer', agent: '', status: 'closed', group: 'done', last_activity: '', ledger_item: 'Fresh review', created_by: root, remote_crew: 'linked-crew' },
+      ],
+    } : { root, workers: [] }))
+    await mount()
+    const user = userEvent.setup({ advanceTimers: () => undefined })
+    const working = await screen.findByTestId('all-projects-section-working')
+    const button = await within(working).findByRole('button', { name: 'Open the chat' })
+    const fresh = within(screen.getByTestId('all-projects-section-conductor')).getAllByTestId('board-story').find(r => r.getAttribute('data-item') === 'Fresh review') as HTMLElement
+    expect(within(fresh).getByTestId('board-worker-door-none')).toHaveTextContent('Its chat is closed on linked-crew and cannot be opened from here.')
+    expect(within(fresh).queryByRole('button', { name: 'Fresh review' })).toBeNull()
+    await user.click(button)
+    expect(openCrewSession).toHaveBeenCalledWith(expect.any(Function), 'w-build', expect.any(Boolean))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/chat$/)
+  })
+
   it('stretches a board whose read fails under the one poll rule, the right bar\'s own id', async () => {
     crewBoard.mockImplementation((root: string) => (root === 'root-a'
       ? Promise.reject(Object.assign(new Error('gateway restarting'), { status: 503 }))

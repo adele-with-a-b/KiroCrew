@@ -4,7 +4,9 @@
  *  (./rows) and its one `actions` object; the row's memo compares both. */
 import { useRef, useEffect, useState, memo, useMemo, useContext } from 'react'
 import { motion } from 'framer-motion'
-import { X, Pin, VolumeX, EyeOff, VenetianMask, MoreVertical, CornerDownRight, Split, Loader, Loader2, Bot, ExternalLink, Workflow, TriangleAlert, Goal, MessageCircleQuestionMark, ShieldCheck, Hourglass, GripVertical, Moon, Zap } from 'lucide-react'
+import { X, Pin, VolumeX, EyeOff, VenetianMask, MoreVertical, CornerDownRight, Split, Loader, Loader2, Bot, ExternalLink, Workflow, TriangleAlert, Goal, MessageCircleQuestionMark, ShieldCheck, Hourglass, GripVertical, Moon, Zap, ChevronRight } from 'lucide-react'
+import FolderGlyph from '../../components/FolderGlyph'
+import { folderNameText } from '../../utils/folderTree'
 import { useQuery } from '@tanstack/react-query'
 import { shallowEqual } from 'react-redux'
 import { useAppDispatch, useAppSelector, type RootState } from '../../store'
@@ -61,7 +63,7 @@ export { crewRowOwnState, type CrewRowOwnState } from './CrewRowState'
 import { CrewRootSummaryLine } from './CrewRootSummaryLine'
 import { crewWaitingApprovals, openedSessionRunning } from '../chat/command-center/model'
 import { needsYouOf } from '../../lib/needsYou'
-import { NeedsYouLine, NeedsYouPulse, NeedsYouSide } from './NeedsYouRow'
+import { NeedsYouLine, NeedsYouPulse, NeedsYouSide, SetAsideLine } from './NeedsYouRow'
 import { MemberRowHead } from './MemberRowFace'
 import { useCrewMode } from '../../hooks/usePreviewFlag'
 import { useInterruptedRowLabel } from './interruptedRowLabel'
@@ -1123,8 +1125,10 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
         role="img" aria-label={i18nT('pages.chatSidebar.agent_finished_your_turn')}
         title={i18nT('pages.chatSidebar.agent_finished_your_turn')} />
       : null
-    // What a waiting chat waits on, said where its status goes (a crew root's when its summary has nothing to say).
-    const needsLine = needs ? <NeedsYouLine needs={needs} lastMessage={s.last_message} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} /> : null
+    // What a waiting chat waits on, said where its status goes (a crew root's when its summary has nothing to say);
+    // once its ask is set aside ("Not now"), the calm line that says so.
+    const needsLine = needs ? <NeedsYouLine needs={needs} lastMessage={s.last_message} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} />
+      : s.reply_ask?.set_aside ? <SetAsideLine ask={s.reply_ask} lineCls={ROW_STATUS_LINE_CLS} iconPx={ROW_ICON_PX} /> : null
     // The row's tail line when no state claims it: the last message, led by the
     // unread dot. A crew card shows it too until its workers summary has an answer.
     const lastMessageLine = (s.last_message || unreadDot) ? (
@@ -1569,6 +1573,15 @@ export const SessionRow = memo(function SessionRow({ view, actions }: SessionRow
                 *  conductor is Crew Mode's to choose and may be swapped. The bolt sits
                 *  inline on this line rather than as a badge before the title, so the
                 *  title keeps the row's full width. */}
+              {/* The row's folder, in the "Needs you" filter's list only: no folder is
+                *  drawn around the row there, so its agent line names it. */}
+              {view.folderCrumb && (
+                <span className="inline-flex items-center gap-[3px] shrink-0 min-w-0 max-w-[45%] text-text" data-testid="session-row-folder-crumb">
+                  <FolderGlyph color={view.folderCrumb.color} icon={view.folderCrumb.icon} size={11} className="shrink-0" />
+                  <span className="truncate">{folderNameText(view.folderCrumb)}</span>
+                  <ChevronRight size={10} aria-hidden="true" className="shrink-0 text-muted" />
+                </span>
+              )}
               {crewRoot && <Zap size={12} aria-hidden="true" className="inline-block shrink-0 conductor-mode-accent" />}
               {crewRoot && <CrewEyebrow active={crewWorking} />}
               {/* A code-channel row's agent name gives way first, so the Slack

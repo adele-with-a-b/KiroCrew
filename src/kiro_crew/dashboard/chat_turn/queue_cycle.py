@@ -537,7 +537,27 @@ async def _send_chat_done(
     if payload is None:
         payload = await chat_done_payload(state, slot, continuing=continuing, ends_turn=ends_turn)
     _report_run_seconds(slot, payload)
+    _push_idle_wake(slot, payload)
     state.broadcast_ws("chat_done", payload)
+
+
+def _push_idle_wake(slot: _ChatSlot, payload: dict[str, Any]) -> None:
+    """At a run's end, arm the bound worker's conductor tick one idle threshold later.
+
+    ``conductor_wake.wake_for_idle_worker``, off the event loop: it reads the worker's
+    binding and item. A frame that continues the run, or pauses on a question to the
+    person, arms nothing. Best-effort: the conductor's patrol tick reads the same rule.
+    """
+    if "turn" not in payload or payload.get("continuing") or payload.get("needs_input"):
+        return
+    from kiro_crew import conductor_wake
+
+    try:
+        asyncio.get_running_loop().run_in_executor(
+            None, conductor_wake.wake_for_idle_worker, str(slot.key)
+        )
+    except Exception:  # noqa: BLE001 - the turn end must finish
+        logger.debug("idle-worker wake not scheduled (slot %s)", slot.key)
 
 
 def _report_run_seconds(slot: _ChatSlot, payload: dict[str, Any]) -> None:

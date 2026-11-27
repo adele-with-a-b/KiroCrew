@@ -97,6 +97,9 @@ SLOT_OWNED_META_KEYS: frozenset[str] = frozenset(
         "mutes_opened",
         # Same reason: an unmute of the per-row mute writes no key.
         "muted",
+        # Same reason: "Bring back" on a reply ask set aside with "Not now"
+        # writes no key (``dashboard.needs_you_aside``).
+        "needs_you_set_aside",
         "color_index",
         "color_hex",
         "color_theme",

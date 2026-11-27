@@ -677,6 +677,20 @@ def stall_brief(*, item_id: str, status: str | None) -> str:
     return f"[work-ledger wake] item={item_id} reason=stall last_status={status or '(none yet)'}"
 
 
+def idle_wake_brief(*, item_id: str, status: str | None, idle_secs: float) -> str:
+    """Text for a worker whose chat went IDLE owing the next move (``work_ledger.idle_spell``).
+
+    Its own reason for the reason :func:`stall_brief` has one: the worker's chat is still
+    open and nothing of its own will wake it, so the conductor's move is to send it the
+    next step (or close it), not to wait. Structural only, for the reason
+    :func:`wake_brief` gives.
+    """
+    return (
+        f"[work-ledger wake] item={item_id} reason=worker_idle "
+        f"last_status={status or '(none yet)'} idle_secs={int(max(idle_secs, 0.0))}"
+    )
+
+
 def undelivered_wake_brief(*, item_id: str, tool: str) -> str:
     """Text for a worker whose ``work_report`` / ``work_brief`` call never arrived.
 

@@ -106,6 +106,7 @@ export type {
   CrewWorkItemFacts,
   NeedsYou,
   NeedsYouKind,
+  ReplyAsk,
   ConductorModeRun,
   CrewTimeline,
   CrewTimelineHandoff,

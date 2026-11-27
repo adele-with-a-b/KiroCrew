@@ -346,6 +346,11 @@ def _seen_open(item: str, slot: str = "peer-a", *, closed: bool = False) -> None
     )
 
 
+def _listed(state: _State, *slots: str, crew: str = "lab", at: float = 1_000.0) -> None:
+    """A fresh read of *crew*'s slot list that named *slots*, as the refresh stores it."""
+    patrol_seats._ROSTERS.setdefault(state, {})[crew] = (frozenset(slots), at)
+
+
 def _close_item(item: str, state: str = "abandoned") -> None:
     work_ledger.apply_conductor_action(CONDUCTOR, "close", item_id=item, state=state)
 
@@ -359,7 +364,7 @@ def _close_clock(monkeypatch) -> list[str]:
 
 @pytest.mark.asyncio
 async def test_a_closed_item_whose_crew_worker_is_still_open_is_named(monkeypatch):
-    """A crew-bound worker answers from the hub's stored record of that crew, and
+    """A crew-bound worker answers from a fresh read of that crew's slot list, and
     closing it through ``session_close(crew=)`` is what takes it off the line."""
     _board()
     live, unread = _create(), _create()
@@ -367,10 +372,11 @@ async def test_a_closed_item_whose_crew_worker_is_still_open_is_named(monkeypatc
         _remote_bind(item, slot)
         _close_item(item)
     _seen_open(live)
-    # The other pull never read the slot list, so nothing says its worker is open.
-    work_ledger.write_remote_state(CONDUCTOR, unread, work_ledger.RemoteState(roster_read=False))
+    _seen_open(unread, "peer-b")
     state = _State()
     _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    # The crew's list names only peer-a now: peer-b's chat closed on the crew.
+    _listed(state, "peer-a")
     body = await _fire(_orchestrator(state))
     assert f"Finished workers still open: 1 ({live})." in body
     assert unread not in body
@@ -413,6 +419,7 @@ async def test_a_crew_session_an_open_item_reuses_is_no_finished_worker(monkeypa
     _remote_bind(done)
     _close_item(done, "rejected")
     _seen_open(done)
+    _listed(state, "peer-a")
     assert f"Finished workers still open: 1 ({done})." in await _fire(_orchestrator(state))
     again = _create()
     _remote_bind(again)
@@ -452,6 +459,7 @@ async def test_a_crew_session_is_read_from_its_newest_closed_item(monkeypatch):
         _close_item(item)
     _seen_open(first)
     _seen_open(second, closed=True)
+    _listed(state, "peer-a")
     assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
 
 
@@ -468,6 +476,7 @@ async def test_a_finished_crew_worker_no_close_can_reach_is_not_named(monkeypatc
     _remote_bind(done)
     _close_item(done)
     _seen_open(done)
+    _listed(state, "peer-a")
     assert f"Finished workers still open: 1 ({done})." in await _fire(_orchestrator(state))
     if gone == "unregistered":
         monkeypatch.setattr(routes, "_instances", lambda _s: [])
@@ -492,12 +501,63 @@ async def test_a_crew_session_closed_before_its_item_is_not_named(monkeypatch):
     item = _create()
     _remote_bind(item)
     _seen_open(item)
+    _listed(state, "peer-a")
     closed = await routes._close(
         state, state.instances_manager, CONDUCTOR, "lab", "peer-a", CONDUCTOR
     )
     assert closed["closed"] is True
     _close_item(item)
     assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reading", ["none", "not-named", "old"])
+async def test_a_crew_record_frozen_open_at_close_is_not_named(monkeypatch, reading):
+    """The puller stops reading an item once it closes, so its stored record says
+    what the crew's list said while it was open. A chat closed on the crew since
+    (archived, swept, closed by hand) kept reading open, and the line counted
+    every such worker for good: 181 on one board. Only a fresh list read counts."""
+    _board()
+    state = _State()
+    _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    done = _create()
+    _remote_bind(done)
+    _seen_open(done)
+    _close_item(done)
+    if reading == "not-named":
+        _listed(state, "peer-other")
+    elif reading == "old":
+        _listed(state, "peer-a", at=1_000.0 - patrol_seats.ROOM_FRESH_SECS - 1)
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+
+
+@pytest.mark.asyncio
+async def test_the_patrol_reads_the_crews_list_for_the_next_wake(monkeypatch):
+    """The first wake knows nothing and names nothing; it starts the list read, and
+    the next wake names the worker the crew listed. An unreadable list names none."""
+    from kiro_crew.dashboard.handlers import remote_ingest
+
+    _board()
+    state = _State()
+    _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    done = _create()
+    _remote_bind(done)
+    _close_item(done)
+    answers: list[Any] = [{"peer-a": {"running": False, "pending_approval": False}}, None]
+    asked: list[str] = []
+
+    async def _slot_list(_state, instance_id):
+        asked.append(instance_id)
+        return answers.pop(0)
+
+    monkeypatch.setattr(remote_ingest, "_slot_list", _slot_list)
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+    await patrol_seats._ROSTERING[state]
+    assert f"Finished workers still open: 1 ({done})." in await _fire(_orchestrator(state))
+    await patrol_seats._ROSTERING[state]
+    assert patrol_seats.SEATS_TAG not in await _fire(_orchestrator(state))
+    await patrol_seats._ROSTERING[state]
+    assert asked[:2] == ["lab", "lab"]
 
 
 # ── (d) an unreachable crew ───────────────────────────────────────────────────

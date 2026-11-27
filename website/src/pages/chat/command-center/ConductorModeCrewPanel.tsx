@@ -37,7 +37,7 @@ import CrewApprovalCards, { crewApprovalRequests } from '../../../components/cre
 import { crewRouteNotServed, crewSubDispatcher, crewWorkerGroup, mergeCrewWorkers, searchCrewWorkers } from '../../../lib/crewWorkers'
 import { fmtRelativeTime } from '../sessionOrder'
 import { CREW_FINISHED_OPEN_KEY, CREW_WORKER_SEARCH_MIN, CrewPanelBack, CrewWorkerSearch, openCrewSession, useCrewWorkerQuery, useCrewWorkers, useLiveCrewWorkers } from './CrewWorkerList'
-import { canOpenCrewWorker, itemOpener, useOpenCrewWorker } from './openCrewWorker'
+import { canOpenCrewWorker, itemOpener, useOpenCrewWorker, workerDoor } from './openCrewWorker'
 import { usePersistedBool } from '../../../hooks/usePersistedBool'
 import { useCrewMode } from '../../../hooks/usePreviewFlag'
 import { CrewMemberContinue, CrewPauseRow } from './CrewPauseControl'
@@ -48,6 +48,7 @@ import BoardViewSwitch, { type BoardView } from '../../../components/board/Board
 import { PART_SEP, joinParts, type BoardStory } from '../../../components/board/BoardRow'
 import StoryFacts, { storyHasFacts } from '../../../components/board/StoryFacts'
 import BoardStoryView from '../../../components/board/BoardStoryView'
+import WorkerDoorAction from '../../../components/board/WorkerDoor'
 import { useOpenStory } from '../../../components/board/storyView'
 import MergedRing from '../../../components/board/MergedRing'
 import BoardMovesView from './BoardMovesView'
@@ -267,10 +268,19 @@ export function milestoneState(item: WorkBoardItem, waiting: boolean, manager = 
   if (item.alive === 'running') return 'running'
   // Stuck only when nothing is left to move it: its session closed on an open
   // report, or the board is orphaned (no main chat reads its reports). A done
-  // report its Conductor handed back (`reportAnswered`) is the worker's move as an
-  // open report is, so it is stuck the same way. Any other done report, or an
-  // unstarted item, keeps its own state even on an orphaned board.
+  // report its Conductor handed back (`reportAnswered`) is stuck the same way on an
+  // orphaned board. Any other done report, or an unstarted item, keeps its own
+  // state even on an orphaned board.
   const handedBack = item.status === 'done' && reportAnswered(item)
+  // A stage done: its Conductor decided on the done report and kept the item open
+  // for a next stage, and the chat that did the stage closed, by design. It waits
+  // for its Conductor to seat the next stage, so it is not stuck. It is said only
+  // when nothing after the done report gave that chat new work, so a closed chat
+  // still is stuck: on an orphaned board (no Conductor reads it), for a standing
+  // manager (nobody wakes it), and after a person's steer (more work typed to it).
+  // shortcut: a Conductor's decide that hands work back to the same chat reads as
+  // one that keeps the item for its next stage; no Board field tells them apart.
+  if (handedBack && item.alive === 'closed' && !item.orphaned && !manager && !steeredSinceReport(item)) return 'stage_done'
   if ((open || handedBack) && (item.alive === 'closed' || item.orphaned)) return 'stuck'
   // Standing by: a standing manager's open chat, idle between jobs, rests until its
   // Conductor's next note wakes it, so it is never quiet or stuck. A report the
@@ -306,6 +316,19 @@ function judgedSinceReport(item: WorkBoardItem): boolean {
   if (last >= 0) return events.slice(last + 1).some(e => e.kind === 'verdict')
   const reported = item.last_report_at ? Date.parse(item.last_report_at) : NaN
   return Number.isFinite(reported) && events.some(e => e.kind === 'verdict' && Date.parse(e.ts) >= reported)
+}
+
+/** A person's steer on the event tail after the newest report: the owner typed the
+ *  chat more work, so its done report is no longer its last word. With the report
+ *  off the tail, a steer not provably older than `last_report_at` counts, so an
+ *  unsure row stays stuck. */
+function steeredSinceReport(item: WorkBoardItem): boolean {
+  const events = item.events || []
+  let last = -1
+  events.forEach((e, n) => { if (e.kind === 'report') last = n })
+  if (last >= 0) return events.slice(last + 1).some(e => e.kind === 'steer')
+  const reported = item.last_report_at ? Date.parse(item.last_report_at) : NaN
+  return events.some(e => e.kind === 'steer' && !(Date.parse(e.ts) < reported))
 }
 
 /** How long an open item has waited on its conductor, in minutes, or null: its
@@ -386,6 +409,10 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
   } else if (state === 'standing_by') {
     const text = i18nT('components.crewMode.conductor_mode_ms_standing_by')
     sub = <span className={WRAP} title={text} data-testid="conductor-mode-standing-by">{text}</span>
+  } else if (state === 'stage_done') {
+    // What it waits for, not the worker's words: those stay on hover.
+    const text = i18nT('components.crewMode.conductor_mode_ms_stage_done')
+    sub = <span className={WRAP} title={firstSentence(item.summary) || text} data-testid="conductor-mode-stage-done">{text}</span>
   } else if (state === 'waiting') {
     // What it waits on, only as far as the board knows: the PR it reported, then
     // the worker's own words; with neither, a calm "no reason given".
@@ -782,6 +809,7 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
     const subtasks = childProgress(item, plan.children)
     const w = workers.find(x => x.ledger_item === item.item_id)
     const worker = w ? w.title || w.agent || undefined : undefined
+    const door = workerDoor(item, workers, open)
     return {
       item, move, age, late: wait != null && wait >= CONDUCTOR_WAIT_LOUD_MINUTES, onOpen: () => openStory.open(item.item_id),
       // A person's ask quotes what it asks; every other row says what its worker last
@@ -790,7 +818,9 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
         ? <span title={item.summary} data-testid="conductor-mode-person-ask-text">{i18nT('components.crewMode.board_asks', { what: firstSentence(item.summary) })}</span>
         : <MilestoneLine item={item} state={state} waitingOn={m?.waitingOn ?? ''} />,
       facts: storyHasFacts(item, worker, subtasks) ? <StoryFacts item={item} worker={worker} facts={board.data?.pr_facts?.[item.item_id]} subtasks={subtasks} /> : undefined,
-      actions: ask ? <PersonAskActions root={root} item={item} options={board.data?.asks?.[item.item_id] ?? []} onAct={replyInto} back={crewBack} /> : undefined,
+      // A person's ask keeps its own controls; every other row with a worker gets the way to its chat.
+      actions: ask ? <PersonAskActions root={root} item={item} options={board.data?.asks?.[item.item_id] ?? []} onAct={replyInto} back={crewBack} />
+        : door ? <WorkerDoorAction door={door} small /> : undefined,
       testId: ask ? 'conductor-mode-person-ask' : undefined,
     }
   })
@@ -864,7 +894,6 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
 
   // One story open: its own view in place of the Board, until its crumb or Escape goes back.
   const storyItem = openStory.id ? items.find(i => i.item_id === openStory.id) : undefined
-  const storyWorker = storyItem ? workers.find(x => x.ledger_item === storyItem.item_id) : undefined
   // The run line's counts, each one Crew can read: stories merged, this project's
   // worker chats, then each computer's worker chats across every project and its
   // room. No "of N": no computer refuses a worker chat past a count.
@@ -880,8 +909,8 @@ export default function ConductorModeCrewPanel({ root, viewing, active, onAct }:
       {/* A crew member on screen: one click back to its root. */}
       {viewing && viewing !== root && <CrewPanelBack root={root} />}
       {storyItem && (
-        <BoardStoryView root={root} item={storyItem} story={storyById.get(storyItem.item_id)} project={rootSlot?.title} worker={storyWorker ? storyWorker.title || storyWorker.agent || undefined : undefined}
-          facts={board.data?.pr_facts?.[storyItem.item_id]} plan={plan} onBack={openStory.back} onOpenChat={openItem(storyItem)} reopenFailed={reopenFailed} active={active} now={now} />
+        <BoardStoryView root={root} item={storyItem} story={storyById.get(storyItem.item_id)} project={rootSlot?.title} door={workerDoor(storyItem, workers, open)}
+          facts={board.data?.pr_facts?.[storyItem.item_id]} plan={plan} onBack={openStory.back} reopenFailed={reopenFailed} active={active} now={now} />
       )}
       {/* The Board stays mounted under an open story, hidden (out of the tab order and
           the accessibility tree), so back finds its view, Timeline window and scroll as

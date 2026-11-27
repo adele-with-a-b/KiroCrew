@@ -13,7 +13,9 @@ into a running turn:
   remote-dispatch preview on, on each registered crew, read and judged the way
   placement does (``remote_placement.read_headroom`` and ``room_short``);
 * the finished worker sessions still open, here or on a crew a close can reach,
-  one closed item named per session, and none for a session an open item uses.
+  one closed item named per session, and none for a session an open item uses. A
+  crew's are named only from a fresh read of its slot list (:func:`crew_slot_open`),
+  never from the record a pull left while the item was still open.
 
 Then one fixed instruction line. A board with nothing to say adds nothing, so a
 quiet patrol costs no extra text, and its room is not even read.
@@ -73,6 +75,14 @@ _READINGS: "weakref.WeakKeyDictionary[Any, dict[str, tuple[str, float]]]" = (
     weakref.WeakKeyDictionary()
 )
 _REFRESHING: "weakref.WeakKeyDictionary[Any, asyncio.Future[Any]]" = weakref.WeakKeyDictionary()
+
+#: Per gateway state: ``{crew id: (slot keys its list named, read at)}``, and the
+#: list read in flight. Only a complete list is kept; an unreadable one drops the
+#: crew's reading, so its finished workers are left out rather than guessed.
+_ROSTERS: "weakref.WeakKeyDictionary[Any, dict[str, tuple[frozenset[str], float]]]" = (
+    weakref.WeakKeyDictionary()
+)
+_ROSTERING: "weakref.WeakKeyDictionary[Any, asyncio.Future[Any]]" = weakref.WeakKeyDictionary()
 
 
 def _listed(ids: Sequence[str]) -> str:
@@ -260,9 +270,11 @@ async def seats_text(state: Any, conductor_key: str) -> str:
             conductor_key,
             slot_present=present if callable(present) else _no_slot,
             crew_reachable=lambda instance_id: crew_reachable(state, instance_id),
+            crew_slot_open=lambda instance_id, slot: crew_slot_open(state, instance_id, slot),
         )
         if facts is None:
             return ""
+        _refresh_rosters(state, list(facts.finished_crews))
         room = ""
         crews: list[tuple[str, str]] = []
         if facts.ready or _pullable(facts.backlog, facts.seats_free):
@@ -284,6 +296,50 @@ async def seats_text(state: Any, conductor_key: str) -> str:
 
 def _no_slot(_key: str) -> bool:
     return False
+
+
+def crew_slot_open(state: Any, instance_id: str, slot: str) -> bool:
+    """Whether a fresh read of *instance_id*'s slot list named *slot*. Memory read.
+
+    Fresh is :data:`ROOM_FRESH_SECS`, as a crew's room is. No reading, an old one,
+    or one that did not name *slot* answers False: a finished worker is counted
+    open only when the crew itself says so now.
+    """
+    seen = _ROSTERS.get(state, {}).get(instance_id)
+    return seen is not None and 0 <= _clock() - seen[1] <= ROOM_FRESH_SECS and slot in seen[0]
+
+
+def _refresh_rosters(state: Any, instance_ids: list[str]) -> None:
+    """Start one background slot-list read of *instance_ids*, unless one is running.
+
+    The read the remote puller takes (``remote_ingest._slot_list``), bounded by
+    ``remote_placement.PROBE_TIMEOUT_S`` per crew, for the next wake: like the room,
+    the line never waits on a crew.
+    """
+    running = _ROSTERING.get(state)
+    if not instance_ids or (running is not None and not running.done()):
+        return
+    from kiro_crew.dashboard.handlers import remote_ingest
+    from kiro_crew.dashboard.handlers import remote_placement as placement
+
+    async def _one(instance_id: str) -> None:
+        try:
+            listed = await asyncio.wait_for(
+                remote_ingest._slot_list(state, instance_id), placement.PROBE_TIMEOUT_S
+            )
+        except Exception:  # noqa: BLE001 - an unread list is no reading
+            listed = None
+        readings = _ROSTERS.setdefault(state, {})
+        if listed is None:
+            readings.pop(instance_id, None)
+        else:
+            readings[instance_id] = (frozenset(listed), _clock())
+
+    future = asyncio.gather(
+        *(_one(instance_id) for instance_id in instance_ids), return_exceptions=True
+    )
+    future.add_done_callback(_settled)
+    _ROSTERING[state] = future
 
 
 def crew_reachable(state: Any, instance_id: str) -> bool:

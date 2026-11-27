@@ -356,10 +356,15 @@ def is_stale(
     worker_closed: bool = False,
     worker_looping: bool = False,
     worker_loop_held: bool = False,
+    worker_idle_since: float | None = None,
     now: datetime | None = None,
     window_secs: float = DEFAULT_STALE_WINDOW_SECS,
 ) -> bool:
     """Whether *item* has gone quiet in a way that is worth waking someone for.
+
+    ``worker_idle_since`` is when the worker's chat went idle with nothing of its own
+    to wake it (``slot_retention.worker_idle_since``), ``None`` for unknown. An idle
+    spell :func:`idle_spell` accepts flags the item without waiting out the window.
 
     A CONJUNCTION: quiet plus not running. A worker in a thirty-minute build is running,
     so it is never flagged. The window covers the gap between binding and the first
@@ -417,6 +422,18 @@ def is_stale(
         # still rehydrating). A report proves the worker existed; without one the
         # window decides.
         return True
+    if (
+        idle_spell(
+            item,
+            worker_running=worker_running,
+            worker_closed=worker_closed,
+            worker_looping=worker_looping,
+            worker_idle_since=worker_idle_since,
+            now=now,
+        )
+        is not None
+    ):
+        return True
     reference = quiet_since(item, wake=not worker_loop_held)
     if not reference:
         return True
@@ -430,6 +447,59 @@ def is_stale(
     if moment.tzinfo is None:
         moment = moment.astimezone()
     return moment - stamped > timedelta(seconds=max(window_secs, 0.0))
+
+
+#: How long a bound worker's chat must sit idle, with nothing of its own to wake it,
+#: before :func:`idle_spell` counts it. Long enough that the instant between one turn
+#: and a queued next one is never read as a stop.
+IDLE_WAKE_SECS = 60.0
+
+
+def idle_spell(
+    item: WorkItem,
+    *,
+    worker_running: bool,
+    worker_closed: bool = False,
+    worker_looping: bool = False,
+    worker_idle_since: float | None = None,
+    now: datetime | None = None,
+) -> float | None:
+    """When *item*'s worker went idle owing the next move, or ``None``.
+
+    The one rule for "this worker stopped and nothing will wake it": the board's
+    ``stale`` flag (through :func:`is_stale`) and the probe's ``reason=worker_idle``
+    wake both read it. The answer is the spell's start, so one spell is one wake and a
+    worker that runs a turn again starts a new one.
+
+    ``None`` unless the item is open and bound to a worker on this computer, the worker
+    is not running, not closed and not looping, its chat has been idle (positive
+    evidence, ``worker_idle_since``) for :data:`IDLE_WAKE_SECS`, its last report leaves
+    the move with it (so a worker waiting on a person or its conductor never counts), and
+    the spell began at or after the quiet reference (:func:`quiet_since`): a worker that
+    went idle before its item was bound, before the conductor's ``decide``, or before a
+    ``wake_at`` it named has not stopped on this work yet.
+    """
+    if worker_idle_since is None or item.is_terminal or worker_running:
+        return None
+    if worker_closed or worker_looping or item.worker_instance_id:
+        return None
+    if not item.worker_session_key or not _worker_owns_next_move(item):
+        return None
+    reference = parse_stamp(quiet_since(item))
+    if reference is None:
+        return None
+    try:
+        idle_at = datetime.fromtimestamp(float(worker_idle_since), tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+    if idle_at < reference:
+        return None
+    moment = now or datetime.now().astimezone()
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    if moment - idle_at < timedelta(seconds=IDLE_WAKE_SECS):
+        return None
+    return float(worker_idle_since)
 
 
 def quiet_since(item: WorkItem, *, wake: bool = True) -> str:

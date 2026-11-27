@@ -386,6 +386,7 @@ def _row_with_flags(
         worker_closed=closed,
         worker_looping=looping,
         worker_loop_held=held,
+        worker_idle_since=_item_idle_since(state, item),
     )
     row["acceptance_concrete"] = work_ledger.is_acceptance_concrete(item.acceptance)
     row["unpatrolled"] = item.state == "open" and not patrolled
@@ -649,6 +650,20 @@ def _slot_loop_held(key: str) -> bool:
     from kiro_crew.autonudge import get_instance
 
     return ledger_wake.worker_loop_held(get_instance(), key)
+
+
+def _item_idle_since(state: DashboardState, item: work_ledger.WorkItem) -> float | None:
+    """When *item*'s local worker went idle with nothing to wake it, as the idle wake reads it.
+
+    One resolver, :func:`slot_retention.worker_idle_since`, answers both the Board's
+    Quiet reading and the ``worker_idle`` wake, so the two cannot disagree. A remote
+    worker's slot is on its peer, so it answers None and keeps the window.
+    """
+    if item.worker_instance_id or not item.worker_session_key:
+        return None
+    from kiro_crew.dashboard import slot_retention
+
+    return slot_retention.worker_idle_since(state, item.worker_session_key)
 
 
 def worker_holds_open_item(slot_key: str) -> bool:

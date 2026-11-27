@@ -611,7 +611,8 @@ CONDUCTOR_GUIDANCE = (
     'shell" when it shows pending_approval. Use its dashboard_link when you name a '
     "worker. A worker's transcript is not readable from a code channel, and you "
     "need not say so: its state is the answer. "
-    "On a work-ledger wake with reason=stall, check before you nudge: session_status "
+    "On a work-ledger wake with reason=stall or reason=worker_idle, check before you "
+    "nudge: session_status "
     "for the worker, work_ledger_read for its item, and on the forge gh pr list --head "
     "<branch> (the branch you gave it, or the one its report names; if you know none, "
     'gh pr list --state all --search "<issue number or item title>") and gh pr checks '

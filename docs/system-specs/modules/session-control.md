@@ -2747,7 +2747,8 @@ own folder, beside its session, so the sidebar's lineage lane nests it under the
 any other folder, a new one inside it, or a folder-walk preflight is refused
 (`code_channel_folder`). The conductor is told this, and to answer status questions from
 `session_status`, in `CONDUCTOR_GUIDANCE` (seeded by `routing._seed_framing`, repeated on its
-`session_create` replies). The same text governs a `reason=stall` ledger wake: before nudging,
+`session_create` replies). The same text governs a `reason=stall` or `reason=worker_idle`
+ledger wake: before nudging,
 the conductor checks the worker's `session_status`, its item (`work_ledger_read`) and its PR
 and CI on the forge (`gh pr list --head <branch>`, or `--state all --search` by issue or title
 when no branch is known, then `gh pr checks`), then states what it found; `last_status=(none

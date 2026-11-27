@@ -653,6 +653,12 @@ async def _init_autonudge(self: GatewayOrchestrator) -> None:
 
         return queue_age.sender_unread(self.dashboard_state, worker_key, sender_key)
 
+    def _worker_idle_since(session_key: str) -> float | None:
+        """Bind the idle-worker wake to the slot table: ``slot_retention.worker_idle_since``."""
+        from kiro_crew.dashboard import slot_retention
+
+        return slot_retention.worker_idle_since(self.dashboard_state, session_key)
+
     self.autonudge_svc = AutoNudgeService(
         base_dir=data_home(),
         on_fire=_fire,
@@ -662,6 +668,7 @@ async def _init_autonudge(self: GatewayOrchestrator) -> None:
         worker_running=_worker_slot_running,
         worker_closed=_worker_slot_closed,
         worker_unread=_worker_unread,
+        worker_idle_since=_worker_idle_since,
     )
 
     def _monitor_owner_session_id(loop: NudgeLoop) -> str:

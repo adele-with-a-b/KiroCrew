@@ -1,12 +1,14 @@
 /**
- * Chat sidebar: the "Needs you" group, the loud row, the filter and the tab count.
+ * Chat sidebar: a waiting chat is drawn once, in its own place.
  *
- * The rule (`needsYouOf`) decides; the list draws it loud, gathers it on top
- * oldest first, counts it on the filter button, and filters to it. A chat the
- * rule calls settled is never drawn waiting, and the unread dot is the quiet one.
+ * The rule (`needsYouOf`) decides what waits; `useNeedsGroup` decides where it
+ * is drawn: in its place, lit; under the outermost collapsed folder holding it;
+ * or, while the Needs you filter narrows, in the oldest-first list on top with
+ * its folder's crumb, and nowhere else. The chip under the search field carries
+ * the waiting count; the funnel counts unread.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
@@ -49,10 +51,12 @@ vi.mock('../pages/chat/ChatSettings', () => ({
   loadChatConfig: () => ({ tagColumnsEnabled: false, confirmCloseSession: false }),
   saveChatConfig: vi.fn(),
 }))
+// The gateway's folders are the test's own: a refetch must not empty the tree.
+const gatewayFolders = vi.hoisted(() => ({ current: [] as unknown[] }))
 vi.mock('../api/client', () => ({
   SEARCH_MIN_CHARS: 2,
   api: new Proxy({} as Record<string, unknown>, {
-    get: () => vi.fn().mockResolvedValue([]),
+    get: (_t, prop) => (prop === 'chatFolders' ? () => Promise.resolve(gatewayFolders.current) : vi.fn().mockResolvedValue([])),
   }),
 }))
 
@@ -67,6 +71,7 @@ Object.defineProperty(window, 'matchMedia', {
 
 import ChatSidebar from '../pages/ChatSidebar'
 import { selectChatsWaitingOnYou } from '../lib/needsYouCount'
+import { sseSlots } from '../store/dashboardSlice'
 import type { RootState } from '../store'
 import type { ChatSlot } from '../types'
 
@@ -87,11 +92,11 @@ const slots = [
   { key: 'trip', title: 'Trip planner', running: false, messages: 4, agent: 'kirocrew', last_message: 'Saved the plan', last_ts: at(8) },
 ] as unknown as ChatSlot[]
 
-function makeStore(list: ChatSlot[] = slots) {
+function makeStore(list: ChatSlot[] = slots, unread: string[] = ['trip']) {
   return createTestStore({
     dashboard: {
       status: {}, connected: true, slots: list, approvalMode: 'normal',
-      channelTrusted: false, refreshTrigger: 0, unreadSlots: ['trip'], updateProgress: null,
+      channelTrusted: false, refreshTrigger: 0, unreadSlots: unread, updateProgress: null,
       slotsLoaded: true,
       subagentRunning: {}, subagentDetails: {}, subagentText: {},
       sessionDefaultColor: null, sessionColorsMode: 'tint', sessionColorsPalette: 'horizon', sessionColorsIntensity: 'clear',
@@ -102,23 +107,33 @@ function makeStore(list: ChatSlot[] = slots) {
   })
 }
 
-function renderSidebar(list: ChatSlot[] = slots) {
+function renderSidebar(list: ChatSlot[] = slots, opts: { folders?: unknown[]; unread?: string[] } = {}) {
+  const unread = opts.unread ?? ['trip']
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  qc.setQueryData(['chat-folders'], [])
-  return render(
+  gatewayFolders.current = opts.folders ?? []
+  qc.setQueryData(['chat-folders'], gatewayFolders.current)
+  const store = makeStore(list, unread)
+  const view = (rows: ChatSlot[]) => (
     <QueryClientProvider client={qc}>
-      <Provider store={makeStore(list)}>
+      <Provider store={store}>
         <ThemeProvider>
           <MemoryRouter>
             <ChatSidebar
-              slots={list as never} activeSlot={null} unreadSlots={['trip']}
+              slots={rows as never} activeSlot={null} unreadSlots={unread}
               history={[]} historyHasMore={false} defaultAgent="" installedAgents={[]}
             />
           </MemoryRouter>
         </ThemeProvider>
       </Provider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  const utils = render(view(list))
+  /** A new frame from the gateway: the store and the list's props both move. */
+  const rerenderSlots = (rows: ChatSlot[]) => {
+    act(() => { store.dispatch(sseSlots(rows)) })
+    utils.rerender(view(rows))
+  }
+  return { ...utils, rerenderSlots, qc }
 }
 
 const rowOf = (container: HTMLElement, key: string) => container.querySelectorAll<HTMLElement>(`[data-slot-key="${key}"] .session-row`)
@@ -133,19 +148,15 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('chat sidebar — Needs you', () => {
-  it('gathers the waiting chats on top, oldest wait first, under a heading that reads its count', async () => {
+describe('chat sidebar — Needs you, unfiled', () => {
+  it('leaves each waiting chat in its place, lit, with no group on top', async () => {
     const { container } = renderSidebar()
-    const group = await waitFor(() => {
-      const g = container.querySelector<HTMLElement>('[data-testid="needs-you-group"]')
-      expect(g).toBeTruthy()
-      return g!
-    })
-    expect(within(group).getByTestId('needs-you-group-header').getAttribute('aria-label')).toBe('Needs you: 3 chats wait on you')
-    expect([...group.querySelectorAll('[data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['train', 'flaky', 'docs'])
-    expect(within(group).getByTestId('needs-you-rest-header').textContent).toBe('Everything else3')
-    // Unfiled, so drawn once: the group is where they are.
-    for (const key of ['train', 'flaky', 'docs']) expect(rowOf(container, key)).toHaveLength(1)
+    await waitFor(() => expect(rowOf(container, 'train')).toHaveLength(1))
+    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key]')).toBeNull()
+    for (const key of ['train', 'flaky', 'docs']) {
+      expect(rowOf(container, key)).toHaveLength(1)
+      expect(rowOf(container, key)[0].classList.contains('session-needs-you')).toBe(true)
+    }
   })
 
   it('draws a waiting row loud: the ask, the open asks, the wait', async () => {
@@ -168,7 +179,6 @@ describe('chat sidebar — Needs you', () => {
     const settled = rowOf(container, 'settled')[0]
     expect(settled.classList.contains('session-needs-you')).toBe(false)
     expect(within(settled).queryByTestId('session-needs-you')).toBeNull()
-    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key="settled"]')).toBeNull()
   })
 
   it('keeps unread as a small grey dot, lit as before', async () => {
@@ -179,19 +189,177 @@ describe('chat sidebar — Needs you', () => {
     expect(dot.getAttribute('aria-label')).toBe('Agent finished — your turn')
   })
 
-  it('puts the waiting count, in its colour, on the filter button', async () => {
+  it('shows the waiting count once, on the Needs you chip; the funnel counts unread', async () => {
     const { container } = renderSidebar()
-    await waitFor(() => expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('3'))
+    const chip = await waitFor(() => {
+      const c = container.querySelector<HTMLElement>('[data-testid="needs-you-off-chip"]')
+      expect(c).toBeTruthy()
+      return c!
+    })
+    expect(chip.textContent).toBe('Needs you3')
+    expect(chip.getAttribute('aria-label')).toBe('Needs you: 3 chats wait on you')
+    expect(container.querySelector('[data-testid="filter-menu-badge"]')?.textContent).toBe('1')
+    // One click on the chip turns the filter on.
+    fireEvent.click(chip)
+    await waitFor(() => expect(container.querySelector('[data-testid="filter-chip-needs_you"]')?.textContent).toContain('Needs you · 3'))
+    expect(container.querySelector('[data-testid="needs-you-off-chip"]')).toBeNull()
   })
 
-  it('filters to the waiting chats alone, pinned ones included in the narrowing, and says what it hides', async () => {
+  it('filters to the waiting chats alone, oldest first with no crumb, pinned ones included in the narrowing, and says what it hides', async () => {
     localStorage.setItem('mc-session-needs-you-only', '1')
     const { container } = renderSidebar()
     await waitFor(() => expect(container.querySelector('[data-testid="needs-you-hidden-note"]')?.textContent).toBe('3 other chats hidden by the Needs you filter'))
-    expect(container.querySelector('[data-testid="needs-you-group-header"]')).toBeNull()
+    expect([...container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['train', 'flaky', 'docs'])
+    for (const key of ['train', 'flaky', 'docs']) expect(rowOf(container, key)).toHaveLength(1)
+    expect(container.querySelector('[data-testid="session-row-folder-crumb"]')).toBeNull()
     expect(rowOf(container, 'digest')).toHaveLength(0)
     expect(rowOf(container, 'trip')).toHaveLength(0)
     expect(container.querySelector('[data-testid="filter-chip-needs_you"]')?.textContent).toContain('Needs you · 3')
+  })
+})
+
+describe('chat sidebar — Needs you, filed', () => {
+  // Made-up folders: Harbor open with two waits, Quill collapsed with one,
+  // Pebble open whose only chat waits, Sundial collapsed with nothing waiting.
+  const folders = [
+    { id: 'f-harbor', name: 'Harbor', collapsed: false, order: 0 },
+    { id: 'f-quill', name: 'Quill', collapsed: true, order: 1 },
+    { id: 'f-pebble', name: 'Pebble', collapsed: false, order: 2 },
+    { id: 'f-sundial', name: 'Sundial', collapsed: true, order: 3 },
+  ]
+  const quiet = (key: string, title: string, folder: string, min: number) =>
+    ({ key, title, running: false, messages: 4, agent: 'kirocrew', folder_id: folder, last_message: 'Done', last_ts: at(min), needs_you: null })
+  const asks = (key: string, title: string, folder: string | undefined, min: number, words: string) =>
+    ({ key, title, running: false, messages: 4, agent: 'kirocrew', ...(folder ? { folder_id: folder } : {}), last_ts: at(min),
+      needs_you: { count: 1, oldest_ts: (NOW - min * 60_000) / 1000, first_words: words, row_id: `m-${key}`, kinds: ['labelled'] } })
+  const filed = [
+    asks('h-cond', 'Harbor conductor', 'f-harbor', 40, 'Q2a Merge the dock fix?'),
+    asks('h-docs', 'Harbor docs', 'f-harbor', 10, 'Q5a Keep the old page?'),
+    quiet('h-idle', 'Harbor idle', 'f-harbor', 30),
+    asks('q-import', 'Import parser', 'f-quill', 25, 'Q1a Drop the CSV path?'),
+    quiet('q-two', 'Quill two', 'f-quill', 50),
+    quiet('q-three', 'Quill three', 'f-quill', 60),
+    quiet('q-four', 'Quill four', 'f-quill', 70),
+    asks('p-lone', 'Pebble lone', 'f-pebble', 5, 'Q3a Ship it?'),
+    quiet('s-one', 'Sundial one', 'f-sundial', 20),
+    asks('loose', 'Loose ask', undefined, 15, 'Q7a Rename it?'),
+  ] as unknown as ChatSlot[]
+  // Quill's waiting chat is unread, so a dot on Quill would be a second mark for
+  // it; Sundial's unread chat is folded away, so Sundial's dot stays.
+  const unread = ['q-import', 's-one']
+
+  it('draws every waiting chat once, in its own folder, and no group on top', async () => {
+    const { container } = renderSidebar(filed, { folders, unread })
+    await waitFor(() => expect(rowOf(container, 'h-cond')).toHaveLength(1))
+    for (const key of ['h-cond', 'h-docs', 'q-import', 'p-lone', 'loose']) expect(rowOf(container, key)).toHaveLength(1)
+    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key]')).toBeNull()
+    expect(container.querySelector('[data-testid="session-row-folder-crumb"]')).toBeNull()
+    // Pebble's only chat waits: Pebble keeps it, the folder is not emptied by the wait.
+    expect(container.querySelector('[data-folder-row="f-pebble"]')).toBeTruthy()
+  })
+
+  it('draws a collapsed folder\'s waiting chat under it, with the rest counted and no second mark on the folder', async () => {
+    const { container } = renderSidebar(filed, { folders, unread })
+    const strip = await waitFor(() => {
+      const el = container.querySelector<HTMLElement>('[data-testid="folder-waits-f-quill"]')
+      expect(el).toBeTruthy()
+      return el!
+    })
+    expect([...strip.querySelectorAll('[data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['q-import'])
+    expect(within(strip).getByTestId('folder-waits-more-f-quill').textContent).toBe('3 more in Quill')
+    // Once: the closed body does not hold it too.
+    expect(rowOf(container, 'q-import')).toHaveLength(1)
+    // The folder face keeps its count and draws no unread dot for the chat shown under it.
+    const quill = container.querySelector<HTMLElement>('[data-folder-row="f-quill"]')!
+    expect(quill.textContent).toContain('4')
+    expect(within(quill).queryByRole('img', { name: 'Agent finished — your turn' })).toBeNull()
+    const sundial = container.querySelector<HTMLElement>('[data-folder-row="f-sundial"]')!
+    expect(within(sundial).getByRole('img', { name: 'Agent finished — your turn' })).toBeTruthy()
+    expect(container.querySelector('[data-testid="folder-waits-f-sundial"]')).toBeNull()
+  })
+
+  it('lists the waits oldest first across folders, each with its folder crumb, and draws no folder', async () => {
+    localStorage.setItem('mc-session-needs-you-only', '1')
+    const { container } = renderSidebar(filed, { folders, unread })
+    await waitFor(() => expect(container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')).toHaveLength(5))
+    expect([...container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')].map(n => n.getAttribute('data-slot-key')))
+      .toEqual(['h-cond', 'q-import', 'loose', 'h-docs', 'p-lone'])
+    for (const key of ['h-cond', 'h-docs', 'q-import', 'p-lone', 'loose']) expect(rowOf(container, key)).toHaveLength(1)
+    const crumb = (key: string) => rowOf(container, key)[0].querySelector('[data-testid="session-row-folder-crumb"]')?.textContent ?? null
+    expect(crumb('h-cond')).toBe('Harbor')
+    expect(crumb('q-import')).toBe('Quill')
+    expect(crumb('p-lone')).toBe('Pebble')
+    expect(crumb('loose')).toBeNull()
+    expect(container.querySelector('[data-folder-row]')).toBeNull()
+    expect(container.querySelector('[data-testid^="folder-waits-"]')).toBeNull()
+    expect(container.querySelector('[data-testid="needs-you-hidden-note"]')?.textContent).toBe('5 other chats hidden by the Needs you filter')
+  })
+
+  it('takes an answered chat out of the list at once and puts it back in its folder once', async () => {
+    localStorage.setItem('mc-session-needs-you-only', '1')
+    const view = renderSidebar(filed, { folders, unread })
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')).toHaveLength(5))
+    const answered = filed.map(s => (s.key === 'h-cond' || s.key === 'q-import' ? { ...s, needs_you: null } : s)) as ChatSlot[]
+    view.rerenderSlots(answered)
+    await waitFor(() => expect(view.container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')).toHaveLength(3))
+    expect(rowOf(view.container, 'h-cond')).toHaveLength(0)
+    expect(rowOf(view.container, 'q-import')).toHaveLength(0)
+    // The filter off: each is back in its folder, drawn once, quiet.
+    fireEvent.click(view.container.querySelector<HTMLElement>('[data-testid="filter-chip-needs_you-clear"], [data-testid="filter-chip-needs_you"] button[aria-label^="Clear"]')!)
+    await waitFor(() => expect(rowOf(view.container, 'h-idle')).toHaveLength(1))
+    expect(view.container.querySelector('[data-folder-row="f-harbor"]')).toBeTruthy()
+    for (const key of ['h-cond', 'q-import']) {
+      expect(rowOf(view.container, key)).toHaveLength(1)
+      expect(rowOf(view.container, key)[0].classList.contains('session-needs-you')).toBe(false)
+    }
+    // Quill has nothing left waiting: no strip, its chat is back in the closed body.
+    expect(view.container.querySelector('[data-testid="folder-waits-f-quill"]')).toBeNull()
+    expect(view.container.querySelector('[data-testid="needs-you-group"] [data-slot-key]')).toBeNull()
+  })
+
+  const hover = (c: HTMLElement, key: string) => fireEvent.pointerOver(rowOf(c, key)[0], { pointerType: 'mouse', bubbles: true })
+  const leave = (c: HTMLElement) => fireEvent.pointerLeave(c.querySelector('.sidebar-inner')!, { pointerType: 'mouse' })
+  const stripKeys = (c: HTMLElement, folder: string) =>
+    [...c.querySelectorAll(`[data-testid="folder-waits-${folder}"] [data-slot-key]`)].map(n => n.getAttribute('data-slot-key'))
+
+  it('holds a chat that starts waiting in a collapsed folder until the pointer leaves the list', async () => {
+    const view = renderSidebar(filed, { folders, unread })
+    await waitFor(() => expect(stripKeys(view.container, 'f-quill')).toEqual(['q-import']))
+    hover(view.container, 'h-idle')
+    view.rerenderSlots(filed.map(s => (s.key === 'q-two' ? asks('q-two', 'Quill two', 'f-quill', 3, 'Q9a Keep it?') : s)) as unknown as ChatSlot[])
+    // Under the pointer nothing joins; the closed body still holds it, out of sight.
+    await waitFor(() => expect(view.container.querySelector('[data-testid="needs-you-off-chip"]')?.textContent).toBe('Needs you6'))
+    expect(stripKeys(view.container, 'f-quill')).toEqual(['q-import'])
+    expect(rowOf(view.container, 'q-two')).toHaveLength(1)
+    leave(view.container)
+    // It joins in the folder's own order: Quill two is the newer chat.
+    await waitFor(() => expect(stripKeys(view.container, 'f-quill')).toEqual(['q-two', 'q-import']))
+    expect(rowOf(view.container, 'q-two')).toHaveLength(1)
+  })
+
+  it('shows a folder\'s waiting chats under it the moment it is collapsed, pointer over the list or not', async () => {
+    const view = renderSidebar(filed, { folders, unread })
+    await waitFor(() => expect(rowOf(view.container, 'h-cond')).toHaveLength(1))
+    // The strip keeps the folder's own order: collapsing reorders nothing.
+    const openOrder = [...view.container.querySelectorAll('[data-slot-key]')]
+      .map(n => n.getAttribute('data-slot-key')).filter(k => k === 'h-cond' || k === 'h-docs')
+    expect(openOrder).toHaveLength(2)
+    hover(view.container, 'h-idle')
+    gatewayFolders.current = folders.map(f => (f.id === 'f-harbor' ? { ...f, collapsed: true } : f))
+    act(() => { view.qc.setQueryData(['chat-folders'], gatewayFolders.current) })
+    await waitFor(() => expect(stripKeys(view.container, 'f-harbor')).toEqual(openOrder))
+    expect(view.container.querySelector('[data-testid="folder-waits-more-f-harbor"]')?.textContent).toBe('1 more in Harbor')
+    for (const key of ['h-cond', 'h-docs']) expect(rowOf(view.container, key)).toHaveLength(1)
+  })
+
+  it('takes an answered chat out of a collapsed folder\'s strip, with no copy left behind', async () => {
+    const view = renderSidebar(filed, { folders, unread })
+    await waitFor(() => expect(view.container.querySelector('[data-testid="folder-waits-f-quill"]')).toBeTruthy())
+    view.rerenderSlots(filed.map(s => (s.key === 'q-import' ? { ...s, needs_you: null } : s)) as ChatSlot[])
+    await waitFor(() => expect(view.container.querySelector('[data-testid="folder-waits-f-quill"]')).toBeNull())
+    expect(view.container.querySelector('[data-folder-row="f-quill"]')).toBeTruthy()
+    expect(rowOf(view.container, 'q-import')).toHaveLength(1)
+    expect(view.container.querySelector('[data-testid="needs-you-off-chip"]')?.textContent).toBe('Needs you4')
   })
 })
 
@@ -214,30 +382,36 @@ describe('a code-channel crew', () => {
     { key: 'trip', title: 'Trip planner', running: false, messages: 4, agent: 'kirocrew', last_message: 'Saved the plan', last_ts: at(8), needs_you: null },
   ] as unknown as ChatSlot[]
 
-  it("draws a folded worker's wait in the group, so the group, the badge and the tab title agree", async () => {
+  const chipText = (c: HTMLElement) => c.querySelector('[data-testid="needs-you-off-chip"]')?.textContent
+
+  it("lets the conductor's crew line speak for a folded worker's wait, so the chip and the tab title agree", async () => {
     const { container } = renderSidebar(crew)
-    const header = await waitFor(() => {
-      const h = container.querySelector<HTMLElement>('[data-testid="needs-you-group-header"]')
-      expect(h).toBeTruthy()
-      return h!
-    })
-    expect(header.getAttribute('aria-label')).toBe('Needs you: 1 chat waits on you')
-    expect([...container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['worker'])
-    expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('1')
+    await waitFor(() => expect(rowOf(container, 'lead')).toHaveLength(1))
+    // Folded: the worker is no row of its own, and no group draws it a second time.
+    expect(rowOf(container, 'worker')).toHaveLength(0)
+    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key]')).toBeNull()
+    expect(chipText(container)).toBe('Needs you1')
     expect(selectChatsWaitingOnYou(makeStore(crew).getState())).toBe(1)
   })
 
-  it('draws the waiting worker of a sleeping conductor once, in the group', async () => {
+  it("lists a folded worker's wait once while the filter narrows", async () => {
+    localStorage.setItem('mc-session-needs-you-only', '1')
+    const { container } = renderSidebar(crew)
+    await waitFor(() => expect(container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')).toHaveLength(1))
+    expect([...container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['worker'])
+    expect(rowOf(container, 'worker')).toHaveLength(1)
+  })
+
+  it('draws the waiting worker of a sleeping conductor once, in its place', async () => {
     // Quiet for eight days, the conductor sits in the shut dormant section, where the
-    // fold hides no worker: the waiting worker would be drawn loose in the list too.
+    // fold hides no worker: the waiting worker is drawn loose in the list, once.
     const sleeping = crew.map(s => (s.key === 'lead' ? { ...s, last_ts: at(8 * 24 * 60) } : s)) as ChatSlot[]
     const { container } = renderSidebar(sleeping)
-    await waitFor(() => expect(container.querySelector('[data-testid="needs-you-group-header"]')).toBeTruthy())
+    await waitFor(() => expect(rowOf(container, 'worker')).toHaveLength(1))
     expect(rowOf(container, 'lead')).toHaveLength(0)
-    expect(rowOf(container, 'worker')).toHaveLength(1)
-    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key="worker"]')).toBeTruthy()
-    expect(container.querySelector('[data-testid="needs-you-group-header"]')?.getAttribute('aria-label')).toBe('Needs you: 1 chat waits on you')
-    expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('1')
+    expect(rowOf(container, 'worker')[0].classList.contains('session-needs-you')).toBe(true)
+    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key]')).toBeNull()
+    expect(chipText(container)).toBe('Needs you1')
     expect(selectChatsWaitingOnYou(makeStore(sleeping).getState())).toBe(1)
   })
 })
@@ -251,16 +425,15 @@ describe('a Crew Mode root with two waits', () => {
     { key: 'trip', title: 'Trip planner', running: false, messages: 4, agent: 'kirocrew', last_message: 'Saved the plan', last_ts: at(8) },
   ] as unknown as ChatSlot[]
 
-  it('counts both asks on the row, and one waiting chat in the group, the badge and the tab title', async () => {
+  it('counts both asks on the row, and one waiting chat on the chip and the tab title', async () => {
     const { container } = renderSidebar(crew)
     await waitFor(() => expect(rowOf(container, 'root')).toHaveLength(1))
     const root = rowOf(container, 'root')[0]
     expect(within(root).getByTestId('crew-root-attention').textContent).toBe('2 need you')
     await waitFor(() => expect(within(root).getByTestId('session-needs-you-count').getAttribute('aria-label')).toBe('2 open asks'))
     expect(rowOf(container, 'member')).toHaveLength(0)
-    expect([...container.querySelectorAll('[data-testid="needs-you-group"] [data-slot-key]')].map(n => n.getAttribute('data-slot-key'))).toEqual(['root'])
-    expect(container.querySelector('[data-testid="needs-you-group-header"]')?.getAttribute('aria-label')).toBe('Needs you: 1 chat waits on you')
-    expect(container.querySelector('[data-badge-tone="needs"]')?.textContent).toBe('1')
+    expect(container.querySelector('[data-testid="needs-you-group"] [data-slot-key]')).toBeNull()
+    expect(container.querySelector('[data-testid="needs-you-off-chip"]')?.getAttribute('aria-label')).toBe('Needs you: 1 chat waits on you')
     expect(selectChatsWaitingOnYou(makeStore(crew).getState())).toBe(1)
   })
 })

@@ -232,6 +232,32 @@ each stall token (`stall:<last_report_at>`) is kept in a seen set in the
 gate's terminal recheck cannot spend the loop's own wake), bounded by
 `_MAX_REMEMBERED_TOKENS` and `_MAX_WATCHERS_PER_ITEM`, and dropped when the item
 closes. A newer stall token replaces older ones, since only the newest can recur.
+
+A stall token is one per report, so it cannot find a worker that stops again
+without reporting. The idle wake can: a worker bound to an open local item whose
+chat has been idle `work_ledger.IDLE_WAKE_SECS` (60 s), owing the next move (its
+last report is not `done`, `question` or `blocked`), wakes its conductor with
+`[work-ledger wake] item=<id> reason=worker_idle last_status=<status> idle_secs=<n>`.
+One rule, `work_ledger.idle_spell`, decides it, and the Board's `stale` (Quiet)
+reads the same rule through `is_stale(worker_idle_since=)`. Idle is positive
+evidence from the slot (`slot_retention.worker_idle_since`): no turn running, no
+approval or question card open, nothing that will start the chat's next turn by
+itself, and not a standing manager (sidebar title starting `Manager:`). "Nothing
+that will start it" is Crew's one rule for that question,
+`chat_utils.background_wake_pending`, read in memory
+(`background_wake_pending_now`, queued sub-agents as last published): no pending
+synthesis, no sub-agents running, queued or delivering, no unfinished workflow run
+and no active monitor loop. So the probe's thread, the event loop and the fold
+worker read it alike, and no store read is taken. A looping worker, a remote one,
+an unbound, backlog or closed item never counts. Its token is `idle:<spell start>`, spent
+through the same seen set and hourly budget as the others, so one idle spell wakes
+once and a worker that runs a turn and stops again starts a new spell. The patrol
+tick alone would find it minutes late, so a run that ends without a waking report
+pushes its conductor's tick one threshold later
+(`conductor_wake.wake_for_idle_worker`, from `queue_cycle._push_idle_wake`), on its
+own pull-forward budget (`idle:<item>`), and the push fires nothing if the worker
+started again in the wait.
+
 A token is marked seen when the probe emits it, not when the turn lands. A woken
 turn that fails, a recovery it queued for itself that fails, or the turn that
 carries a steered wake (the running turn that took it, or the steer's own requeued
@@ -265,10 +291,16 @@ used, so a session any open item names is never a finished worker, and a session
 several closed items shared is one worker, named by its newest closed item and
 read from that item alone. It takes positive evidence only: a slot present in the
 registry (`has_slot`, never `slot_exists`, which answers open for every name
-while a restore runs), or for a crew-bound item the hub's stored record of that
-crew's slot list, which `session_close(crew=)` marks closed for every item on that
-slot, open or closed (`remote_ingest.mark_slot_closed`), because no pull reads a
-finished item again. A crew-bound worker is named only while that close can reach
+while a restore runs), or for a crew-bound item a FRESH read of that crew's slot
+list naming the slot (`patrol_seats.crew_slot_open`: the list `remote_ingest._slot_list`
+reads, taken in the background for the crews a finished worker was on and kept
+`ROOM_FRESH_SECS`; an unreadable or truncated list keeps no reading, so its workers
+are left out, never guessed). The hub's stored record alone is no evidence: no pull
+reads a finished item again, so that record is what the list said while the item
+was open, and a chat closed on the crew afterwards would read open for good. A
+stored record that `session_close(crew=)` marked closed
+(`remote_ingest.mark_slot_closed`) still takes the worker off at once, before the
+next list read. A crew-bound worker is named only while that close can reach
 its crew: the preview on and the crew registered and connected
 (`patrol_seats.crew_reachable`); otherwise no close could take it off the line.
 Epics and sub-tasks are never named. One fixed `SEATS_INSTRUCTION`
