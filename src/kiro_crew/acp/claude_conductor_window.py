@@ -37,8 +37,8 @@ configured ``agent.crew_mode_agent`` and its aliases). A Bot that carries such a
 name is that Bot (``crew_mode.runs_crew_mode``), so a Bot's own thread and a
 Bot's worker answer False.
 
-shortcut: a chat that turned Crew Mode on with a custom conductor that
-``agent.crew_mode_agent`` no longer names is known only by its slot's stamp, which
+shortcut: a chat running Crew Mode on a custom conductor that
+``agent.crew_mode_agent`` does not name is known only by its slot's stamp, which
 the session client does not hold; give this the stamp if such chats need the window.
 """
 
@@ -74,7 +74,7 @@ def configured_conductor_window(config: Any = None) -> int:
 
     From *config* when given, else the live config watcher's snapshot, else the
     file. An unreadable config reads as off: the session then follows Claude
-    Code's own settings, as it did before this setting existed.
+    Code's own settings.
     """
     try:
         if config is None:
