@@ -122,7 +122,7 @@ def kicked(monkeypatch):
     return seen
 
 
-def _opener(env) -> str:
+def _opener(env) -> str:  # noqa: F811 -- shadows the imported fixture name
     (caller,) = crew._record(env.state)
     return caller
 
@@ -131,11 +131,11 @@ def _closes() -> dict[str, list[tuple[str, str]]]:
     return work_ledger.read_crew_closes()
 
 
-def _deletes(env) -> list[str]:
+def _deletes(env) -> list[str]:  # noqa: F811
     return [c["path"] for c in env.peer.calls if c["method"] == "DELETE"]
 
 
-def test_a_close_its_crew_never_got_is_kept_and_made_again(env, monkeypatch, kicked):
+def test_a_close_its_crew_never_got_is_kept_and_made_again(env, monkeypatch, kicked):  # noqa: F811
     """The crew is away when the conductor closes its finished worker. The receipt
     says not closed, the close outlives a hub restart, and the puller lands it."""
     target = _create(env)
@@ -181,7 +181,7 @@ def test_a_close_its_crew_never_got_is_kept_and_made_again(env, monkeypatch, kic
         ("crew_500", "crew_peer_refused"),
     ],
 )
-def test_a_close_no_crew_settled_is_kept_whatever_broke(env, kicked, fault, why):
+def test_a_close_no_crew_settled_is_kept_whatever_broke(env, kicked, fault, why):  # noqa: F811
     target = _create(env)
     if fault == "version":
         env.peer.version = "0.0.1"
@@ -198,7 +198,7 @@ def test_a_close_no_crew_settled_is_kept_whatever_broke(env, kicked, fault, why)
     assert _closes() == {_opener(env): [(INSTANCE, target)]}
 
 
-def test_a_kept_close_whose_chat_is_already_gone_is_dropped(env, kicked):
+def test_a_kept_close_whose_chat_is_already_gone_is_dropped(env, kicked):  # noqa: F811
     """A reply cut off after the crew closed the chat: the next run hears ``gone``."""
     target = _create(env)
     env.peer.cut_body = True
@@ -214,7 +214,7 @@ def test_a_kept_close_whose_chat_is_already_gone_is_dropped(env, kicked):
     assert crew._record(env.state) == {}
 
 
-def test_a_crew_that_is_away_is_asked_once_per_run(env, monkeypatch, kicked):
+def test_a_crew_that_is_away_is_asked_once_per_run(env, monkeypatch, kicked):  # noqa: F811
     first = _create(env)
     env.peer.reply("POST", "api/chat/slots", 200, {"key": "chat-78"})
     assert _call(env, "create", crew="lab")[0] == 200
@@ -235,7 +235,9 @@ def test_a_crew_that_is_away_is_asked_once_per_run(env, monkeypatch, kicked):
     assert len(_closes()[_opener(env)]) == 2
 
 
-def test_a_404_that_names_no_session_leaves_the_chat_on_the_record(env, monkeypatch, kicked):
+def test_a_404_that_names_no_session_leaves_the_chat_on_the_record(
+    env, monkeypatch, kicked  # noqa: F811
+):
     """A plain 404 is a route the answering side does not serve. The chat may be
     open, so the hub keeps it listed; only ``slot_not_found`` says it is gone."""
     target = _create(env)
@@ -260,7 +262,7 @@ def test_a_404_that_names_no_session_leaves_the_chat_on_the_record(env, monkeypa
     assert crew._record(env.state) == {}
 
 
-def test_a_send_to_a_chat_its_crew_closed_tells_the_conductor(env):
+def test_a_send_to_a_chat_its_crew_closed_tells_the_conductor(env):  # noqa: F811
     target = _create(env)
     env.peer.reply("POST", "api/chat", 404, {"error": "gone", "code": "slot_not_found"})
     status, body = _call(env, "send", crew="lab", target=target, message="one more thing")
@@ -295,7 +297,7 @@ def peer_list(monkeypatch):
     return fake
 
 
-def _status(env, key: str | None = None) -> dict:
+def _status(env, key: str | None = None) -> dict:  # noqa: F811
     req = _request(env.state, key or _key(env.caller), query={})
     resp = asyncio.run(handlers_sc.api_session_control_status(req))
     assert resp.status == 200, resp.body
@@ -313,7 +315,7 @@ def _row(target: str, status: str, answered: bool = True) -> dict:
 
 
 def test_session_status_lists_the_chats_a_conductor_opened_on_other_crews(
-    env, monkeypatch, peer_list, kicked
+    env, monkeypatch, peer_list, kicked  # noqa: F811
 ):
     _switch_on(monkeypatch)
     target = _create(env)
@@ -355,7 +357,7 @@ def test_session_status_lists_the_chats_a_conductor_opened_on_other_crews(
 
 
 def test_a_chat_its_crew_closed_reads_closed_and_an_unread_crew_unknown(
-    env, monkeypatch, peer_list
+    env, monkeypatch, peer_list  # noqa: F811
 ):
     _switch_on(monkeypatch)
     target = _create(env)
@@ -368,7 +370,7 @@ def test_a_chat_its_crew_closed_reads_closed_and_an_unread_crew_unknown(
 
 
 def test_a_turn_that_may_not_read_a_crew_lists_its_chats_and_asks_no_crew(
-    env, monkeypatch, peer_list
+    env, monkeypatch, peer_list  # noqa: F811
 ):
     """The list is the hub's own record. A crew's state is a crew-scoped read, so it
     keeps the ``crew=`` owner arm: a turn the owner did not send asks no crew."""
@@ -383,7 +385,7 @@ def test_a_turn_that_may_not_read_a_crew_lists_its_chats_and_asks_no_crew(
     assert peer_list.calls == 0
 
 
-def test_switch_off_session_status_is_unchanged(env, peer_list):
+def test_switch_off_session_status_is_unchanged(env, peer_list):  # noqa: F811
     _create(env)
     body = _status(env)
     assert "crew_sessions" not in body and "crew_state" not in body
