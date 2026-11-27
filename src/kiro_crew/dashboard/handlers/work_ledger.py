@@ -139,6 +139,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _UNPLACED_WHY,
         _bar_is_placed,
         _find_slot,
+        _item_idle_since,
         _passes_filters,
         _published_payload,
         _read_options,
