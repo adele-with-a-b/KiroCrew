@@ -190,6 +190,23 @@ describe('code channel crew: workers fold under the conductor row', () => {
       .toBe(i18nT('pages.chatSidebar.code_channel_crew_waiting'))
   })
 
+  it('a hidden worker whose reply asks the person surfaces on the conductor row, as its question card does', () => {
+    // No card and nothing unread: only the gateway's summary says w2 waits.
+    const asks = { count: 1, oldest_ts: PIN.getTime() / 1000 - 600, first_words: 'Q2a Which branch?', row_id: 'm-1', kinds: ['labelled' as const] }
+    renderSidebar([
+      conductorRow({ running: true, needs_you: null }),
+      workerRow('w1', { running: true, needs_you: null }),
+      workerRow('w2', { needs_you: asks }),
+    ])
+    expect(screen.getByTestId('needs-you-off-chip')).toHaveTextContent('1')
+    expect(screen.queryAllByText('w2 title')).toHaveLength(0)
+    const row = rowOf('cond title')!
+    const line = within(row).getByTestId('code-channel-crew-state')
+    expect(line).toHaveAttribute('data-crew-state', 'needs_you')
+    expect(line.textContent).toBe(i18nT('pages.chatSidebar.code_channel_crew_waiting'))
+    expect(within(row).getByTestId('code-channel-crew-attention')).toHaveAttribute('data-crew-attention', 'needs_you')
+  })
+
   it('a hidden worker\'s unread result lights the conductor row\'s attention marker', () => {
     renderSidebar([conductorRow(), workerRow('w1')], ['w1'])
     expect(within(rowOf('cond title')!).getByTestId('code-channel-crew-attention'))

@@ -526,6 +526,27 @@ function makeNeedsOf(crewApprovals: Readonly<Record<string, number>>): SidebarRo
   }
 }
 
+/**
+ * THE reading every roll-up takes of a row it stands in for: whether that row waits
+ * on the person. A shut "sleeping sessions" expander, a shut Conductor-lane branch
+ * and a folded code-channel crew each hide rows, and each must say so when one of
+ * them waits, by the mark it already has. True when the rule every Needs-you
+ * surface reads says so (`needsYouOf`, the chip's count), or the row holds an
+ * approval or question card, or one of its sub-agents is held at the spawn gate
+ * (`subagentApprovals`, by LOCAL key). A peer row answers from its own fields.
+ */
+export function makeWaitsOnPerson(
+  crewApprovals: Readonly<Record<string, number>>,
+  subagentApprovals: Readonly<Record<string, number>>,
+): (slot: Slot) => boolean {
+  const needsOf = makeNeedsOf(crewApprovals)
+  return slot => {
+    const key = localKeyOf(slot)
+    return needsOf(slot) !== null || !!slot.pending_approval || !!slot.needs_input
+      || (key !== null && (subagentApprovals[key] ?? 0) > 0)
+  }
+}
+
 function makeLaneOrder(
   searchRanks: ReadonlyMap<string, number> | null,
   sortKey: SortKey,

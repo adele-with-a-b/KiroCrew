@@ -24,7 +24,8 @@
  *     (N of M) and "stuck" (a worker gone quiet or lost).
  *   - The slot list the sidebar already holds, through the same signals each
  *     worker's own row renders from: waiting on you (an approval, a question, a
- *     sub-agent's approval), interrupted, working, idle. The whole line while
+ *     sub-agent's approval, an ask in a reply to the person), interrupted,
+ *     working, idle. The whole line while
  *     `work_aggregate` is null or absent, where "done" and "stuck" do not show.
  *
  * One rule holds over both: a worker waiting on the user in the slot list
@@ -54,21 +55,22 @@ const LINE_RANK: Record<CrewLineKey | 'idle', number> = { needs_you: 5, stuck: 4
 export interface CrewSignals {
   /** The widened running signal the row's own spinner uses. */
   isRunning: (s: Slot) => boolean
-  /** Sub-agents of this session held at the spawn gate. */
-  subagentApprovals: (s: Slot) => number
+  /** Whether this session waits on the person: the roll-ups' one reading
+   *  (`rows.ts::makeWaitsOnPerson`). */
+  waitsOnPerson: (s: Slot) => boolean
   isUnread: (s: Slot) => boolean
 }
 
-/** The signals from the sidebar's own state, read only for LOCAL rows: the
- *  approval counts and the unread set are keyed by local slot key. */
+/** The signals from the sidebar's own state. The unread set is keyed by local
+ *  slot key, so only a LOCAL row reads it. */
 export function crewSignalsFrom(src: {
   isRunning: (s: Slot) => boolean
-  subagentApprovalCounts: Readonly<Record<string, number>>
+  waitsOnPerson: (s: Slot) => boolean
   unreadSet: ReadonlySet<string>
 }): CrewSignals {
   return {
     isRunning: src.isRunning,
-    subagentApprovals: row => (isPeerRow(row) ? 0 : (src.subagentApprovalCounts[row.key] || 0)),
+    waitsOnPerson: src.waitsOnPerson,
     isUnread: row => !isPeerRow(row) && src.unreadSet.has(row.key),
   }
 }
@@ -77,11 +79,12 @@ export function crewSignalsFrom(src: {
  *  outranks every working signal (a blocking card keeps `running` true), and an
  *  interrupted turn outranks an armed loop or monitor -- the widened running
  *  signal counts those as running, but the row itself reads "interrupted" until
- *  raw live work (a turn, sub-agents, queued prompts) supersedes it. An
- *  `[OPTIONS:]` reply alone is not an ask of the user here: a worker's options
- *  are addressed to its conductor, and its own row does not call it waiting. */
+ *  raw live work (a turn, sub-agents, queued prompts) supersedes it. Whether a
+ *  reply's question or `[OPTIONS:]` line asks the person is the rule's call
+ *  (`waitsOnPerson`): a worker's reply to its conductor does not, and the same
+ *  reply to the person does, exactly as its own row draws it. */
 export function memberState(s: Slot, sig: CrewSignals): CrewStateKey {
-  if (s.pending_approval || s.needs_input || sig.subagentApprovals(s) > 0) return 'needs_you'
+  if (sig.waitsOnPerson(s)) return 'needs_you'
   if (s.interrupted && !hasLiveSessionWork(s)) return 'interrupted'
   if (sig.isRunning(s) || hasLiveSessionWork(s)) return 'working'
   return 'idle'
