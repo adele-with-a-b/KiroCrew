@@ -52,14 +52,11 @@ function makeScroller(initial: Geom) {
 }
 
 describe('useVirtualChat: a reply is followed after a send that follows a cancelled turn', () => {
-  let origRaf: typeof requestAnimationFrame
   let origRO: typeof ResizeObserver | undefined
   let fire: ((entries: { target: Element }[]) => void) | undefined
 
   beforeEach(() => {
     localStorage.clear()
-    origRaf = globalThis.requestAnimationFrame
-    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => { cb(0); return 0 }) as typeof requestAnimationFrame
     origRO = globalThis.ResizeObserver
     globalThis.ResizeObserver = class {
       constructor(cb: ResizeObserverCallback) {
@@ -69,11 +66,11 @@ describe('useVirtualChat: a reply is followed after a send that follows a cancel
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver
+    // Fake timers own the frame clock too: a frame runs when the test plays it.
     vi.useFakeTimers()
   })
   afterEach(() => {
     vi.useRealTimers()
-    globalThis.requestAnimationFrame = origRaf
     if (origRO) globalThis.ResizeObserver = origRO
     fire = undefined
   })
@@ -94,7 +91,7 @@ describe('useVirtualChat: a reply is followed after a send that follows a cancel
     // The send. Nothing was appended (the stopped turn is still winding down),
     // so the reader is at the bottom and the glide has nowhere to go.
     act(() => { view.result.current.scrollToBottom('smooth') })
-    // The pin is written on the next frame (fake timers own the frame clock).
+    // The pin is written on the next frame.
     act(() => { vi.advanceTimersToNextFrame() })
     flushScroll()
     expect(state.scrollTop).toBe(4600)
