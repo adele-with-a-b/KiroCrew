@@ -328,7 +328,6 @@ export interface SidebarScope {
   clearModelFilter: ReturnType<typeof useSessionFilterState>['clearModelFilter']
 
   // From `useSessionStatusFilters`
-  subagentApprovalCounts: ReturnType<typeof useSessionStatusFilters>['subagentApprovalCounts']
   unreadSet: ReturnType<typeof useSessionStatusFilters>['unreadSet']
   recentWindowMs: ReturnType<typeof useSessionStatusFilters>['recentWindowMs']
   recentAmountDraft: ReturnType<typeof useSessionStatusFilters>['recentAmountDraft']
@@ -370,6 +369,8 @@ export interface SidebarScope {
   staleExpanded: ReturnType<typeof useStaleCollapse>['staleExpanded']
   setStaleExpanded: ReturnType<typeof useStaleCollapse>['setStaleExpanded']
   isStaleExempt: ReturnType<typeof useStaleCollapse>['isStaleExempt']
+  /** Whether a row waits on the person, the roll-ups' one reading (`rows.ts::makeWaitsOnPerson`). */
+  waitsOnPerson: (slot: Slot) => boolean
 
   // From `useFolderSort`
   folderSortRead: ReturnType<typeof useFolderSort>['folderSortRead']

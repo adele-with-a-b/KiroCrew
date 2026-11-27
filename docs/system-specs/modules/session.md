@@ -2954,10 +2954,36 @@ against sweep completeness, and are torn down at `close_all`.
   default. When the idle sweep does reset a session whose newest launch is past
   the hold, on either axis, it logs a warning naming the launch, its age and the
   hold (`hold_expired_reason`), and after a successful `reset` fires the recycle
-  callback with that reason, so the chat says the work may have been stopped. An
+  callback with that reason followed by what the reset stopped (below). An
   expiry with no recorded launch, or a declined reset, stays silent as before.
   The RSS recycle past the hold keeps the plain memory-limit notice: there the
   memory ceiling, not the hold, is the stated cause.
+  **What the notice says was stopped** (`session_recycle_jobs`): the launch record
+  holds a label and a time, never a process, so both notices that name launched
+  work (the idle sweep past the hold, the hard-ceiling RSS recycle) read the
+  machine instead of saying the work "may" have been stopped. `before_reset`
+  runs ahead of the last synchronous guards, because it suspends, and only for a
+  session with a recorded launch. It keeps no record of its own: it reads the
+  kill path's identity-pinned descendant record
+  (`session_pid._provider_descendant_records`, the spawn-time snapshot merged
+  with a live walk) and the session leftovers (`find_session_leftovers`). Of the
+  descendants only those outside the runtime's process group are listed: the
+  group is the harness and the servers it started, while a command it ran leads
+  a group of its own (measured on claude-agent-acp, macOS). `after_reset` reads
+  each start identity again through `platform_compat.get_process_start_id`
+  (never a signal): the same identity that is not a zombie is `still running`,
+  anything else, a reused pid included, is `stopped`. A descendant still read as
+  running once the root is gone is read once more after `SETTLE_SECS` (0.5 s),
+  since the kill waits for the root and not for each descendant it signals. The
+  clause names the runtime pid and whether it was ended (a co-tenant can keep
+  it), then each list as `pid <n> <name>`, cut at `NOTICE_MAX_LISTED` with a
+  count. It always ends by saying that a job which had detached from its command
+  (`nohup`, `setsid`) is not tracked and is checked by its pid or its exit file:
+  such a job left the tree and the session before the read, so neither record
+  holds it. With no runtime pid, on Windows, or when the process table cannot be
+  read, the clause says the read could not be made and gives the same check. The
+  recycle itself signals exactly what it did before. The text is composed here in
+  English and stored as a transcript row; it is not drawn from the i18n catalog.
 
 ## APIs
 
@@ -5349,20 +5375,32 @@ so absence clears it.
   The readers that count queued work (`restored_card_waits` in
   `slot_queue_repository.py`: `is_held_queue_entry`, the completion sound's
   "work continues", `_has_user_queued_followup`) treat a marked card as held
-  even when a press marked it chosen. A held card has one way out, the owner's
-  press, across a restart too: the keep retires the card's parked work row
-  (`admission_parked.retire_parked`, which writes the row unparked), so the
-  startup scan (`_drain_restored_parked_work`) no longer accepts it and the card
-  comes back as an ordinary held card. The mark is for this process's drains,
-  the startup drain's accepted ids among them. A restored peer's note (it
+  even when a press marked it chosen; every reader asks that one function, and
+  `test_kept_card_restart.py` fails when another function reads the chosen
+  mark. A held card has one way out, the owner's press, across a restart too,
+  and no write has to land for that. A parked work row proves a send for one
+  start only: the start whose own reconciliation ended the row as never started
+  (the reconcile listener records those ids in memory,
+  `host_hooks.restart_unstarted`), and the startup scan
+  (`_drain_restored_parked_work`) spends that proof when it accepts the card. At
+  any later start the row reads the same whether its card was sent, kept or
+  never started, so the scan does not accept it: a card still in the queue line
+  comes back as an ordinary held card with its words, also a card that was sent
+  when the save of its removal never landed. The durable writer
+  (`durable_queue_entries`) leaves a restored card's parked-work link out of the
+  line and the restore stamps the line as read, so the next flush writes the
+  card without it; a start that finds admission off closes the proof for its
+  whole run (`host_hooks.close_restart_unstarted`). The mark is for this
+  process's drains, the startup drain's accepted ids among them. A restored
+  peer's note (it
   carries its sender's address) and a card queued since the restart are still
   dropped with the drop notice, the sender told. Known limit: Send now on a
   running chat promotes its card to the front, and a card held again there stays
   at the front. A drain whose opening pass holds chosen cards and whose accepted-id
-  pick then holds the startup drain's cards posts two notices, one per pass. The
-  row is retired off the drain (a background task), so a gateway stopped in the
-  moment between the keep and that write still finds the row parked at its next
-  start. On an
+  pick then holds the startup drain's cards posts two notices, one per pass. A
+  gateway that starts with admission off and stops before its first queue flush
+  leaves the link in the line, so the next start with admission on resumes that
+  card as the first start after its park would. On an
   idle slot the route starts the drain through Send now's own start (`turn_stop.start_queued_card`, its checks
   under the slot's lock) with no card named, so the queue's holds still apply.
   The marked cards keep their restored provenance. A mark set while the

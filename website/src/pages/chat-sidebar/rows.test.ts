@@ -12,7 +12,7 @@ import vm from 'node:vm'
 import { describe, it, expect, vi } from 'vitest'
 import { i18nT } from '../../i18n/t'
 import {
-  buildSidebarRows, chipLabel, guideStepOnRowControl, sameRowView,
+  buildSidebarRows, chipLabel, guideStepOnRowControl, makeWaitsOnPerson, sameRowView,
   type ConductorRowView, type RowPlacement, type RowScene, type RowShell, type SidebarRowInputs, type SidebarRows,
 } from './rows'
 import type { SessionFilterKey, Slot } from './types'
@@ -140,6 +140,23 @@ describe('a peer row never carries local state', () => {
       renameValue: 'draft', revealFlash: 'flash', pinnedOrderIndex: 0, pinnedReorderEnabled: true,
     })
     expect(views.windowOf(theLocal).keepMounted).toBe(true)
+  })
+
+  it('waitsOnPerson, the roll-ups\' one reading: the rule, a card, a held sub-agent, and nothing local for a peer', () => {
+    const asks = { needs_you: { count: 1, oldest_ts: 1, first_words: 'Q2a Which branch?', row_id: 'm-1', kinds: ['labelled' as const] } }
+    const waits = makeWaitsOnPerson({ root: 1 }, { held: 1, k: 1 })
+    // What the "Needs you" chip counts, on a local and on a peer row alike.
+    expect(waits(local('a', asks))).toBe(true)
+    expect(waits(peer('a', asks))).toBe(true)
+    // A Crew Mode root whose member waits on an approval.
+    expect(waits(local('root', { crew_mode_root: true }))).toBe(true)
+    // A card the row holds though the summary is null (a Crew Mode worker's approval).
+    expect(waits(local('b', { pending_approval: true, needs_you: null }))).toBe(true)
+    expect(waits(local('c', { needs_input: true, needs_you: null }))).toBe(true)
+    // A sub-agent held at the spawn gate, by LOCAL key only.
+    expect(waits(local('held', { needs_you: null }))).toBe(true)
+    expect(waits(peer('k', { needs_you: null }))).toBe(false)
+    expect(waits(local('settled', { needs_you: null, has_options: true, options: ['Yes'] }))).toBe(false)
   })
 
   it('never waits on the person through a local crew approval its key collides with', () => {

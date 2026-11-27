@@ -48,7 +48,6 @@ from kiro_crew.dashboard.slot_queue_repository import (
     broadcast_queue_order,
     is_owner_queue_entry,
     restored_card_waits,
-    retire_held_parked_work,
 )
 
 if TYPE_CHECKING:
@@ -980,8 +979,7 @@ def _drop_stale_admissions(
         if q.get(RESTORED_HELD_AGAIN_KEY):
             continue
         if (
-            q.get(RESTORED_QUEUE_KEY)
-            and not q.get(RESTORED_SEND_CHOSEN_KEY)
+            restored_card_waits(q)
             and (selected_id is None or q.get("id") != selected_id)
             and q.get("id") not in selected_ids
         ):
@@ -1079,9 +1077,10 @@ def _keep_restored_held(
     record, so a limit that comes after any send button (or a mirror store that
     does not answer) stops it. It stays queued for the person to send, edit or
     delete, and the notice names each reason once. One audit row records the
-    cards kept. Its parked work row, if any, is retired, so no later start sends
-    it on its own; the mark keeps this process's drains (the startup drain's
-    accepted ids among them) off it until the person sends it again.
+    cards kept. The mark keeps this process's drains (the startup drain's
+    accepted ids among them) off it until the person sends it again; no later
+    start sends it on its own, because a parked work row proves a send for one
+    start only (``slot_queue_repository._drain_restored_parked_work``).
     """
     # circular import: session_control imports this package's modules at module level.
     from kiro_crew.dashboard import gateway_notice as gn
@@ -1099,7 +1098,6 @@ def _keep_restored_held(
             if reason not in reasons:
                 reasons.append(reason)
     audit_queued_keep(slot, [q["id"] for q, _changed in kept], reasons)
-    retire_held_parked_work(state, [q for q, _changed in kept])
     change = _sc.describe_containment_change(reasons, mirror_unverified=mirror_unverified)
     slot.append(
         "notice",

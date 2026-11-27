@@ -91,6 +91,7 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_client_class_by_backend": ("data", False, "", ""),
     "_close_steer_turn": ("function", False, "f604c3478f16", "client_turn_control"),
     "_codex_compaction_event": ("function", False, "e64128661dfa", "client_usage"),
+    "_compaction_holds_steers": ("function", False, "a6632a57e602", "client_class"),
     "_confirm_copilot_mcp_identity": ("function", False, "87459833bc5c", "client_copilot"),
     "_confirm_member_projection": ("function", False, "0e165137f085", "client_class"),
     "_consult_liveness_model_wait": ("function", True, "0329a680bb66", "client_turn"),
@@ -426,6 +427,7 @@ _CLAUDE_MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_claude_settings_is_still_ours": ("function", False, "a6632a57e602", "client_seed_ownership"),
     "_claude_shipped_restrictions": ("annotation", False, "", ""),
     "_claude_stop_session": ("function", True, "b60c5fea256e", "client_claude_session"),
+    "_compaction_holds_steers": ("function", False, "a6632a57e602", "client_claude_turn"),
     "_copy_aside_back_without_clobber": (
         "staticmethod",
         False,

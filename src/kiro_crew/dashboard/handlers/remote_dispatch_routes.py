@@ -1125,18 +1125,15 @@ async def _close(
             raise
         return await remote_kept_closes.kept_or_raise(state, caller, instance_id, slot, exc)
     gone = remote_ingest.slot_gone(status, payload)
-    if (
-        board
-        and (200 <= status < 300 or gone)
-        and await remote_ingest.holds_retired_slot(board, instance_id, slot) is True
-    ):
+    closed = bool(board) and (200 <= status < 300 or gone)
+    if closed:
+        # No pull reads a finished item again, so this write is what records the close.
+        await remote_ingest.mark_slot_closed(board, instance_id, slot)
+    if closed and await remote_ingest.holds_retired_slot(board, instance_id, slot) is True:
         # A retired binding's slot is closed on its crew: its entry reads destroyed.
         await _forget_locked(state, caller, instance_id, slot)
         destroyed = await remote_ingest.mark_destroyed(state, board, instance_id, slot)
         return {"target": slot, "crew": instance_id, "closed": True, "destroyed": destroyed}
-    if board and (200 <= status < 300 or gone):
-        # No pull reads a finished item again, so this write is what records the close.
-        await remote_ingest.mark_slot_closed(board, instance_id, slot)
     if gone:
         # Already gone on the crew: nothing left to drive, so the record goes too.
         await _forget_locked(state, caller, instance_id, slot)

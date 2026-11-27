@@ -1,11 +1,11 @@
 """What a claude-agent-acp prompt turn reads that no other backend's does.
 
 Its compaction notices, which arrive as plain assistant text and, for an automatic
-compaction, with no terminal; a native ``compaction_update`` it claims; the
-``_session/steering`` floor of its adapter; a turn whose only unfinished calls are
-background agents'; and the debug line for a session update this client does not
-handle. ``AcpClient`` reaches each through a hook whose default is what every other
-backend does, and ``ClaudeAcpClient`` binds the functions here.
+compaction, with no terminal; a native ``compaction_update`` it claims, and holds
+steers behind; the ``_session/steering`` floor of its adapter; a turn whose only
+unfinished calls are background agents'; and the debug line for a session update
+this client does not handle. ``AcpClient`` reaches each through a hook whose default
+is what every other backend does, and ``ClaudeAcpClient`` binds the functions here.
 
 Each function here whose first parameter is ``self`` is a ``ClaudeAcpClient`` method:
 the class binds it by name, so it reads and writes the session's own state on the
@@ -191,12 +191,30 @@ def _claims_native_compaction(
     Always claimed on claude: a native start without a terminal is settled at the
     turn's end by :meth:`_settle_claude_compaction`, which also records the ID so a
     delayed native terminal cannot reset the counts again.
+
+    A start is a compaction that is running now, so the bounded wait an earlier
+    failure armed is over. A steer that reaches Claude Code while it compacts
+    aborts that compaction (``failed``, ``aborted``); Claude Code then runs the
+    steered message, which starts the compaction again, silent for minutes. Left
+    armed, the wait ended that live turn at ``_COMPACTION_FAILED_TURN_BUDGET``.
+    A terminal lets the steers :meth:`_compaction_holds_steers` held go out.
     """
     self._claude_compaction_pending = status_type == "started"
     self._claude_native_compaction_id = (
         liveness_key(update["compactionId"]) if self._claude_compaction_pending else None
     )
+    if self._claude_compaction_pending:
+        self._compaction_failed_at = None
+    else:
+        self._release_held_steers()
     return True
+
+
+def _compaction_holds_steers(self: ClaudeAcpClient) -> bool:
+    """Whether a native compaction of this turn is in flight, so a steer waits for
+    its terminal: claude-agent-acp hands a steer to Claude Code at once, and that
+    aborts the compaction it lands on."""
+    return getattr(self, "_claude_native_compaction_id", None) is not None
 
 
 def _note_unhandled_session_update(self: ClaudeAcpClient, kind: str) -> None:

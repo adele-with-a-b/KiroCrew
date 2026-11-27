@@ -53,6 +53,7 @@ from kiro_crew.acp.types import (
 )
 from kiro_crew.agent import require_unchanged_derived_spec
 from kiro_crew.agent_sdk.backends import effort_config_option_levels, model_refusal_phrase
+from kiro_crew.dashboard.chat_utils_awaits import drained_to_thread
 from kiro_crew.platform.context import redact_log_via_context
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 
@@ -245,9 +246,11 @@ async def set_model(self: AcpClient, model_id: str) -> None:
         # 4.8 pick to 200K). Overwrites only the file Crew authored (ownership
         # guards inside), refreshing both to the just-claimed selection.
         # Capability-gated (not ``_is_claude``) so a future settings-seeding
-        # adapter re-seeds on a warm claim by joining the set.
+        # adapter re-seeds on a warm claim by joining the set. Drained like the
+        # start's seed write (``client_claude_seed.settled_seed_write``), so a
+        # cancelled switch is never torn down under a write still in flight.
         try:
-            await asyncio.to_thread(self._write_settings_seed)
+            await drained_to_thread(self._write_settings_seed)
         except (OSError, ValueError, TypeError):
             logger.warning("re-seed of settings.local.json on set_model failed", exc_info=True)
     # The previous model's window (and its authoritative usage_update, if

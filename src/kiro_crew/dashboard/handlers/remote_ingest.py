@@ -98,6 +98,11 @@ READ_DEADLINE_SECS = 6.0
 #: a read that finds its board in here serves the stored state instead.
 _PULLING: set[str] = set()
 
+#: Close marks :func:`mark_slot_closed` wrote per board, counted under the board
+#: lock. A pull takes the count before it reads a crew's slot list, which it reads
+#: outside that lock; a mark counted since is newer than the list's answer.
+_CLOSE_MARKS: dict[str, int] = {}
+
 #: The create refusal for a peer whose reply did not echo ``work_item_id``.
 CODE_PEER_LACKS_WORK_ITEMS = "crew_peer_lacks_work_items"
 
@@ -396,10 +401,14 @@ async def mark_slot_closed(board: str, instance_id: str, slot: str) -> None:
     for good. An item still open is marked too: when its session closes first and
     no pull reads it before the item closes, its record would keep the last open
     answer a pull read; a later pull reads the same answer from the slot list.
-    Under the board lock, as every record write is. Never raises.
+    Every close the crew confirmed comes here, a retired binding's slot included:
+    another item may still name it. Under the board lock, as every record write
+    is, and counted in :data:`_CLOSE_MARKS`, so a pull whose list read came first
+    files no open answer over it. Never raises.
     """
     try:
         async with _board_lock(board):
+            _CLOSE_MARKS[board] = _CLOSE_MARKS.get(board, 0) + 1
             items = await asyncio.to_thread(work_ledger.list_work_items, board)
             for item in items:
                 if not (item.worker_instance_id == instance_id and item.worker_session_key == slot):
@@ -572,7 +581,7 @@ async def _pull_all(
     state: "DashboardState", board: str, remote: list[work_ledger.WorkItem]
 ) -> None:
     mgr = getattr(state, "instances_manager", None)
-    slot_lists: dict[str, dict[str, dict[str, bool]] | None] = {}
+    slot_lists: dict[str, tuple[dict[str, dict[str, bool]] | None, int]] = {}
     loop = asyncio.get_running_loop()
     deadline = loop.time() + READ_DEADLINE_SECS
     for item in remote:
@@ -625,7 +634,7 @@ async def _ingest_item(
     mgr: Any,
     board: str,
     item: work_ledger.WorkItem,
-    slot_lists: dict[str, dict[str, dict[str, bool]] | None],
+    slot_lists: dict[str, tuple[dict[str, dict[str, bool]] | None, int]],
 ) -> None:
     routes = _routes()
     crew = str(item.worker_instance_id)
@@ -671,8 +680,9 @@ async def _ingest_item(
         return
     _UNANSWERED.pop(crew, None)
     if crew not in slot_lists:
-        slot_lists[crew] = await _slot_list(state, crew)
-    listed = slot_lists[crew]
+        marks = _CLOSE_MARKS.get(board, 0)
+        slot_lists[crew] = (await _slot_list(state, crew), marks)
+    listed, marks_at_read = slot_lists[crew]
     # Only for the paging choice; the filing reads the fold again under the lock.
     filed_ids = await _filed_ids_hint(board, item.item_id)
     limit = PULL_EVENT_LIMIT
@@ -706,6 +716,10 @@ async def _ingest_item(
         record.binding = work_ledger.binding_id(item)
         record.crew_state = "connected"
         record.crew_down_since = None
+        if record.closed and _CLOSE_MARKS.get(board, 0) != marks_at_read:
+            # A close was marked after the list was read: its answer is older, and
+            # a finished item is never pulled again, so the close stands.
+            observed = {}
         for name, value in observed.items():
             setattr(record, name, value)
         # Whether this pull read the crew's roster: without it ``closed`` is the last
@@ -1051,7 +1065,9 @@ def _schedule_closes(
 async def _close_retired_slot(
     state: "DashboardState", mgr: Any, board: str, crew: str, slot: str
 ) -> None:
-    """Close one retired peer slot, then mark its entry ``destroyed``. Never raises.
+    """Close one retired peer slot, then mark it closed and its entry ``destroyed``.
+
+    Never raises.
 
     A 2xx, or a 404 saying the slot is gone, counts as closed. Anything else (a
     timeout, a refusal, a version skew) leaves the entry ``retired``: fail closed.
@@ -1074,6 +1090,7 @@ async def _close_retired_slot(
         logger.info("retired slot %s on %s not closed", slot, crew, exc_info=True)
         return
     if 200 <= status < 300 or slot_gone(status, payload):
+        await mark_slot_closed(board, crew, slot)
         await mark_destroyed(state, board, crew, slot)
 
 

@@ -845,6 +845,18 @@ describe('chat sidebar — conductor lane', () => {
     expect(getByTestId('conductor-running-k-conductor').textContent).toBe('1')
   })
 
+  it('a collapsed conductor counts a child whose reply asks the person: the wait the Needs you chip counts', () => {
+    localStorage.setItem('mc-sidebar-lane', 'conductor')
+    openAllBut('k-conductor')
+    // No card and nothing unread: only the gateway's summary says Worker B waits.
+    const asks = { count: 1, oldest_ts: 1000, first_words: 'Q2a Which branch?', row_id: 'm-1', kinds: ['labelled'] }
+    const rows = NESTED.map(row => ({ ...row, needs_input: false, needs_you: row.key === 'k-worker-b' ? asks : null }))
+    const { getByTestId } = renderSidebar(rows)
+    expect(getByTestId('needs-you-off-chip')).toHaveTextContent('1')
+    expect(laneRows(getByTestId('conductor-view-lane'))).toEqual(['k-conductor'])
+    expect(getByTestId('conductor-needs-you-k-conductor').textContent).toBe('1')
+  })
+
   it('a conductor mode worker raises no needs-your-answer count on its conductor (S3)', () => {
     // Its question goes to the conductor; its unread reply is the conductor's to read.
     localStorage.setItem('mc-sidebar-lane', 'conductor')

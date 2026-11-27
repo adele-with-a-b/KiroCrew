@@ -10,12 +10,14 @@ import { isPeerRow, localSlotFolder } from './rowIdentity'
 import { lastActivityEpoch, type SortKey } from '../chat/sessionOrder'
 
 /** The dormant-collapse threshold, expanded containers, move exemptions and exempt rows. */
-export function useStaleCollapse({ pinned, activeSlot, runningSet, subagentCounts, unreadSet }: {
+export function useStaleCollapse({ pinned, activeSlot, runningSet, subagentCounts, unreadSet, waitsOnPerson }: {
   pinned: Set<string>
   activeSlot: string | null
   runningSet: Set<string>
   subagentCounts: Record<string, number>
   unreadSet: Set<string>
+  /** The roll-ups' one reading of "this row waits on the person" (`rows.ts::makeWaitsOnPerson`). */
+  waitsOnPerson: (s: Slot) => boolean
 }) {
   // ── Stale-session collapse ─────────────────────────────────────────────────
   // Sessions idle past the threshold collapse behind a per-container
@@ -72,8 +74,9 @@ export function useStaleCollapse({ pinned, activeSlot, runningSet, subagentCount
     return () => clearInterval(id)
   }, [staleCollapseMs])
   // Exempt everything live or owed to the user: pinned, focused, running
-  // (incl. workflows/goal loops), live or queued subagents, an approval gate,
-  // an unanswered question, unread output — and a row the user JUST moved or
+  // (incl. workflows/goal loops), live or queued subagents, a wait on the person
+  // (`waitsOnPerson`: what the "Needs you" chip counts, an approval gate, an
+  // unanswered question), unread output — and a row the user JUST moved or
   // just left, which must stay visible where it is whatever its age. The collapse
   // de-noises settled work; a row that needs the user is not settled.
   // Memoized (not just for render cost): the reveal-in-sidebar effect (./reveal)
@@ -81,19 +84,19 @@ export function useStaleCollapse({ pinned, activeSlot, runningSet, subagentCount
   // pre-expanded, so it must be a listable effect dependency.
   const isStaleExempt = useCallback((s: Slot): boolean => {
     // A peer row has no local pin, focus, unread or subagent state to exempt it
-    // — every clause below is a lookup in a LOCAL map keyed by slot key, and a
-    // peer key can collide with a local one. Its own `running` flag, read off
-    // the proxied payload, is the only signal that travels with it.
+    // — every other clause below is a lookup in a LOCAL map keyed by slot key, and
+    // a peer key can collide with a local one. Its own `running` flag and its own
+    // wait, read off the proxied payload, are the signals that travel with it.
+    if (waitsOnPerson(s)) return true
     if (isPeerRow(s)) return s.running === true
     return pinned.has(s.key) || s.key === activeSlot || runningSet.has(s.key)
-      || (subagentCounts[s.key] ?? 0) > 0 || !!s.pending_approval
-      || !!s.needs_input || unreadSet.has(s.key)
+      || (subagentCounts[s.key] ?? 0) > 0 || unreadSet.has(s.key)
       // Read-time expiry: an entry only counts while younger than one heartbeat
       // interval, so correctness never depends on the prune timer having fired
       // (the timer is gated on the feature being on; the writer is not).
       || (staleRecentlyMoved.get(s.key) ?? 0) > Date.now() - STALE_COLLAPSE_TICK_MS
   },
-  [pinned, activeSlot, runningSet, subagentCounts, unreadSet, staleRecentlyMoved])
+  [pinned, activeSlot, runningSet, subagentCounts, unreadSet, staleRecentlyMoved, waitsOnPerson])
   return {
     staleCollapseMs, setStaleCollapseMs, staleExpanded, setStaleExpanded, setStaleRecentlyMoved,
     isStaleExempt,

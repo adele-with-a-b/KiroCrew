@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest'
 import { aggregateLine, codeChannelCrews, crewAttention, crewState, foldCodeChannelCrews, memberState, sameCrewView, type CrewSignals } from './codeChannelCrew'
 import type { WorkAggregate } from '../../types'
 import type { Slot } from './types'
+import { makeWaitsOnPerson } from './rows'
 import { turnOffCrewModeAsLts } from '../../test/crewModeOff'
 
 const CODE = { channel_name: 'fix-login', status: 'active' as const, web_url: 'https://slack.com/app_redirect?channel=C0CODE1&team=T0TEAM1' }
@@ -13,7 +14,7 @@ const worker = (key: string, extra: Partial<Slot> = {}) => row(key, { parent: { 
 function signals(over: { running?: string[]; approvals?: Record<string, number>; unread?: string[] } = {}): CrewSignals {
   return {
     isRunning: s => (over.running ?? []).includes(s.key),
-    subagentApprovals: s => over.approvals?.[s.key] ?? 0,
+    waitsOnPerson: makeWaitsOnPerson({}, over.approvals ?? {}),
     isUnread: s => (over.unread ?? []).includes(s.key),
   }
 }
@@ -24,6 +25,10 @@ describe('memberState: the precedence a row uses', () => {
     [{ needs_input: true }, 'needs_you'],
     // A worker's [OPTIONS:] are addressed to its conductor, not the user.
     [{ has_options: true }, 'idle'],
+    // The gateway's summary is the rule: its null says these options ask the person nothing.
+    [{ has_options: true, options: ['Yes', 'No'], needs_you: null }, 'idle'],
+    // A labelled question in a reply to the person: the wait the "Needs you" chip counts.
+    [{ needs_you: { count: 1, oldest_ts: 1, first_words: 'Q2a Which branch?', row_id: 'm-1', kinds: ['labelled'] } }, 'needs_you'],
     [{ running: true, interrupted: true }, 'working'],
     [{ interrupted: true }, 'interrupted'],
     [{}, 'idle'],
@@ -55,6 +60,14 @@ describe('crewState: worst first across the conductor and its workers', () => {
       worker('w2', { pending_approval: true, last_message: 'approve git push' }),
     ], signals({ running: ['w1', 'cond'] }))
     expect(st).toEqual({ key: 'needs_you', count: 1, detail: 'approve git push', approval: true })
+  })
+
+  it('a hidden worker whose reply asks the person takes the line and the marker', () => {
+    const asks = { needs_you: { count: 1, oldest_ts: 1, first_words: 'Q2a Which branch?', row_id: 'm-1', kinds: ['labelled' as const] } }
+    const workers = [worker('w1', { running: true }), worker('w2', asks)]
+    const sig = signals({ running: ['w1', 'cond'] })
+    expect(crewState(cond, workers, sig)).toEqual({ key: 'needs_you', count: 1, detail: '' })
+    expect(crewAttention(workers, sig)).toBe('needs_you')
   })
 
   it('interrupted outranks working', () => {

@@ -473,9 +473,15 @@ def settings_withheld_cause(self: ClaudeAcpClient) -> str:
     local_settings = self._claude_local_settings_path()
     if self._foreign_settings_is_crew_seed(local_settings):
         return SETTINGS_WITHHELD_BY_SESSION
-    # No file at all (the seed has not run, or its write failed): neither
-    # answer would name the holder, so the caller shows nothing.
     if not os.path.lexists(local_settings):
+        # No file at all. When another Crew session still holds the path, this
+        # one was refused the vacant name (the seed is never recreated under a
+        # sibling's claim) and its array is withheld, so it names that session
+        # like any other seed it could not share. Otherwise the seed has not
+        # run, or its write failed: neither answer would name a holder, so the
+        # caller shows nothing.
+        if seed_provenance.held_by_another(local_settings, getattr(self, "_seed_owner", "")):
+            return SETTINGS_WITHHELD_BY_SESSION
         return ""
     return SETTINGS_WITHHELD_BY_PROJECT
 

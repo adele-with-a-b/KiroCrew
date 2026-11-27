@@ -55,7 +55,7 @@ import { openCrewWindow, useCrewWindow } from './chat/crew-window/crewWindowStor
 import { useStableCallbackProps } from './chat/useStableCallbackProps'
 import { isPeerRow, sessionRowIdentity } from './chat-sidebar/rowIdentity'
 import { normalizeRunSessionKey } from '../components/workflows/runModel'
-import { buildSidebarRows, guideStepOnRowControl, opensElsewhereOf, type RowScene, type RowShell, type SidebarRows } from './chat-sidebar/rows'
+import { buildSidebarRows, guideStepOnRowControl, makeWaitsOnPerson, opensElsewhereOf, type RowScene, type RowShell, type SidebarRows } from './chat-sidebar/rows'
 import { useSessionSources } from './chat-sidebar/sessionSources'
 import { crewSpaceChain, useCollapsedCrews, useCollapsedCrewSpaces, useCrewEnable } from './chat-sidebar/CrewGroups'
 import { crewOf, type CrewGroup } from '../hooks/useInstanceSessions'
@@ -359,10 +359,15 @@ function ChatSidebar({
     offer: manualSortOffer, undo: undoManualSort, dismiss: dismissManualSort, bar: manualSortBar,
   } = useManualSessionOrder({ localSlots, pinned, sortKey, setSortKey })
 
+  // What `needsYouOf` reads from the other rows: over every row, crew members included.
+  const crewApprovals = useMemo(() => crewWaitingApprovals(slotsProp), [slotsProp])
+  // Whether a row waits on the person, as every roll-up that stands in for hidden
+  // rows reads it (the sleeping expander, a shut Conductor-lane branch, a folded crew).
+  const waitsOnPerson = useMemo(() => makeWaitsOnPerson(crewApprovals, subagentApprovalCounts), [crewApprovals, subagentApprovalCounts])
   const {
     staleCollapseMs, setStaleCollapseMs, staleExpanded, setStaleExpanded, setStaleRecentlyMoved,
     isStaleExempt,
-  } = useStaleCollapse({ pinned, activeSlot, runningSet, subagentCounts, unreadSet })
+  } = useStaleCollapse({ pinned, activeSlot, runningSet, subagentCounts, unreadSet, waitsOnPerson })
 
   // Ranks up to the configured count of sessions by settled recency for the sidebar tint —
   // see ../utils/recencyTint. Count = server-side dashboard.recent_tint_count (shared
@@ -516,8 +521,6 @@ function ChatSidebar({
   // memoized output keeps its identity while the inputs it reads hold still; the
   // result, its `lanes`, `staleSplit` and `views` are fresh per build.
   const previousRowsRef = useRef<SidebarRows | null>(null)
-  // What `needsYouOf` reads from the other rows: over every row, crew members included.
-  const crewApprovals = useMemo(() => crewWaitingApprovals(slotsProp), [slotsProp])
   const sidebarRows = buildSidebarRows({
     rows: allRows,
     local: {
@@ -1078,11 +1081,11 @@ function ChatSidebar({
     manualOrderError, setManualOrderError,
     showAllFolders, shownCrewGroups, shownCrewRowCount, shownCrewRows, sidebarRows, slotFilter, slotFolders,
     sortError, sortKey, staleCollapseMs, staleExpanded, startsAutomaticSection, staticRows, stripEdges,
-    subagentApprovalCounts, suppressMenuRestore, tagById, tagColumnsEnabled, tagFilterRows, tagsData,
+    suppressMenuRestore, tagById, tagColumnsEnabled, tagFilterRows, tagsData,
     tagsQueryFailed, tintAgents, toggleCollapse, toggleColumnCollapse, toggleCrewCollapsed, toggleFilter,
     toggleFolderFilter, toggleFoldersShelved, toggleFoldersUnreadFirst, toggleHideFilter, toggleModelFilter, toggleReveal,
     toggleSaveFailed, toggleSpaceCollapsed, toggleTagFilter, toggleUnfiledAboveFolders, unfiledAboveFolders, unfiledAboveFoldersError, ungroupedSlots, unreadSet, updateColumnMutation,
-    updateFolderMutation, visibleRootFolders, warmCrews }
+    updateFolderMutation, visibleRootFolders, waitsOnPerson, warmCrews }
   const searchDock = renderSearchDock(scope)
   const laneRows = createLaneRows(scope)
   const folderBlocks = createFolderBlocks({ ...scope, ...laneRows })

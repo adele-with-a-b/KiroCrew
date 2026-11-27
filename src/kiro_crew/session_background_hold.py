@@ -49,13 +49,14 @@ def hold_expired_reason(launch: tuple[float, str], hold_secs: float, *, orphaned
     """Why the idle sweep ended a session whose launched work outlived the hold.
 
     *launch* is ``(seconds since the newest launch, description)``; *orphaned* says the
-    sweep ended it because its tab closed rather than on the idle clock. Shown in the
-    chat as the recycle notice's reason and written to the gateway log.
+    sweep ended it because its tab closed rather than on the idle clock. Written to
+    the gateway log, and shown in the chat as the recycle notice's reason, where what
+    the reset stopped follows it (``session_recycle_jobs.after_reset``).
     """
     age, label = launch
     why = "tab closed" if orphaned else "idle"
     return (
         f"{why}; its agent started background work {_minutes(age, up=True)} ago ({label}), "
         f"longer than the {_minutes(hold_secs)} hold set by "
-        "session.harness_background_hold_secs, so that work may have been stopped"
+        "session.harness_background_hold_secs"
     )

@@ -509,7 +509,9 @@ model when that call returns (acp-client, `_steer_via_steering_request`). The
 result then carries `held: true` (`steer_hold.held_behind_tool`, read off the
 agent's `steer_held_behind_tool` right after the accept), and the tool reply says
 the target has not read the message yet and reads it when that call returns,
-which can take minutes. Nothing cuts a running tool call short for a steer:
+which can take minutes. A steer sent while the turn compacts is held the same
+way until the compaction ends (acp-client, *Native adapter compaction lifecycle*):
+sent at once it aborts the compaction. Nothing cuts a running tool call short for a steer:
 `session_stop` is the one way to end it, and it loses that call's work.
 
 **A steer carries the sender's earlier queued notes in with it.** Before a

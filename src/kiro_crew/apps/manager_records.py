@@ -889,8 +889,13 @@ def _read_approved_grants(name: str) -> dict[str, list[str]] | None:
     family existed, is fixed once to what the manifest declares at this first read
     (:func:`_freeze_declared`), so a later write to the agent-writable manifest
     widens nothing.
+
+    Inside a sandbox the store is hidden and is not opened: nothing is approved
+    there, and the gateway, which reads it, decides.
     """
     nothing: dict[str, list[str]] = {family: [] for family in STAGED_GRANT_FAMILIES}
+    if member_records._inside_sandbox():
+        return nothing
     try:
         _import_app_tree_grants()
         text = protected_app_state.read_grants_text(name)

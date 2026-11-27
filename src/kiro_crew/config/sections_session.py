@@ -285,7 +285,8 @@ class SessionConfig:
             "RSS Limit still leave its session running (default 3600, 300-86400). "
             "Claude Code does not report when that work ends, so after this time the "
             "work is treated as finished and the session can be ended; the chat then "
-            "says the work may have been stopped. Raise it for work that runs longer. "
+            "says which of its processes were stopped and which still run, by pid. "
+            "Raise it for work that runs longer. "
             "Twice the Watchdog RSS Limit still ends a session inside the hold.",
         ),
     )

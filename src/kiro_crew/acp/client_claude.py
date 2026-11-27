@@ -361,6 +361,7 @@ class ClaudeAcpClient(AcpClient, serves=ACP_BACKEND_CLAUDE):
     _settle_harness_compaction = _client_claude_turn._settle_harness_compaction
     _reset_harness_compaction = _client_claude_turn._reset_harness_compaction
     _claims_native_compaction = _client_claude_turn._claims_native_compaction
+    _compaction_holds_steers = _client_claude_turn._compaction_holds_steers
     _note_unhandled_session_update = _client_claude_turn._note_unhandled_session_update
     _steering_adapter_floor_met = _client_claude_turn._steering_adapter_floor_met
     _folds_prompt_into_agent_turn = _client_claude_turn._folds_prompt_into_agent_turn

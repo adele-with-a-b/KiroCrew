@@ -14,11 +14,7 @@ from kiro_crew.dashboard.chat_delivery_owner_steer import (
     deliver_again as deliver_owner_steers_again,
 )
 from kiro_crew.dashboard.chat_utils import SYNTHESIS_HELD, SYNTHESIS_UNKNOWN
-from kiro_crew.dashboard.slot_queue_repository import (
-    RESTORED_HELD_AGAIN_KEY,
-    RESTORED_QUEUE_KEY,
-    RESTORED_SEND_CHOSEN_KEY,
-)
+from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY, restored_card_waits
 from kiro_crew.dashboard.state import SUBAGENT_FINAL_COMPLETION_NOTE, SUBAGENT_SYNTHESIS_PROMPT
 
 if TYPE_CHECKING:
@@ -279,9 +275,7 @@ def _chosen_restored_head(slot: _ChatSlot) -> Any:
     for item in slot._queue or ():
         if not isinstance(item, dict):
             return None
-        if item.get(RESTORED_QUEUE_KEY) and (
-            not item.get(RESTORED_SEND_CHOSEN_KEY) or item.get(RESTORED_HELD_AGAIN_KEY)
-        ):
+        if restored_card_waits(item):
             continue
         return item.get("id") if item.get(RESTORED_QUEUE_KEY) else None
     return None

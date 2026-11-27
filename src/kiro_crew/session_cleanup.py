@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from kiro_crew import session_cleanup_leftovers as _leftovers
 from kiro_crew import session_cleanup_spare as _spare
+from kiro_crew import session_recycle_jobs as _jobs
 from kiro_crew.messaging.link import is_channel_session_key
 from kiro_crew.metrics.events import SESSION_RUNTIME_RECONCILE
 from kiro_crew.process_identity import (
@@ -841,6 +842,7 @@ class SessionCleanup:
                 continue
             try:
                 before = await _leftovers.snapshot(self, pid, loop)
+                jobs = await _jobs.before_reset(self, key, session)
                 # A free semaphore only proves the parent's OWN turn is over.
                 # Sub-agents spawned by that turn keep running on this session's
                 # runtime, so a reset here discards their work. reset() only
@@ -924,17 +926,12 @@ class SessionCleanup:
                 self._deps.stats_factory().inc_session_cleaned()
                 reason = rss_recycle_reason(rss, limit, rebounds)
                 # Name the launched work only while the launch is still inside
-                # the hold — in practice, a hard-ceiling recycle. A recycle let
-                # through PAST the hold just presumed that work finished (that
-                # is what ending the hold means), and the record is never
-                # cleared while the process lives, so warning "may have been
-                # stopped" about a launch from hours ago would be permanent
-                # noise on every later recycle.
+                # the hold — in practice, a hard-ceiling recycle. Past the hold
+                # that work is presumed finished and its record is never cleared,
+                # so naming it would be noise on every later recycle.
                 if launch is not None and launch[0] <= hold:
-                    reason += (
-                        "; background work its agent started earlier may have been "
-                        f"stopped: {launch[1]}"
-                    )
+                    reason += f"; its agent started background work earlier ({launch[1]})"
+                    reason += await _jobs.after_reset(self, key, jobs)
                 await self._owner._fire_recycle_callback(key, reason=reason)
             except Exception:
                 # One victim cannot suppress the rest of this tick.
@@ -1770,6 +1767,7 @@ class SessionCleanup:
                     "orphaned" if is_orphan else "idle",
                 )
                 continue
+            jobs = await _jobs.before_reset(self, key, scanned)  # for the notice
             # Everything above was concluded BEFORE that await, and the probe
             # reads the task store off-loop, so the loop ran while this sweep
             # was suspended. Re-judge the candidate now, on BOTH axes, before
@@ -1993,4 +1991,5 @@ class SessionCleanup:
                 # Tell the chat, which otherwise resets with no explanation.
                 # After ``reset``, so nothing here reopens a pre-reset window.
                 if hold_reason is not None:
+                    hold_reason += await _jobs.after_reset(self, key, jobs)
                     await self._owner._fire_recycle_callback(key, reason=hold_reason)
