@@ -462,7 +462,13 @@ it pinned a reader who had just started to leave, cancelling their notch with it
 reader whose scroll took them off that write has left: follow releases, an idle
 append leaves them where
 they are, and only their return to the bottom, the jump pill, or sending a message
-(every chat host force-pins on send) re-arms it. A downward arrival near the bottom
+(every chat host force-pins on send) re-arms it. That send-time pin is smooth for a
+short hop, and the smooth-pin guard (which stands every automatic pin down for the
+glide and releases follow on any input during it) is armed only when the glide has
+distance to cover (`smoothPinHasDistance`): a reader already on the bottom, as after
+a send that drew no bubble because the turn before it was still being stopped, gets
+no scroll event to end a guard, so the reply that follows is pinned like any other
+growth. A downward arrival near the bottom
 re-arms follow only when the reader's own downward travel across the gesture is at
 least the viewport's growth (`FollowController`), so a collapsing toolbar that brings
 the bottom up to a nudge does not. Growth is followed wherever it

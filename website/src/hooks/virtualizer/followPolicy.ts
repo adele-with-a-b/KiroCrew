@@ -41,6 +41,7 @@ import {
   resolveUserScrollStick,
   scrollerCollapsed,
   scrollIntentPending,
+  smoothPinHasDistance,
   type ScrollGeom,
 } from './FollowController'
 import { bottomPinWindow, computeJumpWindow, getOffset as getOffsetFn, tailWindow, type HeightGetter, type WindowRange } from './WindowCalculator'
@@ -398,6 +399,7 @@ export function useFollowState(followOutput: boolean): FollowState {
       who?: string,
     ) => {
       if (inspectorOn()) devLog('WRITE', `${who ?? '?'} ${Math.round(el.scrollTop)}->${Math.round(top)}${behavior === 'smooth' ? ' smooth' : ''}`)
+      const glides = accounting === 'pin' && behavior === 'smooth' && smoothPinHasDistance(el, top)
       if (typeof el.scrollTo === 'function') el.scrollTo({ top, behavior })
       else el.scrollTop = top
       // Keep native scroll anchoring in step with who owns the position. While
@@ -432,6 +434,19 @@ export function useFollowState(followOutput: boolean): FollowState {
       // Only the explicit "jump to latest" path is smooth; the streaming pin
       // is instant, so this guard only needs to cover the jump-to-latest glide.
       if (accounting === 'pin' && behavior === 'smooth') {
+        // A reader already on the target gets no glide and no scroll event
+        // (the send-time pin of a reader following at the bottom: their
+        // bubble's append is pinned before it, and a send made while the turn
+        // before it is still being stopped draws no bubble at all). A guard
+        // armed here would never see an arrival: every automatic pin would
+        // stand down for it and its abort listeners would release follow on
+        // an input that moves nothing. The write is an ordinary pin; a guard
+        // left by an earlier glide to this same spot goes with it.
+        if (!glides) {
+          smoothPinActiveRef.current = false
+          detachSmoothAbort()
+          return
+        }
         smoothPinActiveRef.current = true
         prevSmoothTopRef.current = el.scrollTop
         // ...but the guard must yield to REAL input. Its only other release
