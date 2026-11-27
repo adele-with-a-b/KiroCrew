@@ -948,6 +948,56 @@ class TestRunChatRecoveryLadders:
         assert not any("Connection lost" in err for err in _errors(slot))
 
     @pytest.mark.asyncio
+    async def test_an_aborted_compaction_runs_the_message_exactly_once(self, tmp_path):
+        """One send, one compaction abort, one execution. "aborted" is what Claude
+        Code reports for a compaction a steer interrupted: nothing is wrong with the
+        conversation, so the message the abandoned turn never ran is replayed, and
+        nothing sends it a third time."""
+        from kiro_crew.acp.client import compaction_failure_is_transient
+
+        state, client = _runner_state(tmp_path)
+        slot = _slot()
+        # The verdict the ACP layer records for the frame claude-agent-acp sends.
+        client.last_compaction_transient = compaction_failure_is_transient(
+            {
+                "sessionUpdate": "compaction_update",
+                "compactionId": "c1",
+                "status": "failed",
+                "error": "aborted",
+            }
+        )
+        turns = [
+            [_complete(STOP_REASON_COMPACTION_FAILED)],
+            [LLMEvent(kind=EVENT_TEXT_CHUNK, text="the answer"), _complete()],
+        ]
+
+        def _stream(*_a, **_kw):
+            return _async_iter(turns.pop(0) if turns else [_complete()])
+
+        client.stream = MagicMock(side_effect=_stream)
+
+        slot._empty_response_retries = 2
+        with _quiet_sel():
+            await chat_runner._run_chat(state, slot, "do the thing")
+            replay = slot.task
+            # No follow-up turn here means the message was dropped.
+            assert replay is not None
+            await await_until(replay, what="the replay turn")
+        await _settle(slot)
+
+        # The aborted attempt and the replay: the message ran once, in the second.
+        assert client.stream.call_count == 2
+        answers = [
+            row
+            for row in slot.messages
+            if row.get("role") == "assistant" and "the answer" in row.get("content", "")
+        ]
+        assert len(answers) == 1, slot.messages
+        retries = [err for err in _errors(slot) if "Compaction failed — retrying" in err]
+        assert len(retries) == 1, _errors(slot)
+        assert slot._queue == []
+
+    @pytest.mark.asyncio
     async def test_a_stopped_turn_is_not_revived_by_the_throttle_requeue(self, tmp_path):
         """A requeue lands at queue index 0, so a message the user STOPPED during
         the turn would come back and run first. The stop completed, so _stopping

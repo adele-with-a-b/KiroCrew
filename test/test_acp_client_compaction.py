@@ -599,6 +599,83 @@ class TestCompactionFailureTurnBudget:
         # tool resolved, not at the 30 s outer deadline.
         assert 0.1 < elapsed <= 0.1 + 0.02 + 1e-6, f"loop ended {elapsed:.3f}s in"
 
+    @pytest.mark.asyncio
+    async def test_a_compaction_started_after_an_aborted_one_disarms_the_budget(
+        self, tmp_path, monkeypatch
+    ):
+        """claude: a steer that lands on a running compaction aborts it (`failed`,
+        "aborted"). Claude Code then runs the steered message, which starts the
+        compaction again, silent for minutes. That start is a live turn: the budget
+        the failure armed must not end it while the new compaction runs."""
+        from kiro_crew.acp import client as acp_client
+        from kiro_crew.acp.types import (
+            EVENT_COMPACTION_STATUS,
+            EVENT_COMPLETE,
+            STOP_REASON_END_TURN,
+            JsonRpcMessage,
+        )
+        from kiro_crew.agent_sdk.backends import ACP_BACKEND_CLAUDE
+
+        monkeypatch.setattr(acp_client, "_COMPACTION_FAILED_TURN_BUDGET", 0.2)
+        monkeypatch.setattr(acp_client, "_READ_TIMEOUT", 0.02)
+
+        def _native(compaction_id: str, status: str, **extra):
+            update = {
+                "sessionUpdate": "compaction_update",
+                "compactionId": compaction_id,
+                "status": status,
+                **extra,
+            }
+            return JsonRpcMessage(
+                method="session/update", params={"sessionId": "sess-1", "update": update}
+            )
+
+        client = AcpClient(work_dir=tmp_path, acp_backend=ACP_BACKEND_CLAUDE)
+        client._session_id = "sess-1"
+        client._process = MagicMock()
+        client._process.returncode = None
+        client.ensure_ready = AsyncMock()
+        client._send_prompt = AsyncMock(return_value=1)
+        client._is_process_alive = lambda: True
+        # One manual clock for the budget, the turn deadline and the silent reads.
+        clock = ManualClock()
+        clock.install(monkeypatch, acp_client)
+        before = [
+            _native("c1", "in_progress"),
+            _native("c1", "failed", error="aborted"),
+            _native("c2", "in_progress"),
+        ]
+        after = [
+            _native("c2", "completed"),
+            JsonRpcMessage(id=1, result={"stopReason": "end_turn"}),
+        ]
+        # The new compaction stays silent for more than twice the budget.
+        quiet = {"left": 0.5}
+
+        async def _read(timeout: float = 0.0):
+            if before:
+                return before.pop(0)
+            if quiet["left"] > 0 or not after:
+                step = max(timeout, 0.01)
+                quiet["left"] -= step
+                clock.advance(step)
+                return None
+            return after.pop(0)
+
+        client._read_message = _read
+
+        events = [ev async for ev in client.stream_events("hello", timeout=30.0)]
+
+        assert events[-1].kind == EVENT_COMPLETE
+        # On the armed budget the turn ended ``error: compaction failed`` here.
+        assert events[-1].stop_reason == STOP_REASON_END_TURN
+        assert [e.text for e in events if e.kind == EVENT_COMPACTION_STATUS] == [
+            "started",
+            "failed",
+            "started",
+            "completed",
+        ]
+
 
 class TestCompactionVerdictReachesTheConsumer:
     """The verdict is SET on the client/handle and READ off the provider the
@@ -701,6 +778,21 @@ class TestCompactionFailureIsTransient:
         from kiro_crew.acp.client import compaction_failure_is_transient
 
         assert compaction_failure_is_transient({"error": {"httpStatusCode": 429}})
+
+    def test_an_aborted_compaction_is_transient(self):
+        """The frame claude-agent-acp sends when a steer lands on a running
+        compaction: it was interrupted, not refused, so the turn it abandoned is
+        worth running again."""
+        from kiro_crew.acp.client import compaction_failure_is_transient
+
+        assert compaction_failure_is_transient(
+            {
+                "sessionUpdate": "compaction_update",
+                "compactionId": "c1",
+                "status": "failed",
+                "error": "aborted",
+            }
+        )
 
     def test_an_overflowing_conversation_is_not_transient(self):
         """The case the no-retry policy was written for: replaying it repeats

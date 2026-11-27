@@ -633,6 +633,10 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
     turn ends before injecting is never reported consumed, so the caller's
     pending entry for it is queued by the turn's teardown, as for any steer
     the turn did not take (``steer_needs_loss_recovery``).
+
+    A steer is held the same way while a compaction of the turn is in flight
+    (``_compaction_holds_steers``): Claude Code aborts the compaction a steer
+    lands on, and the turn then waits minutes for the next one.
     """
     aimed_at = self._steering_turn_req
     refusal = self._steering_refusal(aimed_at)
@@ -662,7 +666,7 @@ async def _steer_via_steering_request(self: AcpClient, text: str) -> bool:
         return False
     if aimed_at == _AGENT_STARTED_REQUEST_ID:
         return await self._steer_via_folded_prompt(text)
-    if held or self._active_tool_calls.possibly_open:
+    if held or self._active_tool_calls.possibly_open or self._compaction_holds_steers():
         held.append((aimed_at, text))
         self._last_steer_monotonic = time.monotonic()
         self._release_held_steers()
@@ -815,14 +819,18 @@ def _held_steer_writes(self: AcpClient) -> set[str]:
 
 
 def _release_held_steers(self: AcpClient) -> None:
-    """Start sending the held steers if no tool call of the turn is open.
+    """Start sending the held steers if no tool call of the turn is open and no
+    compaction of it is in flight.
 
     The turn's read loop calls this each time a tool call reaches a terminal
-    status. The sends run on a task of their own, one at a time: the loop is
-    the one reader of the adapter's stdout and has to keep reading while a
-    steer waits for its answer.
+    status, and the backend's compaction record each time a compaction does.
+    The sends run on a task of their own, one at a time: the loop is the one
+    reader of the adapter's stdout and has to keep reading while a steer waits
+    for its answer.
     """
-    if not getattr(self, "_steers_held", None) or self._active_tool_calls.possibly_open:
+    if not getattr(self, "_steers_held", None):
+        return
+    if self._active_tool_calls.possibly_open or self._compaction_holds_steers():
         return
     task = self._held_steer_task
     if task is not None and not task.done():
@@ -831,7 +839,8 @@ def _release_held_steers(self: AcpClient) -> None:
 
 
 async def _send_held_steers(self: AcpClient) -> None:
-    """Send the held steers, oldest first, while no tool call of their turn is open.
+    """Send the held steers, oldest first, while no tool call of their turn is open
+    and no compaction of it is in flight.
 
     Each goes out as :meth:`_send_steering_request` sends any steer, and leaves
     the list once the send finishes, so a steer that arrives meanwhile waits
@@ -855,7 +864,11 @@ async def _send_held_steers(self: AcpClient) -> None:
         ):
             held.clear()
             return
-        if self._active_tool_calls.possibly_open or self._parked_on_permission:
+        if (
+            self._active_tool_calls.possibly_open
+            or self._parked_on_permission
+            or self._compaction_holds_steers()
+        ):
             return
         # Registered before the write: a turn that ends while the write is
         # still in flight finds the text here, as for a direct steer's RPC.
