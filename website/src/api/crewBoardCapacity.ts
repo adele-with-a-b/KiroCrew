@@ -12,6 +12,10 @@ export interface CrewBoardCapacity {
   critical_gb: number
   /** The macOS kernel reports memory pressure. */
   pressure_held: boolean
+  /** Each linked Crew's room as the patrol last read it, by its stories' `runs_on`
+   *  name: `''` has room, else `memory`, `disk`, `cpu`, `unknown` or `unreachable`.
+   *  A crew no patrol read lately is absent; an older gateway sends no list. */
+  crews?: { name: string; room: string }[]
 }
 
 export const crewBoardCapacityQueryKey = ['crew-board-capacity'] as const

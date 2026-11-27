@@ -309,7 +309,8 @@ worker's summary, so no report can forge a line; ids are listed up to
 `MAX_LISTED_IDS` with the whole count. A board with nothing to start or close
 adds nothing, a full board's backlog included, and its room is not read. A crew never delays the wake: the line shows
 its last reading within `ROOM_FRESH_SECS` (else `unknown`), a crew that is not
-connected reads `unreachable` at once, and one refresh bounded by
+connected reads `unreachable` at once (`patrol_seats.rooms_now`, the rule the
+Board's run line reads too), and one refresh bounded by
 `PROBE_TIMEOUT_S` runs in the background for the next wake. The lines come last,
 so the turn still opens with `[auto-nudge cycle N]` or `[work-ledger wake]`; a
 steered wake carries them after its briefs, and a cycle with no wake still steers

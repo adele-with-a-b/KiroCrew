@@ -27,7 +27,8 @@ reports can put a line here or forge one.
 A crew never delays the wake. The line shows the last room each crew reported
 (:data:`ROOM_FRESH_SECS`, else ``unknown``) and starts one bounded refresh in the
 background for the next wake; a crew that is not connected reads ``unreachable``
-without being asked.
+without being asked. The Board's run line reads the same words by the same rule
+(:func:`rooms_now`), and starts no refresh.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ import logging
 import re
 import time
 import weakref
-from typing import Any, Sequence
+from typing import Any, NamedTuple, Sequence
 
 from kiro_crew.conductor_patrol import PATROL_INTERVAL_SECS
 
@@ -158,44 +159,73 @@ def local_room() -> str:
         return resource_status.POSTURE_UNKNOWN
 
 
-async def crew_rooms(state: Any) -> list[tuple[str, str]]:
-    """``(name, room word)`` per registered crew, from readings already taken.
+class RoomNow(NamedTuple):
+    """One registered crew's room right now, as :func:`rooms_now` reads it."""
 
-    Empty with the remote-dispatch preview off or no crew manager. Never waits on a
-    crew: it starts :func:`_refresh` and returns.
+    instance_id: str
+    name: str
+    #: ``""`` for room, a short resource, :data:`UNREACHABLE` or :data:`UNKNOWN`.
+    word: str
+    #: Only a connected crew is read again (:func:`_refresh`).
+    connected: bool
+
+
+def rooms_now(state: Any, settings: Any) -> list[RoomNow]:
+    """Each registered crew's room right now. BLOCKING; read only.
+
+    The one rule both the ``[seats]`` line (:func:`crew_rooms`) and the Board's run
+    line (``handlers/crew_board_capacity.py``) read a crew's room by, so they never
+    disagree: no crew with the remote-dispatch preview off (*settings*, as
+    ``remote_dispatch_settings`` reads it) or no crew manager; a crew that is not
+    connected is :data:`UNREACHABLE` without being asked; else its last reading
+    while :data:`ROOM_FRESH_SECS` old, else :data:`UNKNOWN`. It starts no read and
+    stores nothing; only :func:`crew_rooms` starts a refresh.
     """
     from kiro_crew.dashboard.handlers import remote_dispatch_routes as routes
     from kiro_crew.dashboard.handlers import remote_placement as placement
 
     mgr = getattr(state, "instances_manager", None)
-    if mgr is None:
-        return []
-    settings = await asyncio.to_thread(placement.remote_dispatch_settings)
-    if not settings.enabled:
+    if mgr is None or not settings.enabled:
         return []
     try:
-        rows = await asyncio.to_thread(routes._instances, state)
+        rows = routes._instances(state)
     except Exception:  # noqa: BLE001 - an unreadable registry names no crew
         logger.debug("seats: crew registry unreadable", exc_info=True)
         return []
-    readings = _READINGS.setdefault(state, {})
+    try:
+        readings = dict(_READINGS.get(state) or {})
+    except TypeError:  # a state that takes no weak reference never held a reading
+        readings = {}
     now = _clock()
-    out: list[tuple[str, str]] = []
-    connected: list[str] = []
+    out: list[RoomNow] = []
     for row in rows:
         instance_id = str(getattr(row, "id", "") or "")
         if not instance_id:
             continue
         name = str(getattr(row, "name", "") or instance_id)
         if not placement._connected(mgr, instance_id):
-            out.append((name, UNREACHABLE))
+            out.append(RoomNow(instance_id, name, UNREACHABLE, False))
             continue
-        connected.append(instance_id)
         seen = readings.get(instance_id)
         fresh = seen is not None and 0 <= now - seen[1] <= ROOM_FRESH_SECS
-        out.append((name, seen[0] if seen is not None and fresh else UNKNOWN))
-    _refresh(state, mgr, connected, settings.memory_gb, settings.disk_gb)
+        word = seen[0] if seen is not None and fresh else UNKNOWN
+        out.append(RoomNow(instance_id, name, word, True))
     return out
+
+
+async def crew_rooms(state: Any) -> list[tuple[str, str]]:
+    """``(name, room word)`` per registered crew, by :func:`rooms_now`.
+
+    Never waits on a crew: it starts :func:`_refresh` of the connected ones and returns.
+    """
+    from kiro_crew.dashboard.handlers import remote_placement as placement
+
+    settings = await asyncio.to_thread(placement.remote_dispatch_settings)
+    rooms = await asyncio.to_thread(rooms_now, state, settings)
+    connected = [room.instance_id for room in rooms if room.connected]
+    mgr = getattr(state, "instances_manager", None)
+    _refresh(state, mgr, connected, settings.memory_gb, settings.disk_gb)
+    return [(room.name, room.word) for room in rooms]
 
 
 def _refresh(state: Any, mgr: Any, instance_ids: list[str], mem_gb: float, disk_gb: float) -> None:

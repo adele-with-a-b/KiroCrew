@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkBoardItem, WorkItemPlan } from '../api/crewBoard'
-import { backlogCompare, boardPlan, childProgress, moveRow, projectedIndex, ranksForDrop, seatsBusy } from './crewPlan'
+import { backlogCompare, boardPlan, childProgress, moveRow, projectedIndex, ranksForDrop } from './crewPlan'
 
 function item(id: string, plan?: WorkItemPlan, extra: Partial<WorkBoardItem> = {}): WorkBoardItem {
   return { item_id: id, title: id, state: 'open', created_at: `2026-11-22T08:00:0${id.slice(-1)}Z`, ...(plan ? { plan } : {}), ...extra } as WorkBoardItem
@@ -33,15 +33,13 @@ describe('boardPlan', () => {
     const plan = boardPlan(rows)
     expect(plan.sprint.map(i => i.item_id)).toEqual(['a2', 'a4'])
     expect(plan.backlog.map(i => i.item_id)).toEqual(['a1', 'a3', 'a5'])
-    expect(seatsBusy(rows)).toBe(2)
   })
 
-  it('keeps a story held in the sprint with no worker yet out of the backlog and the seats', () => {
+  it('keeps a story held in the sprint with no worker yet out of the backlog', () => {
     const rows = [item('h1', { backlog: false }, { in_backlog: false, has_worker: false }), item('w2', undefined, { in_backlog: false, has_worker: true })]
     const plan = boardPlan(rows)
     expect(plan.sprint.map(i => i.item_id)).toEqual(['h1', 'w2'])
     expect(plan.backlog).toHaveLength(0)
-    expect(seatsBusy(rows)).toBe(1)
   })
 
   it('reads a board that was never planned as one sprint from an older gateway', () => {
@@ -97,7 +95,7 @@ describe('ranksForDrop', () => {
 })
 
 describe('progress and seats', () => {
-  it('counts merged children and seats outside the backlog', () => {
+  it('counts merged children', () => {
     const items = [
       item('s1'),
       item('t1', { level: 'task', parent: 's1', step: 'merged' }),
@@ -107,6 +105,5 @@ describe('progress and seats', () => {
     ]
     const plan = boardPlan(items)
     expect(childProgress(items[0], plan.children)).toEqual({ done: 1, total: 2 })
-    expect(seatsBusy(items)).toBe(1)
   })
 })
