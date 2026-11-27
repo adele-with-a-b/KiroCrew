@@ -3013,7 +3013,14 @@ owner has approved for each app are stored in
 `member-records/app-grants/<app>.json` (`{"api": [...], "events": [...]}`,
 `apps.protected_app_state`), outside the app's own tree: code in the app's
 sandbox can write `apps/<name>/`, and `member-records/` is masked in every
-sandbox mode. Every
+sandbox mode. A sandboxed process (an MCP server, a `kirocrew` command) therefore
+opens no set: `_read_approved_grants` answers "nothing approved" there without
+touching the store, and the record reads that pass through it
+(`_read_installed`, so `builtin_app_names` and the first-party agent tools a
+server lists) do not fail on the hidden directory. Whether a process is
+sandboxed is `member_records._inside_sandbox`, which asks `sandbox_launch_mark`
+because the entry points drop the marker from the environment
+([security](security.md), Bot records). Every
 enforcement point -- `token_auth._app_api_allowlist`,
 `ws_event_scope._read_declared_events`, and the hook context's event bus via
 `approved_manifest_permissions` -- grants only entries the live manifest
