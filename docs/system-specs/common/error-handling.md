@@ -265,6 +265,31 @@ Notable terminal (non-retryable) classes:
   rewrites it once (so neither pass hides a value from the other), because the
   dashboard row and the channel post that show it do not redact on their own,
   and the frame's trailing `data` repr is dropped from it.
+- **The model road is down**: `llm_helpers.model_road_down_cause(exc)` answers
+  why an error says the chat's model account cannot be used at all, or `""`. It
+  is a fact about an error a turn has already ENDED on, never a retry verdict:
+  every arm above runs first and is unchanged, and no row wording depends on it.
+  Three causes, the `credential_errors.MODEL_ROAD_*` values. `signed_out`:
+  `acp_error_needs_sign_in` (an `AcpAuthRequired`, the `sign_in_needed` or
+  `auth_required` tag, an expired-token `auth_error_code`).
+  `credentials_unavailable`: the `credential_reload` tag, or a frame that names a
+  credential provider's own failure to obtain credentials
+  (`credential_errors.is_credential_retrieval_failure`: botocore's
+  `CredentialRetrievalError` and `NoCredentialsError`, the AWS SDK for
+  JavaScript's `CredentialsProviderError`). `credentials_refused`: any other
+  `auth_error_code`, the AWS exception name `_raise_acp_error` read from the raw
+  frame. The retrieval names matter because a proxy in front of the model answers
+  a failed credential helper with a 5xx, so the frame classifies as a transient
+  `http_5xx`, is retried on the ladder as before, and ends on the 5xx card with
+  nothing typed saying the account, not the provider, was the cause. Only
+  exception names count, read from the harness's own frame: `raw_detail` when the
+  message is Kiro Crew's wording, and the message itself only when it is the frame
+  verbatim (`user_worded` false, as `client_transport` raises a refused request).
+  Curated prose is never read. A credential IAM has not propagated yet, a
+  throttle, a plain 5xx, a spent usage limit and an unentitled model answer `""`.
+  Its one reader is the work ledger: a bound worker's dead turn is reported
+  `blocked` for it (crew-mode.md, "A turn the model road ended is reported for
+  it").
 - **Preserved-thinking binding mismatch**: `AcpConversationBindingMismatch`
   (non-transient) means the stored native conversation carries thinking bound to
   another conversation prefix. A dashboard outer turn with no reply, thought or

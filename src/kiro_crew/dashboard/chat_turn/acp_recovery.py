@@ -91,6 +91,7 @@ if TYPE_CHECKING:
         _handed_to_a_chat_keeper,
         _persist_partial_reply,
     )
+    from kiro_crew.dashboard.chat_turn.worker_wait import _note_model_road_down
 
 
 async def _recover_posttoken_transient(
@@ -648,6 +649,9 @@ async def _on_acp_session_not_found(turn: _ChatTurn, exc) -> None:
             f"❌ {credential_give_up_text(exc)} Then send your message again.",
             "msg msg-err",
         )
+        # The turn ends here on credentials no restart could load: a bound
+        # worker's item is marked blocked so its conductor wakes on the ledger.
+        _note_model_road_down(turn, exc)
     else:
         slot.append(
             "error",

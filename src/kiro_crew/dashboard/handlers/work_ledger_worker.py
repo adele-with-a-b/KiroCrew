@@ -143,9 +143,15 @@ WAIT_ARTIFACT = "waits_in_chat"
 #: that ended on the question, as the chat showed them (already redacted there): a
 #: hard block puts up no approval, so this is the only place the conductor sees it.
 REFUSED_ARTIFACT = "refused_calls"
+#: The artifact key that marks a ``blocked`` report the gateway filed for a worker
+#: whose turn ended because its model account cannot be used (``work_ledger_waits``),
+#: valued with the cause (a ``credential_errors.MODEL_ROAD_*`` value).
+MODEL_ROAD_ARTIFACT = "model_road"
 #: The keys only the gateway writes. A worker's own report drops them, so it cannot
 #: pass itself off as the gateway's, and a brief it echoes back still lands.
-GATEWAY_ARTIFACT_KEYS: frozenset[str] = frozenset({WAIT_ARTIFACT, REFUSED_ARTIFACT})
+GATEWAY_ARTIFACT_KEYS: frozenset[str] = frozenset(
+    {WAIT_ARTIFACT, REFUSED_ARTIFACT, MODEL_ROAD_ARTIFACT}
+)
 
 
 async def api_work_report(request: web.Request) -> web.Response:

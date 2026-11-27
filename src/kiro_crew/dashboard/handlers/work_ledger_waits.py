@@ -22,6 +22,18 @@ and so is a gateway report of the same question (the worker asking again), so a
 repeat never wakes the conductor twice. A turn that answered a person typing in the
 worker's own chat writes nothing: that person is looking at the question.
 
+A turn can also end with no reply at all, because the worker's model account cannot
+be used: it is signed out, it could not mint credentials, or its credentials were
+refused (``llm_helpers.model_road_down_cause``). The chat is left on an error row and
+its item on its last status, so the conductor learns nothing until the item goes
+stale. The gateway files a ``blocked`` report for that turn through the same
+transaction (:func:`record_model_road_down`): no ``reason``, because the item waits on
+a service and not on a person, fixed words that start ``Gateway:``, and the
+:data:`MODEL_ROAD_ARTIFACT` pointer naming the cause. It is written only while no
+report holds the conductor (:func:`_road_mark_owed`), so one report stands for the
+whole outage: the turns that die after it file nothing until the conductor has
+answered it.
+
 What counts as a question in text agrees with the Ref Links finder
 (``ref_labels.DEF`` / ``HEAD`` in agent-definitions, Q labels only) and with the chip
 bar's ``[OPTIONS: ...]`` reader (``member_waiting.chip_bar_options``).
@@ -39,11 +51,17 @@ from collections.abc import Callable
 from typing import Any
 
 from kiro_crew import work_ledger
+from kiro_crew.credential_errors import (
+    MODEL_ROAD_CREDENTIALS_REFUSED,
+    MODEL_ROAD_CREDENTIALS_UNAVAILABLE,
+    MODEL_ROAD_SIGNED_OUT,
+)
 from kiro_crew.crew_log import emit as crew_log_emit
 from kiro_crew.crew_log.resolve import unit_for_session_key
 from kiro_crew.dashboard.handlers.work_ledger_recording import _acting_unit
 from kiro_crew.dashboard.handlers.work_ledger_worker import (
     GATEWAY_ARTIFACT_KEYS,
+    MODEL_ROAD_ARTIFACT,
     REFUSED_ARTIFACT,
     WAIT_ARTIFACT,
     _last_report_id,
@@ -69,6 +87,18 @@ CARD_ANSWERED_TEXT = "The person answered a question card in this crew member's 
 _APPROVAL_SUMMARY = "A tool approval is waiting for a person in its chat."
 
 _SUMMARY_PREFIX = "Gateway: it stopped on {where} and filed no work_report. "
+
+#: Fixed words for a turn that ended because the model road is down, by cause: the
+#: provider's own text can name an account or a host, so none of it reaches the ledger.
+_ROAD_DOWN_WORDS = {
+    MODEL_ROAD_SIGNED_OUT: "its model account is signed out",
+    MODEL_ROAD_CREDENTIALS_REFUSED: "its model account's credentials were refused",
+    MODEL_ROAD_CREDENTIALS_UNAVAILABLE: "its model account could not mint credentials",
+}
+_ROAD_DOWN_SUMMARY = (
+    "Gateway: this chat's turn ended because {words}, and it filed no work_report. "
+    "The work waits on the model road, not on a person."
+)
 
 #: A Q-label definition line, as the Ref Links finder reads one (``ref_labels.DEF``,
 #: narrowed to Q labels): optional list marker, heading marks and bold, then the label.
@@ -213,6 +243,88 @@ def _refused_text(refused: list[str]) -> str:
     return text if len(text) <= cap else text[: cap - 1] + "…"
 
 
+def _road_mark_owed(
+    worker_key: str, seen: tuple[Any, ...]
+) -> Callable[[work_ledger.WorkItem, list[dict[str, Any]]], bool]:
+    """Whether a model-road ``blocked`` report is owed on an item, as it stands.
+
+    The first half of :func:`_stopped_unreported`, and only that: open, still bound
+    to *worker_key*, its last report the one *seen*, and no report holding the
+    conductor. So a report the worker filed and nobody answered is left standing, a
+    question the gateway filed for the person is never replaced by a wait on no
+    person, and the gateway's own model-road report stands until the conductor
+    answers it: one per outage, however many turns die in it.
+    """
+    from kiro_crew.dashboard.handlers.work_ledger_board import answered_since_report
+
+    def owed(item: work_ledger.WorkItem, events: list[dict[str, Any]]) -> bool:
+        if item.is_terminal or item.worker_session_key != worker_key:
+            return False
+        if _report_seen(item) != seen:
+            return False
+        return _workers_move(item, events) or answered_since_report(item, events)
+
+    return owed
+
+
+async def _file_for_worker(
+    state: Any,
+    slot_key: str,
+    fields: dict[str, Any],
+    gateway: dict[str, str],
+    owed: Callable[
+        [str, str, tuple[Any, ...]], Callable[[work_ledger.WorkItem, list[dict[str, Any]]], bool]
+    ],
+) -> str:
+    """File the report *fields* on the item worker *slot_key* is bound to.
+
+    The one write both gateway reports take. *fields* are the report's ``status``,
+    ``summary`` and, for a wait on a person, ``reason``; *gateway* are the artifact
+    keys only the gateway writes, set beside the worker's own artifacts, with its
+    discussion kept. *owed*, given the worker key, the cleaned summary and the report
+    last seen, answers the ``only_while`` asked under the board lock. Returns the item
+    id, or ``""`` when the session is not a bound worker, no report is owed or the
+    write was refused. Raises what the ledger raises: each caller swallows it.
+    """
+    board, item_id, worker_key = await asyncio.to_thread(_bound_item_of, slot_key)
+    if not item_id:
+        return ""
+    unit, refusal = await asyncio.to_thread(
+        _acting_unit, state, worker_key, WAIT_OPERATION, item_id, board
+    )
+    if refusal is not None or not unit:
+        return ""
+    own_unit = unit_for_session_key(getattr(state, "sessions", None), worker_key)
+    # Read again once when a report landed between the read and the board lock:
+    # the fields are built from the item as read, and the newer report decides.
+    for _attempt in range(2):
+        item = await asyncio.to_thread(_read_item, board, item_id)
+        if item is None:
+            return ""
+        seen = _report_seen(item)
+        cleaned = crew_log_emit.safe_work_fields(
+            {**fields, "artifacts": _with_gateway_keys(_own_artifacts(item), gateway)}
+        )
+        response = await _record_report(
+            state,
+            worker_key,
+            board,
+            item_id,
+            unit,
+            own_unit,
+            cleaned,
+            item.discussion,
+            operation=WAIT_OPERATION,
+            only_while=owed(worker_key, cleaned["summary"], seen),
+        )
+        if response.status == 200:
+            return item_id
+        now = await asyncio.to_thread(_read_item, board, item_id)
+        if now is None or _report_seen(now) == seen:
+            return ""
+    return ""
+
+
 async def record_worker_wait(
     state: Any, slot_key: str, *, where: str, question: str, refused: list[str] | None = None
 ) -> str:
@@ -225,54 +337,44 @@ async def record_worker_wait(
     is owed (:func:`_stopped_unreported`) or the write was refused. Never raises.
     """
     try:
-        board, item_id, worker_key = await asyncio.to_thread(_bound_item_of, slot_key)
-        if not item_id:
-            return ""
-        reason = "approval" if where == WAIT_ON_APPROVAL else "needs_human"
         gateway = {WAIT_ARTIFACT: where}
         if refused_text := _refused_text(refused or []):
             gateway[REFUSED_ARTIFACT] = refused_text
-        unit, refusal = await asyncio.to_thread(
-            _acting_unit, state, worker_key, WAIT_OPERATION, item_id, board
-        )
-        if refusal is not None or not unit:
-            return ""
-        own_unit = unit_for_session_key(getattr(state, "sessions", None), worker_key)
-        # Read again once when a report landed between the read and the board lock:
-        # the fields are built from the item as read, and the newer report decides.
-        for _attempt in range(2):
-            item = await asyncio.to_thread(_read_item, board, item_id)
-            if item is None:
-                return ""
-            seen = _report_seen(item)
-            cleaned = crew_log_emit.safe_work_fields(
-                {
-                    "status": "question",
-                    "reason": reason,
-                    "summary": _summary(where, question),
-                    "artifacts": _with_gateway_keys(_own_artifacts(item), gateway),
-                }
-            )
-            response = await _record_report(
-                state,
-                worker_key,
-                board,
-                item_id,
-                unit,
-                own_unit,
-                cleaned,
-                item.discussion,
-                operation=WAIT_OPERATION,
-                only_while=_stopped_unreported(worker_key, cleaned["summary"], seen),
-            )
-            if response.status == 200:
-                return item_id
-            now = await asyncio.to_thread(_read_item, board, item_id)
-            if now is None or _report_seen(now) == seen:
-                return ""
-        return ""
+        fields = {
+            "status": "question",
+            "reason": "approval" if where == WAIT_ON_APPROVAL else "needs_human",
+            "summary": _summary(where, question),
+        }
+        return await _file_for_worker(state, slot_key, fields, gateway, _stopped_unreported)
     except Exception:  # noqa: BLE001 - a turn must never fail on the ledger
         logger.warning("worker wait: the gateway report was not written", exc_info=True)
+        return ""
+
+
+async def record_model_road_down(state: Any, slot_key: str, *, cause: str) -> str:
+    """File a ``blocked`` report for worker *slot_key*, whose turn the model road ended.
+
+    *cause* is a ``credential_errors.MODEL_ROAD_*`` value and rides as the
+    :data:`MODEL_ROAD_ARTIFACT` artifact; the summary is fixed words for it. No
+    ``reason`` is set: the item waits on a service, not on a person, so it wakes the
+    conductor and holds nothing for the person. Returns the item id, or ``""`` when
+    the session is not a bound worker, *cause* is not one of those values, no report
+    is owed (:func:`_road_mark_owed`) or the write was refused. Never raises.
+    """
+    try:
+        words = _ROAD_DOWN_WORDS.get(cause)
+        if not words:
+            return ""
+        fields = {"status": "blocked", "summary": _ROAD_DOWN_SUMMARY.format(words=words)}
+        return await _file_for_worker(
+            state,
+            slot_key,
+            fields,
+            {MODEL_ROAD_ARTIFACT: cause},
+            lambda worker_key, _summary_text, seen: _road_mark_owed(worker_key, seen),
+        )
+    except Exception:  # noqa: BLE001 - a turn must never fail on the ledger
+        logger.warning("model road: the gateway report was not written", exc_info=True)
         return ""
 
 
@@ -314,6 +416,11 @@ def note_turn_end_question(
                 state, slot_key, where=WAIT_IN_TEXT, question=question, refused=refused
             ),
         )
+
+
+def note_model_road_down(state: Any, slot_key: str, cause: str) -> None:
+    """A turn of *slot_key* ended because its model account cannot be used (*cause*)."""
+    _schedule(state, record_model_road_down(state, slot_key, cause=cause))
 
 
 def note_approval_waiting(state: Any, slot_key: str) -> None:

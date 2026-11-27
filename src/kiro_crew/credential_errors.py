@@ -63,3 +63,33 @@ def is_credential_propagation_delay(haystack: str) -> bool:
     second vocabulary is what creates the gaps.
     """
     return bool(_RE_TOKEN_NOT_YET_VALID.search(haystack))
+
+
+# The names a credential provider gives its own failure to OBTAIN credentials, as
+# opposed to a service refusing credentials it was sent: botocore's
+# ``CredentialRetrievalError`` (a ``credential_process`` that failed) and
+# ``NoCredentialsError``, and the AWS SDK for JavaScript's
+# ``CredentialsProviderError``. A proxy in front of the model answers such a failure
+# with a 5xx that carries the name, so the status alone reads as a provider hiccup.
+# Exception names only, never the sentence beside them: prose is what a copy edit
+# moves, and a name is what the frame was built from.
+_RE_CREDENTIALS_NOT_OBTAINED = re.compile(
+    r"\b(?:CredentialRetrievalError|NoCredentialsError|CredentialsProviderError)\b"
+)
+
+#: Why a chat's model road is down, as ``llm_helpers.model_road_down_cause`` names it
+#: and the work ledger's ``model_road`` artifact carries it.
+MODEL_ROAD_SIGNED_OUT = "signed_out"
+MODEL_ROAD_CREDENTIALS_REFUSED = "credentials_refused"
+MODEL_ROAD_CREDENTIALS_UNAVAILABLE = "credentials_unavailable"
+
+
+def is_credential_retrieval_failure(haystack: str) -> bool:
+    """True when a harness frame names a failure to obtain credentials at all.
+
+    Read from the frame, never from Kiro Crew's wording of it. It changes no retry
+    verdict: a frame that is also a 5xx is still retried on the 5xx ladder, and this
+    only says, once the turn has ended on it, that no retry of the same account
+    could have worked.
+    """
+    return bool(_RE_CREDENTIALS_NOT_OBTAINED.search(haystack))

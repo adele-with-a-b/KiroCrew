@@ -1,10 +1,14 @@
-"""The turn-end half of a bound worker's unreported question (``work_ledger_waits``).
+"""The turn-end half of the reports the gateway files for a bound worker (``work_ledger_waits``).
 
 A turn that ended normally hands its reply to the ledger side, which files a
 ``question`` report when the reply leaves one for the person and the session is a
 bound crew worker. Read here: the reply, and whether a person typing in this chat
 started the turn (they are looking at the reply, so nothing is filed), and the calls a
 safety policy blocked in it (``_refusal_reasons``, redacted when the chat showed them).
+
+A turn that ended on an error hands the error instead (``_note_model_road_down``): the
+ledger side files a ``blocked`` report when it says the chat's model account cannot be
+used, and nothing for any other error.
 """
 
 from __future__ import annotations
@@ -49,3 +53,25 @@ def _note_worker_question(turn: _ChatTurn) -> None:
         )
     except Exception:  # noqa: BLE001 - see docstring
         logger.debug("worker wait: turn-end check failed", exc_info=True)
+
+
+def _note_model_road_down(turn: _ChatTurn, exc: BaseException) -> None:
+    """Hand a turn that ENDED on *exc* to ``work_ledger.note_model_road_down``.
+
+    Called by the arms that end a turn on an error, never by one that retries,
+    resets or replays it, so a failure a retry absorbed files nothing. An error that
+    is not the model road (``llm_helpers.model_road_down_cause`` answers ``""``) hands
+    nothing, and the ledger side files nothing for a session that is not a bound
+    worker. Never raises: a turn's end must not fail on the ledger.
+    """
+    try:
+        from kiro_crew.llm_helpers import model_road_down_cause
+
+        cause = model_road_down_cause(exc)
+        if not cause:
+            return
+        from kiro_crew.dashboard.handlers import work_ledger
+
+        work_ledger.note_model_road_down(turn.state, turn.slot.key, cause)
+    except Exception:  # noqa: BLE001 - see docstring
+        logger.debug("model road: turn-end check failed", exc_info=True)

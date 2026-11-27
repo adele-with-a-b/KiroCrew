@@ -391,7 +391,7 @@ otherwise. Its `summary` starts `Gateway:` and quotes the question, and its
 `artifacts` carry `waits_in_chat`, naming where the question waits. A command a
 safety policy blocked in that turn shows no approval anywhere, so it is listed in
 `refused_calls`. The worker's own `artifacts` and `discussion` stay on the item
-beside them. Only the gateway writes those two keys: a worker's own report that
+beside them. Only the gateway writes those keys: a worker's own report that
 names them has them dropped. The report wakes the conductor and shows on the
 Board like the worker's own.
 
@@ -400,6 +400,27 @@ Nothing is filed for a turn you typed into that chat yourself, while a
 whose check failed after it is the worker's move again, so it is filed), or when
 the worker asks the same question again. Answering the approval or the card in the
 worker's chat clears it.
+
+## A turn the model road ended
+
+A worker's turn can end with no reply at all, because its model account cannot be
+used: it is signed out, it could not mint credentials, or its credentials were
+refused. The chat shows the error row it always showed, and the gateway files a
+`blocked` report on the worker's item. It carries no `reason`: the item waits on
+a service, not on a person, so it wakes the conductor and adds nothing to what
+needs you. Its `summary` starts `Gateway:` and says in fixed words which of the
+three it was, and its `artifacts` carry `model_road` with the cause:
+`signed_out`, `credentials_unavailable` or `credentials_refused`. Nothing the
+provider said is copied, since that text can name an account or a host. Only the
+gateway writes `model_road`.
+
+One report stands for the whole outage. A turn that was retried and then worked
+files nothing, and neither do the turns that die after the report, until the
+conductor answers it (a `decide`, or a steer) or the worker reports again. A
+`question`, `blocked` or `done` the worker filed and nobody answered is left as
+it is, and so is a question the gateway filed for you. A chat that holds no item,
+and a turn that failed for any other reason (a throttle, a plain 5xx, a spent
+allowance, a tool error), are not touched.
 
 ## A person's steer
 
