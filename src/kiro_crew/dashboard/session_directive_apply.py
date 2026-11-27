@@ -372,11 +372,15 @@ async def apply_session_directive_outcome(
         elif kind == "suggest_followup":
             result = await _suggest_followup(state, slot, args)
         elif kind == "nothing_to_do":
+            # Deferred: the wake module reaches the turn loop's import graph.
+            from kiro_crew.dashboard import mate_thread_wakes
+
             result = _nothing_to_do(
                 args,
                 producer_is_user_facing=producer_is_user_facing,
                 producer_is_self_wake=producer_is_self_wake,
                 producer_is_channel=producer_is_channel,
+                answer_owed=mate_thread_wakes.answer_owed(state, slot),
             )
         else:
             _audit(session_key, kind, "error")
@@ -499,6 +503,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _surface_arm_success,
     )
     from kiro_crew.dashboard.session_directive_apply_slot import (  # noqa: F401
+        QUIET_END_REFUSED_ANSWER_OWED,
         QUIET_END_REFUSED_USER_TURN,
         _push,
         _slot_has_pending_interaction,

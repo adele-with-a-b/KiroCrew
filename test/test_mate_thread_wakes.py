@@ -272,11 +272,13 @@ def test_every_top_level_turn_end_reaches_the_wake_path(tmp_path, monkeypatch):
 
     state = _make_state(tmp_path)
     slot = state.get_or_create_slot("chat-2")
-    seen: list[tuple[str, object, bool]] = []
+    seen: list[tuple[str, object, bool, bool]] = []
     monkeypatch.setattr(
         cr,
         "_note_mate_wakes",
-        lambda st, s, reply, *, quiet_end: seen.append((s.key, reply, quiet_end)),
+        lambda st, s, reply, *, quiet_end, wrote_text: seen.append(
+            (s.key, reply, quiet_end, wrote_text)
+        ),
     )
     monkeypatch.setattr(cr, "_hand_off_queue", AsyncMock())
     monkeypatch.setattr(cr, "_consume_pending_reset", AsyncMock(return_value=False))
@@ -297,18 +299,178 @@ def test_every_top_level_turn_end_reaches_the_wake_path(tmp_path, monkeypatch):
     nested.depth = 1
 
     async def _drive():
+        # Text written before a tool call is gone from the reply by the turn's end;
+        # the slot's mark is what says the turn wrote any.
+        slot._turn_wrote_text = True
         await cr._end_turn_tail(state, slot, _landed("worker says hi", False))
+        assert slot._turn_wrote_text is False
         await cr._end_turn_tail(state, slot, _landed("", True))
         await cr._end_turn_tail(state, slot, early)
+        slot._turn_wrote_text = True
         await cr._end_turn_tail(state, slot, nested)
 
     asyncio.run(_drive())
 
     assert seen == [
-        ("chat-2", "worker says hi", False),
-        ("chat-2", "", True),
-        ("chat-2", None, False),
+        ("chat-2", "worker says hi", False, True),
+        ("chat-2", "", True, False),
+        ("chat-2", None, False, False),
     ]
+
+
+def _in_a_persons_turn(mate: _Slot) -> None:
+    mate.turn_running = True
+    mate._turn_user_sent = True
+
+
+def _turn_ends(mate: _Slot) -> None:
+    mate.turn_running = False
+    mate._turn_user_sent = False
+
+
+@pytest.mark.asyncio
+async def test_a_worker_sent_from_a_persons_turn_makes_its_report_wake_owe_the_answer(dispatched):
+    mate, worker = _crewmate(), _worker()
+    state = _State(mate, worker)
+
+    _in_a_persons_turn(mate)
+    wakes.note_dispatch(state, mate, worker.key)
+    assert wakes.answer_owed(state, mate) is False, "the worker has not reported yet"
+    _turn_ends(mate)
+    # The holding line of the asking turn answers nothing: the worker is still out.
+    wakes.note_turn_end(state, mate, "On it.", wrote_text=True)
+    assert wakes.answer_owed(state, mate) is False
+
+    wakes.note_turn_end(state, worker, "The answer is 42.")
+    await _settle(state)
+    [(_key, prompt)] = dispatched
+    # The wake says so itself, last, so the Bot answers without being refused first.
+    assert prompt.endswith(crewmate_prompts.text("worker_report.answer_owed"))
+    assert wakes.answer_owed(state, mate) is True
+    mate._turn_wrote_text = True
+    assert wakes.answer_owed(state, mate) is False, "text this wake wrote is the answer"
+    mate._turn_wrote_text = False
+
+    wakes.note_turn_end(state, mate, "The worker found it: 42.", wrote_text=True)
+    assert wakes.answer_owed(state, mate) is False
+    assert state._mate_answers_owed == {}
+
+
+@pytest.mark.asyncio
+async def test_an_unanswered_report_is_owed_for_its_wake_and_one_more_turn(dispatched):
+    """The wake and the one continuation a refused quiet end is given; a thread that
+    answers in neither is let go, so its later wakes end as any other."""
+    mate, worker = _crewmate(), _worker()
+    state = _State(mate, worker)
+    _in_a_persons_turn(mate)
+    wakes.note_dispatch(state, mate, worker.key)
+    _turn_ends(mate)
+    wakes.note_turn_end(state, worker, "The answer is 42.")
+    await _settle(state)
+
+    assert wakes.answer_owed(state, mate) is True
+    wakes.note_turn_end(state, mate, "")
+    assert wakes.answer_owed(state, mate) is True
+    wakes.note_turn_end(state, mate, "")
+    assert wakes.answer_owed(state, mate) is False
+    assert state._mate_answers_owed == {}
+
+
+@pytest.mark.asyncio
+async def test_a_worker_no_person_asked_for_leaves_nothing_owed(dispatched):
+    mate, worker = _crewmate(), _worker()
+    tab = _Slot("chat-person-tab")
+    state = _State(mate, worker, tab)
+
+    # A Bot turn nobody sent (a check-in, a patrol) and a person's own plain chat.
+    mate.turn_running = True
+    wakes.note_dispatch(state, mate, worker.key)
+    _in_a_persons_turn(tab)
+    wakes.note_dispatch(state, tab, worker.key)
+    _turn_ends(mate)
+
+    wakes.note_turn_end(state, worker, "Sweep done, nothing found.")
+    await _settle(state)
+    [(_key, prompt)] = dispatched
+    # The wake's prompt is the one it always was, to the last character.
+    assert prompt == wakes.report_prompt(
+        [
+            {
+                "key": "chat-worker-1",
+                "title": "title of chat-worker-1",
+                "reply": "Sweep done, nothing found.",
+                "turns": 1,
+            }
+        ],
+        "atlas",
+    )
+    assert prompt.endswith(crewmate_prompts.text("worker_report.guidance"))
+    assert wakes.answer_owed(state, mate) is False
+    assert not getattr(state, "_mate_answers_owed", {})
+
+
+@pytest.mark.asyncio
+async def test_a_wake_that_sends_the_worker_on_keeps_the_question_on_it(dispatched):
+    mate, worker = _crewmate(), _worker()
+    state = _State(mate, worker)
+    _in_a_persons_turn(mate)
+    wakes.note_dispatch(state, mate, worker.key)
+    _turn_ends(mate)
+    wakes.note_turn_end(state, worker, "Half done, which repo next?")
+    await _settle(state)
+    assert wakes.answer_owed(state, mate) is True
+
+    # The report wake gives the worker its next step: nothing to tell the person yet.
+    mate.turn_running = True
+    wakes.note_dispatch(state, mate, worker.key)
+    assert wakes.answer_owed(state, mate) is False
+    _turn_ends(mate)
+    wakes.note_turn_end(state, mate, "", quiet_end=True)
+
+    wakes.note_turn_end(state, worker, "All done: 42.")
+    await _settle(state)
+    assert len(dispatched) == 2
+    assert wakes.answer_owed(state, mate) is True
+
+
+def test_a_send_from_a_bots_person_turn_records_its_worker(tmp_path, monkeypatch):
+    """The recording rides the real send: only a Bot thread in a turn a person sent."""
+    from chat_test_helpers import _make_state
+
+    from kiro_crew.dashboard import session_control as sc
+    from kiro_crew.dashboard.chat_utils import slot_history_key
+
+    monkeypatch.setattr(sc, "session_control_enabled", lambda: True)
+    state = _make_state(tmp_path)
+    mate = state.get_or_create_slot("chat-mate-thread")
+    mate.mode = members_mod.DM_SLOT_MODE
+    mate.agent = "atlas"
+    tab = state.get_or_create_slot("chat-1")
+    for creator, key in ((mate, "chat-2"), (mate, "chat-3"), (tab, "chat-4")):
+        state.get_or_create_slot(key)._created_by = creator.key
+
+    async def _fake_run_chat(_state, slot, prompt):
+        return None
+
+    monkeypatch.setattr("kiro_crew.dashboard.chat_runner._run_chat", _fake_run_chat)
+
+    async def _drive():
+        turn = asyncio.get_running_loop().create_future()
+        mate.task = tab.task = turn
+        for caller, target, person_sent in (
+            (mate, "chat-2", True),
+            (mate, "chat-3", False),
+            (tab, "chat-4", True),
+        ):
+            caller._turn_user_sent = person_sent
+            await sc.send_to_target(
+                state, caller_session_key=slot_history_key(caller), target=target, message="go"
+            )
+        turn.set_result(None)
+
+    asyncio.run(_drive())
+
+    assert state._mate_answers_owed == {"chat-mate-thread": {"chat-2": wakes._WORKER_OUT}}
 
 
 @pytest.mark.asyncio

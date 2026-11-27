@@ -574,6 +574,10 @@ async def send_to_target(
         # The live witness that this child's creator still drives it, so its
         # turn ends may report back (``dashboard.mate_thread_wakes``).
         slot._reports_to_creator = True
+        # Sent from a person's turn, the worker's answer is owed to that person.
+        from kiro_crew.dashboard import mate_thread_wakes  # deferred: no facade name
+
+        mate_thread_wakes.note_dispatch(state, caller_slot, slot.key)
     # This send is the caller's answer to any "may not have run" notice of its.
     queue_age.forget_unconfirmed(slot, caller_key)
     # Sanitized on the same grounds as the steer path (``chat_delivery`` sanitizes
