@@ -372,6 +372,9 @@ def init_session_fields(self: _ChatSlot) -> None:
     self._telemetry_notice_shown = ""
     self._project_hook_files_notice_shown = ""
     self._session_notice_marks = []
+    # The reply ask the owner set aside with "Not now", by its ``meta.mid``; ""
+    # for none (``dashboard.needs_you_aside``). Saved on the metadata line.
+    self._needs_you_set_aside = ""
     # Set by api_chat_slot_project; consumed in _run_chat instead of
     # inline because the endpoint can be reached from inside the kiro-cli
     # process group via the set_project MCP tool.

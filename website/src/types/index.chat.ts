@@ -60,6 +60,17 @@ export interface NeedsYou {
   kinds: NeedsYouKind[]
 }
 
+/** The newest reply's own ask (`reply_ask` on its slot row): an options line or a
+ *  question label that asks the person. `set_aside` is the person's "Not now",
+ *  which keeps it out of `needs_you` until a newer reply asks again. Never an
+ *  approval or a question card. */
+export interface ReplyAsk {
+  /** The reply's transcript row (`meta.mid`). */
+  row_id: string
+  first_words: string
+  set_aside: boolean
+}
+
 /** A conductor's work ledger in brief (`crew_work` on its slot row). */
 export interface CrewWorkFacts {
   open: number
@@ -488,6 +499,8 @@ export interface ChatSlot extends TurnIdentityFields {
    * `waiting_for_input` (true of every finished turn, and therefore no signal)
    * and separate from `pending_approval` (a tool gate). */
   needs_input?: boolean
+  /** The newest reply's ask the person can set aside ("Not now"), or null. */
+  reply_ask?: ReplyAsk | null
   /** What this chat waits on the person for, or null when nothing. Absent from
    *  a gateway that does not build it: `needsYouOf` (lib/needsYou) then reads
    *  the flags above instead. */

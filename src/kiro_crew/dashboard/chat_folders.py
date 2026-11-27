@@ -575,11 +575,15 @@ async def api_chat_slot_muted(request: web.Request) -> web.Response:
     return await _toggle_slot_user_flag(request, "muted")
 
 
-async def _toggle_slot_user_flag(request: web.Request, field: str) -> web.Response:
-    """The shared body of the two user-owned mute toggles (``mutes_opened`` and
-    ``muted``). Each comment below that names ``mutes_opened`` applies to both."""
+def user_owned_slot(
+    request: web.Request, operation: str, field: str
+) -> tuple[DashboardState, Any, str, str] | web.Response:
+    """The fences of a slot flag only the dashboard user may set, or their refusal.
 
-    operation = f"chat.slot_{field}"
+    ``(state, slot, request_app, authorized_history_key)`` once the caller passes
+    the ownership fences and is a dashboard human; a 403 ``<field>_user_only``
+    otherwise. Shared by the mute toggles and ``needs_you_aside``'s "Not now".
+    """
     state: DashboardState = request.app["state"]
     name = request.match_info["slot"]
     slot = state._slots.get(name)
@@ -620,7 +624,7 @@ async def _toggle_slot_user_flag(request: web.Request, field: str) -> web.Respon
             outcome="denied",
             source=source,
             resources=name,
-            error="mute toggle is a dashboard-user action; app and agent callers are refused",
+            error=f"{field} is a dashboard-user action; app and agent callers are refused",
         )
         return web.json_response(
             {
@@ -629,6 +633,19 @@ async def _toggle_slot_user_flag(request: web.Request, field: str) -> web.Respon
             },
             status=403,
         )
+    return state, slot, request_app, authorized_history_key
+
+
+async def _toggle_slot_user_flag(request: web.Request, field: str) -> web.Response:
+    """The shared body of the two user-owned mute toggles (``mutes_opened`` and
+    ``muted``). Each comment below that names ``mutes_opened`` applies to both."""
+
+    operation = f"chat.slot_{field}"
+    owned = user_owned_slot(request, operation, field)
+    if isinstance(owned, web.Response):
+        return owned
+    state, slot, request_app, authorized_history_key = owned
+    name = request.match_info["slot"]
     # Shared parse-and-shape guard: a body that is valid JSON but not an object
     # (a list, string or number) answers 400 body_not_object instead of letting
     # the .get() below turn a client mistake into a 500. The body is a fixed set

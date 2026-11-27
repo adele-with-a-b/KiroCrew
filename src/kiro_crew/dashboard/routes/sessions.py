@@ -16,6 +16,7 @@ from kiro_crew.dashboard.handlers import chat_elicitation
 from kiro_crew.dashboard.handlers import debug as debug_handlers
 from kiro_crew.dashboard.handlers import session_environments as session_environment_handlers
 from kiro_crew.dashboard.handlers import slot_question
+from kiro_crew.dashboard.needs_you_aside import api_chat_slot_set_aside
 
 
 def register(app: web.Application) -> None:
@@ -120,6 +121,8 @@ def register(app: web.Application) -> None:
     app.router.add_patch("/api/chat/slots/{slot}/pin", chat.api_chat_slot_pin)
     app.router.add_patch("/api/chat/slots/{slot}/mutes-opened", chat.api_chat_slot_mutes_opened)
     app.router.add_patch("/api/chat/slots/{slot}/muted", chat.api_chat_slot_muted)
+    # "Not now" under a reply ask, and its "Bring back" (dashboard user only).
+    app.router.add_patch("/api/chat/slots/{slot}/set-aside", api_chat_slot_set_aside)
     app.router.add_patch("/api/chat/slots/{slot}/todo", chat.api_chat_slot_todo)
     # The whole pinned-session order in one atomic write (sidebar drag and the
     # dashboard MCP's chat_session_pin_move).
