@@ -4553,6 +4553,7 @@
       "conductor_mode_ms_stuck_unread": "Stuck · the main chat closed, reopen it so its reports are read",
       "conductor_mode_ms_quiet": "Quiet · nothing is scheduled to wake it",
       "conductor_mode_ms_standing_by": "Standing by · wakes on its Conductor's next job",
+      "conductor_mode_ms_stage_done": "Stage done · waits for its next seat",
       "conductor_mode_ms_waiting_pr": "Waiting on PR #{{n}}",
       "conductor_mode_ms_waiting_no_reason": "Paused, no reason given",
       "conductor_mode_ms_pr": "PR #{{n}}",

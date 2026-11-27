@@ -230,6 +230,44 @@ describe('milestoneState', () => {
     expect(standingManager(item({}), [{ ...worker('w-2', 'root'), title: 'Manager: other', ledger_item: 'it_2' }])).toBe(false)
   })
 
+  it('stage done: a done report its Conductor decided on, kept open, its chat closed, waits for its next seat', () => {
+    const now = Date.parse('2026-10-30T03:00:00Z')
+    const read = (over: Partial<WorkBoardItem>, manager = false) => {
+      const it0 = item(over)
+      const state = milestoneState(it0, false, manager)
+      return { state, move: boardMove(it0, state, conductorWaitMinutes(it0, now)) }
+    }
+    // Decided after the report, the stage's chat closed by design: the Conductor's
+    // move (it seats the next stage), never Stuck, stale or not.
+    expect(read({ status: 'done', alive: 'closed', ...ANSWERED })).toEqual({ state: 'stage_done', move: 'conductor' })
+    expect(read({ status: 'done', alive: 'closed', stale: true, ...ANSWERED })).toEqual({ state: 'stage_done', move: 'conductor' })
+    // It never turns late: nothing is timed as owed.
+    expect(conductorWaitMinutes(item({ status: 'done', alive: 'closed', ...ANSWERED }), now)).toBeNull()
+    // A decision on the event tail after the report decides it as `decided_at` does.
+    const report = { id: 'e1', ts: R.last_report_at, item_id: 'it_1', kind: 'report' as const, status: 'done' as const, text: '' }
+    const decision = { id: 'e2', ts: '2026-10-30T01:04:00Z', item_id: 'it_1', kind: 'decision' as const, status: null, text: '' }
+    expect(read({ status: 'done', alive: 'closed', events: [report, decision], ...R }).state).toBe('stage_done')
+    // Not decided yet, or decided only before the report: still the Conductor's move to judge, timed.
+    expect(read({ status: 'done', alive: 'closed', ...R })).toEqual({ state: 'done', move: 'conductor' })
+    expect(read({ status: 'done', alive: 'closed', decided_at: '2026-10-30T00:55:00Z', ...R })).toEqual({ state: 'done', move: 'conductor' })
+    expect(conductorWaitMinutes(item({ status: 'done', alive: 'closed', ...R }), now)).toBe(120)
+    // Closed with no done report (progress, or nothing yet): unchanged.
+    expect(read({ status: 'progress', alive: 'closed', ...ANSWERED })).toEqual({ state: 'stuck', move: 'stuck' })
+    expect(read({ status: 'progress', alive: 'closed', stale: true, ...R })).toEqual({ state: 'stuck', move: 'stuck' })
+    expect(read({ status: null, alive: 'closed' }).state).toBe('next')
+    // Blocked and question keep theirs, answered or not.
+    expect(read({ status: 'blocked', alive: 'closed', ...ANSWERED })).toEqual({ state: 'stuck', move: 'stuck' })
+    expect(read({ status: 'question', alive: 'closed', outstanding: true, ...R })).toEqual({ state: 'stuck', move: 'stuck' })
+    expect(read({ status: 'blocked', ...R })).toEqual({ state: 'waiting', move: 'conductor' })
+    // An orphaned board has no Conductor to seat the next stage: stuck.
+    expect(read({ status: 'done', alive: 'closed', orphaned: true, ...ANSWERED })).toEqual({ state: 'stuck', move: 'stuck' })
+    // Its chat still open or running: as before.
+    expect(read({ status: 'done', ...ANSWERED })).toEqual({ state: 'done', move: 'working' })
+    expect(read({ status: 'done', alive: 'running', ...ANSWERED }).state).toBe('running')
+    // A standing manager keeps its own reading while its chat is open.
+    expect(read({ status: 'done', stale: true, ...ANSWERED }, true)).toEqual({ state: 'standing_by', move: 'working' })
+  })
+
   it('stuck: a closed session on an open report, or an orphaned board', () => {
     expect(milestoneState(item({ status: 'progress', alive: 'closed' }), false)).toBe('stuck')
     expect(milestoneState(item({ status: 'blocked', alive: 'closed', ...R }), false)).toBe('stuck')

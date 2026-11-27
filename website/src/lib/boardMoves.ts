@@ -9,7 +9,7 @@ import { isMerged, levelOf, planOf, type BoardPlan } from './crewPlan'
 
 /** A story's state on the Board, from its reports and its session (the panel's
  *  `milestoneState`). */
-export type MilestoneState = 'done' | 'not_done' | 'needs_you' | 'running' | 'waiting' | 'standing_by' | 'quiet' | 'stuck' | 'next'
+export type MilestoneState = 'done' | 'not_done' | 'needs_you' | 'running' | 'waiting' | 'standing_by' | 'stage_done' | 'quiet' | 'stuck' | 'next'
 
 /** A wait on the Conductor this long is late, drawn red: a patrol looks far more often. */
 export const CONDUCTOR_WAIT_LOUD_MINUTES = 10
@@ -45,19 +45,22 @@ export function reportAnswered(item: WorkBoardItem): boolean {
  *  - stuck: nothing is left to move it (its chat closed, the board unread, or its
  *    worker went quiet with its own move unmade); a standing manager idle between
  *    jobs (`standing_by`) is its normal rest, never stuck, and reads working;
- *  - the Conductor's move: a report it has not answered or judged;
+ *  - the Conductor's move: a report it has not answered or judged, or a stage done
+ *    (`stage_done`: it decided on the done report, kept the item open and the chat
+ *    that did the stage closed), which waits for it to seat the next stage and is
+ *    never late;
  *  - working, when its Conductor handed a done report back: the move follows the
  *    newest of report and decision (`reportAnswered`), so a decision after the
  *    report is the worker's to act on, never a wait on the Conductor that cannot
- *    turn late; with nobody on it (its chat closed, the board unread) the panel's
- *    `milestoneState` reads it stuck, as an open report's;
+ *    turn late; on an unread board the panel's `milestoneState` reads it stuck, as
+ *    an open report's, and with its chat closed a stage done;
  *  - waits on GitHub: idle on a pull request, its own loop waiting on it included;
  *  - working: anything else still open, a story not started included, and a loop
  *    with no pull request to wait on (it waits on its own next check, not GitHub). */
 export function boardMove(item: WorkBoardItem, state: MilestoneState, conductorWait: number | null): BoardMove {
   if (state === 'needs_you') return 'needs_you'
   if (state === 'stuck' || state === 'quiet') return 'stuck'
-  if (conductorWait != null) return 'conductor'
+  if (conductorWait != null || state === 'stage_done') return 'conductor'
   if (state === 'done' && reportAnswered(item)) return 'working'
   const idle = item.alive !== 'running'
   if (idle && item.pr != null && ((state === 'running' && item.looping === true) || state === 'waiting' || state === 'done')) return 'github'

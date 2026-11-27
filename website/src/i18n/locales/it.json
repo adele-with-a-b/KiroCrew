@@ -11122,6 +11122,7 @@
       "conductor_mode_ms_stuck_unread": "Bloccato · la chat principale è chiusa, riaprila perché i suoi report vengano letti",
       "conductor_mode_ms_quiet": "Inattivo · nulla è previsto per riattivarlo",
       "conductor_mode_ms_standing_by": "In attesa · si riattiva al prossimo lavoro del suo Conductor",
+      "conductor_mode_ms_stage_done": "Fase finita · attende il prossimo posto libero",
       "conductor_mode_ms_waiting_pr": "In attesa della PR #{{n}}",
       "conductor_mode_ms_waiting_no_reason": "In pausa, nessun motivo indicato",
       "conductor_mode_ms_pr": "PR #{{n}}",

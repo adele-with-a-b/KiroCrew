@@ -10612,6 +10612,7 @@
       "conductor_mode_ms_stuck_unread": "卡住 · 主聊天已关闭，重新打开它即可读取汇报",
       "conductor_mode_ms_quiet": "无动静 · 没有安排任何事唤醒它",
       "conductor_mode_ms_standing_by": "待命 · 在其 Conductor 的下一项任务时唤醒",
+      "conductor_mode_ms_stage_done": "阶段完成 · 等待下一个名额",
       "conductor_mode_ms_waiting_pr": "等待 PR #{{n}}",
       "conductor_mode_ms_waiting_no_reason": "已暂停，未说明原因",
       "conductor_mode_ms_pr": "PR #{{n}}",

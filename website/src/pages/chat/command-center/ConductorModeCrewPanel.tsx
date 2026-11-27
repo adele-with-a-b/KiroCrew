@@ -266,10 +266,15 @@ export function milestoneState(item: WorkBoardItem, waiting: boolean, manager = 
   if (item.alive === 'running') return 'running'
   // Stuck only when nothing is left to move it: its session closed on an open
   // report, or the board is orphaned (no main chat reads its reports). A done
-  // report its Conductor handed back (`reportAnswered`) is the worker's move as an
-  // open report is, so it is stuck the same way. Any other done report, or an
-  // unstarted item, keeps its own state even on an orphaned board.
+  // report its Conductor handed back (`reportAnswered`) is stuck the same way on an
+  // orphaned board. Any other done report, or an unstarted item, keeps its own
+  // state even on an orphaned board.
   const handedBack = item.status === 'done' && reportAnswered(item)
+  // A stage done: its Conductor decided on the done report and kept the item open
+  // for a next stage, and the chat that did the stage closed, by design. It waits
+  // for its Conductor to seat the next stage, so it is not stuck; an orphaned board
+  // (no Conductor reads it) still is.
+  if (handedBack && item.alive === 'closed' && !item.orphaned) return 'stage_done'
   if ((open || handedBack) && (item.alive === 'closed' || item.orphaned)) return 'stuck'
   // Standing by: a standing manager's open chat, idle between jobs, rests until its
   // Conductor's next note wakes it, so it is never quiet or stuck. A report the
@@ -385,6 +390,10 @@ function MilestoneLine({ item, state, waitingOn }: { item: WorkBoardItem; state:
   } else if (state === 'standing_by') {
     const text = i18nT('components.crewMode.conductor_mode_ms_standing_by')
     sub = <span className={WRAP} title={text} data-testid="conductor-mode-standing-by">{text}</span>
+  } else if (state === 'stage_done') {
+    // What it waits for, not the worker's words: those stay on hover.
+    const text = i18nT('components.crewMode.conductor_mode_ms_stage_done')
+    sub = <span className={WRAP} title={firstSentence(item.summary) || text} data-testid="conductor-mode-stage-done">{text}</span>
   } else if (state === 'waiting') {
     // What it waits on, only as far as the board knows: the PR it reported, then
     // the worker's own words; with neither, a calm "no reason given".

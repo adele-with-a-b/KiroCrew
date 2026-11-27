@@ -11122,6 +11122,7 @@
       "conductor_mode_ms_stuck_unread": "Bloqué · le chat principal est fermé, rouvre-le pour que ses rapports soient lus",
       "conductor_mode_ms_quiet": "Silencieux · rien n’est prévu pour le réveiller",
       "conductor_mode_ms_standing_by": "En attente · se réveille à la prochaine tâche de son Conductor",
+      "conductor_mode_ms_stage_done": "Étape terminée · attend sa prochaine place",
       "conductor_mode_ms_waiting_pr": "En attente de la PR #{{n}}",
       "conductor_mode_ms_waiting_no_reason": "En pause, sans raison donnée",
       "conductor_mode_ms_pr": "PR #{{n}}",

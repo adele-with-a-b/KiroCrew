@@ -549,6 +549,22 @@ describe('Conductor mode Crew tab', () => {
     expect(screen.getByTestId('conductor-mode-needs-you')).toHaveAttribute('data-empty', 'true')
   })
 
+  it('Board: a stage done, decided on and kept open with its chat closed, waits for its next seat and is never stuck', async () => {
+    api.crewWorkers.mockResolvedValue(WORKERS)
+    api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'sd1', title: 'Kettle firmware', status: 'done', alive: 'closed', stale: true, decided_at: '2026-10-30T00:05:00Z', summary: 'Stage 1 done: the parts are listed.' })] })
+    renderWith(<ConductorModeCrewPanel root="root-1" viewing="root-1" active />)
+    const row = await screen.findByTestId('conductor-mode-milestone')
+    expect(row.getAttribute('data-state')).toBe('stage_done')
+    expect(row).toHaveTextContent('Stage done · waits for its next seat')
+    // The worker's own words stay one hover away.
+    expect(screen.getByTestId('conductor-mode-stage-done')).toHaveAttribute('title', 'Stage 1 done: the parts are listed.')
+    // Under the Conductor's move, which seats the next stage; never red, no stuck pulse, Stuck empty.
+    expect(row.closest('[data-section]')).toHaveAttribute('data-section', 'conductor')
+    expect(row.closest('[data-testid="board-story"]')).not.toHaveAttribute('data-tone')
+    expect(screen.getByTestId('board-section-stuck')).toHaveAttribute('data-empty', 'true')
+    expect(screen.queryByTestId('conductor-mode-pulse')).toBeNull()
+  })
+
   it('Board: an unstarted milestone says Not started, never a made-up order', async () => {
     api.crewWorkers.mockResolvedValue(WORKERS)
     api.crewBoard.mockResolvedValue({ ...BOARD, items: [ITEM({ item_id: 'r1', title: 'Menu', alive: 'running' }), ITEM({ item_id: 'n1', title: 'Decor', status: null, last_report_at: null, created_at: '2026-10-30T00:01:00Z' })] })

@@ -153,7 +153,9 @@ function storyAge(s: AllProjectsStory): string {
 
 function StoryCell({ s, open, labelled = true }: { s: AllProjectsStory; open: OpenStory; labelled?: boolean }) {
   const said = firstSentence(s.item.summary || '')
-  const why = s.move === 'needs_you' && s.item.awaits_person && said ? i18nT('components.crewMode.board_asks', { what: said }) : said
+  // A stage done says what it waits for, as in the right bar; the rest say their worker's words.
+  const why = s.state === 'stage_done' ? i18nT('components.crewMode.conductor_mode_ms_stage_done')
+    : s.move === 'needs_you' && s.item.awaits_person && said ? i18nT('components.crewMode.board_asks', { what: said }) : said
   return (
     <li data-testid="all-projects-story" data-root={s.root}>
       {labelled && <ProjectLabel name={s.project} />}

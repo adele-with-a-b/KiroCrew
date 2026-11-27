@@ -10612,6 +10612,7 @@
       "conductor_mode_ms_stuck_unread": "막힘 · 메인 채팅이 닫혔습니다. 다시 열면 보고를 읽습니다",
       "conductor_mode_ms_quiet": "조용함 · 다시 깨울 예정이 없습니다",
       "conductor_mode_ms_standing_by": "대기 중 · Conductor의 다음 작업에 깨어납니다",
+      "conductor_mode_ms_stage_done": "단계 완료 · 다음 자리를 기다립니다",
       "conductor_mode_ms_waiting_pr": "PR #{{n}} 대기 중",
       "conductor_mode_ms_waiting_no_reason": "일시 중지됨, 이유 없음",
       "conductor_mode_ms_pr": "PR #{{n}}",

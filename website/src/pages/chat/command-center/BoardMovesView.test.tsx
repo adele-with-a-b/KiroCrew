@@ -139,18 +139,20 @@ describe('Board Moves', () => {
     expect(document.body.textContent).not.toMatch(/%/)
   })
 
-  it('reads a done report its Conductor handed back as Stuck once nobody is on it', async () => {
+  it('reads a done report its Conductor handed back as Stuck on an unread board, and as a stage done once its chat closed', async () => {
     pinClock()
     // The Conductor's decision came after the done report: the worker's move.
     const back = (id: string, over: Partial<WorkBoardItem> = {}) => ITEM({ item_id: id, title: id, status: 'done', summary: 'Rows redone.', last_report_at: ago(40), decided_at: ago(30), ...over })
     renderPanel([back('it_gone', { alive: 'closed' }), back('it_unread', { orphaned: true }), back('it_here'), back('it_back_running', { alive: 'running', orphaned: true })])
     await screen.findByTestId('board-moves')
-    // Its chat closed, or no main chat reads the board: nobody is on it, red as any stuck row.
-    for (const id of ['it_gone', 'it_unread']) {
-      expect(rowOf(id).closest('[data-section]')).toBe(section('stuck'))
-      expect(rowOf(id)).toHaveAttribute('data-tone', 'danger')
-    }
-    expect(within(rowOf('it_gone')).getByTestId('board-row-why')).toHaveTextContent('its chat closed')
+    // No main chat reads the board: nobody is on it, red as any stuck row.
+    expect(rowOf('it_unread').closest('[data-section]')).toBe(section('stuck'))
+    expect(rowOf('it_unread')).toHaveAttribute('data-tone', 'danger')
+    // Its chat closed on a decided done, the item kept open: a stage done, waiting for its
+    // Conductor to seat the next stage, never red.
+    expect(rowOf('it_gone').closest('[data-section]')).toBe(section('conductor'))
+    expect(rowOf('it_gone')).not.toHaveAttribute('data-tone')
+    expect(within(rowOf('it_gone')).getByTestId('board-row-why')).toHaveTextContent('Stage done · waits for its next seat')
     // Its worker still there, or its turn running again: the worker's, Working.
     expect(rowOf('it_here').closest('[data-section]')).toBe(section('working'))
     expect(rowOf('it_back_running').closest('[data-section]')).toBe(section('working'))

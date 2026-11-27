@@ -10867,6 +10867,7 @@
       "conductor_mode_ms_stuck_unread": "আটকে আছে · মূল চ্যাট বন্ধ, আবার খোলো যাতে এর রিপোর্ট পড়া হয়",
       "conductor_mode_ms_quiet": "চুপ · একে জাগানোর কিছু ঠিক করা নেই",
       "conductor_mode_ms_standing_by": "প্রস্তুত · এর Conductor-এর পরের কাজে জেগে উঠবে",
+      "conductor_mode_ms_stage_done": "ধাপ শেষ · পরের খালি জায়গার অপেক্ষায়",
       "conductor_mode_ms_waiting_pr": "PR #{{n}}-এর অপেক্ষায়",
       "conductor_mode_ms_waiting_no_reason": "থেমে আছে, কোনো কারণ বলা নেই",
       "conductor_mode_ms_pr": "PR #{{n}}",
