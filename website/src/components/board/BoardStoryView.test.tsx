@@ -11,6 +11,7 @@ vi.mock('../../hooks/usePanelTabs', () => ({ openPanelView: vi.fn() }))
 
 import ConductorModeCrewPanel from '../../pages/chat/command-center/ConductorModeCrewPanel'
 import { crewBoardCapacityQueryKey } from '../../api/crewBoardCapacity'
+import { closeCrewWindow, currentCrewWindow } from '../../pages/chat/crew-window/crewWindowStore'
 import { landSteps, storyHeld, storyMinutes } from './storyView'
 import type { WorkBoardItem } from '../../api/crewBoard'
 import type { TimelineLane } from '../../lib/boardTimeline'
@@ -122,7 +123,7 @@ describe('a click on a story opens its story view', () => {
     const held = await within(view).findByTestId('board-story-held')
     // Nobody had it between its creation and its worker's bind, so that is said too.
     expect([...held.querySelectorAll('li')].map(li => li.textContent)).toEqual(['worker 4h', 'GitHub 52m', 'Conductor 8m', 'you 0', 'nobody 1h'])
-    expect(steps[1]).toHaveTextContent('Worker G · 4h of work')
+    expect(steps[1]).toHaveTextContent('Worker G · This machine · 4h of work')
     expect(within(view).queryByTestId('board-story-held-window')).toBeNull()
     expect([...within(view).getByTestId('board-story-lane').querySelectorAll('[data-span]')].map(s => s.getAttribute('data-span'))).toEqual(['idle', 'working', 'conductor', 'idle'])
     expect(within(view).getByTestId('board-story-time')).toHaveTextContent('6h used of 8h')
@@ -136,7 +137,7 @@ describe('a click on a story opens its story view', () => {
     renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: 'Decor list' }))
     const view = await screen.findByTestId('board-story-view')
-    expect(within(view).queryByTestId('board-story-open-chat')).toBeNull()
+    expect(within(view).queryByTestId('board-worker-door')).toBeNull()
     expect(within(view).getByTestId('board-story-time')).toHaveTextContent('45m used · estimate: no record')
     expect(within(view).getByTestId('board-story-last-report')).toHaveTextContent('no record')
     expect(within(view).getByTestId('board-story-epic')).toHaveTextContent('none')
@@ -159,7 +160,8 @@ describe('a click on a story opens its story view', () => {
     api.resumeChatSlot.mockResolvedValueOnce({ ok: true, key: 'w-g', messages: [] })
     const store = renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: 'Vignette rows' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Open the chat' }))
+    // The button says it reopens it.
+    fireEvent.click(within(await screen.findByTestId('board-story-view')).getByRole('button', { name: 'Reopen the chat' }))
     await waitFor(() => expect(store.getState().chat.activeSlot).toBe('w-g'))
     expect(api.resumeChatSlot).toHaveBeenCalled()
   })
@@ -242,6 +244,87 @@ describe('a click on a story opens its story view', () => {
     renderPanel()
     fireEvent.click(await screen.findByRole('button', { name: 'New rows' }))
     expect(await screen.findByTestId('board-story-time')).toHaveTextContent(/^0 used · estimate: no record$/)
+  })
+
+  describe('names its worker, where it ran, and the way to its chat', () => {
+    afterEach(() => closeCrewWindow())
+    const LAB = { remote_crew: 'Lab crew' }
+    const openStory = async (title = 'Vignette rows') => {
+      fireEvent.click(await screen.findByRole('button', { name: title }))
+      return screen.findByTestId('board-story-view')
+    }
+
+    it('a live chat on this machine: who and where, and Open the chat opens it', async () => {
+      const store = renderPanel()
+      const view = await openStory()
+      expect(within(view).getByTestId('board-story-worker')).toHaveTextContent('Worker G · This machine')
+      fireEvent.click(within(view).getByRole('button', { name: 'Open the chat' }))
+      expect(store.getState().chat.activeSlot).toBe('w-g')
+      expect(api.resumeChatSlot).not.toHaveBeenCalled()
+    })
+
+    it('a closed chat on this machine: Reopen the chat reopens it from its saved transcript', async () => {
+      api.crewWorkers.mockResolvedValue({ root: 'root-s', workers: [W('w-g', 'Worker G', 'closed', 'it_g')] })
+      api.resumeChatSlot.mockResolvedValueOnce({ ok: true, key: 'w-g', messages: [] })
+      const store = renderPanel()
+      const view = await openStory()
+      expect(within(view).getByTestId('board-story-worker')).toHaveTextContent('Worker G · This machine')
+      expect(within(view).queryByRole('button', { name: 'Open the chat' })).toBeNull()
+      fireEvent.click(within(view).getByRole('button', { name: 'Reopen the chat' }))
+      await waitFor(() => expect(store.getState().chat.activeSlot).toBe('w-g'))
+      expect(api.resumeChatSlot).toHaveBeenCalledWith('dashboard_w-g', 'Worker G')
+    })
+
+    it('a live chat on a linked crew: Open the chat opens it in the crew window', async () => {
+      api.crewWorkers.mockResolvedValue({ root: 'root-s', workers: [{ ...W('w-g', 'Worker G', 'idle', 'it_g'), ...LAB, remote_instance: 'inst-1', remote_slot: 'peer-g' }] })
+      const store = renderPanel()
+      const view = await openStory()
+      expect(within(view).getByTestId('board-story-worker')).toHaveTextContent('Worker G · Lab crew')
+      fireEvent.click(within(view).getByRole('button', { name: 'Open the chat' }))
+      expect(currentCrewWindow()).toEqual({ instanceId: 'inst-1', key: 'peer-g' })
+      expect(store.getState().chat.activeSlot).not.toBe('w-g')
+    })
+
+    it('a chat closed on a linked crew: no button, a line that says it cannot be opened from here', async () => {
+      // Closed on its crew, so the crew list names no chat there to open.
+      api.crewWorkers.mockResolvedValue({ root: 'root-s', workers: [{ ...W('w-g', 'Worker G', 'closed', 'it_g'), ...LAB }] })
+      renderPanel()
+      const view = await openStory()
+      expect(within(view).getByTestId('board-story-worker')).toHaveTextContent('Worker G · Lab crew')
+      expect(within(view).queryByTestId('board-worker-door')).toBeNull()
+      expect(within(view).getByTestId('board-worker-door-none')).toHaveTextContent('Its chat is closed on Lab crew and cannot be opened from here.')
+    })
+
+    it('a bound worker the crew list has no row for: a plain "worker chat", where the board says it ran, and why', async () => {
+      api.crewWorkers.mockResolvedValue({ root: 'root-s', workers: [] })
+      api.crewBoard.mockResolvedValue({ ...BOARD, items: [...BOARD.items, ITEM({ item_id: 'it_x', title: 'Kettle rows', status: 'done', alive: 'closed', runs_on: 'Lab crew', decided_at: ago(20), in_backlog: false, plan: { level: 'story', step: 'build' } })] })
+      renderPanel()
+      const view = await openStory('Kettle rows')
+      expect(within(view).getByTestId('board-story-worker')).toHaveTextContent('worker chat · Lab crew')
+      expect(within(view).getByTestId('board-worker-door-none')).toHaveTextContent('Its chat is closed on Lab crew and cannot be opened from here.')
+    })
+
+    it('no worker ever bound: no button, and the line says no worker yet', async () => {
+      renderPanel()
+      const view = await openStory('Decor list')
+      expect(within(view).getByTestId('board-story-worker')).toHaveTextContent('No worker yet')
+      expect(within(view).getByTestId('board-story-worker')).toHaveAttribute('data-bound', 'false')
+      expect(within(view).queryByTestId('board-worker-door')).toBeNull()
+      expect(within(view).queryByTestId('board-worker-door-none')).toBeNull()
+    })
+
+    it("each move's row carries the same door, and it opens the chat without the story view", async () => {
+      api.crewWorkers.mockResolvedValue({ root: 'root-s', workers: [W('w-g', 'Worker G', 'closed', 'it_g')] })
+      api.resumeChatSlot.mockResolvedValueOnce({ ok: true, key: 'w-g', messages: [] })
+      const store = renderPanel()
+      const row = (await screen.findAllByTestId('board-story')).find(r => r.getAttribute('data-item') === 'it_g') as HTMLElement
+      fireEvent.click(within(row).getByRole('button', { name: 'Reopen the chat' }))
+      await waitFor(() => expect(store.getState().chat.activeSlot).toBe('w-g'))
+      expect(screen.queryByTestId('board-story-view')).toBeNull()
+      // A story nobody was ever bound to has no door on its row.
+      const fresh = (await screen.findAllByTestId('board-story')).find(r => r.getAttribute('data-item') === 'it_f') as HTMLElement
+      expect(within(fresh).queryByTestId('board-worker-door')).toBeNull()
+    })
   })
 
   it('the hidden seats strip reads nothing under an open story, and reads again on back', async () => {

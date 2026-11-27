@@ -69,6 +69,17 @@ describe('allProjectsBoard', () => {
     expect(alpha).toMatchObject({ stories: 6, merged: 1, needsYou: 1, stuck: 1, late: 0, working: 1, lastLook: 2, run: 'waiting', loaded: true })
   })
 
+  it('counts a stage done, decided on with its chat closed, under the Conductor\'s move and never as stuck or late', () => {
+    const stage = (id: string) => item(id, { status: 'done', alive: 'closed', stale: true, last_report_at: ago(90), decided_at: ago(80) })
+    const boards = new Map<string, ProjectBoard>([['root-a', board([stage('it_s1'), stage('it_s2'), stage('it_s3'), item('it_gone', { status: 'progress', alive: 'closed' })])]])
+    const page = allProjectsBoard(ROWS, boards, NOW)
+    expect(page.stories.map(s => [s.item.item_id, s.state, s.move, s.late])).toEqual([
+      ['it_s1', 'stage_done', 'conductor', false], ['it_s2', 'stage_done', 'conductor', false], ['it_s3', 'stage_done', 'conductor', false],
+      ['it_gone', 'stuck', 'stuck', false],
+    ])
+    expect(page.projects[0]).toMatchObject({ stuck: 1, late: 0 })
+  })
+
   it('counts what waits on the person outside the stories, and lists the most to act on first', () => {
     const boards = new Map<string, ProjectBoard>([['root-a', board([item('it_run')])], ['root-b', null]])
     const page = allProjectsBoard(ROWS, boards, NOW, live('root-b', { questions: 1, approvals: [{ worker: 'w-b' }] }))
