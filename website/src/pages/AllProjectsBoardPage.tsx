@@ -64,7 +64,8 @@ import { moveHint, storiesByMove } from './chat/command-center/BoardMovesView'
 import { LandedRows, STEP_KEY, byMoveThenWait } from './chat/command-center/BoardStepsView'
 import { fmtEstimate } from './chat/command-center/BoardUpNext'
 import { crewWorkersQuery, useCrewWorkersPush } from './chat/command-center/CrewWorkerList'
-import { itemOpener, useOpenCrewWorker } from './chat/command-center/openCrewWorker'
+import { useOpenCrewWorker, workerDoor, type WorkerDoor } from './chat/command-center/openCrewWorker'
+import WorkerDoorAction from '../components/board/WorkerDoor'
 import CrewBoardPage from './CrewBoardPage'
 
 /** The positions this page serves: no Workers list across projects. */
@@ -73,8 +74,9 @@ const PAGE_VIEWS: readonly BoardView[] = ['moves', 'steps', 'timeline']
 /** Up next rows shown before "N more". */
 const UP_NEXT_SHOWN = 5
 
-/** A row's click: its worker opened, or none when no worker can be opened for it. */
-type OpenStory = (s: { root: string; item: WorkBoardItem }) => (() => void) | undefined
+/** A row's way to its worker (`workerDoor`): its click and its action; null when no
+ *  worker was ever bound to it. */
+type DoorOf = (s: { root: string; item: WorkBoardItem }) => WorkerDoor | null
 
 function chatPath(root: string): string {
   return `/chat?sid=${encodeURIComponent(root)}`
@@ -151,7 +153,8 @@ function storyAge(s: AllProjectsStory): string {
     : fmtMinutes(s.minutes)
 }
 
-function StoryCell({ s, open, labelled = true }: { s: AllProjectsStory; open: OpenStory; labelled?: boolean }) {
+function StoryCell({ s, open, labelled = true }: { s: AllProjectsStory; open: DoorOf; labelled?: boolean }) {
+  const door = open(s)
   const said = firstSentence(s.item.summary || '')
   // A stage done says what it waits for, as in the right bar; the rest say their worker's words.
   const why = s.state === 'stage_done' ? i18nT('components.crewMode.conductor_mode_ms_stage_done')
@@ -160,15 +163,16 @@ function StoryCell({ s, open, labelled = true }: { s: AllProjectsStory; open: Op
     <li data-testid="all-projects-story" data-root={s.root}>
       {labelled && <ProjectLabel name={s.project} />}
       <StoryRow story={{
-        item: s.item, move: s.move, late: s.late, age: storyAge(s), onOpen: open(s),
+        item: s.item, move: s.move, late: s.late, age: storyAge(s), onOpen: door?.go,
         why: why || undefined,
         facts: storyHasFacts(s.item, undefined, s.subtasks) ? <StoryFacts item={s.item} subtasks={s.subtasks} /> : undefined,
+        actions: door ? <WorkerDoorAction door={door} small /> : undefined,
       }} />
     </li>
   )
 }
 
-function MovesView({ board, open, openRoot }: { board: AllProjects; open: OpenStory; openRoot: (root: string) => void }) {
+function MovesView({ board, open, openRoot }: { board: AllProjects; open: DoorOf; openRoot: (root: string) => void }) {
   const shown = board.upNext.slice(0, UP_NEXT_SHOWN)
   const folded = board.upNext.length - shown.length
   const upNextEstimates = board.upNext.map(u => estimateMinutes(u.item)).filter((m): m is number => m !== undefined)
@@ -206,7 +210,7 @@ function MovesView({ board, open, openRoot }: { board: AllProjects; open: OpenSt
               return (
                 <li key={`${u.root}:${u.item.item_id}`} data-testid="all-projects-up-next" data-root={u.root}>
                   <ProjectLabel name={u.project} />
-                  <BoardRow title={u.item.title} onOpen={open(u)} testId="all-projects-up-next-row" item={u.item.item_id}
+                  <BoardRow title={u.item.title} onOpen={open(u)?.go} testId="all-projects-up-next-row" item={u.item.item_id}
                     age={estimate === undefined ? undefined : fmtEstimate(estimate)}
                     lead={<span className="shrink-0 w-4 text-right text-[12px] text-muted tabular-nums mt-px">{fmtNumber(u.rank)}</span>} />
                 </li>
@@ -226,7 +230,7 @@ function MovesView({ board, open, openRoot }: { board: AllProjects; open: OpenSt
 /** The cells a project's band draws, in the board's order. */
 const BAND_STEPS: readonly PlanStep[] = PLAN_STEPS.filter(step => step !== 'merged' && step !== 'released')
 
-function StepsBand({ band, project, stories, open }: { band: ProjectSteps; project: ProjectRow | undefined; stories: ReadonlyMap<string, AllProjectsStory>; open: OpenStory }) {
+function StepsBand({ band, project, stories, open }: { band: ProjectSteps; project: ProjectRow | undefined; stories: ReadonlyMap<string, AllProjectsStory>; open: DoorOf }) {
   const byStep = new Map(band.steps.groups.map(g => [g.step, g.items]))
   const upNext = band.upNext.slice(0, 3)
   const cell = 'min-w-0 border-t border-border md:border-t-0 md:border-l'
@@ -241,7 +245,7 @@ function StepsBand({ band, project, stories, open }: { band: ProjectSteps; proje
         <div className="min-w-0" data-testid="all-projects-band-up-next">
           <BoardSection id="up_next" name={i18nT('components.crewMode.board_up_next')} count={band.upNext.length}>
             <BoardRows>
-              {upNext.map((item, n) => <li key={item.item_id}><BoardRow title={item.title} onOpen={open({ root: band.root, item })} lead={<span className="shrink-0 w-4 text-right text-[12px] text-muted tabular-nums mt-px">{fmtNumber(n + 1)}</span>} /></li>)}
+              {upNext.map((item, n) => <li key={item.item_id}><BoardRow title={item.title} onOpen={open({ root: band.root, item })?.go} lead={<span className="shrink-0 w-4 text-right text-[12px] text-muted tabular-nums mt-px">{fmtNumber(n + 1)}</span>} /></li>)}
             </BoardRows>
             {band.upNext.length > upNext.length && <p className="px-3 py-2 text-[12px] text-muted">{i18nT('components.crewMode.board_more', { count: band.upNext.length - upNext.length })}</p>}
           </BoardSection>
@@ -266,7 +270,7 @@ function StepsBand({ band, project, stories, open }: { band: ProjectSteps; proje
   )
 }
 
-function StepsView({ board, open }: { board: AllProjects; open: OpenStory }) {
+function StepsView({ board, open }: { board: AllProjects; open: DoorOf }) {
   const stories = new Map(board.stories.map(s => [`${s.root}:${s.item.item_id}`, s]))
   const projects = new Map(board.projects.map(p => [p.root, p]))
   return (
@@ -350,8 +354,7 @@ export function AllProjectsBoard() {
   const loads = capacity.data ? computerLoads(boards.values(), capacity.data.name) : []
   const toChat = useCallback(() => navigate('/chat'), [navigate])
   const { open, reopenFailed } = useOpenCrewWorker(toChat)
-  const openers = new Map(roots.map(root => [root, itemOpener(workers.get(root) ?? [], open)] as const))
-  const openStory: OpenStory = s => openers.get(s.root)?.(s.item)
+  const openStory: DoorOf = s => workerDoor(s.item, workers.get(s.root) ?? [], open)
   const openRoot = (root: string) => navigate(chatPath(root))
 
   let body: ReactNode

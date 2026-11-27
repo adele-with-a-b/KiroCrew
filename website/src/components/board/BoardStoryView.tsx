@@ -13,7 +13,7 @@
  *  draws. */
 import { useEffect, useId, useMemo, useRef, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bot, ChevronLeft, Circle, CircleCheck, CircleX, MessageSquare } from 'lucide-react'
+import { Bot, ChevronLeft, Circle, CircleCheck, CircleX } from 'lucide-react'
 import { api } from '../../api/client'
 import type { CrewPrFacts, WorkBoardItem } from '../../api/crewBoard'
 import { boardTimelineQueryKey, TIMELINE_DEFAULT_WINDOW, TIMELINE_POLL_MS, type TimelineResponse } from '../../api/boardTimeline'
@@ -31,6 +31,8 @@ import ErrorNotice from '../ErrorNotice'
 import { Btn } from '../ui'
 import { prFactTags } from '../crew/prFactTags'
 import { MOVE_LABEL, MoveMark, joinParts, moveTone, type BoardStory } from './BoardRow'
+import WorkerDoorAction from './WorkerDoor'
+import type { WorkerDoor } from '../../pages/chat/command-center/openCrewWorker'
 import { landSteps, storyHeld, storyMinutes, type LandStepState, type StoryHeld } from './storyView'
 
 /** A share of the lane as a CSS length, never through the locale's percent format
@@ -121,20 +123,19 @@ function Fact({ label, children, testId }: { label: string; children: ReactNode;
   )
 }
 
-export default function BoardStoryView({ root, item, story, project, worker, facts, plan, onBack, onOpenChat, reopenFailed, active = true, now }: {
+export default function BoardStoryView({ root, item, story, project, door, facts, plan, onBack, reopenFailed, active = true, now }: {
   root: string
   item: WorkBoardItem
   /** Its Board row while it is open; absent once it closed, when it has no move left. */
   story?: BoardStory
   /** The project's name: its Conductor chat's title. */
   project?: string
-  /** The bound worker's name, from the crew list. */
-  worker?: string
+  /** Who its worker is, where it ran and the way to its chat (`workerDoor`); null
+   *  when no worker was ever bound to it. */
+  door?: WorkerDoor | null
   facts?: CrewPrFacts
   plan: BoardPlan
   onBack: () => void
-  /** Opens the story's worker chat; absent when the crew list names none to open. */
-  onOpenChat?: () => void
   /** The last reopen of its closed chat failed. */
   reopenFailed?: boolean
   /** Polled only while the Board tab is the one on screen. */
@@ -169,7 +170,9 @@ export default function BoardStoryView({ root, item, story, project, worker, fac
   // The window holds the story's whole life only when it was made inside it.
   const whole = data != null && Date.parse(item.created_at) >= since
   const step = storyStep(item)
-  const who = joinParts([worker ?? '', item.runs_on ?? ''])
+  const who = door ? joinParts([door.who, door.where]) : ''
+  // An open story nobody was ever bound to says so; a closed one says nothing.
+  const whoLine = who || (item.state === 'open' ? i18nT('components.crewMode.board_no_worker_yet') : '')
   const said = prFactTags(facts).filter(t => !t.read).map(t => t.text)
   const crumb = joinParts([project ?? '', i18nT(STEP_KEY[step])])
   const subtasks = childProgress(item, plan.children)
@@ -219,17 +222,13 @@ export default function BoardStoryView({ root, item, story, project, worker, fac
               {i18nT(accepted ? 'components.crewMode.board_landed' : 'components.crewMode.board_landed_not_done')}
             </span>
           )}
-          {who && (
-            <span className="inline-flex items-center gap-1 min-w-0" data-testid="board-story-worker">
-              <Bot size={12} aria-hidden="true" className="shrink-0" /><span className="[overflow-wrap:anywhere]">{who}</span>
+          {whoLine && (
+            <span className="inline-flex items-center gap-1 min-w-0" data-testid="board-story-worker" data-bound={door ? 'true' : 'false'}>
+              <Bot size={12} aria-hidden="true" className="shrink-0" /><span className="[overflow-wrap:anywhere]">{whoLine}</span>
             </span>
           )}
         </p>
-        {onOpenChat && (
-          <Btn type="button" onClick={onOpenChat} className="mt-1.5 text-[12px] font-medium" data-testid="board-story-open-chat">
-            <MessageSquare size={12} aria-hidden="true" />{i18nT('components.crewMode.board_story_open_chat')}
-          </Btn>
-        )}
+        {door && <WorkerDoorAction door={door} />}
         {reopenFailed && <ErrorNotice variant="inline" message={i18nT('commandCenter.worker_reopen_failed')} askAgent />}
       </div>
 
