@@ -150,8 +150,10 @@ async def test_recovery_leaves_unaccepted_cards_in_the_same_slot(
     )
     slot = state.get_or_create_slot("mixed")
     slot._queue[:] = sanitize_restored_queue(saved)
-    from kiro_crew.shared_crew.host_hooks import mark_sessions_restored
+    from kiro_crew.shared_crew.host_hooks import mark_sessions_restored, reconcile_note
 
+    # The gateway's own listener: it tells the scan which rows this start ended.
+    service.set_reconcile_listener(reconcile_note(state))
     mark_sessions_restored(state)
     plain = [dict(item) for item in slot._queue if item["id"].startswith("plain")]
     monkeypatch.setattr(chat_runner, "subagents_hold_user_messages", lambda *_: False)
@@ -256,8 +258,10 @@ async def test_an_abandoned_startup_drain_leaves_its_accepted_card_held(
     state.memory_startup_task = asyncio.get_running_loop().create_future()
     slot = state.get_or_create_slot("abandoned")
     slot._queue[:] = sanitize_restored_queue(saved)
-    from kiro_crew.shared_crew.host_hooks import mark_sessions_restored
+    from kiro_crew.shared_crew.host_hooks import mark_sessions_restored, reconcile_note
 
+    # The gateway's own listener: it tells the scan which rows this start ended.
+    service.set_reconcile_listener(reconcile_note(state))
     mark_sessions_restored(state)
     monkeypatch.setattr(
         chat_runner, "_parked_queue_drain_admitted", lambda: abandon != "fence_refused"
@@ -328,8 +332,10 @@ async def test_a_boot_scan_that_fails_part_way_marks_no_card(tmp_path, monkeypat
     state._dynamic_cards = None
     slot = state.get_or_create_slot("scan")
     slot._queue[:] = sanitize_restored_queue(durable_queue_entries(saved))
-    from kiro_crew.shared_crew.host_hooks import mark_sessions_restored
+    from kiro_crew.shared_crew.host_hooks import mark_sessions_restored, reconcile_note
 
+    # The gateway's own listener: it tells the scan which rows this start ended.
+    service.set_reconcile_listener(reconcile_note(state))
     mark_sessions_restored(state)
     try:
         with pytest.raises(RuntimeError, match="store read failed"):

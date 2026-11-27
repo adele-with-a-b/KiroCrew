@@ -655,96 +655,10 @@ async def test_a_proven_peer_note_a_late_limit_stops_is_dropped_and_its_sender_t
     assert "Queued message dropped" in _notices(slot)[0]
 
 
-# ── Across a restart: the owner's press is the only way out ──
+# ── Held again: the owner's press is the only way out ──
+# (Across a restart, on the real admission store: test_kept_card_restart.py.)
 
 _LINK = "C0LINKED|1700000000.000100"
-
-
-def _parked_rows(monkeypatch):
-    """An installed admission service whose store holds one parked send's row per
-    work id, as a restart's reconciliation leaves it, memory ready. The startup
-    scan reads the rows through ``current_work``; retiring one writes its store."""
-    from dataclasses import dataclass, field, replace
-    from typing import Any
-
-    from kiro_crew import memory_startup
-    from kiro_crew.dashboard.chat_turn import queue_drain
-    from kiro_crew.shared_crew import admission_gate, host_hooks
-    from kiro_crew.shared_crew.admission import OperationState
-
-    @dataclass(frozen=True)
-    class _Row:
-        work_id: str
-        session_key: str
-        revision: int = 0
-        extra: dict[str, Any] = field(default_factory=lambda: {admission_gate.PARKED_KEY: True})
-        runtime: Any = None
-        state: OperationState = OperationState.CANCELLED
-        reason: Any = None
-
-    class _Store:
-        def __init__(self) -> None:
-            self.rows: dict[str, _Row] = {}
-
-        async def get(self, work_id):
-            return self.rows.get(work_id)
-
-        async def annotate(self, work, extra):
-            nxt = replace(work, revision=work.revision + 1, extra={**work.extra, **extra})
-            self.rows[work.work_id] = nxt
-            return nxt
-
-    class _Service:
-        enabled = True
-
-        def __init__(self) -> None:
-            self._store = _Store()
-            self._live: dict = {}
-
-        async def ensure_ready(self):
-            return None
-
-        async def current_work(self, work_id):
-            return await self._store.get(work_id)
-
-        async def _cancelled_parked(self, _work_ids):
-            return None
-
-    service = _Service()
-
-    async def _no_notes(_state):
-        return None
-
-    monkeypatch.setattr(admission_gate, "installed_service", lambda: service)
-    monkeypatch.setattr(host_hooks, "deliver_owed_notes", _no_notes)
-    monkeypatch.setattr(memory_startup, "memory_startup_preparing", lambda: False)
-    monkeypatch.setattr(queue_drain, "_parked_queue_drain_admitted", lambda: True)
-    monkeypatch.setattr(queue_drain, "_memory_preparation_pending", lambda _state: False)
-    return service, _Row
-
-
-def _restore(tmp_path, entries):
-    """A start: the durable writer's copy read back by the restore reader."""
-    from kiro_crew.dashboard.chat_utils import effective_session_key
-
-    saved = json.loads(json.dumps(durable_queue_entries(entries)))
-    state, slot = _state(tmp_path, sanitize_restored_queue(saved))
-    state.memory_startup_task = None
-    return state, slot, effective_session_key(slot)
-
-
-async def _startup(state) -> None:
-    """The real startup scan and drain, then whatever it left running."""
-    import asyncio
-
-    from kiro_crew.dashboard import slot_queue_repository
-
-    await slot_queue_repository._drain_restored_parked_work(state)
-    await asyncio.gather(*list(state._background_tasks))
-
-
-def _parked_card(queue_id: str, text: str, work_id: str) -> dict:
-    return {**_held(queue_id, text), "meta": {"sharedCrewWork": work_id}}
 
 
 _MIRROR_PROBE = dc._probe_channel_mirror
@@ -755,51 +669,6 @@ def _mirror(monkeypatch, on: bool) -> None:
     the parked row still names this chat's session (a link would move it)."""
     mirrored = lambda _state, _slot: "slack:C0MIRROR:"  # noqa: E731
     monkeypatch.setattr(dc, "_probe_channel_mirror", mirrored if on else _MIRROR_PROBE)
-
-
-@pytest.mark.asyncio
-async def test_a_parked_send_a_limit_held_again_never_goes_at_a_later_start(
-    tmp_path, turns, monkeypatch
-):
-    """A parked send r2 is held again by a mirror at the startup drain. The mirror
-    goes, a later drain leaves it, the gateway restarts and its startup scan runs
-    again: r2 is not sent, it waits with its words, and the owner's press sends it
-    once."""
-    service, row = _parked_rows(monkeypatch)
-    state, slot, key = _restore(tmp_path / "first", [_parked_card("r2", "accepted two", "w-2")])
-    service._store.rows["w-2"] = row("w-2", key)
-    _mirror(monkeypatch, True)
-    await _startup(state)
-    assert _held_texts(slot) == [("r2", "accepted two")] and len(_notices(slot)) == 1
-    _mirror(monkeypatch, False)
-    assert await cr._start_next_queued_turn(state, slot) is False
-
-    state, slot, _key = _restore(tmp_path / "second", slot._queue)
-    await _startup(state)
-
-    assert _sent_rows(slot) == [], "the restart sent a card a limit held again"
-    assert _held_texts(slot) == [("r2", "accepted two")] and _notices(slot) == []
-    status, body = await _press(state, ["r2"])
-    assert status == 200 and body["sent"] == ["r2"] and body["started"] is True
-    assert _sent_rows(slot) == ["accepted two"] and slot._queue == []
-
-
-@pytest.mark.asyncio
-async def test_a_restart_while_still_mirrored_keeps_the_card_held_with_no_new_notice(
-    tmp_path, turns, monkeypatch
-):
-    service, row = _parked_rows(monkeypatch)
-    state, slot, key = _restore(tmp_path / "first", [_parked_card("r2", "accepted two", "w-2")])
-    service._store.rows["w-2"] = row("w-2", key)
-    _mirror(monkeypatch, True)
-    await _startup(state)
-    assert len(_notices(slot)) == 1
-
-    state, slot, _key = _restore(tmp_path / "second", slot._queue)
-    await _startup(state)
-
-    assert _sent_rows(slot) == []
-    assert _held_texts(slot) == [("r2", "accepted two")] and _notices(slot) == []
 
 
 async def _held_again(tmp_path, monkeypatch, *behind: dict):

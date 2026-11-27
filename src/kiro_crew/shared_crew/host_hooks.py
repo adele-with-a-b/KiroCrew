@@ -45,6 +45,8 @@ _OWED_MAX = 10000
 _OWED_ATTR = "_shared_crew_owed_notes"
 _DELIVERY_ATTR = "_shared_crew_note_delivery"
 _RESTORED_ATTR = "_shared_crew_sessions_restored"
+_UNSTARTED_ATTR = "_shared_crew_restart_unstarted"
+_UNSTARTED_CLOSED_ATTR = "_shared_crew_restart_unstarted_closed"
 #: Session history keys this process has seen recorded on disk (bounded).
 _RECORDED: set[str] = set()
 _RECORDED_MAX = 20000
@@ -105,6 +107,33 @@ def mark_sessions_restored(state: Any) -> None:
     _restored_event(state).set()
 
 
+def restart_unstarted(state: Any) -> set[str]:
+    """The parked sends this start's own reconciliation ended as never started.
+
+    Such a row is the only proof that lets the startup scan send a restored
+    card with no press (``slot_queue_repository._drain_restored_parked_work``),
+    and it holds for this start alone: the scan takes an id out when it accepts
+    its card. A row that was already ended before this start is never here, so
+    a card a person kept, or one a start already sent, waits for a press however
+    its row and its queue line were left. Held in memory: no write can miss.
+    """
+    unstarted = getattr(state, _UNSTARTED_ATTR, None)
+    if not isinstance(unstarted, set):
+        unstarted = set()
+        setattr(state, _UNSTARTED_ATTR, unstarted)
+    return unstarted
+
+
+def close_restart_unstarted(state: Any) -> None:
+    """This start found admission off: it resumes no parked send, now or later.
+
+    Its restored cards wait for a person, and a person may have sent or kept one
+    by the time admission comes on and reconciles the rows.
+    """
+    setattr(state, _UNSTARTED_CLOSED_ATTR, True)
+    restart_unstarted(state).clear()
+
+
 def _note_for(work: AcceptedWork) -> str | None:
     if work.operation is not OperationKind.CHAT_TURN:
         return None
@@ -129,6 +158,12 @@ def reconcile_note(state: Any) -> Callable[[AcceptedWork, "Mapping[str, Any] | N
     """
 
     def note(work: AcceptedWork, payload: Mapping[str, Any] | None = None) -> None:
+        if (
+            work.extra.get(_gate.PARKED_KEY)
+            and work.extra.get(_gate.RECONCILE_DETAIL_KEY) == _gate.RECONCILE_RESTARTED_BEFORE_START
+            and not getattr(state, _UNSTARTED_CLOSED_ATTR, False)
+        ):
+            restart_unstarted(state).add(work.work_id)
         text = _note_for(work)
         if text is None:
             return
@@ -340,6 +375,7 @@ def uninstall() -> None:
 
 __all__ = [
     "child_hooks",
+    "close_restart_unstarted",
     "deliver_owed_notes",
     "ensure_slot_recorded",
     "mark_sessions_restored",
@@ -347,6 +383,7 @@ __all__ = [
     "NOTE_UNKNOWN",
     "install",
     "parked_probe",
+    "restart_unstarted",
     "reconcile_note",
     "shutdown_probe",
     "taskrunner_hook",

@@ -53,6 +53,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from kiro_crew.dashboard.chat_delivery_owner_steer import durable_queue as owner_steer_durable_queue
 from kiro_crew.dashboard.chat_utils import (
     effective_session_key,
     slot_history_key,
@@ -65,6 +66,7 @@ from kiro_crew.dashboard.slot_buffers import (
     sanitize_restored_deferred_notes,
 )
 from kiro_crew.dashboard.slot_queue_repository import (
+    durable_queue_entries,
     queue_persist_signature,
     sanitize_restored_queue,
 )
@@ -831,8 +833,11 @@ def _read_queued_prompts(r: _Read) -> None:
         name = slot.key if isinstance(r.purpose, Resume) else r.purpose.name
         logger.info("Restored %d queued prompt(s) for slot %s", len(queue), name)
     # Stamped whatever was restored, so the first flush re-persists only a queue
-    # that actually changed.
-    slot._queue_persisted_sig = queue_persist_signature(slot.durable_queue_entries())
+    # that actually changed. A restored card's parked-work link is such a change:
+    # the stamp is the line as read, and the writer no longer emits the link.
+    slot._queue_persisted_sig = queue_persist_signature(
+        durable_queue_entries(owner_steer_durable_queue(slot), restored_links=True)
+    )
 
 
 def _read_memory_mode(r: _Read) -> None:
