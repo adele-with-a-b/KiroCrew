@@ -63,6 +63,7 @@ from kiro_crew.acp.types import (
 from kiro_crew.agent import DEPRECATED_AGENT_SPECS
 from kiro_crew.agent_sdk.backends import resolve_cc_pin_inherited_mode
 from kiro_crew.constants import KIROCREW_SESSION_AGENT_ENV
+from kiro_crew.dashboard.chat_utils_awaits import drained_to_thread
 from kiro_crew.platform.context import redact_log_via_context
 from kiro_crew.security import (
     redact_credentials,
@@ -1206,9 +1207,12 @@ async def _reissue_naming_model(
     self._adopted_substitute_model = model
     # Re-seed settings.local.json so the fresh SettingsManager the adapter builds
     # for the retry resolves that model (it merges settings sources each
-    # session/new).
+    # session/new). Drained like the start's own seed write
+    # (``client_claude_seed.settled_seed_write``, an owner above this one): a start
+    # cut here is torn down only once the write has settled, so it hands back what
+    # it took.
     try:
-        await asyncio.to_thread(self._write_claude_local_settings)
+        await drained_to_thread(self._write_claude_local_settings)
     except (OSError, ValueError, TypeError):
         # Narrow to realistic re-seed failure modes: OSError covers disk /
         # permission errors on the atomic write; ValueError and TypeError cover
