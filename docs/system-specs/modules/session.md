@@ -2954,10 +2954,36 @@ against sweep completeness, and are torn down at `close_all`.
   default. When the idle sweep does reset a session whose newest launch is past
   the hold, on either axis, it logs a warning naming the launch, its age and the
   hold (`hold_expired_reason`), and after a successful `reset` fires the recycle
-  callback with that reason, so the chat says the work may have been stopped. An
+  callback with that reason followed by what the reset stopped (below). An
   expiry with no recorded launch, or a declined reset, stays silent as before.
   The RSS recycle past the hold keeps the plain memory-limit notice: there the
   memory ceiling, not the hold, is the stated cause.
+  **What the notice says was stopped** (`session_recycle_jobs`): the launch record
+  holds a label and a time, never a process, so both notices that name launched
+  work (the idle sweep past the hold, the hard-ceiling RSS recycle) read the
+  machine instead of saying the work "may" have been stopped. `before_reset`
+  runs ahead of the last synchronous guards, because it suspends, and only for a
+  session with a recorded launch. It keeps no record of its own: it reads the
+  kill path's identity-pinned descendant record
+  (`session_pid._provider_descendant_records`, the spawn-time snapshot merged
+  with a live walk) and the session leftovers (`find_session_leftovers`). Of the
+  descendants only those outside the runtime's process group are listed: the
+  group is the harness and the servers it started, while a command it ran leads
+  a group of its own (measured on claude-agent-acp, macOS). `after_reset` reads
+  each start identity again through `platform_compat.get_process_start_id`
+  (never a signal): the same identity that is not a zombie is `still running`,
+  anything else, a reused pid included, is `stopped`. A descendant still read as
+  running once the root is gone is read once more after `SETTLE_SECS` (0.5 s),
+  since the kill waits for the root and not for each descendant it signals. The
+  clause names the runtime pid and whether it was ended (a co-tenant can keep
+  it), then each list as `pid <n> <name>`, cut at `NOTICE_MAX_LISTED` with a
+  count. It always ends by saying that a job which had detached from its command
+  (`nohup`, `setsid`) is not tracked and is checked by its pid or its exit file:
+  such a job left the tree and the session before the read, so neither record
+  holds it. With no runtime pid, on Windows, or when the process table cannot be
+  read, the clause says the read could not be made and gives the same check. The
+  recycle itself signals exactly what it did before. The text is composed here in
+  English and stored as a transcript row; it is not drawn from the i18n catalog.
 
 ## APIs
 
