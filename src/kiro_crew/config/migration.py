@@ -13,13 +13,16 @@ not on the loader. This module imports neither the loader nor schema/validation.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Callable
 from dataclasses import MISSING, asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kiro_crew.atomic_write import atomic_write
 from kiro_crew.config import windows_exec_adoption
 from kiro_crew.config.sections import DEFAULT_KIRO_TEMPLATE, KiroCrewAgentConfig, WorkspaceConfig
 from kiro_crew.config.superseded_defaults import (
@@ -61,6 +64,59 @@ MIGRATE_SUPERSEDED_DEFAULTS = "superseded_defaults"
 #: than inside it for the same reason as the superseded-defaults ack file — a
 #: full ``to_dict()`` rewrite carries only schema fields and would drop it.
 CONNECTIONS_UI_MIGRATION_MARKER = "connections_ui_migrated.json"
+
+#: Clear the ``show_sessions_in_list: false`` a Bot row stored while that switch
+#: was off by default. Every save writes every field of every ``agents`` row, so
+#: a Bot saved then holds ``false`` though nobody turned it off, and its sessions
+#: stay out of the person's Sessions list now that the default is on. Same
+#: one-shot boundary as ``connections_ui``: a ``false`` found before
+#: :data:`BOT_SESSIONS_LISTED_MIGRATION_MARKER` exists is cleared once, and one
+#: found after it is the person's own and is kept.
+MIGRATE_BOT_SESSIONS_LISTED = "bot_sessions_listed"
+BOT_SESSIONS_LISTED_MIGRATION_MARKER = "bot_sessions_listed_migrated.json"
+_BOT_LISTED_FIELD = "show_sessions_in_list"
+
+
+def unlisted_bot_rows(data: dict) -> list[str]:
+    """The ``agents`` rows of *data* that store exactly ``show_sessions_in_list: false``."""
+    rows = data.get("agents")
+    if not isinstance(rows, dict):
+        return []
+    return [
+        name
+        for name, row in rows.items()
+        if isinstance(row, dict) and row.get(_BOT_LISTED_FIELD) is False
+    ]
+
+
+def list_unlisted_bots_in_memory(cfg: KiroCrewConfig, data: dict, local_data: dict) -> bool:
+    """Turn the switch on in *cfg* for each row :func:`unlisted_bot_rows` names in *data*.
+
+    The in-memory half, so this very load already lists them; the on-disk half is the
+    :data:`MIGRATE_BOT_SESSIONS_LISTED` delta. A row whose value ``config.local.json``
+    supplies is skipped: that is the operator's live choice. True when any row is due.
+    """
+    overlay_rows = local_data.get("agents")
+    due = False
+    for name in unlisted_bot_rows(data):
+        overlay_row = overlay_rows.get(name) if isinstance(overlay_rows, dict) else None
+        if isinstance(overlay_row, dict) and _BOT_LISTED_FIELD in overlay_row:
+            continue
+        if name in cfg.agents:
+            cfg.agents[name].show_sessions_in_list = True
+        due = True
+    return due
+
+
+def record_bot_listing_cleared(marker: Path, *, cleared: bool) -> None:
+    """Write :data:`BOT_SESSIONS_LISTED_MIGRATION_MARKER`; only once the delta landed.
+
+    A marker without the clear would keep a stale ``false`` as the person's choice
+    for good, so the caller writes it on the ``connections_ui`` marker's own gate.
+    """
+    stamp = {"migrated_at": datetime.now(timezone.utc).isoformat(), "cleared_stale_false": cleared}
+    atomic_write(marker, json.dumps(stamp, indent=2) + "\n")
+
 
 #: Remove a ``skills.lazy_load: false`` that a 0.6.x-or-earlier build materialized.
 #: Those builds wrote every default into ``config.json``, and their default was
@@ -271,6 +327,14 @@ def apply_document_migrations(
     if MIGRATE_CONNECTIONS_UI in pending:
         if data.get("connections_ui") is False:
             del data["connections_ui"]
+            changed = True
+
+    # Clear each Bot row's pre-default ``show_sessions_in_list: false``. Like the
+    # strip above: re-checked against *data*, only an exact stored ``false`` is
+    # removed, and the caller's marker keeps it to loads that found no marker.
+    if MIGRATE_BOT_SESSIONS_LISTED in pending:
+        for name in unlisted_bot_rows(data):
+            del data["agents"][name][_BOT_LISTED_FIELD]
             changed = True
 
     # Point default_agent at an agent that exists. Resolved against the

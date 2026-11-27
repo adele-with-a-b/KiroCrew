@@ -1431,6 +1431,12 @@ def persist_write_back(cfg: KiroCrewConfig, doc: ConfigDocument) -> None:
                 pending.add(MIGRATE_CONNECTIONS_UI)
             connections_migrating = True
 
+        # The one-shot Bot listing clear rides the same road and marker gate.
+        listing_marker = config_dir() / _migration.BOT_SESSIONS_LISTED_MIGRATION_MARKER
+        listing_migrating = not listing_marker.exists()
+        if listing_migrating and _migration.list_unlisted_bots_in_memory(cfg, data, local_data):
+            pending.add(_migration.MIGRATE_BOT_SESSIONS_LISTED)
+
         # Adopt the auto-adopting superseded defaults. The in-memory half is
         # applied BELOW, after the write is confirmed -- never here. Applying it
         # eagerly would let a failed write leave the running config holding a
@@ -1544,6 +1550,9 @@ def persist_write_back(cfg: KiroCrewConfig, doc: ConfigDocument) -> None:
                 )
                 + "\n",
             )
+        if listing_migrating and persisted and not cfg._degraded_sections:
+            cleared = _migration.MIGRATE_BOT_SESSIONS_LISTED in pending
+            _migration.record_bot_listing_cleared(listing_marker, cleared=cleared)
     except PendingEditBlocksSave as e:
         # Refused again on every load while the file is pending: once per version.
         loosening_provenance.log_writeback_refused_once(e.leaf, str(e))

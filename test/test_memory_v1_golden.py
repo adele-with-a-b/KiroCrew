@@ -772,6 +772,7 @@ def test_seeded_home_file_set_is_pinned(seeded: Seeded) -> None:
     * ``config.json.bak``: ``KiroCrewConfig.load()`` writes the file back with a backup.
     * ``config.json.lock``: ``config.loader``'s advisory lock.
     * ``connections_ui_migrated.json``: the loader's one-time migration marker.
+    * ``bot_sessions_listed_migrated.json``: the loader's one-time Bot listing marker.
     * ``config-provenance/published``: ``config.write_provenance``, POSIX only.
     * ``config-provenance/endorsed/config.json``: the same save's endorsed copy
       (``config.loosening_provenance``), every platform.
@@ -792,6 +793,7 @@ def test_seeded_home_file_set_is_pinned(seeded: Seeded) -> None:
         "config.json.bak",
         "config.json.lock",
         "connections_ui_migrated.json",
+        "bot_sessions_listed_migrated.json",
         "memory.db",
         "memory.db-shm",
         "memory.db-wal",
