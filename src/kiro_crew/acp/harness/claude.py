@@ -28,6 +28,7 @@ from kiro_crew import model_registry, platform_compat
 from kiro_crew.acp import launch as launch_mod
 from kiro_crew.acp import raw_sdk_tasks
 from kiro_crew.acp.claude_settings_sources import a_source_decides_thinking
+from kiro_crew.acp.client_claude_seed import settled_seed_write
 from kiro_crew.acp.harness._common import MembershipHarness
 from kiro_crew.acp.harness.base import (
     NotificationAliases,
@@ -922,7 +923,8 @@ class ClaudeHarness(MembershipHarness):
         state._model = model
         state._adopted_substitute_model = model
         try:
-            await asyncio.to_thread(state._write_claude_local_settings)
+            # Drained like the start's own seed write (``settled_seed_write``).
+            await settled_seed_write(state._write_claude_local_settings)
         except (OSError, ValueError, TypeError):
             logger.warning(
                 "claude shared session: re-seed after substitution failed", exc_info=True

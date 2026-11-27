@@ -18,7 +18,6 @@ Instance fields read: ``_agent``, ``_model``, ``_permission_mode``, ``_seed_owne
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -26,7 +25,7 @@ import os
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from kiro_crew import model_registry, pinned_fs
 from kiro_crew.acp import seed_provenance
@@ -39,6 +38,7 @@ from kiro_crew.acp.session_mcp import session_mcp_deny_rules
 from kiro_crew.acp.spec_tools_allowlists import claude_ask_rules, session_allowlist_spec
 from kiro_crew.agent_sdk.backends import ACP_BACKENDS_CREW_ENFORCES_SPEC_TOOLS_SETTINGS
 from kiro_crew.atomic_write import atomic_write
+from kiro_crew.dashboard.chat_utils_awaits import drained_to_thread
 from kiro_crew.security import is_sensitive_path
 
 if TYPE_CHECKING:
@@ -1032,7 +1032,7 @@ async def _reseed_after_capture(self: ClaudeAcpClient) -> None:
     if not self._seeds_local_settings:
         return
     try:
-        await asyncio.to_thread(self._write_claude_local_settings)
+        await settled_seed_write(self._write_claude_local_settings)
     except (OSError, ValueError, TypeError):
         logger.warning("post-capture re-seed of settings.local.json failed", exc_info=True)
 
@@ -1045,9 +1045,28 @@ async def _seed_session_settings(self: ClaudeAcpClient) -> None:
     still route through the host gate.
     """
     try:
-        await asyncio.to_thread(self._write_claude_local_settings)
+        await settled_seed_write(self._write_claude_local_settings)
     except (OSError, ValueError, TypeError):
         logger.warning("initial seed of settings.local.json failed", exc_info=True)
+
+
+async def settled_seed_write(write: Callable[[], None]) -> None:
+    """Run a session's seed *write* off the loop and return only once it has settled.
+
+    The write takes the claim, creates the file, publishes the durable owner holder
+    and sets the client's authorship flags, in that order, on a worker thread. A
+    plain ``await asyncio.to_thread(...)`` returns to a cancelled start at once while
+    that thread keeps going: the start's teardown then finds nothing to hand back,
+    and the thread goes on to publish a holder for a client nobody tears down again.
+    That holder carries this process's live identity, so every later session on the
+    work dir reads the path as held by a live sibling until the gateway exits.
+
+    So the await is drained: a cancellation is kept until the write has finished and
+    is raised then, and the teardown that follows sees what the write took and hands
+    it back. The wait is bounded by the write itself (the create-race poll's two
+    seconds at most).
+    """
+    await drained_to_thread(write)
 
 
 def _write_settings_seed(self: ClaudeAcpClient) -> None:

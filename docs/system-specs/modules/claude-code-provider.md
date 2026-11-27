@@ -583,6 +583,33 @@ shared with runs with the whole `mcpServers` array withheld
 (`test_seed_claim_released_on_teardown.py`, which also pins the kept claim under a
 live tenancy: the successor cannot re-write the file).
 
+Every hand-back above acts on what the client holds at that moment, so the write
+must have settled before one runs. The write (`_write_claude_local_settings`) runs
+on a worker thread, and a cancellation delivered to a plain `asyncio.to_thread`
+await returns at once while the thread keeps going: the cut start's teardown then
+finds no claim and no authorship to hand back, and the thread goes on to create
+the file and publish an owner holder for a client nobody tears down again. That
+holder reads live until the gateway exits. So every await of the write is drained
+(`client_claude_seed.settled_seed_write` at the start's seed, the post-capture
+re-seed and the shared runtime's re-seed after a model substitution; the
+`drained_to_thread` it wraps at the per-chat substitution re-seed, whose owner
+sits below the seed's, and at `set_model`'s re-seed, which every backend's
+client runs): the
+cancellation is kept until the write has finished and raised then, and the
+teardown that follows hands back what the write took. This covers a per-chat
+client and a session of the shared runtime alike (`ClaudeHarness.prepare_session`
+ends the session it was preparing). `test_seed_write_cut_mid_start.py` holds the
+write, cuts the start and checks that no holder is left on either path.
+
+A session whose array is withheld says why in its transcript
+(`settings_withheld_cause`, one `notice` row on a new session): `session` when
+another open Crew session's seed holds the path, `project` when the project's own
+file does. A seed file that is missing while another session still holds the path
+is the `session` case as well: this session was refused the vacant name (a seed is
+never recreated under a sibling's claim), and without the row only the gateway log
+said its tools were off. With no file and no holder the seed has not run or its
+write failed, and no row is shown.
+
 **One relaxation: a sibling seed that governs this session is SHARED, not refused.**
 Two sessions of the same agent in the same `work_dir` render the same permissions,
 and refusing the second one bought nothing — it ran with the whole `mcpServers` array
