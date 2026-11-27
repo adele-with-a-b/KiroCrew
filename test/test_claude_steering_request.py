@@ -532,6 +532,57 @@ async def test_a_steer_while_a_tool_runs_is_sent_when_the_tool_finishes():
         assert consumed[0].text == "<user_message>\nchange course\n</user_message>"
 
 
+def _compaction_update(compaction_id: str, status: str, **extra: Any) -> JsonRpcMessage:
+    return _tool_update(
+        {
+            "sessionUpdate": "compaction_update",
+            "compactionId": compaction_id,
+            "status": status,
+            **extra,
+        }
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal",
+    [
+        pytest.param({"status": "completed"}, id="completed"),
+        pytest.param({"status": "failed", "error": "aborted"}, id="failed"),
+    ],
+)
+async def test_a_steer_while_the_turn_compacts_is_sent_when_the_compaction_ends(terminal):
+    """claude-agent-acp hands a steer to Claude Code at once, and Claude Code aborts
+    the compaction it lands on. So the steer is held while one runs and goes out at
+    its terminal."""
+    async with _Tasks() as spawned:
+        client = _client()
+        wire = _Wire(client)
+        turn = await _start_turn(client, spawned)
+        wire.inbound.put_nowait(_compaction_update("c1", "in_progress"))
+        await async_wait_until(lambda: getattr(client, "_claude_compaction_pending", False))
+
+        steer = _spawn(spawned, client.steer("change course"))
+        await async_wait_until(lambda: steer.done() or wire.steering_frames())
+        # Held, not written: a frame here is what aborts the compaction.
+        assert wire.steering_frames() == []
+        assert await await_until(steer, what="the steer") is True
+        assert client.steer_held_behind_tool is True
+
+        wire.inbound.put_nowait(_compaction_update("c1", **terminal))
+        wire.answer(await wire.next_steering_id(), "injected")
+        assert _steered_texts(wire) == ["change course"]
+        await async_wait_until(
+            lambda: client._steers_accepted, describe=lambda: client._steers_held
+        )
+        assert client.steer_held_behind_tool is False
+        wire.end_turn()
+        events = await await_until(turn, what="the turn")
+        consumed = [e.text for e in events if e.kind == EVENT_STEER_CONSUMED]
+        assert consumed == ["<user_message>\nchange course\n</user_message>"]
+        assert events[-1].kind == EVENT_COMPLETE
+
+
 @pytest.mark.asyncio
 async def test_a_held_steer_waits_for_every_open_tool_call():
     async with _Tasks() as spawned:

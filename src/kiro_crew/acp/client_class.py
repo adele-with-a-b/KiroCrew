@@ -1142,6 +1142,11 @@ class AcpClient:
         compaction. Not here: the shared codex-shaped record keeps it."""
         return False
 
+    def _compaction_holds_steers(self) -> bool:
+        """Whether a steer waits for a compaction of this turn to end. Not here: no
+        backend this class drives reports one a steer would abort."""
+        return False
+
     def _note_unhandled_session_update(self, kind: str) -> None:
         """A ``session/update`` kind this client does not handle: dropped silently here."""
 

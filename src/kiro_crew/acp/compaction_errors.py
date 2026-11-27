@@ -57,6 +57,9 @@ _COMPACTION_TRANSIENT_MARKERS = (
     "internal server error",
     "timed out",
     "timeout",
+    # The compaction was interrupted, not refused: Claude Code reports this when
+    # a steer lands on it. The same conversation compacts on the next attempt.
+    "aborted",
 )
 
 # Depth bound for the payload walk. The shapes we read are three levels at

@@ -6347,6 +6347,17 @@ through `compaction_failure_detail`, including its credential and URL redaction.
 `cancelled` (a Stop
 mid-compaction) closes the lifecycle with no event, no failure streak and no
 synthesized failure at turn end.
+A steer and a Claude compaction do not mix: claude-agent-acp hands a steer to
+Claude Code at once, Claude Code aborts the compaction it lands on (`failed`,
+`error: "aborted"`), then runs the steered message, which starts the compaction
+again under a new ID and is silent for minutes. So on Claude a steer is held while
+a native compaction of the turn is in flight (`_compaction_holds_steers`, the hold
+`_steer_via_steering_request` already keeps behind an open tool call) and goes out
+at that compaction's terminal; a native start disarms the post-failure wait an
+earlier failure armed, so a steer that still won the race does not end the live
+turn at `_COMPACTION_FAILED_TURN_BUDGET`; and `aborted` is a transient reason
+(`compaction_failure_is_transient`), so a turn that does end on it before anything
+streamed has its message replayed by the existing transient-compaction retry.
 Claude native starts use Claude's own pending state on `AcpClient`, the only
 transport a Claude session runs on (Claude is not in `ACP_BACKENDS_ACP_RUNTIME`,
 so the runtime handle sees only Codex frames). If no explicit terminal arrives,
