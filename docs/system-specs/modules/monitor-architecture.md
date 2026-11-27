@@ -317,9 +317,14 @@ reads, taken in the background for the crews a finished worker was on and kept
 are left out, never guessed). The hub's stored record alone is no evidence: no pull
 reads a finished item again, so that record is what the list said while the item
 was open, and a chat closed on the crew afterwards would read open for good. A
-stored record that `session_close(crew=)` marked closed
-(`remote_ingest.mark_slot_closed`) still takes the worker off at once, before the
-next list read. A crew-bound worker is named only while that close can reach
+stored record marked closed once its crew confirmed the close
+(`remote_ingest.mark_slot_closed`, the one writer every confirmed close goes
+through: `session_close(crew=)`, on a retired binding's slot too, and the sweep
+that closes retired slots, since another item may still name the slot) still
+takes the worker off at once, before the next list read. A pull reads the slot
+list outside the board lock, so the mark is counted under it
+(`remote_ingest._CLOSE_MARKS`): a pull whose list read came before a mark files
+no open answer over it. A crew-bound worker is named only while that close can reach
 its crew: the preview on and the crew registered and connected
 (`patrol_seats.crew_reachable`); otherwise no close could take it off the line.
 Epics and sub-tasks are never named. One fixed `SEATS_INSTRUCTION`
