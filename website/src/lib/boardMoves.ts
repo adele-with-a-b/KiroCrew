@@ -47,8 +47,9 @@ export function reportAnswered(item: WorkBoardItem): boolean {
  *    jobs (`standing_by`) is its normal rest, never stuck, and reads working;
  *  - the Conductor's move: a report it has not answered or judged, or a stage done
  *    (`stage_done`: it decided on the done report, kept the item open and the chat
- *    that did the stage closed), which waits for it to seat the next stage and is
- *    never late;
+ *    that did the stage closed; never a standing manager's, nor one a person
+ *    steered after the report, which stay stuck), which waits for it to seat the
+ *    next stage and is never late;
  *  - working, when its Conductor handed a done report back: the move follows the
  *    newest of report and decision (`reportAnswered`), so a decision after the
  *    report is the worker's to act on, never a wait on the Conductor that cannot

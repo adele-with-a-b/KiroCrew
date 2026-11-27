@@ -273,9 +273,13 @@ export function milestoneState(item: WorkBoardItem, waiting: boolean, manager = 
   const handedBack = item.status === 'done' && reportAnswered(item)
   // A stage done: its Conductor decided on the done report and kept the item open
   // for a next stage, and the chat that did the stage closed, by design. It waits
-  // for its Conductor to seat the next stage, so it is not stuck; an orphaned board
-  // (no Conductor reads it) still is.
-  if (handedBack && item.alive === 'closed' && !item.orphaned) return 'stage_done'
+  // for its Conductor to seat the next stage, so it is not stuck. It is said only
+  // when nothing after the done report gave that chat new work, so a closed chat
+  // still is stuck: on an orphaned board (no Conductor reads it), for a standing
+  // manager (nobody wakes it), and after a person's steer (more work typed to it).
+  // shortcut: a Conductor's decide that hands work back to the same chat reads as
+  // one that keeps the item for its next stage; no Board field tells them apart.
+  if (handedBack && item.alive === 'closed' && !item.orphaned && !manager && !steeredSinceReport(item)) return 'stage_done'
   if ((open || handedBack) && (item.alive === 'closed' || item.orphaned)) return 'stuck'
   // Standing by: a standing manager's open chat, idle between jobs, rests until its
   // Conductor's next note wakes it, so it is never quiet or stuck. A report the
@@ -311,6 +315,19 @@ function judgedSinceReport(item: WorkBoardItem): boolean {
   if (last >= 0) return events.slice(last + 1).some(e => e.kind === 'verdict')
   const reported = item.last_report_at ? Date.parse(item.last_report_at) : NaN
   return Number.isFinite(reported) && events.some(e => e.kind === 'verdict' && Date.parse(e.ts) >= reported)
+}
+
+/** A person's steer on the event tail after the newest report: the owner typed the
+ *  chat more work, so its done report is no longer its last word. With the report
+ *  off the tail, a steer not provably older than `last_report_at` counts, so an
+ *  unsure row stays stuck. */
+function steeredSinceReport(item: WorkBoardItem): boolean {
+  const events = item.events || []
+  let last = -1
+  events.forEach((e, n) => { if (e.kind === 'report') last = n })
+  if (last >= 0) return events.slice(last + 1).some(e => e.kind === 'steer')
+  const reported = item.last_report_at ? Date.parse(item.last_report_at) : NaN
+  return events.some(e => e.kind === 'steer' && !(Date.parse(e.ts) < reported))
 }
 
 /** How long an open item has waited on its conductor, in minutes, or null: its

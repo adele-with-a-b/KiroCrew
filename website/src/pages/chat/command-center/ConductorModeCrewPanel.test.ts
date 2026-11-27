@@ -268,6 +268,50 @@ describe('milestoneState', () => {
     expect(read({ status: 'done', stale: true, ...ANSWERED }, true)).toEqual({ state: 'standing_by', move: 'working' })
   })
 
+  describe('stage done only when nothing after the done report gave its chat new work', () => {
+    const now = Date.parse('2026-10-30T03:00:00Z')
+    const STUCK = { state: 'stuck', move: 'stuck' }
+    const MANAGERS = [{ ...worker('w-1', 'root'), title: 'Manager: kettle', ledger_item: 'it_1' }]
+    const read = (over: Partial<WorkBoardItem>, workers: CrewWorker[] = []) => {
+      const it0 = item(over)
+      const state = milestoneState(it0, false, standingManager(it0, workers))
+      return { state, move: boardMove(it0, state, conductorWaitMinutes(it0, now)) }
+    }
+    const ev = (id: string, kind: 'report' | 'decision' | 'steer', ts: string) =>
+      ({ id, ts, item_id: 'it_1', kind, status: kind === 'report' ? 'done' as const : null, text: '' })
+    const report = ev('e1', 'report', R.last_report_at)
+    const decision = ev('e2', 'decision', '2026-10-30T01:04:00Z')
+    const steer = ev('e3', 'steer', '2026-10-30T01:02:00Z')
+
+    it('a standing manager whose chat closed on a decided done is stuck: nobody wakes it', () => {
+      expect(read({ status: 'done', alive: 'closed', ...ANSWERED }, MANAGERS)).toEqual(STUCK)
+      expect(read({ status: 'done', alive: 'closed', stale: true, events: [report, decision], ...R }, MANAGERS)).toEqual(STUCK)
+    })
+
+    it('a steer after the done report, then its chat closed, is stuck: the work typed to it is unseen', () => {
+      expect(read({ status: 'done', alive: 'closed', events: [report, steer], ...R })).toEqual(STUCK)
+      // A Conductor's decide too, before or after the steer, does not take the steer back.
+      expect(read({ status: 'done', alive: 'closed', events: [report, steer], ...ANSWERED })).toEqual(STUCK)
+      expect(read({ status: 'done', alive: 'closed', events: [report, decision, { ...steer, ts: '2026-10-30T01:06:00Z' }], ...R })).toEqual(STUCK)
+      // The report off the tail: a steer not provably older than the report counts.
+      expect(read({ status: 'done', alive: 'closed', events: [steer], ...ANSWERED })).toEqual(STUCK)
+      expect(read({ status: 'done', alive: 'closed', events: [{ ...steer, ts: 'not a time' }], ...ANSWERED })).toEqual(STUCK)
+    })
+
+    it('the plain case still reads stage done: decided after, no steer, no manager, chat closed', () => {
+      expect(read({ status: 'done', alive: 'closed', ...ANSWERED })).toEqual({ state: 'stage_done', move: 'conductor' })
+      expect(read({ status: 'done', alive: 'closed', events: [report, decision], ...R })).toEqual({ state: 'stage_done', move: 'conductor' })
+      // A steer the newest report already answered is no new work.
+      expect(read({ status: 'done', alive: 'closed', events: [steer, report, decision], ...R })).toEqual({ state: 'stage_done', move: 'conductor' })
+      expect(read({ status: 'done', alive: 'closed', events: [{ ...steer, ts: '2026-10-30T00:50:00Z' }], ...ANSWERED })).toEqual({ state: 'stage_done', move: 'conductor' })
+    })
+
+    it('an open idle manager on a decided done still stands by', () => {
+      expect(read({ status: 'done', alive: 'idle', ...ANSWERED }, MANAGERS)).toEqual({ state: 'standing_by', move: 'working' })
+      expect(read({ status: 'done', alive: 'idle', stale: true, events: [report, decision], ...R }, MANAGERS)).toEqual({ state: 'standing_by', move: 'working' })
+    })
+  })
+
   it('stuck: a closed session on an open report, or an orphaned board', () => {
     expect(milestoneState(item({ status: 'progress', alive: 'closed' }), false)).toBe('stuck')
     expect(milestoneState(item({ status: 'blocked', alive: 'closed', ...R }), false)).toBe('stuck')
