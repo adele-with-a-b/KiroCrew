@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from kiro_crew.dashboard.chat_turn.turn_ledgers import _queue_recovery
     from kiro_crew.dashboard.chat_turn.turn_locals import _ChatTurn
     from kiro_crew.dashboard.chat_turn.turn_reply_seams import _persist_partial_reply
+    from kiro_crew.dashboard.chat_turn.worker_wait import _note_model_road_down
 
 
 async def _on_cancelled(turn: _ChatTurn) -> None:
@@ -155,6 +156,8 @@ async def _on_auth_required(turn: _ChatTurn, exc) -> None:
     slot.append("error", _auth_msg, "msg msg-err", meta=_terminal_error_meta(exc))
     _mark_kiro_signed_out(state)
     turn.died_notice = "chat_stopped_signed_out"
+    # A bound worker's conductor learns of it from the ledger, not from this chat.
+    _note_model_road_down(turn, exc)
     await _deliver_linked_slack_message(state, slot, sessions, session_key, _auth_msg)
 
 
@@ -446,6 +449,10 @@ async def _on_acp_error_card(turn: _ChatTurn, exc) -> None:
         # malformed-request rejection). Ring the bell so an operator in
         # another session is not left to find the inline card.
         turn.died_notice = "chat_stopped_error"
+        # When the error is the model road itself (credentials that cannot be
+        # minted, an account refused), a bound worker's item is marked blocked so
+        # its conductor wakes on the ledger. Any other error files nothing.
+        _note_model_road_down(turn, exc)
         # Record a STRUCTURAL terminal outcome for this slot's last turn,
         # but ONLY for a self-driven nudge fire (``_directive_self_wake``).
         # A malformed-request rejection is deterministic in the payload's

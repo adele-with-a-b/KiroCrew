@@ -99,6 +99,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         is_context_overflow_error,
         is_prompt_busy,
         is_transient_backend_error,
+        model_road_down_cause,
         throttle_retry_delay,
         transient_retry_delay,
     )
@@ -258,7 +259,11 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
         DENY_CAUSE_UNREADABLE_IDENTITY,
     )
     from kiro_crew.credential_errors import (  # noqa: F401
+        MODEL_ROAD_CREDENTIALS_REFUSED,
+        MODEL_ROAD_CREDENTIALS_UNAVAILABLE,
+        MODEL_ROAD_SIGNED_OUT,
         is_credential_propagation_delay,
+        is_credential_retrieval_failure,
     )
     from kiro_crew.deny_notice import (  # noqa: F401
         steer_refusal_notice,

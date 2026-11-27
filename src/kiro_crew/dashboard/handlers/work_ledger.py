@@ -56,7 +56,8 @@ from kiro_crew import _facade_mirror
 #   ``work_ledger_caller`` -- the entry gate: who the caller is and which ledger it reaches
 #   ``work_ledger_recording`` -- the fit probe, entry, board lock and undo of a recorded write
 #   ``work_ledger_worker`` -- the worker's brief and report
-#   ``work_ledger_waits`` -- the report the gateway files for a worker stopped on the person
+#   ``work_ledger_waits`` -- the report the gateway files for a worker stopped on the person,
+#     or for one whose turn ended because its model account cannot be used
 #   ``work_ledger_read`` -- the conductor's read of its board and the flags a row derives
 #   ``work_ledger_conductor`` -- the conductor's record and rebuild writes
 #   ``work_ledger_handback`` -- the hand-back a delivered ``session_send`` stamps
@@ -202,6 +203,8 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _FENCE,
         _Q_HEAD,
         _Q_LINE,
+        _ROAD_DOWN_SUMMARY,
+        _ROAD_DOWN_WORDS,
         _SUMMARY_PREFIX,
         CARD_ANSWERED_TEXT,
         WAIT_IN_TEXT,
@@ -210,10 +213,12 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         WAIT_OPERATION,
         _bound_item_of,
         _failed_since_report,
+        _file_for_worker,
         _own_artifacts,
         _read_item,
         _refused_text,
         _report_seen,
+        _road_mark_owed,
         _schedule,
         _stopped_unreported,
         _summary,
@@ -222,9 +227,11 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _workers_move,
         asked_in_text,
         note_approval_waiting,
+        note_model_road_down,
         note_question_card,
         note_question_card_answered,
         note_turn_end_question,
+        record_model_road_down,
         record_question_card_answered,
         record_worker_wait,
     )
@@ -233,6 +240,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _WORKER_REPORT_FIELDS,
         APPROVAL_ANSWERED_TEXT,
         GATEWAY_ARTIFACT_KEYS,
+        MODEL_ROAD_ARTIFACT,
         REFUSED_ARTIFACT,
         STEER_CREW_LOG_OFF,
         STEER_ITEM_CLOSED,
@@ -264,6 +272,11 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
     )
     from kiro_crew.constants import (  # noqa: F401
         env_file_display,
+    )
+    from kiro_crew.credential_errors import (  # noqa: F401
+        MODEL_ROAD_CREDENTIALS_REFUSED,
+        MODEL_ROAD_CREDENTIALS_UNAVAILABLE,
+        MODEL_ROAD_SIGNED_OUT,
     )
     from kiro_crew.crew_log import emit as crew_log_emit  # noqa: F401
     from kiro_crew.crew_log.errors import (  # noqa: F401

@@ -4777,6 +4777,35 @@ reader, so the two agree. `test/test_work_ledger_worker_waits.py` pins it. Known
 limit: a wait written as plain prose with neither marker is not detected; the
 stale flag stays its backstop.
 
+**A turn the model road ended is reported for it.** A bound worker's turn can
+also end with no reply: its model account is signed out, could not mint
+credentials, or had its credentials refused. The chat is left on an error row and
+the item on its last status, so the conductor would learn why only by reading the
+chat, or not until the item went stale. The arms that END a turn on an error hand
+it to `chat_turn/worker_wait._note_model_road_down`: `_on_auth_required` and the
+terminal branch of `_on_acp_error_card` (`chat_turn/turn_failures.py`), and the
+credential give-up of `_on_acp_session_not_found` (`chat_turn/acp_recovery.py`).
+No arm that retries, resets or replays calls it, so a failure the ladder absorbed
+files nothing. `llm_helpers.model_road_down_cause` names the cause from typed tags
+and the harness's own frame (error-handling.md, "The model road is down"), and
+`work_ledger_waits.record_model_road_down` files `blocked` through the same
+transaction as the report above (`_file_for_worker`, operation
+`work_report.gateway`). The report has no `reason`: by the person-wait rule
+(`docs/request-for-change/rfc-work-ledger-person-wait-hold.md` §3.1) a wait on a
+service carries none, so it wakes the conductor and holds nothing for the person.
+Its summary is fixed words starting `Gateway:`, one sentence per cause
+(`_ROAD_DOWN_WORDS`), and the gateway-only artifact `model_road`
+(`MODEL_ROAD_ARTIFACT`, in `GATEWAY_ARTIFACT_KEYS`) carries the cause, a
+`credential_errors.MODEL_ROAD_*` value. Nothing from the provider's text is
+written: it can name an account or a host. It is filed only while no report holds
+the conductor (`_road_mark_owed`: the worker owes the next move, or the last
+report was answered), so one report stands for an outage however many turns die
+in it, a report of the worker's own stands, and a question the gateway filed for
+the person is never replaced by a wait on no person. An unbound session and any
+other error file nothing. `test/test_work_ledger_model_road.py` pins it. Known
+limit: only the dashboard turn hands its error over; a worker turn that runs on a
+channel surface is not covered.
+
 **A stale worker is released, not capped.** A Bot opens as many workers as
 its work needs; memory is bounded by the cgroup `max_memory_mb`. A worker idle
 past `session.timeout_secs` is stopped by the idle sweep like any session, its

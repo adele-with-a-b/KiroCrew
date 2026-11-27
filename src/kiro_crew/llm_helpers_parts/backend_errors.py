@@ -18,7 +18,13 @@ from typing import Any
 
 from kiro_crew.agent_sdk.drivers.acp import provider_error_client
 from kiro_crew.agent_sdk.drivers.acp_turn_vocab import AcpAuthRequired, AcpError, AcpPromptBusy
-from kiro_crew.credential_errors import is_credential_propagation_delay
+from kiro_crew.credential_errors import (
+    MODEL_ROAD_CREDENTIALS_REFUSED,
+    MODEL_ROAD_CREDENTIALS_UNAVAILABLE,
+    MODEL_ROAD_SIGNED_OUT,
+    is_credential_propagation_delay,
+    is_credential_retrieval_failure,
+)
 from kiro_crew.platform.context import redact_via_context
 
 _PROMPT_BUSY_RETRIES = 2
@@ -304,6 +310,41 @@ def acp_error_needs_sign_in(exc: BaseException) -> bool:
         or getattr(exc, "auth_required", False) is True
         or (isinstance(code, str) and code in _EXPIRED_TOKEN_CODES)
     )
+
+
+def model_road_down_cause(exc: BaseException) -> str:
+    """Why *exc* says this chat's model account cannot be used at all, or ``""``.
+
+    The class a retry of the same account cannot fix and the chat's own work did not
+    cause: the harness is signed out (:func:`acp_error_needs_sign_in`), the account
+    could not obtain credentials (the ``cloud_credential_error`` answer of
+    :func:`acp_error_needs_fresh_credentials`, or a frame that names a credential
+    provider's own failure, ``credential_errors.is_credential_retrieval_failure``), or
+    the service refused the credentials it was sent (``auth_error_code``, the AWS
+    exception name read from the raw frame at raise time). Answers one of the
+    ``credential_errors.MODEL_ROAD_*`` values.
+
+    Read from typed tags and the harness's own frame, never from Kiro Crew's wording:
+    the frame is ``raw_detail`` when the message is curated, and the message itself
+    only when it is the frame verbatim (``user_worded`` is false). It is no retry
+    verdict. A caller asks it once a turn has ENDED on *exc*; every retry arm runs
+    first and is unchanged, so a credential IAM has not propagated yet, which the
+    ladder absorbs, never reaches it. A spent usage limit, an unentitled model, a
+    throttle and a plain 5xx answer ``""``: the account works, or has its own remedy.
+    """
+    if acp_error_needs_sign_in(exc):
+        return MODEL_ROAD_SIGNED_OUT
+    if not isinstance(exc, AcpError):
+        return ""
+    if acp_error_needs_fresh_credentials(exc):
+        return MODEL_ROAD_CREDENTIALS_UNAVAILABLE
+    frame = getattr(exc, "raw_detail", "")
+    if not frame and getattr(exc, "user_worded", False) is not True:
+        frame = str(exc)
+    if isinstance(frame, str) and is_credential_retrieval_failure(frame):
+        return MODEL_ROAD_CREDENTIALS_UNAVAILABLE
+    code = getattr(exc, "auth_error_code", "")
+    return MODEL_ROAD_CREDENTIALS_REFUSED if isinstance(code, str) and code else ""
 
 
 #: The frame's structured ``data`` as the ACP formatter appends it to the provider
