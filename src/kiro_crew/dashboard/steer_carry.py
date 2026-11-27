@@ -48,7 +48,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew.acp.types import ACP_BACKEND_CLAUDE, ACP_BACKEND_CODEX, MAX_STEERING_TEXT_CHARS
+from kiro_crew.acp.types import ACP_BACKEND_CLAUDE, MAX_STEERING_TEXT_CHARS
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Awaitable, Callable
@@ -71,12 +71,17 @@ WAS_STEERED_META = "wasSteered"
 MAX_RETAINED_STEERS = 256
 MAX_RETAINED_STEER_CHARS = 32 * MAX_STEERING_TEXT_CHARS
 
-#: The backends whose written steer stays pending until its turn ends cleanly:
-#: their client steers over ``_session/steering`` (``AcpClient.steer``), which
-#: reports a steer read only then. Only these leave written steers out of
-#: ``MAX_PENDING_STEERS`` (:func:`has_steer_room`). goose and pi report each read
-#: as it happens, so their pending steers are unread and every one counts.
-WRITTEN_STEERS_STAY_PENDING = frozenset({ACP_BACKEND_CLAUDE, ACP_BACKEND_CODEX})
+#: The backends whose written steer stays pending until its turn ends cleanly and
+#: whose per-chat client says how many it still holds (``held_steer_count``): it
+#: steers over ``_session/steering`` (``AcpClient.steer``), which reports a steer
+#: read only then. Only these leave written steers out of ``MAX_PENDING_STEERS``
+#: (:func:`has_steer_room`). goose and pi report each read as it happens, so
+#: their pending steers are unread and every one counts. codex is not a member:
+#: it speaks the same request, but only through the shared runtime's session
+#: handle, which reports no such count and keeps its own bound of
+#: ``MAX_STEERING_ANSWERS`` on the steers a turn took, written or not. A claude
+#: chat on a shared runtime is driven by that handle too and counts every one.
+WRITTEN_STEERS_STAY_PENDING = frozenset({ACP_BACKEND_CLAUDE})
 
 
 @dataclass

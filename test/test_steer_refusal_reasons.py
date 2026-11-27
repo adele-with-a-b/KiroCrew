@@ -23,6 +23,8 @@ from session_control_helpers import (  # noqa: F401 -- the autouse fixtures regi
 )
 
 from kiro_crew import steer_refusal
+from kiro_crew.acp.session_provider import AcpSessionProvider
+from kiro_crew.agent_sdk.backends import ACP_BACKENDS_ACP_RUNTIME
 from kiro_crew.dashboard import chat_delivery as cd
 from kiro_crew.dashboard import steer_carry
 
@@ -110,14 +112,22 @@ def test_written_steers_leave_room_for_the_next(tmp_path, backend):
     assert _steer(state, slot) == cd.STEER_STEERED
 
 
-@pytest.mark.parametrize("backend", ["goose", "pi", ""])  # "" is kiro-cli
+@pytest.mark.parametrize("backend", ["codex", "goose", "pi", ""])  # "" is kiro-cli
 def test_a_backend_outside_the_named_set_counts_every_pending_steer(tmp_path, backend):
     """goose and pi report each read as it happens, so a pending steer there is
-    unread: 32 of them fill the cap even with a held count of 0."""
+    unread: 32 of them fill the cap even with a held count of 0. codex keeps a
+    written steer pending, but its client never says which are written."""
     assert backend not in steer_carry.WRITTEN_STEERS_STAY_PENDING
     state, slot = _running(tmp_path)
     _written(slot, cd.MAX_PENDING_STEERS, backend=backend)
     _assert_fell_back(_steer(state, slot), steer_refusal.TOO_MANY)
+
+
+def test_every_named_backend_is_driven_by_a_client_that_reports_its_held_steers():
+    """A shared-runtime backend's chat steers through ``AcpSessionProvider``, which
+    reports no ``held_steer_count``: naming one would promise room its chats never get."""
+    on_the_shared_runtime = steer_carry.WRITTEN_STEERS_STAY_PENDING & ACP_BACKENDS_ACP_RUNTIME
+    assert hasattr(AcpSessionProvider, "held_steer_count") or not on_the_shared_runtime
 
 
 def test_held_steers_still_fill_the_cap(tmp_path):

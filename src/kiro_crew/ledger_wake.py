@@ -738,23 +738,32 @@ def is_unread_overdue(oldest_secs: float | None, oldest_id: str = "") -> bool:
 
 
 def unconfirmed_wake_brief(
-    *, item_id: str, count: int, target: str = "", waited_secs: float | None = None
+    *,
+    item_id: str,
+    count: int,
+    target: str = "",
+    waited_secs: float | None = None,
+    running: bool = False,
 ) -> str:
     """Text for a sender whose message went into its target's turn, with no read confirmed.
 
-    The one writer of ``reason=message_unconfirmed``, for two cases. The target's
-    turn ended with an error after the note went in (``queue_age.note_unconfirmed``),
-    so the note may not have run and nothing runs it again: the conductor decides
-    whether to send it again. Or the turn still runs on a harness that reports a
-    steer read only when its turn ends, so the model may have read it at its next
-    step. *count* is the messages counted; *target* and *waited_secs*, when given,
-    name the target and the oldest one's wait. Structural only, for the reason
-    :func:`wake_brief` gives.
+    The one writer of ``reason=message_unconfirmed``, for two cases that ask the
+    opposite of the sender, so the text names which (``turn=``). ``turn=failed``:
+    the target's turn ended with an error after the note went in
+    (``queue_age.note_unconfirmed``), so the note may not have run and nothing runs
+    it again: the conductor sends it again. ``turn=running`` (*running*): the turn
+    still runs on a harness that reports a steer read only when its turn ends, so
+    the model has most likely read it at its next step, and sending it again would
+    land a second copy. *count* is the messages counted; *target* and
+    *waited_secs*, when given, name the target and the oldest one's wait.
+    Structural only, for the reason :func:`wake_brief` gives.
     """
     who = f" target={target}" if target else ""
+    turn = " turn=running" if running else " turn=failed"
     age = "" if waited_secs is None else f" oldest_waited_secs={int(waited_secs)}"
     return (
-        f"[work-ledger wake] item={item_id} reason=message_unconfirmed count={int(count)}{who}{age}"
+        f"[work-ledger wake] item={item_id} reason=message_unconfirmed "
+        f"count={int(count)}{who}{turn}{age}"
     )
 
 
@@ -767,14 +776,18 @@ def unread_wake_brief(
     apart from a report or a stall: the target may be working, but it has not seen
     what it was told. *count* is proven unread; *unconfirmed* went into a turn whose
     harness reports a read only when the turn ends, so the model may have read it.
-    With nothing proven unread it is :func:`unconfirmed_wake_brief`'s text, with the
-    unconfirmed ones as its count, so no wake says unread of a message the harness
-    took. Counts, a session key and seconds only, for the reason :func:`wake_brief`
-    is structural.
+    With nothing proven unread it is :func:`unconfirmed_wake_brief`'s text for a
+    turn still running, with the unconfirmed ones as its count, so no wake says
+    unread of a message the harness took. Counts, a session key and seconds only,
+    for the reason :func:`wake_brief` is structural.
     """
     if count <= 0:
         return unconfirmed_wake_brief(
-            item_id=item_id, count=unconfirmed, target=target, waited_secs=waited_secs
+            item_id=item_id,
+            count=unconfirmed,
+            target=target,
+            waited_secs=waited_secs,
+            running=True,
         )
     extra = f" unconfirmed={int(unconfirmed)}" if unconfirmed > 0 else ""
     return (

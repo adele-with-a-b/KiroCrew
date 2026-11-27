@@ -626,9 +626,11 @@ def test_a_steer_the_turn_took_wakes_its_sender_once_and_says_only_what_is_prove
 
     clock.now += ledger_wake.UNREAD_WAKE_SECS
     first = [b for b in _wake_briefs(state, board) if "reason=message_" in b]
+    # The unconfirmed wake says its turn still runs: the model most likely read it.
+    turn = "turn=running " if reason == "message_unconfirmed" else ""
     assert first == [
         f"[work-ledger wake] item={item_id} reason={reason} count=1 target={worker.key} "
-        f"oldest_waited_secs={int(ledger_wake.UNREAD_WAKE_SECS)}"
+        f"{turn}oldest_waited_secs={int(ledger_wake.UNREAD_WAKE_SECS)}"
     ]
     assert not any("reason=message_" in b for b in _wake_briefs(state, board))
 
@@ -701,7 +703,7 @@ def test_a_note_queued_after_an_unconfirmed_steer_wakes_on_its_own_wait(tmp_path
     clock.now += ledger_wake.UNREAD_WAKE_SECS
     assert [b for b in _wake_briefs(state, board) if "reason=message_" in b] == [
         f"[work-ledger wake] item={item_id} reason=message_unconfirmed count=1 "
-        f"target={worker.key} oldest_waited_secs={secs}"
+        f"target={worker.key} turn=running oldest_waited_secs={secs}"
     ]
 
     clock.now += 100
