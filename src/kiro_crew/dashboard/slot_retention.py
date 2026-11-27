@@ -278,24 +278,31 @@ def worker_idle_since(state: "DashboardState | None", session_key: str) -> float
     board's ``stale`` flag alike. The moment is :func:`slot_last_activity`: no turn
     runs, so the newest row is where the last one ended. ``None`` -- unknown, which never
     flags -- for a slot that is absent or still being built, has a turn in flight, waits
-    on the person's answer to a question card, on an approval or on sub-agent work that
-    will report back
-    (:func:`has_pending_approval`, :func:`subagents_attached_now`), or is a standing
-    manager between jobs (:data:`STANDING_MANAGER_TITLE_PREFIX`). Never raises.
+    on the person's answer to a question card or on an approval
+    (:func:`has_pending_approval`), has its own background work out that will start its
+    next turn (``chat_utils.background_wake_pending_now``: a pending synthesis,
+    sub-agents running, queued or delivering, a workflow run, a monitor loop), or is a
+    standing manager between jobs (:data:`STANDING_MANAGER_TITLE_PREFIX`). Memory reads
+    only, so the probe's thread, the event loop and the fold worker read it alike.
+    Never raises.
     """
     if state is None or not session_key:
         return None
+    # circular: chat_utils -> state
+    from kiro_crew.dashboard.chat_utils import background_wake_pending_now
+
     try:
         for candidate in (session_key, f"dashboard_{session_key}"):
             slot = state.get_slot(candidate)
             if slot is None:
                 continue
-            if slot.turn_running or str(slot.title or "").startswith(STANDING_MANAGER_TITLE_PREFIX):
+            # ``running``: a send that reserved the slot starts its next turn too.
+            if slot.running or str(slot.title or "").startswith(STANDING_MANAGER_TITLE_PREFIX):
                 return None
             # A question card open to the person (``needs_input``): waiting on them.
             if getattr(slot, "_question_pending", None):
                 return None
-            if has_pending_approval(state, slot) or subagents_attached_now(state, slot):
+            if has_pending_approval(state, slot) or background_wake_pending_now(state, slot):
                 return None
             return slot_last_activity(slot) or None
     except Exception:  # noqa: BLE001 - an unreadable slot is unknown, never idle

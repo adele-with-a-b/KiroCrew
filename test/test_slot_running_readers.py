@@ -153,6 +153,9 @@ def test_running_and_turn_running_slot_readers_are_enumerated() -> None:
                 # the create's awaits keeps it.
                 ("chat_api/slot_create.py", "_retract_failed_newborn"),
                 ("chat_api/slot_create.py", "api_chat_slot_create"),
+                # A worker whose slot a send has reserved is not idle: that send
+                # starts its next turn, so its conductor is not woken for it.
+                ("slot_retention.py", "worker_idle_since"),
                 # The keeper adopt pass leaves a kept chat to a start that has
                 # reserved its slot: that start adopts the keeper, or ends it.
                 ("chat_keeper_adopt.py", "_left_to_another_start"),

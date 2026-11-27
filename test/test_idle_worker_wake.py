@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from kiro_crew import conductor_wake, work_ledger, work_ledger_records, work_ledger_rules
-from kiro_crew.dashboard import slot_retention
+from kiro_crew.dashboard import chat_utils, slot_retention
 from kiro_crew.probes import work_ledger as probe_module
 from kiro_crew.testing.clock import ManualClock
 
@@ -195,6 +195,8 @@ class _Slot:
     def __init__(self, **fields: Any) -> None:
         self.key = fields.pop("key", f"dashboard_{WORKER}")
         self.turn_running = fields.pop("turn_running", False)
+        # ``_ChatSlot.running``: the turn, or a send's reservation before it starts.
+        self.running = self.turn_running or fields.pop("reserved", False)
         self.title = fields.pop("title", "Port the gate")
         self._question_pending = fields.pop("question_pending", None)
         assert not fields
@@ -208,16 +210,17 @@ def _state(slot: _Slot | None) -> SimpleNamespace:
     "slot",
     [
         _Slot(turn_running=True),
+        _Slot(reserved=True),
         _Slot(title="Manager: website"),
         _Slot(question_pending={"ask-1": object()}),
         None,
     ],
-    ids=["running", "standing-manager", "question-card", "no-slot"],
+    ids=["running", "send-reserved", "standing-manager", "question-card", "no-slot"],
 )
 def test_a_chat_with_something_to_wake_it_is_not_idle(monkeypatch, slot):
     monkeypatch.setattr(slot_retention, "slot_last_activity", lambda _s: 1_000.0)
     monkeypatch.setattr(slot_retention, "has_pending_approval", lambda _st, _s: False)
-    monkeypatch.setattr(slot_retention, "subagents_attached_now", lambda _st, _s: False)
+    monkeypatch.setattr(chat_utils, "background_wake_pending_now", lambda _st, _s: False)
     assert slot_retention.worker_idle_since(_state(slot), WORKER) is None
 
 
@@ -228,7 +231,9 @@ def test_an_idle_chat_answers_its_last_activity_and_an_approval_or_subagent_hold
     monkeypatch.setattr(slot_retention, "slot_last_activity", lambda _s: 1_000.0)
     pending = {"approval": False, "agents": False}
     monkeypatch.setattr(slot_retention, "has_pending_approval", lambda _st, _s: pending["approval"])
-    monkeypatch.setattr(slot_retention, "subagents_attached_now", lambda _st, _s: pending["agents"])
+    monkeypatch.setattr(
+        chat_utils, "background_wake_pending_now", lambda _st, _s: pending["agents"]
+    )
     # Bare and prefixed spellings both find the slot.
     assert slot_retention.worker_idle_since(_state(slot), WORKER) == 1_000.0
     assert slot_retention.worker_idle_since(_state(slot), slot.key) == 1_000.0
@@ -236,6 +241,96 @@ def test_an_idle_chat_answers_its_last_activity_and_an_approval_or_subagent_hold
     assert slot_retention.worker_idle_since(_state(slot), WORKER) is None
     pending.update(approval=False, agents=True)
     assert slot_retention.worker_idle_since(_state(slot), WORKER) is None
+
+
+# ── its own background work out: the next turn will start by itself ───────────
+
+
+class _OwnSlot(_Slot):
+    """A worker slot with the fields ``background_wake_pending``'s terms read."""
+
+    def __init__(self, *, pending_synthesis: bool = False) -> None:
+        super().__init__()
+        self.linked_session_key = ""
+        self._pending_synthesis = pending_synthesis
+        self._subagent_deliveries_inflight = 0
+
+
+def _worker_with(monkeypatch: pytest.MonkeyPatch, term: str) -> tuple[SimpleNamespace, _OwnSlot]:
+    """The worker's slot and gateway state, with exactly *term* out (``"none"``: nothing)."""
+    from kiro_crew import autonudge
+
+    slot = _OwnSlot(pending_synthesis=term == "pending-synthesis")
+    key = chat_utils.effective_session_key(slot)
+    depths = {key: 1} if term == "queued-subagent" else {}
+    subs = SimpleNamespace(
+        running_agents_for=lambda _k: [],
+        published_queued_depths=lambda: dict(depths),
+    )
+    registry = SimpleNamespace(has_pending_work_for=lambda k: term == "workflow-run" and k == key)
+    loop = SimpleNamespace(active=True) if term == "monitor-loop" else None
+    monkeypatch.setattr(
+        autonudge,
+        "get_instance",
+        lambda: SimpleNamespace(get_by_slot=lambda k: loop if k == slot.key else None),
+    )
+    state = SimpleNamespace(
+        get_slot=lambda k: slot if k == slot.key else None,
+        subagents=subs,
+        workflow_service=SimpleNamespace(registry=registry),
+    )
+    return state, slot
+
+
+def _quiet_on_board(state: SimpleNamespace, item_id: str) -> bool:
+    """The Board's Quiet for *item_id*, read through the Board's own idle resolver."""
+    from kiro_crew.dashboard.handlers import work_ledger_read
+
+    item = work_ledger.read_work_item(CONDUCTOR, item_id)
+    assert item is not None
+    return work_ledger.is_stale(
+        item,
+        worker_running=False,
+        worker_idle_since=work_ledger_read._item_idle_since(state, item),
+    )
+
+
+@pytest.mark.parametrize(
+    "term", ["workflow-run", "queued-subagent", "pending-synthesis", "monitor-loop"]
+)
+def test_a_worker_with_its_own_background_work_out_wakes_nobody_and_is_not_quiet(
+    monkeypatch, clock, term
+):
+    """Its turn ended to wait for work that will start its next turn by itself: a
+    workflow run, sub-agents queued behind the cap, the post-fan-out synthesis, or its
+    own monitor loop. That is not idle, so no ``worker_idle`` wake, every turn end, and
+    no Quiet on the Board."""
+    item = _bound_item()
+    clock.advance(1)
+    ended = clock.time()
+    clock.advance(work_ledger.IDLE_WAKE_SECS + 60)
+    state, _slot = _worker_with(monkeypatch, term)
+    monkeypatch.setattr(slot_retention, "slot_last_activity", lambda _s: ended)
+    assert slot_retention.worker_idle_since(state, WORKER) is None
+    assert "reason=worker_idle" not in _briefs(
+        lambda: slot_retention.worker_idle_since(state, WORKER)
+    )
+    assert _quiet_on_board(state, item) is False
+
+
+def test_the_same_worker_with_nothing_out_is_idle(monkeypatch, clock):
+    """The control for the cases above: the same slot and state, no term out."""
+    item = _bound_item()
+    clock.advance(1)
+    ended = clock.time()
+    clock.advance(work_ledger.IDLE_WAKE_SECS + 60)
+    state, _slot = _worker_with(monkeypatch, "none")
+    monkeypatch.setattr(slot_retention, "slot_last_activity", lambda _s: ended)
+    assert slot_retention.worker_idle_since(state, WORKER) == ended
+    assert f"item={item} reason=worker_idle" in _briefs(
+        lambda: slot_retention.worker_idle_since(state, WORKER)
+    )
+    assert _quiet_on_board(state, item) is True
 
 
 # ── the push: within a minute, not at the patrol's cadence ────────────────────

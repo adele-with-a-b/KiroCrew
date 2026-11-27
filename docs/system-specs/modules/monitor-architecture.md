@@ -241,9 +241,15 @@ last report is not `done`, `question` or `blocked`), wakes its conductor with
 One rule, `work_ledger.idle_spell`, decides it, and the Board's `stale` (Quiet)
 reads the same rule through `is_stale(worker_idle_since=)`. Idle is positive
 evidence from the slot (`slot_retention.worker_idle_since`): no turn running, no
-approval or question card open, no sub-agent work out, and not a standing manager
-(sidebar title starting `Manager:`); a looping worker, a remote one, an unbound,
-backlog or closed item never counts. Its token is `idle:<spell start>`, spent
+approval or question card open, nothing that will start the chat's next turn by
+itself, and not a standing manager (sidebar title starting `Manager:`). "Nothing
+that will start it" is Crew's one rule for that question,
+`chat_utils.background_wake_pending`, read in memory
+(`background_wake_pending_now`, queued sub-agents as last published): no pending
+synthesis, no sub-agents running, queued or delivering, no unfinished workflow run
+and no active monitor loop. So the probe's thread, the event loop and the fold
+worker read it alike, and no store read is taken. A looping worker, a remote one,
+an unbound, backlog or closed item never counts. Its token is `idle:<spell start>`, spent
 through the same seen set and hourly budget as the others, so one idle spell wakes
 once and a worker that runs a turn and stops again starts a new spell. The patrol
 tick alone would find it minutes late, so a run that ends without a waking report

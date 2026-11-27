@@ -235,10 +235,41 @@ async def background_wake_pending(state: DashboardState, slot: _ChatSlot, operat
     A probe failure RAISES rather than answering False: each caller decides
     which way unknown activity must fail.
     """
-    if slot._pending_synthesis:
-        return True
     session_key = effective_session_key(slot)
-    if await subagents_attached_async(state, slot, session_key, operation):
+    if _wake_pending_beside_children(state, slot, session_key):
+        return True
+    return await subagents_attached_async(state, slot, session_key, operation)
+
+
+def background_wake_pending_now(state: DashboardState, slot: _ChatSlot) -> bool:
+    """:func:`background_wake_pending` for a caller that may read no store.
+
+    The same four owners, read in memory, for a caller that cannot await or
+    take the task store: the event loop, or the crew log's fold worker. The
+    queued children are the count the manager last published
+    (``published_queued_depths``), the reading the slot list shows on the loop,
+    instead of the store count; running and delivering children are read as
+    :func:`subagents_attached_async` reads them. Raises like the coroutine.
+    """
+    session_key = effective_session_key(slot)
+    if _wake_pending_beside_children(state, slot, session_key):
+        return True
+    subs = getattr(state, "subagents", None)
+    if subs is None:
+        return False
+    running = subs.running_agents_for(session_key)
+    queued = int(subs.published_queued_depths().get(session_key, 0) or 0)
+    return _attached_verdict(running, queued, slot)
+
+
+def _wake_pending_beside_children(state: DashboardState, slot: _ChatSlot, session_key: str) -> bool:
+    """The owners of a later turn other than sub-agent children, all in memory.
+
+    A pending post-fan-out synthesis, an unfinished workflow run, an active
+    monitor loop. Both forms of :func:`background_wake_pending` ask these first,
+    so a store read is taken only when none of them answers.
+    """
+    if slot._pending_synthesis:
         return True
     workflows = getattr(state, "workflow_service", None)
     if workflows is not None and workflows.registry.has_pending_work_for(session_key):
