@@ -450,6 +450,33 @@ def test_a_remote_slot_missing_from_a_good_list_reads_closed(recorded, peer):
     asyncio.run(go())
 
 
+def test_a_close_landing_after_a_pulls_list_read_is_not_undone(recorded, peer, monkeypatch):
+    """A pull reads the crew's slot list, then files under the board lock. A
+    ``session_close(crew=)`` marking the record closed in between must stand: the
+    list answer predates it, and a finished item is never pulled again."""
+
+    async def go() -> None:
+        item_id = await _remote_item(peer)
+        read_list = remote_ingest._slot_list
+
+        async def _closed_after_the_read(state: Any, instance_id: str) -> Any:
+            listed = await read_list(state, instance_id)
+            await remote_ingest.mark_slot_closed(CONDUCTOR, CREW, PEER_SLOT)
+            return listed
+
+        monkeypatch.setattr(remote_ingest, "_slot_list", _closed_after_the_read)
+        await _read(peer)
+        stored = work_ledger.read_remote_state(CONDUCTOR, item_id)
+        assert stored is not None and (stored.closed, stored.running) == (True, False)
+        # The next pull's list read follows the close, so it is the crew's answer.
+        monkeypatch.setattr(remote_ingest, "_slot_list", read_list)
+        await _read(peer)
+        stored = work_ledger.read_remote_state(CONDUCTOR, item_id)
+        assert stored is not None and stored.closed is False
+
+    asyncio.run(go())
+
+
 def test_no_ingest_yet_reads_neither_running_nor_closed():
     item = work_ledger.WorkItem(item_id="it_0000000a", worker_instance_id=CREW)
     assert work_ledger.remote_liveness(CONDUCTOR, item) == (False, False)

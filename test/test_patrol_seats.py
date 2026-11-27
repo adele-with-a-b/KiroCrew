@@ -511,6 +511,46 @@ async def test_a_crew_session_closed_before_its_item_is_not_named(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("closer", ["session_close", "retired-slot sweep"])
+async def test_a_retired_bindings_closed_session_is_not_named(monkeypatch, closer):
+    """A finished item's session reused by another item whose binding was then
+    retired: closing that slot, by ``session_close(crew=)`` or by the hub's own
+    sweep of retired slots, must mark the finished item's record closed too."""
+    from kiro_crew.dashboard.handlers import remote_ingest
+
+    _board()
+    state = _State()
+    _crews_on(monkeypatch, state, _Crews(lab="connected"))
+    done, reused = _create(), _create()
+    _remote_bind(done)
+    _close_item(done)
+    _seen_open(done)
+    _remote_bind(reused)
+    work_ledger.apply_remote_retire(
+        CONDUCTOR,
+        reused,
+        worker_session_key="peer-a",
+        worker_instance_id="lab",
+        reason=remote_ingest.RETIRE_CREW_UNREACHABLE,
+    )
+    _listed(state, "peer-a")
+    assert f"Finished workers still open: 1 ({done})." in await _fire(_orchestrator(state))
+    await patrol_seats._ROSTERING[state]
+    # The crew's list was read before the close and is still fresh after it.
+    _listed(state, "peer-a")
+    if closer == "session_close":
+        closed = await routes._close(
+            state, state.instances_manager, CONDUCTOR, "lab", "peer-a", CONDUCTOR
+        )
+        assert closed["closed"] is True
+    else:
+        await remote_ingest._close_retired_slot(
+            state, state.instances_manager, CONDUCTOR, "lab", "peer-a"
+        )
+    assert "Finished workers" not in await _fire(_orchestrator(state))
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("reading", ["none", "not-named", "old"])
 async def test_a_crew_record_frozen_open_at_close_is_not_named(monkeypatch, reading):
     """The puller stops reading an item once it closes, so its stored record says
