@@ -119,7 +119,7 @@ const NO_FOLDERS: ChatFolder[] = []
 import { SIDEBAR_MIN } from './chat/sidebarWidth'
 import { askAppConfirm } from '../lib/appConfirm'
 import { crewWaitingApprovals } from './chat/command-center/model'
-import { useNeedsGroupRows, type NeedsGroup } from './chat-sidebar/needsGroup'
+import { useNeedsGroup } from './chat-sidebar/needsGroup'
 import { landOnAsk } from './chat-sidebar/needsYouLanding'
 export { SIDEBAR_MIN, SIDEBAR_MAX } from './chat/sidebarWidth'
 
@@ -616,21 +616,20 @@ function ChatSidebar({
   // where no folder is drawn. The folder order itself is read and offered in
   // every lane.
   const folderRowsDrawn = shownLane === 'tree' || shownLane === 'board'
-  // The "Needs you" group on top of the list lanes (./chat-sidebar/needsGroup). Not on
-  // the board, whose columns are the grouping, nor while a search ranks the list.
-  // Every row the rule calls waiting joins, a code-channel crew's folded worker
-  // included, so the group counts what the tab title and the filter badge count.
-  const needsGroupRows = useNeedsGroupRows({
-    rows: flatSlots, needsOf: sidebarRows.needsOf, enabled: !boardLaneActive && !searchRanked,
-    frozen: listHovered || dragFrozen || nativeSessionDrag !== null,
-  })
+  // Where a waiting chat is drawn, once (./chat-sidebar/needsGroup): in its place, or
+  // under its collapsed folder in the tree, or in the oldest-first list while the
+  // "Needs you" filter narrows a list lane. No list on the board, whose columns are
+  // the grouping, nor while a search ranks the list. Every row the rule calls waiting
+  // joins the list, a code-channel crew's folded worker included, so the list counts
+  // what the tab title and the filter chip count.
   const needsNarrows = activeFilters.has('needs_you') && !pausedFilters.has('needs_you')
-  const needsGroup: NeedsGroup = {
-    rows: needsGroupRows,
-    ids: new Set(needsGroupRows.map(sessionRowIdentity)),
-    headed: !needsNarrows,
+  const needsGroup = useNeedsGroup({
+    listRows: flatSlots, needsOf: sidebarRows.needsOf, folders, folderOf: slotFolders,
+    listOnTop: needsNarrows && !boardLaneActive && !searchRanked,
+    folderTree: shownLane === 'tree' && !searchRanked,
+    frozen: listHovered || dragFrozen || nativeSessionDrag !== null,
     hiddenByFilter: needsNarrows ? allRows.length - filterCounts.needs_you : 0,
-  }
+  })
 
   // Scroll memory for the session lane. Collapsing the sessions sidebar (or
   // closing the mobile drawer) UNMOUNTS ChatSidebar — OverlayDrawer gates its

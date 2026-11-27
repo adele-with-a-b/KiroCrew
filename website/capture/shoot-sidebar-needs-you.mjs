@@ -1,7 +1,8 @@
 /**
  * Capture harness for "Needs you" (capture/sidebar-needs-you.html): the Sessions
- * panel over twenty made-up chats, four waiting, in dark and light, with the
- * "Needs you" filter off and on, and the filter menu open.
+ * panel over fifteen made-up chats in five folders, four waiting, in dark and
+ * light: the filter off and on, Harbor Conductor answered with the filter on and
+ * off, and one more waiting chat in no folder with the filter off and on.
  *
  * Usage:
  *   node capture/shoot-sidebar-needs-you.mjs <outDir> [port]
@@ -33,19 +34,33 @@ const server = await createServer({
 await server.listen()
 console.log(`vite up on ${PORT}`)
 
+/** Five made-up folders, answered over the real `/api/chat/folders` read. */
+const FOLDERS = [
+  { id: 'f-harbor', name: 'Harbor', color: '#3b82f6', collapsed: false, order: 0 },
+  { id: 'f-lumen', name: 'Lumen', color: '#8b5cf6', collapsed: false, order: 1 },
+  { id: 'f-quill', name: 'Quill', color: '#14b8a6', collapsed: true, order: 2 },
+  { id: 'f-pebble', name: 'Pebble', color: '#ec4899', collapsed: false, order: 3 },
+  { id: 'f-sundial', name: 'Sundial', color: '#22c55e', collapsed: true, order: 4 },
+]
+
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, headless: true })
 
-async function shoot(theme, filter, name, { menu = false } = {}) {
+async function shoot(theme, filter, name, { menu = false, answered = 0, unfiled = 0 } = {}) {
   // Desktop width (a phone width draws the phone layout); the frame is cropped to the panel.
   const ctx = await browser.newContext({ viewport: { width: 1100, height: 2000 }, deviceScaleFactor: 2, reducedMotion: 'reduce' })
   const page = await ctx.newPage()
   // No gateway: every API read answers empty, the way the sidebar tests mock it,
   // so the frame shows the rows and not a sign-in notice.
   // The gateway's paths only: Vite serves the client's own /src/api/ modules too.
-  await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
-  await page.goto(`http://127.0.0.1:${PORT}/capture/sidebar-needs-you.html?theme=${theme}&filter=${filter}`)
+  await page.route(url => url.pathname.startsWith('/api/'), route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: new URL(route.request().url()).pathname === '/api/chat/folders' ? JSON.stringify(FOLDERS) : '[]',
+  }))
+  await page.goto(`http://127.0.0.1:${PORT}/capture/sidebar-needs-you.html?theme=${theme}&filter=${filter}&answered=${answered}&unfiled=${unfiled}`)
   await page.waitForSelector('[data-capture-ready]', { timeout: 60000 })
   await page.waitForSelector('[data-session-row]', { timeout: 60000 })
+  // The folders arrive on their own read; with the filter off the frame waits for the last one.
+  if (!filter) await page.waitForSelector('[data-folder-row="f-sundial"]', { timeout: 60000 })
   await page.waitForTimeout(800)
   if (menu) {
     await page.click('button[aria-label="Sort and filter sessions"]')
@@ -66,7 +81,7 @@ async function shoot(theme, filter, name, { menu = false } = {}) {
       // The Sessions card itself (`LIST_SHELL_CLS` carries the `sidebar` hook).
       const side = lane.closest('.sidebar').getBoundingClientRect()
       // The frame ends where the lane's last row or note ends.
-      const marks = lane.querySelectorAll('[data-session-row], [data-testid="needs-you-hidden-note"]')
+      const marks = lane.querySelectorAll('[data-session-row], [data-folder-row], [data-testid^="folder-waits-more-"], [data-testid="needs-you-hidden-note"]')
       const last = marks.length ? marks[marks.length - 1].getBoundingClientRect().bottom : side.bottom
       return { x: 0, y: tab.y, width: side.right, height: Math.min(side.bottom, last + 16) - tab.y }
     })
@@ -78,6 +93,10 @@ async function shoot(theme, filter, name, { menu = false } = {}) {
 for (const theme of ['dark', 'light']) {
   await shoot(theme, 0, `${theme}-filter-off`)
   await shoot(theme, 1, `${theme}-filter-on`)
+  await shoot(theme, 1, `${theme}-answered-filter-on`, { answered: 1 })
+  await shoot(theme, 0, `${theme}-answered-filter-off`, { answered: 1 })
+  await shoot(theme, 0, `${theme}-unfiled-filter-off`, { unfiled: 1 })
+  await shoot(theme, 1, `${theme}-unfiled-filter-on`, { unfiled: 1 })
 }
 await shoot('dark', 1, 'dark-menu', { menu: true })
 

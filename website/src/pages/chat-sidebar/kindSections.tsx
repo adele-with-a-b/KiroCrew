@@ -120,11 +120,11 @@ export function kindSectionLabel(kind: SessionKind): string {
 }
 
 /** The heading of one section of a session list: a heading, so a screen reader can
- *  jump between sections. `tone` is its colour class (muted by default). */
-export function ListSectionHeading({ tone = 'text-muted', children, ...attrs }: { tone?: string; children: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'className' | 'role'>) {
+ *  jump between sections. */
+function ListSectionHeading({ children, ...attrs }: { children: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'className' | 'role'>) {
   return (
     <div role="heading" aria-level={3} {...attrs}
-      className={`px-3 pt-3 pb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[.06em] select-none first:pt-1 ${tone}`}>
+      className="px-3 pt-3 pb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[.06em] select-none first:pt-1 text-muted">
       {children}
     </div>
   )

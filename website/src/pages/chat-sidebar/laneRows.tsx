@@ -9,6 +9,7 @@ import { WindowedSessionRow } from '../chat/sessionRowWindow'
 import type { StaleSplit } from '../staleCollapse'
 import { i18nT } from '../../i18n/t'
 import { uiLocation } from '../../uiLocations/uiLocation'
+import type { ChatFolder } from '../../types'
 import type { Slot } from './types'
 import { sessionRowIdentity } from './rowIdentity'
 import { type ConductorRowView } from './rows'
@@ -161,7 +162,7 @@ export function createLaneRows(shell: SidebarScope) {
   // total across scopes, which is what the clamp counts.
   const sessionRowStamps = new Map<string, Map<string, number>>()
   let sessionRowStampCount = 0
-  const renderSessionRow = (s: Slot, _indent: number, showDivider: boolean, scope = 'list', navScope = scope, holdContainer = navScope, conductor?: ConductorRowView, folderConductor?: boolean, crew?: CodeChannelCrewView) => {
+  const renderSessionRow = (s: Slot, _indent: number, showDivider: boolean, scope = 'list', navScope = scope, holdContainer = navScope, conductor?: ConductorRowView, folderConductor?: boolean, crew?: CodeChannelCrewView, folderCrumb?: ChatFolder) => {
     // Clamped, not raw: rows past the window share a stamp and bail out of a
     // displacement above them (see SIDEBAR_DISPLACEMENT_WINDOW).
     let scopeStamps = sessionRowStamps.get(scope)
@@ -177,7 +178,7 @@ export function createLaneRows(shell: SidebarScope) {
       scopeStamps.set(stampKey, orderStamp)
     }
     const view = rowViews.view(s, {
-      scope, navScope, holdContainer, showDivider, orderStamp, conductor, folderConductor, crew,
+      scope, navScope, holdContainer, showDivider, orderStamp, conductor, folderConductor, crew, folderCrumb,
       // staticRows (the compositor drawer) folds into the one row-animation
       // gate: projection under a WAAPI-driven ancestor mis-attributes the
       // panel's motion to the rows, so the drawer disables row animation

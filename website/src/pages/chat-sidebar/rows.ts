@@ -19,7 +19,7 @@
  *  effect keyed on `filteredSlots` or a memo keyed on `laneOrder` re-runs only when that
  *  output can have changed. The result object, its `lanes` container, `staleSplit` and
  *  `views` are fresh per build: read their members, never key on them. */
-import type { ChatTag } from '../../types'
+import type { ChatFolder, ChatTag } from '../../types'
 import type { GuideStepPlan } from '../../guide/guideActions'
 import type { PaletteBoost } from '../../utils/sessionColors'
 import { isChatPageSurface } from '../../utils/channelOrigin'
@@ -190,6 +190,9 @@ export interface RowPlacement {
   /** A Slack code channel's conductor in the folder view, with its workers folded
    *  under it (`codeChannelCrew.ts`). Absent on every other row. */
   crew?: CodeChannelCrewView
+  /** The folder this copy names in front of its agent: set only in the "Needs you"
+   *  filter's list, where no folder is drawn around the row (./needsGroup). */
+  folderCrumb?: ChatFolder
 }
 
 /** The shell values every row shows the same way. The shell builds it once per change
@@ -286,6 +289,8 @@ export interface SessionRowView {
   folderConductor: boolean
   /** See `RowPlacement.crew`. */
   crew: CodeChannelCrewView | null
+  /** See `RowPlacement.folderCrumb`. */
+  folderCrumb: ChatFolder | null
   isActive: boolean
   /** Whether this row's own slot IS the sidebar's active slot — the raw
    *  `key === activeSlot` test, independent of the crew-window logic `isActive`
@@ -1017,6 +1022,7 @@ function rowView(slot: Slot, placement: RowPlacement, scene: RowScene, model: Vi
     conductor: placement.conductor ?? null,
     folderConductor: placement.folderConductor ?? false,
     crew: placement.crew ?? null,
+    folderCrumb: placement.folderCrumb ?? null,
     isActive: isActiveIn(scene, slot),
     // Raw comparison, NOT isActiveIn: the self-reference refusal must hold even
     // when a crew window covers the pane (where isActiveIn is false but the
@@ -1067,7 +1073,7 @@ export function opensElsewhereOf(slot: Slot): string | null {
 const VIEW_FIELDS: Record<keyof SessionRowView, true> = {
   slot: true, identity: true, localKey: true, peerId: true, peerName: true, scope: true, navScope: true,
   holdContainer: true, showDivider: true, orderStamp: true, rowAnimEnabled: true, rowMotionHeld: true, conductor: true,
-  folderConductor: true, crew: true,
+  folderConductor: true, crew: true, folderCrumb: true,
   isActive: true, isSidebarActiveSlot: true, isCrewParent: true, crewWindowCovers: true, isOut: true, isPinned: true, isUnread: true, isRunning: true, recent: true,
   subagentCount: true, subagentApprovalCount: true, digitBadge: true, isRenaming: true, renamingHere: true,
   renameValue: true, revealFlash: true, pinnedOrderIndex: true, drawnOrderIndex: true, pinnedReorderEnabled: true,

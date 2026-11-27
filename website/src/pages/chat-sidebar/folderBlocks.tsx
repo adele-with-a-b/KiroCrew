@@ -43,7 +43,7 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
     folderConductorPin, countSubfolderContents, folderCreateError, folderDragWithheld, folderEditInputRef, folderCancelEscapeRef, folderNameMatchIds,
     folderReorderable, folderSortMode, folderSubtrees, folders, foldersWithActiveSubtree, heldLane,
     hiddenByContainer, hideEmptyFolderBody, ime, instantCloseId, isActiveRow, isFolderFilteredOut,
-    isFolderHidden, listNarrowed, moveFolderTo, onMenuCloseAutoFocus, onOpenSlotInNewTab, onSelectSlot,
+    isFolderHidden, listNarrowed, moveFolderTo, needsGroup, onMenuCloseAutoFocus, onOpenSlotInNewTab, onSelectSlot,
     pinned, pinnedFolderAncestors, pinnedFolderSubtree, renameCommit, renderSessionRow, renderStaleSection, revealFlash, revealedContainers,
     searchRanked, setEditName, setEditScope, setEditingId, setFolderCleanupRoot, setFolderCreateError, setFolderModal, setFolderOfflineNotice, sidebarRows,
     slotFilter, slotFolders, splitStale, staleExpanded, startsAutomaticSection, suppressMenuRestore, kindSections,
@@ -105,11 +105,20 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
   }
 
   // ── Folder row: matches session-row width (full width minus drawer padding) ──
-  // Recursively check if a folder or any descendant contains an unread slot.
+  /** The rows a folder draws in its own body: its rows without the waiting ones the
+   *  "Needs you" rule draws elsewhere (./needsGroup). */
+  const drawnHere = (folderId: string): Slot[] => {
+    const rows = sidebarRows.folderTree.rowsIn(folderId)
+    return needsGroup.drawnElsewhere.size === 0 ? rows : rows.filter(s => !needsGroup.drawnElsewhere.has(sessionRowIdentity(s)))
+  }
+  // The local keys behind `drawnElsewhere` (a peer row is never filed in a folder).
+  const drawnElsewhereKeys = new Set([...needsGroup.rows, ...[...needsGroup.underCollapsed.values()].flat()].map(s => s.key))
+  // Recursively check if a folder or any descendant contains an unread slot. A
+  // waiting row drawn under the collapsed folder is not rolled up: it is on screen.
   const folderTreeHasUnread = (folderId: string, visited = new Set<string>()): boolean => {
     if (visited.has(folderId)) return false
     visited.add(folderId)
-    for (const k of unreadSet) { if (slotFolders[k] === folderId) return true }
+    for (const k of unreadSet) { if (slotFolders[k] === folderId && !drawnElsewhereKeys.has(k)) return true }
     return folders.some(f => f.parent_id === folderId && folderTreeHasUnread(f.id, visited))
   }
 
@@ -212,7 +221,7 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
   const narrowedSubtreeShowsSomething = (folder: ChatFolder, visited = new Set<string>()): boolean => {
     if (visited.has(folder.id)) return false
     visited.add(folder.id)
-    if (sidebarRows.folderTree.rowsIn(folder.id).length > 0) return true
+    if (drawnHere(folder.id).length > 0 || needsGroup.underCollapsed.has(folder.id)) return true
     if (folderNameMatchIds?.has(folder.id)) return true
     if (folderCreateError?.folderId === folder.id) return true
     if (hiddenByContainer.get(folder.id)?.length) return true
@@ -232,6 +241,16 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
       && !isFolderHidden(f) && !isFolderFilteredOut(f)
       && (!listNarrowed || narrowedSubtreeShowsSomething(f)))
       .sort(folderCompare)
+
+  /** The number on a folder's row (why it counts what it does: `renderFolderHeader`).
+   *  The row model's folder index: a peer row is never in a folder, so a peer key
+   *  colliding with a local one cannot count a session this machine does not own
+   *  toward the folder it does. With "Include Subfolder Contents in Folder Counts"
+   *  on, each drawable subfolder's total is added in, by the same two predicates,
+   *  so the number is the sum of the numbers on the rows under it. */
+  const folderCount = (folder: ChatFolder): number => countSubfolderContents
+    ? countWithSubfolders(folder, drawableChildFolders, f => sidebarRows.folderTree.rowsIn(f.id).length)
+    : sidebarRows.folderTree.rowsIn(folder.id).length + drawableChildFolders(folder).length
 
   // The folder's action items, rendered once for BOTH surfaces that open them:
   // the row's ⋯ button (a DropdownMenu) and a right-click on the row (a Radix
@@ -402,17 +421,7 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
     // a search active, a child whose whole subtree draws nothing is not part of
     // what this row holds either, and counting it printed a number the body below
     // could not account for.
-    const childFolders = drawableChildFolders(folder)
-    // The row model's folder index: a peer row is never in a folder, so a peer key
-    // colliding with a local one cannot count a session this machine does not own
-    // toward the folder it does.
-    const childSlots = sidebarRows.folderTree.rowsIn(folder.id)
-    // With "Include Subfolder Contents in Folder Counts" on, each drawable
-    // subfolder's total is added in, by the same two predicates, so the number
-    // is the sum of the numbers on the rows under it.
-    const count = countSubfolderContents
-      ? countWithSubfolders(folder, drawableChildFolders, f => sidebarRows.folderTree.rowsIn(f.id).length)
-      : childSlots.length + childFolders.length
+    const count = folderCount(folder)
     const collapsed = !!folder.collapsed
     // One derivation, not two: `renderFolderBlock` decides the body from the nodes
     // it renders, and this row follows that decision. With the count now built
@@ -782,7 +791,7 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
           *  it follow pinned parents without inserting layout; all remaining
           *  child-row pixels and the child body keep their own droppable. A
           *  session already filed directly here gets no no-op target. */}
-        {activeDrag?.type === 'session' && !collapsed && childFolders.length > 0
+        {activeDrag?.type === 'session' && !collapsed && drawableChildFolders(folder).length > 0
           && slotFolders[activeDrag.id] !== folder.id && !mateManaged
           && <ParentFolderDropTarget folder={folder} depth={depth} />}
       </div>
@@ -830,7 +839,9 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
   const renderFolderBlock = (folder: ChatFolder, depth: number, visited = new Set<string>(), dragHandleProps?: React.HTMLAttributes<HTMLElement>, forceCollapsed = false): React.ReactNode[] => {
     if (depth > 10 || visited.has(folder.id)) return []
     visited.add(folder.id)
-    const allChildSlots = sidebarRows.folderTree.rowsIn(folder.id)
+    // Without the waiting rows the "Needs you" rule draws elsewhere: in the filter's
+    // list on top, or under a collapsed folder (this one or an outer one).
+    const allChildSlots = drawnHere(folder.id)
     /**
      * The one row this folder is drawn AROUND, or null.
      *
@@ -852,7 +863,8 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
      * this folder draws. Null while a filter conceals the root, which is also
      * why the row it returns is always one of `allChildSlots` below.
      */
-    const folderConductorSlot = folderConductorPin ? folderConductorOf(folder.id) : null
+    const pinnedConductor = folderConductorPin ? folderConductorOf(folder.id) : null
+    const folderConductorSlot = pinnedConductor && !needsGroup.drawnElsewhere.has(sessionRowIdentity(pinnedConductor)) ? pinnedConductor : null
     // What the body draws: every row in the folder except the pinned one. The
     // folder HEADER's count still reads `rowsIn` and so still counts the
     // conductor -- it says how many sessions are filed here, and that is still
@@ -1015,7 +1027,10 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
     // cannot show it. `folderNameMatchIds` covers the matched folder's subtree, so
     // a matched parent keeps its empty children too: they are part of what the
     // query asked to see.
-    if (listNarrowed && childNodes.length === 0
+    // A collapsed folder still shows the waiting rows it holds (./needsGroup), then
+    // how many more it holds. Its closed body leaves those rows out.
+    const waits = needsGroup.underCollapsed.get(folder.id) ?? []
+    if (listNarrowed && childNodes.length === 0 && waits.length === 0
       && folderCreateError?.folderId !== folder.id
       && !folderNameMatchIds?.has(folder.id)) return []
     // Wrap children in a bordered container so the folder's extent is visually
@@ -1027,7 +1042,27 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
     // most of the sidebar's height on rows holding nothing. Dropping the body
     // rather than collapsing it is why there is no per-folder expansion state:
     // nothing is hidden, so nothing needs re-reaching.
-    const emptyBody = hideEmptyFolderBody && childNodes.length === 0
+    const emptyBody = hideEmptyFolderBody && childNodes.length === 0 && waits.length === 0
+    const waitsHold = waits.length > 0 ? heldLane(waits, 'list', `tree:folder-waits:${folder.id}`) : null
+    const waitNodes = waitsHold && (() => {
+      const shown = waitsHold.rows
+      const filedHere = shown.filter(s => slotFolders[s.key] === folder.id).length
+      // The row's own number less the rows shown, so the two always add up.
+      const more = Math.max(0, folderCount(folder) - (countSubfolderContents ? shown.length : filedHere))
+      // The open body's own inset, so the strip's rows sit where the body's rows sit.
+      return (
+        <div key={`folder-waits-${folder.id}`} style={{ padding: FOLDER_BODY_OPEN_PADDING }}>
+          <div className={FOLDER_BODY_CLS} data-testid={`folder-waits-${folder.id}`}>
+            {shown.map((s, i) => renderSessionRow(s, depth + 1, i < shown.length - 1 && !isActiveRow(s) && !isActiveRow(shown[i + 1]), waitsHold.navScope, waitsHold.navScope, waitsHold.container))}
+            {more > 0 && (
+              <div className="px-3.5 pt-0.5 pb-1.5 text-[11px] text-muted select-none" data-testid={`folder-waits-more-${folder.id}`}>
+                {i18nT('pages.chatSidebar.needs_you_more_in_folder', { count: more, name: folderNameText(folder) })}
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    })()
     const wrapped = childNodes.length > 0 ? (
       <div key={`folder-children-${folder.id}`} className={FOLDER_BODY_CLS}>
         <FolderRail name={folder.name} id={folder.id} onToggle={e => toggleListFolderCollapse(folder, e.currentTarget)} />
@@ -1070,6 +1105,7 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
           <div ref={setNodeRef} data-folder-drop={folder.id} style={{ '--folder-pin-stack': `calc(var(--folder-row-sticky-h) * ${depth + 1})` } as React.CSSProperties} className={`rounded-md transition-all mb-0.5${isOver ? ' ring-1 ring-accent' : ''}`}>
             {renderFolderHeader(folder, dragHandleProps, emptyBody, depth, forceCollapsed)}
             {renderFolderCreateError(folder.id)}
+            {waitNodes}
             {wrapped && <FolderBody key={`folder-body-${folder.id}`} padding={FOLDER_BODY_OPEN_PADDING} open={!folder.collapsed && !forceCollapsed} instantClose={instantCloseId === folder.id}>{wrapped}</FolderBody>}
           </div>
         )}

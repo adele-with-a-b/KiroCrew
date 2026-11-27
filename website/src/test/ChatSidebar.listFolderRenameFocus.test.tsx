@@ -157,6 +157,8 @@ function FolderBlockRig({
     hiddenByContainer: new Map<string, ChatFolder[]>(),
     revealFlash: null,
     revealedContainers: new Set<string>(),
+    // Nothing waits: no list on top, nothing under a collapsed folder.
+    needsGroup: { rows: [], hiddenByFilter: 0, underCollapsed: new Map(), drawnElsewhere: new Set<string>() },
 
     // Stubs for list-rendering helpers
     sidebarRows: {

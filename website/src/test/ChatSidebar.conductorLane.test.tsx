@@ -196,27 +196,28 @@ function renderSidebar(
   return { ...utils, store, pushFrame, qc }
 }
 
-/** The "Needs you" group drawn on top of the lane (../pages/chat-sidebar/needsGroup). */
+/** The "Needs you" list drawn on top of the lane while its filter narrows (../pages/chat-sidebar/needsGroup). */
 const NEEDS_GROUP = '[data-testid="needs-you-group"]'
 
-/** The lane's tree rows (every row outside the "Needs you" group), optionally of one key. */
+/** The lane's tree rows (every row outside the "Needs you" list), optionally of one key. */
 function treeRowEls(lane: HTMLElement, key?: string): Element[] {
   return Array.from(lane.querySelectorAll(key ? `[data-slot-key="${key}"]` : '[data-slot-key]'))
     .filter(el => !el.closest(NEEDS_GROUP))
 }
 
-/** Row keys in the conductor lane's tree, in render order. A chat that waits on the
- *  person is also drawn in the "Needs you" group on top; `needsGroupRows` reads that. */
+/** Row keys in the conductor lane's tree, in render order. While the Needs you
+ *  filter narrows, a waiting chat is drawn in the list on top instead; `needsGroupRows`
+ *  reads that list, which is empty with the filter off. */
 function laneRows(lane: HTMLElement): string[] {
   return treeRowEls(lane).map(el => el.getAttribute('data-slot-key') ?? '')
 }
 
-/** The row of `key` where the tree draws it, not its copy in the "Needs you" group. */
+/** The row of `key` where the tree draws it. */
 function treeRow(lane: HTMLElement, key: string): Element | null {
   return treeRowEls(lane, key)[0] ?? null
 }
 
-/** Row keys in the "Needs you" group on top of the lane, oldest wait first. */
+/** Row keys in the "Needs you" list on top of the lane, oldest wait first. */
 function needsGroupRows(lane: HTMLElement): string[] {
   const group = lane.querySelector(NEEDS_GROUP)
   return group ? Array.from(group.querySelectorAll('[data-slot-key]')).map(el => el.getAttribute('data-slot-key') ?? '') : []
@@ -774,8 +775,10 @@ describe('chat sidebar — conductor lane', () => {
     const { getByTestId } = renderSidebar()
     expect(laneRows(getByTestId('conductor-view-lane'))).toEqual(['k-conductor'])
     expect(getByTestId('conductor-child-count-k-conductor').textContent).toBe('2')
-    // k-deep waits on an answer: the "Needs you" group draws it on top, its branch still shut.
-    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+    // k-deep waits on an answer behind the shut branch: the conductor's own count
+    // speaks for it, and no group on top draws it a second time.
+    expect(getByTestId('conductor-needs-you-k-conductor').textContent).toBe('1')
+    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual([])
   })
 
   it('every level is shut by default, not just the root', () => {
@@ -787,7 +790,7 @@ describe('chat sidebar — conductor lane', () => {
     fireEvent.click(getByTestId('conductor-chevron-k-conductor'))
     expect(laneRows(getByTestId('conductor-view-lane'))).toEqual(['k-conductor', 'k-worker-a', 'k-worker-b'])
     expect(getByTestId('conductor-child-count-k-worker-a').textContent).toBe('1')
-    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual([])
   })
 
   it('collapsing hides that row\u2019s subtree and nothing else', () => {
@@ -797,8 +800,8 @@ describe('chat sidebar — conductor lane', () => {
     // Only Worker A's branch folds; Worker B is a sibling and stays.
     expect(laneRows(getByTestId('conductor-view-lane')))
       .toEqual(['k-conductor', 'k-worker-a', 'k-worker-b'])
-    // The fold hides the tree's copy only: the waiting k-deep stays in the group on top.
-    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+    // The waiting k-deep is drawn once: by Worker A's count while its branch is shut.
+    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual([])
   })
 
   it('renders three levels open, with depth on the row', () => {
@@ -806,7 +809,7 @@ describe('chat sidebar — conductor lane', () => {
     const { getByTestId } = renderSidebar()
     const lane = getByTestId('conductor-view-lane')
     expect(laneRows(lane)).toEqual(['k-conductor', 'k-worker-a', 'k-deep', 'k-worker-b'])
-    expect(needsGroupRows(lane)).toEqual(['k-deep'])
+    expect(needsGroupRows(lane)).toEqual([])
     // Depth is on the row wrapper, which is what drives the indentation.
     const deep = treeRow(lane, 'k-deep')!.closest('[data-conductor-depth]')
     expect(deep?.getAttribute('data-conductor-depth')).toBe('2')
@@ -822,7 +825,7 @@ describe('chat sidebar — conductor lane', () => {
 
     const second = renderSidebar()
     expect(laneRows(second.getByTestId('conductor-view-lane'))).toEqual(['k-conductor', 'k-worker-a', 'k-worker-b'])
-    expect(needsGroupRows(second.getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+    expect(needsGroupRows(second.getByTestId('conductor-view-lane'))).toEqual([])
   })
 
   it('a collapsed conductor shows its child count', () => {
@@ -969,7 +972,7 @@ describe('chat sidebar — conductor lane', () => {
     const lane = getByTestId('conductor-view-lane')
 
     expect(laneRows(lane)).toEqual(['k-conductor', 'k-worker-a', 'k-deep'])
-    expect(needsGroupRows(lane)).toEqual(['k-deep'])
+    expect(needsGroupRows(lane)).toEqual([])
     const deep = treeRow(lane, 'k-deep')!.closest('[data-conductor-depth]')
     expect(deep?.getAttribute('data-conductor-depth')).toBe('2')
   })
@@ -1089,7 +1092,7 @@ describe('chat sidebar — conductor lane', () => {
     const { getByTestId } = renderSidebar(adopted as never)
     const lane = getByTestId('conductor-view-lane')
     expect(laneRows(lane)).toEqual(['k-new', 'k-conductor', 'k-worker-a', 'k-deep', 'k-worker-b'])
-    expect(needsGroupRows(lane)).toEqual(['k-deep'])
+    expect(needsGroupRows(lane)).toEqual([])
     const moved = lane
       .querySelector('[data-slot-key="k-worker-a"]')!
       .closest('[data-conductor-depth]')
@@ -1107,7 +1110,7 @@ describe('chat sidebar — conductor lane', () => {
     const { getByTestId } = renderSidebar(released as never)
     const lane = getByTestId('conductor-view-lane')
     expect(laneRows(lane)).toEqual(['k-conductor', 'k-worker-b', 'k-worker-a', 'k-deep'])
-    expect(needsGroupRows(lane)).toEqual(['k-deep'])
+    expect(needsGroupRows(lane)).toEqual([])
     const root = lane.querySelector('[data-slot-key="k-worker-a"]')!.closest('[data-conductor-depth]')
     expect(root?.getAttribute('data-conductor-depth')).toBe('0')
     expect(within(lane).queryByTestId('conductor-orphan-k-worker-a')).toBeNull()
@@ -1127,7 +1130,7 @@ describe('chat sidebar — conductor lane', () => {
     ]
     const { getByTestId, pushFrame } = renderSidebar(before as never)
     expect(laneRows(getByTestId('conductor-view-lane'))).toEqual(['k-new', 'k-conductor'])
-    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual([])
 
     pushFrame(before.map(row =>
       row.key === 'k-conductor' ? { ...row, parent: { slot: 'k-new', key: 'k-new' } } : row,
@@ -1207,7 +1210,7 @@ describe('chat sidebar — conductor lane', () => {
     openAllBut('k-conductor')
     const { getByTestId, pushFrame } = renderSidebar()
     expect(laneRows(getByTestId('conductor-view-lane'))).toEqual(['k-conductor'])
-    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual([])
 
     pushFrame([
       ...NESTED,
@@ -1227,7 +1230,7 @@ describe('chat sidebar — conductor lane', () => {
     openAllBut('k-conductor')
     const { getByTestId, pushFrame } = renderSidebar()
     expect(laneRows(getByTestId('conductor-view-lane'))).toEqual(['k-conductor'])
-    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+    expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual([])
 
     pushFrame(NESTED.map(row => (row.key === 'k-worker-a' ? { ...row, parent: null } : row)) as never)
 
@@ -1583,7 +1586,7 @@ describe('chat sidebar — conductor lane', () => {
     const { getByTestId, getByPlaceholderText } = renderSidebar()
     const lane = () => getByTestId('conductor-view-lane')
     expect(laneRows(lane())).toEqual(['k-conductor', 'k-worker-a', 'k-deep', 'k-worker-b'])
-    expect(needsGroupRows(lane())).toEqual(['k-deep'])
+    expect(needsGroupRows(lane())).toEqual([])
     const search = getByPlaceholderText(/search/i)
     fireEvent.change(search, { target: { value: 'Deep' } })
     // The match is two levels down and renders without any expanding.
@@ -1656,8 +1659,8 @@ describe('chat sidebar — conductor lane', () => {
       const { getByTestId } = renderSidebar(NESTED, [], null, {}, [], [MEMBER, ...NESTED])
       expect(laneRows(getByTestId('conductor-view-lane')))
         .toEqual(['k-conductor', 'k-worker-a', 'k-deep', 'k-worker-b'])
-      // The group on top draws a listed chat only; the member is never borrowed into it.
-      expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual(['k-deep'])
+      // No group on top: the listed waiting chat is drawn in its place, once.
+      expect(needsGroupRows(getByTestId('conductor-view-lane'))).toEqual([])
     })
 
     it('follows a chain of unlisted creators, not just one level', () => {
