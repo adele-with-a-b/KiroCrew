@@ -107,6 +107,8 @@ or `consecutive_failures` for turns that started and then errored or timed out)
 starts again by itself once a turn completes in its session, so an outage does
 not leave it off after the model answers again. A loop you paused or stopped
 yourself, a finished one, and one that ran out its cap or budget stay stopped.
+That includes a pause that lands on a loop that has just stood down: it counts
+as your pause, and the loop stays stopped until you resume it.
 
 Each stop is logged once at WARNING in `gateway.log` as an
 `AutoNudge: … stopped — reason=…` line naming the reason, the cycles run and the

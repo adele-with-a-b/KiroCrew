@@ -40,6 +40,7 @@ from kiro_crew.autonudge_service.model import (
     _MIN_IDLE_SECS,
     AUTONUDGE_STOP_REASON,
     CYCLE_CAP_REASON,
+    FAILURE_STANDDOWN_REASONS,
     FINISHED_LOOP_REASONS,
     MANUAL_STOP_REASON,
     RUNTIME_BUDGET_REASON,
@@ -1032,7 +1033,7 @@ async def _update_unserialized(
                 not active
                 and stopped_reason is None
                 and not loop.active
-                and reason_in(loop.stopped_reason, _KEPT_STOP_REASONS)
+                and reason_in(loop.stopped_reason, _KEPT_STOP_REASONS - FAILURE_STANDDOWN_REASONS)
             ):
                 # The MIRROR of the race above: the bound landed first and a
                 # reasonless pause (the goal popover's, pressed off a stale
@@ -1041,6 +1042,9 @@ async def _update_unserialized(
                 # the loop ended. A FINISHED stop is kept for one more reason:
                 # its reason is what refuses the revival, so "manual" over it
                 # would hand Play back on a loop with nothing to resume.
+                # The two failure stand-downs are left out: a completed turn
+                # restarts a loop stopped for one of them, so the pause falls
+                # through and records "manual", which nothing restarts.
                 logger.info(
                     "AutoNudge: loop %s keeps its %s stop on reasonless inactive update",
                     loop.id,

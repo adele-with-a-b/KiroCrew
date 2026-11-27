@@ -350,12 +350,34 @@ async def test_a_stop_that_changed_before_the_revival_runs_is_left_alone(
     svc, _nosleep, monkeypatch
 ):
     """The hook only schedules the revival, and the stop is read again under the
-    lock. A pause recorded in between (written here as its stored reason) wins."""
+    lock. A person's pause that is ahead of it in the queue for that lock wins."""
     loop = await _stood_down(svc, CONSECUTIVE_FAILURE_REASON)
     armed = _record_arms(svc, monkeypatch)
 
+    # Created first, so it reaches the lock first; the hook still reads a stand-down.
+    pause = asyncio.ensure_future(svc.update(loop.id, active=False))
     svc.notify_cycle_landed(SLOT, succeeded=True)
-    svc._loops[loop.id].stopped_reason = MANUAL_STOP_REASON
+    await pause
+    await _settle(svc)
+
+    stopped = svc._loops[loop.id]
+    assert (stopped.active, stopped.stopped_reason) == (False, MANUAL_STOP_REASON)
+    assert armed == []
+    await _stop_and_drain(svc)
+
+
+@pytest.mark.parametrize("reason", sorted(_STREAK_FIELD))
+@pytest.mark.asyncio
+async def test_a_pause_on_a_loop_that_just_stood_down_holds(svc, _nosleep, monkeypatch, reason):
+    """Pause pressed off a reading that still said running, a moment after the timer
+    stood the loop down. The route sends ``active=False`` and no reason. That is a
+    person's decision, so it is recorded as one and a completed turn leaves the
+    loop stopped."""
+    loop = await _stood_down(svc, reason)
+    armed = _record_arms(svc, monkeypatch)
+
+    await svc.update(loop.id, active=False)
+    svc.notify_cycle_landed(SLOT, succeeded=True)
     await _settle(svc)
 
     stopped = svc._loops[loop.id]

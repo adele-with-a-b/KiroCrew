@@ -205,8 +205,10 @@ countdown at the loop's interval; no bind or `monitor_start` is needed. A turn t
 person stopped reaches the same hook with `succeeded=False` and restarts nothing.
 Every other stop stays as it is: a person's pause, an app's `autonudge_stop`, a
 finished subject, the stop file, a spent cap or budget, and any reason this
-version does not know. A pause pressed on a loop that already stood down keeps the
-stand-down reason (`_KEPT_STOP_REASONS`), so it does not hold the loop off.
+version does not know. A pause pressed on a loop that already stood down for one
+of those two reasons (off a reading that still said running) records `manual` in
+place of the stand-down reason, so the loop stays stopped; every other reason in
+`_KEPT_STOP_REASONS` is kept under such a pause.
 
 A `work-ledger` watch has its own quiet floor while no worker has reported.
 Every gated loop is delivered anyway after `_MAX_QUIET_STREAK` (10) quiet

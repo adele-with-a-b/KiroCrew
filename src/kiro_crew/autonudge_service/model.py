@@ -301,7 +301,10 @@ _REPLACEABLE_LOOP_STOP_REASONS = (
 #: reaching a row one of these already stopped keeps the earlier reason: the record
 #: keeps why the loop ended, which the popover words its state by -- and for a
 #: finished loop the reason is also what refuses the revival, so ``manual`` stamped
-#: over it would hand Play back on a loop with nothing to resume.
+#: over it would hand Play back on a loop with nothing to resume. One exception, for
+#: the reasonless pause only: on a ``FAILURE_STANDDOWN_REASONS`` stop it records
+#: ``manual``, because a completed turn restarts those and must not restart a loop a
+#: person paused.
 _KEPT_STOP_REASONS = _TERMINAL_BOUND_REASONS | FINISHED_LOOP_REASONS
 
 
