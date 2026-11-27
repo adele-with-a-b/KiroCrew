@@ -13,10 +13,11 @@ reports memory pressure. Crew holds no ceiling on worker chats per computer (the
 execution cap counts subagents, the goal's concurrency cap counts one project's
 seats), so no "N of M" is invented here: the room is the memory the probe reads.
 
-A linked Crew's room is the word the patrol's ``[seats]`` line last read for it
-(``patrol_seats.fresh_rooms``), under the name its stories' ``runs_on`` carries.
-That is read only: this route starts no crew read of its own. A crew no patrol has
-read lately is left out, and the page then shows its count alone.
+A linked Crew's room is the word the patrol's ``[seats]`` line says for it, by the
+same rule (``patrol_seats.rooms_now``): ``unreachable`` once it is not connected,
+none with the remote-dispatch preview off. It is under the name its stories'
+``runs_on`` carries, and read only: this route starts no crew read of its own. A
+crew with no fresh reading is left out, and the page then shows its count alone.
 
 Owner-gated like ``GET /api/crew-board``, and cookie-authed for the same reason:
 a browser is its only caller.
@@ -34,8 +35,8 @@ from kiro_crew.dashboard.handlers._shared import require_owner_dashboard_request
 
 
 class CrewRoom(TypedDict):
-    """A linked Crew's last room reading: ``""`` has room, else what it is short of
-    (``memory``, ``disk``, ``cpu``), ``unknown`` or ``unreachable``."""
+    """A linked Crew's room word: ``""`` has room, else what it is short of
+    (``memory``, ``disk``, ``cpu``), or ``unreachable``."""
 
     name: str
     room: str
@@ -72,16 +73,20 @@ def capacity_payload(
 
 
 def crew_rooms(state: Any) -> list[CrewRoom]:
-    """Each crew the patrol read lately, named as its stories' ``runs_on`` names it."""
-    from kiro_crew.dashboard.handlers.work_ledger_read import _crew_names
-    from kiro_crew.dashboard.patrol_seats import fresh_rooms
+    """Each linked crew's room word by the patrol's own rule, but ``unknown``. BLOCKING.
 
-    rooms = fresh_rooms(state)
-    if not rooms:
-        return []
-    names = _crew_names(state)
+    The registry's name is the one its stories' ``runs_on`` carries.
+    """
+    from kiro_crew.dashboard import patrol_seats
+    from kiro_crew.dashboard.handlers import remote_placement as placement
+
+    rooms = patrol_seats.rooms_now(state, placement.remote_dispatch_settings())
     return sorted(
-        ({"name": names.get(cid) or cid, "room": word} for cid, word in rooms.items()),
+        (
+            {"name": room.name, "room": room.word}
+            for room in rooms
+            if room.word != patrol_seats.UNKNOWN
+        ),
         key=lambda crew: crew["name"],
     )
 
