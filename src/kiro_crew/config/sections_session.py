@@ -36,6 +36,14 @@ BOT_MAX_WORKERS_DEFAULT = 0
 BOT_MAX_WORKERS_MIN = 0
 BOT_MAX_WORKERS_MAX = 32
 
+# session.conductor_context_window: Claude Code's auto-compact window, in tokens,
+# for a Conductor chat on the Claude backend (``acp/claude_conductor_window.py``).
+# 0 sends nothing, so such a chat follows
+# Claude Code's own settings like every other session. The ceiling only bounds a
+# hand-edited value; Claude Code itself keeps a window inside what the model serves.
+CONDUCTOR_CONTEXT_WINDOW_DEFAULT = 600_000
+CONDUCTOR_CONTEXT_WINDOW_MAX = 2_000_000
+
 
 def _archive_retention_days(session_data: dict) -> int:
     """Resolve session.archive_retention_days, normalizing the disable sentinel.
@@ -125,7 +133,24 @@ class SessionConfig:
             "new session seeded with its "
             "session-ledger snapshot and the newest messages as text. Older messages "
             "and tool output stay in the chat's transcript. Read at each turn start, "
-            "so a change needs no restart.",
+            "so a change needs no restart. A Conductor chat on Claude with a "
+            "Conductor Context Window above 400K tokens is trimmed for size only "
+            "past that window.",
+        ),
+    )
+    conductor_context_window: int = field(
+        default=CONDUCTOR_CONTEXT_WINDOW_DEFAULT,
+        metadata=_meta(
+            "Conductor Context Window",
+            "The context window a Conductor chat on the Claude backend runs with, "
+            "in tokens (0-2000000): Claude Code's auto-compact window for those "
+            "chats. Claude Code compacts a chat some way under its window, and the "
+            "chat's context meter reads a percent of it. It outranks the "
+            "autoCompactWindow in Claude Code's own settings for those chats only: "
+            "worker chats, Bots and Claude Code in a terminal keep theirs. 0 sends "
+            "nothing, so a Conductor chat follows Claude Code's own settings too. "
+            "Read when a chat's Claude session starts, so a change reaches a chat "
+            "at its next new session and needs no restart of Kiro Crew.",
         ),
     )
     idle_compaction: bool = field(

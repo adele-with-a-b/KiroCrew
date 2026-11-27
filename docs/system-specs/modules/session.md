@@ -2217,7 +2217,8 @@ against sweep completeness, and are torn down at `close_all`.
   - `ACP_BACKENDS_HARNESS_MANAGED_COMPACTION` (KAS, claude) is **declined** at the
     global threshold (`"compact_unsupported"`, see the gate ladder below), read
     through `harness_managed_compaction_backend`. claude compacts at Claude Code's
-    own `autoCompactWindow`, the number its terminal sessions use too, and its
+    own `autoCompactWindow`, the number its terminal sessions use too (a
+    Conductor chat at `session.conductor_context_window` instead), and its
     `compaction_update` resets the meter; it is in `ACP_BACKENDS_COMPACT`, so a
     manual `/compact` is served as a prompt. KAS is also in
     `ACP_BACKENDS_COMPACT`, so a user's manual `/compact` is served (the session

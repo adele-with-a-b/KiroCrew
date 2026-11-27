@@ -522,6 +522,15 @@ table idle compaction reads, so claude is 300 s or 3600 s only when
 keeps its measured 300 s. An unknown life never trims under 400K, because a
 trim on a warm cache drops detail for nothing.
 
+A Conductor chat on claude runs with its own window,
+`session.conductor_context_window` (600000 by default; see
+[claude-code-provider](../system-specs/modules/claude-code-provider.md), "A
+Conductor chat's context window"). The 400K line is the larger of 400K and that
+window for such a chat (`_context_cap_high_tokens`), read from the same setting,
+so the cap never ends a session for size before Claude Code's own compaction at
+the window. The 200K cold-cache rule is unchanged, and so is every chat Crew
+gives no window: the conductor on KAS, a Bot's thread, a Bot's worker.
+
 ### What comes back after compaction
 
 kiro-cli compacts its own window and drops the session-start blocks with it.
