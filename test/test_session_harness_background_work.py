@@ -547,8 +547,11 @@ class TestRssRecycleHonoursHarnessWork:
 
         manager.reset.assert_awaited_once()
         reason = cb.await_args.kwargs["reason"]
-        assert reason.startswith(f"memory limit ({rss}MB)")
-        assert 'workflow "sleep-echo"' in reason
+        assert reason.startswith(
+            f"memory limit ({rss}MB); its agent started background work earlier "
+            '(workflow "sleep-echo"); '
+        )
+        assert "may have been stopped" not in reason
 
     @pytest.mark.asyncio
     async def test_the_hard_ceiling_scales_with_the_runtimes_tenant_count(self) -> None:
@@ -825,8 +828,10 @@ class TestExpiryPastTheHoldIsAnnounced:
             (
                 "dashboard:x",
                 'idle; its agent started background work 67 min ago (workflow "long-run"), '
-                "longer than the 60 min hold set by session.harness_background_hold_secs, "
-                "so that work may have been stopped",
+                "longer than the 60 min hold set by session.harness_background_hold_secs; "
+                # No runtime pid is recorded for this session, so nothing was read.
+                "what the recycle stopped could not be read on this host: "
+                "check a job by its pid or its exit file",
             )
         ]
         assert any(
@@ -881,6 +886,209 @@ class TestExpiryPastTheHoldIsAnnounced:
             m.startswith("Idle sweep: dashboard:x tab closed; its agent started background work")
             for m in caplog.messages
         )
+
+
+# --------------------------------------------------------------------------- #
+# What the recycle stopped, by pid
+# --------------------------------------------------------------------------- #
+
+#: The runtime's pid in the process tables below.
+_ROOT = 4100
+
+_UNTRACKED_TAIL = (
+    "a job that had detached from its command (nohup, setsid) is not tracked: "
+    "check it by its pid or its exit file"
+)
+
+
+def _own_process_table(
+    monkeypatch: pytest.MonkeyPatch,
+    table: dict[int, str],
+    *,
+    descendants: dict[int, str],
+    leftovers: dict[int, str],
+    names: dict[int, str],
+    runtime_group: tuple[int, ...] = (),
+) -> None:
+    """Put the recycle's process reads on *table* (pid -> start id).
+
+    *descendants* are what the kill path's own record holds under the runtime,
+    *leftovers* the members of its session outside its tree; a pid in
+    *runtime_group* shares the runtime's process group, every other pid leads its
+    own. Only seams the readers already go through are replaced, so no process is
+    started and none is read.
+    """
+    from kiro_crew import platform_compat, session_pid
+
+    group = {_ROOT, *runtime_group}
+    monkeypatch.setattr(platform_compat, "IS_WINDOWS", False)
+    monkeypatch.setattr(platform_compat, "get_process_start_id", table.get)
+    monkeypatch.setattr(platform_compat, "pgroup_of", lambda pid: _ROOT if pid in group else pid)
+    monkeypatch.setattr(platform_compat, "pid_is_zombie", lambda pid: False)
+    monkeypatch.setattr(
+        session_pid,
+        "_provider_descendant_records",
+        lambda provider, pid, **_: {cpid: (start, None) for cpid, start in descendants.items()},
+    )
+    monkeypatch.setattr(
+        session_pid,
+        "find_session_leftovers",
+        lambda root: session_pid.SessionLeftovers(
+            table.get(root, ""),
+            [session_pid.Leftover(pid, start, 0, names[pid]) for pid, start in leftovers.items()],
+        ),
+    )
+    monkeypatch.setattr(session_pid, "_process_label", lambda pid: names[pid])
+
+
+def _idle_manager_on_root(launch: tuple[float, str], reset: Any) -> tuple[Any, list[Any]]:
+    manager = _make_manager(rss_max_mb=0)
+    sess = _session_with_launch(launch)
+    sess.last_used = -10_000.0  # idle on any monotonic clock, with no clock read
+    manager._sessions["dashboard:x"] = sess
+    manager.reset = AsyncMock(side_effect=reset)
+    manager.get_pid = MagicMock(return_value=_ROOT)
+    notices: list[tuple[str, str]] = []
+    manager.set_recycle_callback(_notice_recorder(notices))
+    return manager, notices
+
+
+class TestTheNoticeSaysWhatTheRecycleStopped:
+    @pytest.mark.asyncio
+    async def test_a_stopped_job_and_a_surviving_one_are_each_named_by_pid(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A chat recycled past the hold must be able to tell whether the job it
+        started is dead: one that cannot starts a second copy or waits on a dead
+        one. 4242 is a command still under the runtime, which the reset ends; 4300
+        is a job an earlier command left behind, which it does not reach."""
+        table = {_ROOT: "s-4100", 4242: "s-4242", 4300: "s-4300"}
+        _own_process_table(
+            monkeypatch,
+            table,
+            descendants={4242: "s-4242"},
+            leftovers={4300: "s-4300"},
+            names={4242: "python3", 4300: "make"},
+        )
+
+        async def _reset(key: str, **_: Any) -> bool:
+            del table[_ROOT], table[4242]
+            return True
+
+        manager, notices = _idle_manager_on_root((67 * 60.0, "background command"), _reset)
+
+        await manager._expire_idle(timeout_secs=1)  # flake-ok: idle threshold, nothing waits on it
+
+        assert notices == [
+            (
+                "dashboard:x",
+                "idle; its agent started background work 67 min ago (background command), "
+                "longer than the 60 min hold set by session.harness_background_hold_secs; "
+                "its runtime (pid 4100) was ended, and a workflow or task running inside "
+                "it with it; stopped with it: pid 4242 python3; "
+                "still running: pid 4300 make; " + _UNTRACKED_TAIL,
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_runtime_another_chat_keeps_is_said_to_be_running(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A reset that ends no process (a co-tenant still holds the runtime) must
+        not claim it stopped anything; and the harness's own servers, which share
+        the runtime's process group, are not listed as jobs."""
+        table = {_ROOT: "s-4100", 4110: "s-4110", 4242: "s-4242"}
+        _own_process_table(
+            monkeypatch,
+            table,
+            descendants={4110: "s-4110", 4242: "s-4242"},
+            leftovers={},
+            names={4110: "node", 4242: "python3"},
+            runtime_group=(4110,),
+        )
+
+        async def _reset(key: str, **_: Any) -> bool:
+            return True
+
+        manager, notices = _idle_manager_on_root(_SIXTY_SEVEN_MIN, _reset)
+
+        await manager._expire_idle(timeout_secs=1)  # flake-ok: idle threshold, nothing waits on it
+
+        assert notices[0][1].endswith(
+            "session.harness_background_hold_secs; its runtime (pid 4100) is still running; "
+            "still running: pid 4242 python3; " + _UNTRACKED_TAIL
+        )
+
+    def test_a_signalled_descendant_is_read_again_before_it_counts_as_running(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The kill waits for the runtime's root, not for each descendant it
+        signals, so one read in that gap would be named as still running."""
+        from kiro_crew import session_recycle_jobs as jobs
+
+        table = {_ROOT: "s-4100", 4242: "s-4242", 4300: "s-4300"}
+        _own_process_table(
+            monkeypatch,
+            table,
+            descendants={4242: "s-4242"},
+            leftovers={4300: "s-4300"},
+            names={4242: "python3", 4300: "make"},
+        )
+        before = jobs.read_jobs(object(), _ROOT)
+        assert before is not None
+        del table[_ROOT]
+        waits: list[float] = []
+
+        def _settle(secs: float) -> None:
+            waits.append(secs)
+            del table[4242]
+
+        fate = jobs.read_fate(before, settle=_settle)
+
+        assert waits == [jobs.SETTLE_SECS]
+        assert [job.pid for job in fate.stopped] == [4242]
+        assert [job.pid for job in fate.running] == [4300]
+
+    def test_a_pid_taken_by_another_process_reads_as_stopped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from kiro_crew import session_recycle_jobs as jobs
+
+        table = {_ROOT: "s-4100", 4300: "s-4300"}
+        _own_process_table(
+            monkeypatch, table, descendants={}, leftovers={4300: "s-4300"}, names={4300: "make"}
+        )
+        before = jobs.read_jobs(object(), _ROOT)
+        assert before is not None
+        table[4300] = "s-someone-else"
+
+        fate = jobs.read_fate(before, settle=lambda secs: None)
+
+        assert (fate.root_gone, fate.running) == (False, [])
+        assert jobs.fate_clause(before, fate) == (
+            "its runtime (pid 4100) is still running; stopped: pid 4300 make; " + _UNTRACKED_TAIL
+        )
+
+    def test_a_long_list_is_cut_and_counted(self) -> None:
+        from kiro_crew import session_recycle_jobs as jobs
+
+        many = [jobs.Job(5000 + n, f"s-{n}", "sh", True) for n in range(7)]
+        clause = jobs.fate_clause(
+            jobs.RuntimeJobs(_ROOT, "s-4100", many), jobs.Fate(True, many, [])
+        )
+
+        assert "stopped with it: pid 5000 sh, pid 5001 sh, pid 5002 sh, pid 5003 sh, " in clause
+        assert "pid 5004 sh and 2 more; " in clause
+
+    def test_a_host_without_process_groups_reads_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from kiro_crew import platform_compat
+        from kiro_crew import session_recycle_jobs as jobs
+
+        monkeypatch.setattr(platform_compat, "IS_WINDOWS", True)
+
+        assert jobs.read_jobs(object(), _ROOT) is None
 
 
 def test_a_launch_just_past_the_hold_never_reads_as_equal_to_it() -> None:
