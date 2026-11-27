@@ -610,3 +610,123 @@ def test_the_creator_log_is_a_real_unit_with_the_entry_type_registered():
     )
     written = handle.append("session/spawned", {"child": {"slot": "W"}}, src=GATEWAY)
     assert written is not None and written.type == "session/spawned"
+
+
+# ── two creators, one backend session id ───────────────────────────────────
+
+#: The id the scripted test backend gives every chat's first session: each chat has its
+#: own backend process, and each process counts from one.
+SHARED_SID = "fake-1"
+RELEASE, TRIAGE = "dm-release", "dm-triage"
+
+
+def _two_bots_spawn_on_one_shared_unit() -> None:
+    """Release Bot's thread opens the unit, so its header names that thread; Triage
+    Bot's thread then runs on the same backend id, and each Bot makes one session."""
+    _open_creator(SHARED_SID, RELEASE)
+    _open_creator(SHARED_SID, TRIAGE)
+    emit.on_session_spawned(SHARED_SID, creator_slot=RELEASE, child_slot="chat-r")
+    emit.on_session_spawned(SHARED_SID, creator_slot=TRIAGE, child_slot="chat-t")
+    assert_drained()
+
+
+def test_a_restart_never_reads_another_slots_spawn_as_the_unit_owners():
+    """The creator a restart reads for a spawn is the unit's header slot, so a spawn
+    another slot wrote into that unit must not be on disk: it would come back as the
+    header slot's child."""
+    _two_bots_spawn_on_one_shared_unit()
+    assert stp.projection().created()["chat-r"][0] == RELEASE
+    assert "chat-t" not in stp.projection().created()
+
+    directory = crew_store.unit_dir_for(lg.KIND_SESSION, SHARED_SID)
+    entries, _, _ = crew_store.find_spawned_entries(directory, 10)
+    assert [e.data["child"]["slot"] for e in entries] == ["chat-r"]
+
+    revived = _restart()
+    assert revived.created()["chat-r"][0] == RELEASE
+    assert "chat-t" not in revived.created()
+    assert "chat-t" not in revived.nodes()
+
+
+def test_a_takeover_is_never_written_into_another_slots_unit():
+    """An adoption and a release are folded onto the unit, so a restart reads them as
+    the header slot's: written for another slot, they would move the wrong session."""
+    _open_creator(SHARED_SID, RELEASE)
+    _open_creator("sid-lead", "dm-lead")
+    settled: list[bool] = []
+    emit.on_session_adopted(
+        SHARED_SID, slot=TRIAGE, parent_slot="dm-lead", on_settled=settled.append
+    )
+    assert_drained()
+    emit.on_session_released(SHARED_SID, slot=TRIAGE, on_settled=settled.append)
+    assert_drained()
+    assert settled == [False, False]
+    assert TRIAGE not in stp.projection().nodes()
+
+    directory = crew_store.unit_dir_for(lg.KIND_SESSION, SHARED_SID)
+    assert crew_store.read_last_tree_edge(crew_store.newest_segment(directory)) is None
+    assert _restart().nodes()[RELEASE].parent_slot is None
+
+    # The unit's own slot still writes both.
+    emit.on_session_adopted(
+        SHARED_SID, slot=RELEASE, parent_slot="dm-lead", on_settled=settled.append
+    )
+    assert_drained()
+    assert settled[-1] is True
+    assert _restart().nodes()[RELEASE].parent_slot == "dm-lead"
+
+
+def test_the_create_reply_says_a_spawn_into_another_slots_unit_did_not_land():
+    from kiro_crew.dashboard import session_control as sc
+
+    _open_creator(SHARED_SID, RELEASE)
+    assert_drained()
+    minted = SimpleNamespace(
+        key="chat-t", _lineage_minted=True, _created_by=TRIAGE, _created_by_sid=SHARED_SID
+    )
+    assert asyncio.run(sc._record_spawn(TRIAGE, minted)) is False
+
+
+def test_each_bots_session_is_still_its_own_after_a_restart(tmp_path, monkeypatch):
+    """Two Bots, one session each, a restart: each session is listed under the Bot its
+    own saved record names, and only the creator the crew log vouches for controls it."""
+    from chat_test_helpers import _make_state
+
+    from kiro_crew import crew_mode
+    from kiro_crew.config.paths import config_dir
+    from kiro_crew.dashboard.chat import restore_open_slots
+    from kiro_crew.dashboard.session_control import UNVERIFIED_CREATOR
+
+    monkeypatch.setattr(crew_mode, "_known_mate_roots", set())
+    _two_bots_spawn_on_one_shared_unit()
+    stp.reset_for_tests()
+    emit.reset_caches()
+
+    monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+    history = tmp_path / "history"
+    history.mkdir()
+    lines = {
+        RELEASE: {"mode": "member", "agent": "release-bot", "agent_kind": "member"},
+        TRIAGE: {"mode": "member", "agent": "triage-bot", "agent_kind": "member"},
+        "chat-r": {"created_by": RELEASE},
+        "chat-t": {"created_by": TRIAGE},
+    }
+    for slot, meta in lines.items():
+        (history / f"dashboard_{slot}.jsonl").write_text(
+            json.dumps({"_type": "metadata", "title": slot, **meta})
+            + "\n"
+            + json.dumps({"role": "user", "content": "task"})
+            + "\n",
+            encoding="utf-8",
+        )
+    (config_dir() / "open_slots.json").write_text(
+        json.dumps({"keys": list(lines), "ts": 0.0}), encoding="utf-8"
+    )
+    state = _make_state(history)
+    assert restore_open_slots(state) == 4
+
+    rows = {row["key"]: row for row in state.serialize_slots()}
+    assert rows["chat-r"][crew_mode.MATE_ROOT_FIELD] == RELEASE
+    assert rows["chat-t"][crew_mode.MATE_ROOT_FIELD] == TRIAGE
+    assert state._slots["chat-r"]._created_by == RELEASE
+    assert state._slots["chat-t"]._created_by == UNVERIFIED_CREATOR

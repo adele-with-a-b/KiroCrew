@@ -254,9 +254,9 @@ unset here -- see "Reconnect is not resume" below for what it is for.
 | `subagent/failed` | the same report, for outcome `failed` or `stopped` | child id, reason, which outcome it was, elapsed ms, credits when billed |
 | `subagent/dismissed` | three writers: the dismiss route arm in `messaging_api/run_control.py` for a run the live manager no longer holds; `SubagentManager.settle_before_delete` for a run it still holds (awaited, and it gates the pop); and `ws.backfill_legacy_panel_dismissals` on reconnect replay, correcting the legacy registry (not awaited) | child id |
 | `write/dropped` | writer recovery, before that session's next ordinary append | dropped count and bytes |
-| `session/adopted` | `on_session_adopted`, when a session is adopted under a new parent | the new `parent`, and `previous_parent` when there was one |
-| `session/released` | `on_session_released`, when a session is released from its parent | `previous_parent` when there was one |
-| `session/spawned` | `on_session_spawned`, from `session_control._record_spawn` when a minted create or fork commits, into the CREATOR's log; nothing when the creator has no ACP session yet | the child's slot |
+| `session/adopted` | `on_session_adopted`, when a session is adopted under a new parent; nothing when the log's header names another slot | the new `parent`, and `previous_parent` when there was one |
+| `session/released` | `on_session_released`, when a session is released from its parent; nothing when the log's header names another slot | `previous_parent` when there was one |
+| `session/spawned` | `on_session_spawned`, from `session_control._record_spawn` when a minted create or fork commits, into the CREATOR's log; nothing when the creator has no ACP session yet, or when that log's header names another slot | the child's slot |
 | `panel/published` | `on_panel_published`, from `panel_publish`, into the member's own DM session log | the published panel |
 | `crew/dispatch` / `crew/report` | `on_crew_dispatch` / `on_crew_report`, into the crew kind's log | the dispatch and the child's report |
 | `object/observed` | `monitoring.controller.MonitorController.tick`, after the service has published a probe's observation whose fingerprint differs from the one it held, into the log of the monitor's OWNER session, named by the host's resolver; and `warm_task_brief_inputs.read_live_prs`, once per pull request whose fresh read changed, into the conductor slot's own session (`producer: warm_brief`). No extra GitHub call: each records a read it already made | `producer` (closed: `probe`, `warm_brief`), the monitored `kind`, the subject's full `target` URL, the probe's `fingerprint`, the canonical `facts` snapshot verbatim (short by named members in `facts_omitted` only when the line would not fit), `observed_at` -- no turn |
@@ -271,6 +271,21 @@ PROPOSED, remembered in process at proposal time; the slot's live session is the
 fallback after a restart. The id is never read back from the transcript row, whose
 meta lives in an agent-writable file -- a session id taken from there would aim a
 gateway-authored entry at another conversation's log.
+
+`session/spawned`, `session/adopted` and `session/released` go only into a log whose header
+names the slot they are written for (`emit_tree._refused_for_another_slot`, the header
+comparison a superseding create makes). A crew log is keyed by the backend's session id alone,
+and a restart reads these three as the HEADER slot's: a spawn's creator is the unit's head,
+never the entry, and a takeover is folded onto the unit. Two slots reach one unit when their
+backends hand out the same session id, which the scripted test backend does for every chat's
+first session. Written there for the second slot, the entry would come back as the first
+slot's: a session one Bot made, listed and controlled under another. So nothing is written
+and nothing is folded, the settle signal says `False` (a create replies that its creating
+edge did not land; an adopt or a release reports it was not recorded), and a warning names
+the log. A header with no slot refuses nobody. After a restart a session whose spawn was
+refused, and whose own log records no parent, has no creator the crew log vouches for: it
+is listed under the creator its own saved record names, and nobody controls it as its
+creator.
 
 `tool/called` and `tool/completed` gained payload accounting: `args_hash` and
 `args_bytes` on the call, `result_hash`, `result_bytes` and `is_error` on the

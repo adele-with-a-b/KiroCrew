@@ -210,6 +210,43 @@ def _candidate_is_same_slot(candidate_sid: str, slot: str) -> bool:
     return unit_header_slot(_KIND, candidate_sid) == slot
 
 
+def _refused_for_another_slot(log: CrewLog, slot: str, what: str) -> bool:
+    """Whether *what*, a tree entry *slot* is about to write, must NOT go into *log*.
+
+    True when the crew log's own header names a different slot. A crew log is keyed by
+    the backend's session id alone, and a restart reads every tree entry in it as its
+    HEADER slot's: :func:`~kiro_crew.crew_log.session_tree.spawned_record` takes the
+    creator from the unit's head and never from the entry, and an adoption or a release
+    is folded onto the unit. So an entry another slot wrote there comes back as the
+    header slot's -- a session one slot created, listed and controlled under another.
+    Two slots reach one unit when their backends hand out the same session id, which the
+    scripted test backend does for every chat's first session.
+
+    The comparison :func:`_candidate_is_same_slot` makes for ``previous``, read off the
+    handle the job already holds, so it costs no read and takes no second lease. A
+    header with no slot names nobody, so it refuses nobody: a log written before the
+    header carried one keeps taking its own session's entries. A header that cannot be
+    read refuses nothing either, which leaves the write as it was before this fence.
+
+    A refusal is said once, at warning level, because the caller's reply then reports an
+    edge that did not land and this line is what explains it.
+    """
+    try:
+        owner = getattr(log.header, "slot", None)
+    except Exception:
+        return False
+    if not isinstance(owner, str) or not owner or owner == slot:
+        return False
+    logger.warning(
+        "session log %s: %s not written for slot %s -- the log's own header names "
+        "another slot, and a restart would read the entry as that slot's",
+        getattr(log.header, "id", ""),
+        what,
+        slot,
+    )
+    return True
+
+
 def slot_previous_store(slot: str) -> "tuple[str, bool, bool]":
     """The crew log *slot* is writing NOW, as ``(sid, decided, complete)``.
 
