@@ -42,6 +42,7 @@ from kiro_crew.crew_log.emit_tree import (
     _record_session_tree_decision,
     _record_session_tree_edge,
     _record_session_tree_spawn,
+    _refused_for_another_slot,
     _tree_settle_hooks,
 )
 
@@ -244,7 +245,7 @@ def on_session_adopted(
 
     def _job() -> None:
         log = _handle(session_id)
-        if log is None:
+        if log is None or _refused_for_another_slot(log, slot, "session/adopted"):
             settle.fail()
             return
         written = log.append("session/adopted", data, src=_SRC_GATEWAY)
@@ -298,7 +299,7 @@ def on_session_released(
 
     def _job() -> None:
         log = _handle(session_id)
-        if log is None:
+        if log is None or _refused_for_another_slot(log, slot, "session/released"):
             settle.fail()
             return
         written = log.append("session/released", data, src=_SRC_GATEWAY)
@@ -334,6 +335,11 @@ def on_session_spawned(
     answers None and nothing is written, which leaves today's in-memory witness as the
     only record, as before.
 
+    Nothing is written either when the log *creator_sid* names belongs to ANOTHER slot
+    (:func:`~kiro_crew.crew_log.emit_tree._refused_for_another_slot`): a restart takes
+    the creator from the log's header, so the entry would hand the child to that slot.
+    :func:`on_session_adopted` and :func:`on_session_released` refuse the same way.
+
     Returns without waiting, and the projection is advanced inside the job AFTER the
     append succeeds. ``on_settled`` reports the durable outcome the way it does on
     :func:`on_session_adopted`: called once, off the caller's thread, ``True`` when the
@@ -349,7 +355,7 @@ def on_session_spawned(
 
     def _job() -> None:
         log = _handle(creator_sid)
-        if log is None:
+        if log is None or _refused_for_another_slot(log, creator_slot, "session/spawned"):
             settle.fail()
             return
         written = log.append("session/spawned", data, src=_SRC_GATEWAY)
