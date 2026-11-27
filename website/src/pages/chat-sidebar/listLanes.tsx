@@ -79,7 +79,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
     renderOlderSessionsHint, renderSessionRow, renderStaleSection, reportDndActive, rootFolderIds,
     rootFolders, rowAnimEnabled, searchHeader, searchLaneActive, searchRanked, setLaneScrollEl, shownCrewGroups, shownCrewRowCount,
     sidebarRows, slotFilter, slotFolders, sortKey, splitStale, staleExpanded, startsAutomaticSection,
-    subagentApprovalCounts, unfiledAboveFolders, ungroupedSlots: ungroupedAll, unreadSet, visibleRootFolders, pinnedBandCaption } = shell
+    unfiledAboveFolders, ungroupedSlots: ungroupedAll, unreadSet, visibleRootFolders, pinnedBandCaption, waitsOnPerson } = shell
   // While the "Needs you" filter narrows the list, its oldest-first list draws on top
   // of every list lane and the lane leaves those rows out; otherwise a waiting chat is
   // drawn in its place (./needsGroup). A code-channel worker the root bucket's fold
@@ -125,7 +125,7 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
     const rootFold = foldCodeChannelCrews(ungroupedAll, rootSplit.fresh, rootSplit.stale, {
       narrowed: !rootFoldsCrews, expanded: conductorExpanded,
       keepShown: keepShownWorker,
-      signals: crewSignalsFrom({ isRunning: sidebarRows.isRunning, subagentApprovalCounts, unreadSet }),
+      signals: crewSignalsFrom({ isRunning: sidebarRows.isRunning, waitsOnPerson, unreadSet }),
     })
     const freshRootRaw = rootFold.fresh
     const staleRoot = rootFold.stale
@@ -247,27 +247,22 @@ export function createListLanes(shell: SidebarScope & LaneRows & FolderBlocks) {
               const rootHeaderAt = new Map<number, ReturnType<typeof sectionHeaders>[number]>()
               const rows: Array<{ id: string; slot: Slot; depth: number; childCount: number; expanded: boolean; orphanOf: string | null; citesParent?: string | null; anchorOnly: boolean; aggregate: { needsYou: number; running: number } | null }> = []
 
-              /** Does this row want the user? The same two signals the row itself
-               *  renders as a dot or a subtitle, so a collapsed conductor's badge and
-               *  its children's badges can never disagree. */
+              /** Does this row want the user? The same signals the row itself
+               *  renders as its loud wait, a dot or a subtitle, so a collapsed
+               *  conductor's badge and its children's badges can never disagree. */
               // Both predicates are derived from the state the CHILD ROWS themselves
               // render from, because the collapsed aggregate claims to be the same fact
               // at a coarser zoom: a count that disagrees with the glyphs it stands for
               // is worse than no count. `runningSet` is the widened signal -- own turn,
               // a live workflow, or a loop -- so a workflow-active child is counted the
-              // way its own row is drawn, and a subagent awaiting approval is an ask
-              // even though the slot itself carries no `pending_approval`.
+              // way its own row is drawn. Whether a child waits on the person is the
+              // roll-ups' one reading (`waitsOnPerson`): the wait the "Needs you" chip
+              // counts, a card, or a subagent awaiting approval.
               const isRunning = sidebarRows.isRunning
-              // The approval counts and the unread set are LOCAL state keyed by
-              // local slot key; a peer row's raw key can spell a local one, so
-              // only a local row reads them.
+              // The unread set is LOCAL state keyed by local slot key; a peer row's
+              // raw key can spell a local one, so only a local row reads it.
               const wantsUser = (s: Slot) =>
-                !!(
-                  s.pending_approval
-                  || s.needs_input
-                  || (!isPeerRow(s) && (subagentApprovalCounts[s.key] || 0) > 0)
-                  || (!isPeerRow(s) && unreadSet.has(s.key) && !isRunning(s))
-                )
+                waitsOnPerson(s) || (!isPeerRow(s) && unreadSet.has(s.key) && !isRunning(s))
 
               const emit = (key: string, depth: number) => {
                 const slot = byKey.get(key)

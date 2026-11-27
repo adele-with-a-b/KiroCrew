@@ -5,7 +5,7 @@
  * running and needs-input sessions are exempt. localStorage "0" turns the
  * feature off. The pure split predicate is pinned in staleCollapse.test.ts.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, onTestFinished, vi } from 'vitest'
 import { render, fireEvent, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
@@ -180,6 +180,25 @@ describe('chat sidebar — stale-session collapse', () => {
     expect(getByText('active old')).toBeInTheDocument()
     // Every old row is exempt, so no expander renders at all.
     expect(queryByTestId('stale-expander-root')).toBeNull()
+  })
+
+  it('never hides a chat that waits on the person: a wait the Needs you chip counts is drawn in the list, lit', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 0, 15, 12, 0, 0))
+    onTestFinished(() => { vi.useRealTimers() })
+    // A labelled question in a reply he has read, ten days ago: no card, not unread.
+    const asks = { count: 1, oldest_ts: (Date.now() - 10 * DAY) / 1000, first_words: 'Q4a Ship it tonight?', row_id: 'm-1', kinds: ['labelled'] }
+    const { getByText, getByTestId, queryByText } = renderSidebar([
+      slot('fresh', 'fresh session', 2, { needs_you: null }),
+      slot('asks-old', 'asked long ago', 10 * 24, { needs_you: asks }),
+      slot('old', 'settled long ago', 12 * 24, { needs_you: null }),
+    ])
+    expect(getByTestId('needs-you-off-chip')).toHaveTextContent('1')
+    const row = getByText('asked long ago').closest('.session-row') as HTMLElement
+    expect(row.querySelector('[data-testid="session-needs-you"]')?.textContent).toContain('Q4a Ship it tonight?')
+    // The settled one still sleeps, alone.
+    expect(queryByText('settled long ago')).toBeNull()
+    expect(getByTestId('stale-expander-root')).toHaveTextContent('1')
   })
 
   it('goes inert while the list is narrowed — a search match must never hide', () => {

@@ -48,10 +48,10 @@ export function createFolderBlocks(shell: SidebarScope & LaneRows) {
     searchRanked, setEditName, setEditScope, setEditingId, setFolderCleanupRoot, setFolderCreateError, setFolderModal, setFolderOfflineNotice, sidebarRows,
     slotFilter, slotFolders, splitStale, staleExpanded, startsAutomaticSection, suppressMenuRestore, kindSections,
     toggleCollapse, toggleFolderFilter, toggleReveal, unreadSet, updateFolderMutation,
-    conductorExpanded, subagentApprovalCounts } = shell
+    conductorExpanded, waitsOnPerson } = shell
   /** The signals a folded crew's line reads: the same ones each worker's own row
    *  renders from, so the line and the rows it stands for agree. */
-  const crewSignals = crewSignalsFrom({ isRunning: sidebarRows.isRunning, subagentApprovalCounts, unreadSet })
+  const crewSignals = crewSignalsFrom({ isRunning: sidebarRows.isRunning, waitsOnPerson, unreadSet })
   /**
    * The session CONDUCTING a folder, derived from the folder's own rows.
    *
