@@ -958,10 +958,10 @@ class TestTheNoticeSaysWhatTheRecycleStopped:
     async def test_a_stopped_job_and_a_surviving_one_are_each_named_by_pid(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The reported case: a chat recycled past the hold could not tell whether
-        the job it had started was dead, and started a second copy or waited on a
-        dead one. 4242 is a command still under the runtime, which the reset ends;
-        4300 is a job an earlier command left behind, which it does not reach."""
+        """A chat recycled past the hold must be able to tell whether the job it
+        started is dead: one that cannot starts a second copy or waits on a dead
+        one. 4242 is a command still under the runtime, which the reset ends; 4300
+        is a job an earlier command left behind, which it does not reach."""
         table = {_ROOT: "s-4100", 4242: "s-4242", 4300: "s-4300"}
         _own_process_table(
             monkeypatch,
@@ -977,7 +977,7 @@ class TestTheNoticeSaysWhatTheRecycleStopped:
 
         manager, notices = _idle_manager_on_root((67 * 60.0, "background command"), _reset)
 
-        await manager._expire_idle(timeout_secs=1)
+        await manager._expire_idle(timeout_secs=1)  # flake-ok: idle threshold, nothing waits on it
 
         assert notices == [
             (
@@ -1012,7 +1012,7 @@ class TestTheNoticeSaysWhatTheRecycleStopped:
 
         manager, notices = _idle_manager_on_root(_SIXTY_SEVEN_MIN, _reset)
 
-        await manager._expire_idle(timeout_secs=1)
+        await manager._expire_idle(timeout_secs=1)  # flake-ok: idle threshold, nothing waits on it
 
         assert notices[0][1].endswith(
             "session.harness_background_hold_secs; its runtime (pid 4100) is still running; "
@@ -1073,7 +1073,9 @@ class TestTheNoticeSaysWhatTheRecycleStopped:
         from kiro_crew import session_recycle_jobs as jobs
 
         many = [jobs.Job(5000 + n, f"s-{n}", "sh", True) for n in range(7)]
-        clause = jobs.fate_clause(jobs.RuntimeJobs(_ROOT, "s-4100", many), jobs.Fate(True, many, []))
+        clause = jobs.fate_clause(
+            jobs.RuntimeJobs(_ROOT, "s-4100", many), jobs.Fate(True, many, [])
+        )
 
         assert "stopped with it: pid 5000 sh, pid 5001 sh, pid 5002 sh, pid 5003 sh, " in clause
         assert "pid 5004 sh and 2 more; " in clause

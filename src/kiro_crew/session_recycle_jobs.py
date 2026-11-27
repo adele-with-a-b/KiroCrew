@@ -3,13 +3,13 @@
 A session whose agent launched background work is recycled once that launch is
 older than the hold (:mod:`kiro_crew.session_background_hold`), or at once when its
 tree passes the hard memory ceiling. The launch record names the work, never a
-process, so the recycle notice used to say only that the work "may have been
-stopped". This module makes the notice say what happened, by pid.
+process, so from it alone a recycle notice can only say the work "may" have been
+stopped. This module is how the notice says what happened, by pid.
 
 It keeps no record of its own. Before the reset it reads the two the kill path
 already has: the runtime's descendants, identity-pinned
 (``session_pid._provider_descendant_records``: the spawn-time snapshot merged with a
-live walk), and the members of the runtime's session that its tree no longer reaches
+live walk), and the members of the runtime's session that its tree does not reach
 (``session_pid.find_session_leftovers``). After the reset it reads each start
 identity again: the same identity is a process still running, anything else is one
 that was stopped. Nothing here signals a process, not even to probe it.
