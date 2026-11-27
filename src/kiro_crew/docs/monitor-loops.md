@@ -102,6 +102,12 @@ subject, or a stand-down after repeated cycles that never got a model session
 (`session_start_failures`) — is replaced by the new one; a loop you paused or
 stopped yourself is preserved.
 
+A loop that stood down because its turns kept failing (`session_start_failures`,
+or `consecutive_failures` for turns that started and then errored or timed out)
+starts again by itself once a turn completes in its session, so an outage does
+not leave it off after the model answers again. A loop you paused or stopped
+yourself, a finished one, and one that ran out its cap or budget stay stopped.
+
 Each stop is logged once at WARNING in `gateway.log` as an
 `AutoNudge: … stopped — reason=…` line naming the reason, the cycles run and the
 time it ran.

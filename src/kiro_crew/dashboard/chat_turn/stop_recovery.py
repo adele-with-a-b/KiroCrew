@@ -568,7 +568,9 @@ async def _turn_persist_and_settle(turn: _ChatTurn) -> None:
         # start-failure streak a monitoring loop bound to this slot recorded.
         # Any landed turn counts, a human's as much as a cycle's: the streak
         # only ever slows or stops a loop, so clearing it on the broader
-        # evidence can only keep a working loop running.
+        # evidence can only keep a working loop running. A loop already stopped
+        # for those streaks starts again only on a turn that ended ok: one the
+        # person stopped proves nothing about the model answering.
         try:
             from kiro_crew.autonudge import (
                 get_instance as _autonudge_landed_get,  # circular: autonudge -> dashboard.chat -> chat_runner
@@ -576,7 +578,9 @@ async def _turn_persist_and_settle(turn: _ChatTurn) -> None:
 
             _landed_svc = _autonudge_landed_get()
             if _landed_svc is not None:
-                _landed_svc.notify_cycle_landed(slot.key)
+                _landed_svc.notify_cycle_landed(
+                    slot.key, succeeded=_turn_outcome(_stop_reason) == "ok"
+                )
         except Exception:
             logger.debug("autonudge.notify_cycle_landed failed", exc_info=True)
         # Per-cycle fallback-chain walk state resets with the budgets; the

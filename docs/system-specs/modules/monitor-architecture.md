@@ -191,6 +191,23 @@ replacement starts its own cycle count. As a backstop, `work_ledger_read` flags 
 read included -- a loop watching something else reads no ledger, so it does not
 count. The Crew page board does not show the flag yet.
 
+A prompt loop whose turns keep failing stands down: five cycles in a row that
+never got a model session (`session_start_failures`), or five delivered cycles in
+a row that ended `error` or `timeout` (`consecutive_failures`). An outage that
+fails every model call therefore stops every conductor's patrol. A turn that ends
+`ok` on the slot, a person's as much as a cycle's, is the evidence the cause is
+gone: `notify_cycle_landed(slot, succeeded=True)` clears both streaks and restarts
+a loop already stopped for one of those two reasons
+(`model.FAILURE_STANDDOWN_REASONS`). The restart is `update(active=True)`, the
+writer every other resume uses, with the stop read again under the lock, so it
+keeps the record, its watch and its counts, starts a fresh streak and arms one
+countdown at the loop's interval; no bind or `monitor_start` is needed. A turn the
+person stopped reaches the same hook with `succeeded=False` and restarts nothing.
+Every other stop stays as it is: a person's pause, an app's `autonudge_stop`, a
+finished subject, the stop file, a spent cap or budget, and any reason this
+version does not know. A pause pressed on a loop that already stood down keeps the
+stand-down reason (`_KEPT_STOP_REASONS`), so it does not hold the loop off.
+
 A `work-ledger` watch has its own quiet floor while no worker has reported.
 Every gated loop is delivered anyway after `_MAX_QUIET_STREAK` (10) quiet
 ticks. For this kind that turn is the goal-conductor skill's active check of
