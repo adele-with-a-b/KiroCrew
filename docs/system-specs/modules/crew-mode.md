@@ -2761,7 +2761,9 @@ default, in Settings > Chat > Sessions and at the top of every Bot's Sessions ta
 lists every Bot's sessions, and while it is on no Bot's own switch applies; while it
 is off, **Show {name} in my Sessions** (the Bot's `show_sessions_in_list`, on by
 default, at the top of that Bot's Sessions tab) decides for that Bot, so a Bot whose
-config leaves it unset lists its sessions and a stored `false` leaves them out. The
+config leaves it unset lists its sessions and a `false` the person set leaves them
+out. A `false` stored before the default turned on is cleared once at the first load
+(config.md, "The Bot listing clear"). The
 server folds the two into one stamp on the Bot thread's row (`bot_sessions_listed`,
 `crew_mode.mate_lists_sessions`), which `list_view` and `crewModeView`
 (`mateThreadsHidingSessions`) read; a Bot's own switch reads on and cannot be

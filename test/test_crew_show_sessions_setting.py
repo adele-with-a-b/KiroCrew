@@ -8,7 +8,9 @@ Bot's own ``show_sessions_in_list`` decides for that Bot, on unless its config s
 otherwise. These tests pin what the two switches rest on, in the shape of
 ``test_crew_card_send_setting``: the defaults and the config round trip, junk
 reading as the default, the APIs refusing a non-bool, the stamp on the mate
-thread's row, and the slot list re-sent when either switch flips.
+thread's row, and the slot list re-sent when either switch flips. A ``false`` an
+older build stored while the switch was off by default is cleared once at the
+first load, and a ``false`` set after that is kept.
 """
 
 from __future__ import annotations
@@ -35,9 +37,22 @@ def _owner_caller(_floor_monkeypatch):
     )
 
 
+#: The sidecar that records the one-shot clear of a pre-default ``false`` (config.md).
+_CLEARED_MARKER = "bot_sessions_listed_migrated.json"
+
+
+def _home_past_the_clear() -> KiroCrewConfig:
+    """A home whose first load of a config file has recorded the one-shot clear, so a
+    ``false`` stored from here on is the person's own."""
+    KiroCrewConfig.load().save()
+    cfg = KiroCrewConfig.load()
+    assert (config_dir() / _CLEARED_MARKER).exists()
+    return cfg
+
+
 def test_defaults_to_on_and_round_trips():
     assert KiroCrewAgentConfig(kiro_agent="x").show_sessions_in_list is True
-    cfg = KiroCrewConfig.load()
+    cfg = _home_past_the_clear()
     cfg.agents["hidden"] = KiroCrewAgentConfig(kiro_agent="kirocrew", show_sessions_in_list=False)
     cfg.agents["plain"] = KiroCrewAgentConfig(kiro_agent="kirocrew")
     cfg.save()
@@ -61,7 +76,7 @@ def test_a_bot_whose_config_omits_the_switch_reads_it_as_on():
     ("stored", "want"), [(True, True), (False, False), ("yes", True), (0, True)]
 )
 def test_a_stored_per_bot_switch_loads_only_a_real_bool(stored, want):
-    cfg = KiroCrewConfig.load()
+    cfg = _home_past_the_clear()
     cfg.agents["weird"] = KiroCrewAgentConfig(kiro_agent="kirocrew")
     cfg.save()
     path = config_dir() / "config.json"
@@ -69,6 +84,72 @@ def test_a_stored_per_bot_switch_loads_only_a_real_bool(stored, want):
     data["agents"]["weird"]["show_sessions_in_list"] = stored
     path.write_text(json.dumps(data), encoding="utf-8")
     assert KiroCrewConfig.load().agents["weird"].show_sessions_in_list is want
+
+
+def _home_an_older_build_saved(**stored: object):
+    """A home whose Bot rows an older build saved, before the switch was on by default.
+
+    Every save writes every field (``to_dict`` -> ``asdict``), so each row carries the
+    value given here, and no load has recorded the clear yet.
+    """
+    cfg = KiroCrewConfig.load()
+    for name in stored:
+        cfg.agents[name] = KiroCrewAgentConfig(kiro_agent="kirocrew", workspace="default")
+    cfg.save()
+    path = config_dir() / "config.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for name, value in stored.items():
+        data["agents"][name]["show_sessions_in_list"] = value
+    path.write_text(json.dumps(data), encoding="utf-8")
+    (config_dir() / _CLEARED_MARKER).unlink(missing_ok=True)
+    return path
+
+
+def test_a_false_an_older_build_stored_is_cleared_at_start_so_the_bot_is_listed(monkeypatch):
+    path = _home_an_older_build_saved(ada=False, bea=True)
+
+    cfg = KiroCrewConfig.load()
+
+    assert cfg.agents["ada"].show_sessions_in_list is True
+    assert cfg.agents["bea"].show_sessions_in_list is True
+    monkeypatch.setattr(crew_mode, "_live_cfg", lambda: cfg)
+    assert crew_mode.mate_lists_sessions("ada") is True
+    rows = json.loads(path.read_text(encoding="utf-8"))["agents"]
+    assert "show_sessions_in_list" not in rows["ada"]
+    assert rows["ada"]["kiro_agent"] == "kirocrew"
+    assert rows["bea"]["show_sessions_in_list"] is True
+    assert (config_dir() / _CLEARED_MARKER).exists()
+
+
+@pytest.mark.asyncio
+async def test_a_false_set_after_the_clear_stays_false_across_a_restart():
+    _home_an_older_build_saved(ada=False)
+    assert KiroCrewConfig.load().agents["ada"].show_sessions_in_list is True
+
+    async with TestClient(TestServer(_crud_app())) as client:
+        off = await client.put("/api/agents/ada", json={"show_sessions_in_list": False})
+        assert off.status == 200
+
+    for _restart in range(2):
+        assert KiroCrewConfig.load().agents["ada"].show_sessions_in_list is False
+
+
+def test_the_clear_runs_once():
+    path = _home_an_older_build_saved(ada=False)
+    assert KiroCrewConfig.load().agents["ada"].show_sessions_in_list is True
+    marker = config_dir() / _CLEARED_MARKER
+    recorded = marker.read_bytes()
+
+    # A false any writer stores after the clear is never cleared again.
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["agents"]["ada"]["show_sessions_in_list"] = False
+    path.write_text(json.dumps(data), encoding="utf-8")
+    for _restart in range(2):
+        assert KiroCrewConfig.load().agents["ada"].show_sessions_in_list is False
+
+    rows = json.loads(path.read_text(encoding="utf-8"))["agents"]
+    assert rows["ada"]["show_sessions_in_list"] is False
+    assert marker.read_bytes() == recorded
 
 
 def _crud_app() -> web.Application:

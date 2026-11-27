@@ -467,8 +467,12 @@ async def api_members(request: web.Request) -> web.Response:
                 # Whether a Dashboard-tab button may send its reply in one click
                 # (card_send); the Profile tab's switch reads and writes it.
                 "dashboard_card_send": bool(agent_cfg.dashboard_card_send),
-                # Whether the sessions its thread opens stay in the person's own
-                # session list (crew_mode.list_view); the Profile tab's switch.
+                # The Bot's own "Show {name} in my Sessions" switch, on by default:
+                # whether the sessions its thread opens are listed in the person's
+                # own Sessions list too (crew_mode.mate_lists_sessions, which lists
+                # every Bot's while dashboard.show_bot_sessions_in_list is on). The
+                # switch atop its Profile > Sessions tab reads it
+                # (BotSessionListSwitches).
                 "show_sessions_in_list": bool(agent_cfg.show_sessions_in_list),
                 # Whether the PERSON created this crewmate: the crew manager's
                 # own origin (`source == "kirocrew"`) AND a member id, which is
