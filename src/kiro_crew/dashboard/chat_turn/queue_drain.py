@@ -45,7 +45,7 @@ from kiro_crew.dashboard.session_directive_apply import (
 from kiro_crew.dashboard.slot_queue_repository import (
     RESTORED_HELD_AGAIN_KEY,
     RESTORED_QUEUE_KEY,
-    RESTORED_SEND_CHOSEN_KEY,
+    restored_card_waits,
     source_channels_of,
 )
 from kiro_crew.dashboard.state import SUBAGENT_COMPLETION_PREFIXES
@@ -853,14 +853,7 @@ async def _start_next_queued_turn(
         # chosen mark, and the next one is picked.
         while True:
             live = next(
-                (
-                    i
-                    for i, item in enumerate(slot._queue)
-                    if not item.get(RESTORED_QUEUE_KEY)
-                    or (
-                        item.get(RESTORED_SEND_CHOSEN_KEY) and not item.get(RESTORED_HELD_AGAIN_KEY)
-                    )
-                ),
+                (i for i, item in enumerate(slot._queue) if not restored_card_waits(item)),
                 None,
             )
             if live is None:

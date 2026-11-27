@@ -278,35 +278,6 @@ def is_held_queue_entry(item: dict[str, Any]) -> bool:
     )
 
 
-def retire_held_parked_work(state: Any, entries: list[dict[str, Any]]) -> None:
-    """Retire the parked work rows of restored *entries* a limit held again
-    (``admission_parked.retire_parked``), so no later start resumes them on its
-    own: only the person's Send all or Send now lets them go. Run off the drain,
-    which must not await between its check and its pop."""
-    from kiro_crew.shared_crew import admission_parked
-    from kiro_crew.shared_crew.admission_entry import queued_work_ids
-    from kiro_crew.shared_crew.admission_gate import installed_service
-
-    work_ids = queued_work_ids(entries)
-    service = installed_service()
-    if not work_ids or service is None or not service.enabled:
-        return
-
-    async def _retire() -> None:
-        try:
-            await admission_parked.retire_parked(service, work_ids)
-        except Exception:
-            logger.warning("held restored cards' parked work not retired", exc_info=True)
-
-    try:
-        task = asyncio.get_running_loop().create_task(_retire())
-    except RuntimeError:
-        logger.warning("held restored cards' parked work not retired: no running loop")
-        return
-    state._background_tasks.add(task)
-    task.add_done_callback(state._background_tasks.discard)
-
-
 _DURABLE_QUEUE_KEYS: tuple[str, ...] = (
     "id",
     "content",
@@ -362,7 +333,9 @@ def _is_durable_queue_entry(item: Any) -> bool:
     return True
 
 
-def durable_queue_entries(queue: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def durable_queue_entries(
+    queue: list[dict[str, Any]], *, restored_links: bool = False
+) -> list[dict[str, Any]]:
     """The json-safe copies of *queue* a metadata writer may persist.
 
     Copies rather than aliases, so a later in-memory mutation cannot rewrite a
@@ -381,7 +354,14 @@ def durable_queue_entries(queue: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from here (see :func:`count_durable_candidates`). This runs on every flush
     tick through ``queue_persist_pending`` and inside a retried snapshot, so a
     warning here would repeat for as long as the queue stayed over the cap.
+
+    A restored card is written without its parked-work link: the link lets the
+    start that restored it resume the send (``_drain_restored_parked_work``) and
+    no start after it, whether admission was on at that start or not.
+    *restored_links* keeps it: the line as the restore read it, for its stamp.
     """
+    from kiro_crew.shared_crew.admission_entry import QUEUED_WORK_META_KEY
+
     out: list[dict[str, Any]] = []
     budget = MAX_DURABLE_QUEUE_BYTES
     for item in queue:
@@ -405,6 +385,8 @@ def durable_queue_entries(queue: list[dict[str, Any]]) -> list[dict[str, Any]]:
         entry_id = entry.get("id")
         if not isinstance(entry_id, str) or not entry_id:
             continue
+        if item.get(RESTORED_QUEUE_KEY) and not restored_links and "meta" in entry:
+            entry["meta"].pop(QUEUED_WORK_META_KEY, None)
         # The source channel rides along as a restriction (SOURCE_CHANNELS_KEY).
         channels = source_channels_of(item)
         if channels:
@@ -763,6 +745,15 @@ async def _drain_restored_parked_work(state: Any) -> None:
     Ordinary restored cards still wait for a person. A durable parked work row
     proves this card was accepted for dispatch; it grants no authority to its
     restored metadata. The drain revalidates containment and admits it afresh.
+
+    The row proves that for one start only: the one whose own reconciliation
+    ended it as never started (``host_hooks.restart_unstarted``). The drain never
+    touches the row again, so at any later start it reads the same whether its
+    card was sent, held again or never started, and the queue line may still
+    list a card that went. Such a card is not accepted: it waits for a person's
+    press, with its words. A row a person's stop ended is still accepted, because
+    the drain removes that card instead of sending it. A start that finds
+    admission off resumes nothing, also when admission comes on later in it.
     """
     from kiro_crew.dashboard.chat_runner import _drain_parked_queues
     from kiro_crew.dashboard.chat_utils import effective_session_key
@@ -772,11 +763,14 @@ async def _drain_restored_parked_work(state: Any) -> None:
 
     service = admission_gate.installed_service()
     if service is None or not service.enabled:
+        if service is not None:
+            host_hooks.close_restart_unstarted(state)
         return
     await service.ensure_ready()
     await host_hooks.deliver_owed_notes(state)
+    unstarted = host_hooks.restart_unstarted(state)
     accepted: dict[str, frozenset[str]] = {}
-    marked: list[dict[str, Any]] = []
+    marked: list[tuple[dict[str, Any], str]] = []
     for slot in list(state._slots.values()):
         queue_ids: set[str] = set()
         for entry in list(slot._queue):
@@ -790,16 +784,21 @@ async def _drain_restored_parked_work(state: Any) -> None:
                     and work.extra.get(admission_gate.PARKED_KEY)
                     and work.runtime is None
                     and work.state is OperationState.CANCELLED
-                    and work.reason in (None, ReasonCode.CANCELLED_BY_USER)
+                    and (
+                        work.reason is ReasonCode.CANCELLED_BY_USER
+                        or (work.reason is None and work_id in unstarted)
+                    )
                 ):
                     queue_ids.add(entry["id"])
-                    marked.append(entry)
+                    marked.append((entry, work_id))
                     break
         if queue_ids:
             accepted[slot.key] = frozenset(queue_ids)
     # Marked once the scan is done: a store read that raises part-way leaves no mark behind.
-    for entry in marked:
+    # The proof is spent with the mark, so no later scan of this start accepts the card again.
+    for entry, work_id in marked:
         entry[RESTORED_BOOT_ACCEPTED_KEY] = True
+        unstarted.discard(work_id)
     from kiro_crew.dashboard.chat_runner import _RESTORED_DRAIN_IDS
     from kiro_crew.memory_startup import memory_startup_preparing
 

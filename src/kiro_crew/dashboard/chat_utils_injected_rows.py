@@ -807,8 +807,7 @@ def _dequeue_agent_run(slot) -> tuple[str, list[dict]] | None:
     from kiro_crew.dashboard.channel_prompt import entry_prompt_on_channel
     from kiro_crew.dashboard.slot_queue_repository import (
         MAX_LIVE_QUEUE_ENTRIES,
-        RESTORED_QUEUE_KEY,
-        RESTORED_SEND_CHOSEN_KEY,
+        restored_card_waits,
     )
     from kiro_crew.shared_crew.turn_gate import queued_initiator
 
@@ -823,7 +822,7 @@ def _dequeue_agent_run(slot) -> tuple[str, list[dict]] | None:
     run: list[dict] = []
     loop_ids: set[Any] = set()
     for item in slot._queue:
-        if item.get(RESTORED_QUEUE_KEY) and not item.get(RESTORED_SEND_CHOSEN_KEY):
+        if restored_card_waits(item):
             continue
         if len(run) >= MAX_LIVE_QUEUE_ENTRIES or not _is_agent_row(item):
             break
@@ -888,17 +887,11 @@ def _dequeue_next_system_message(slot, *, system_only: bool = False) -> tuple:
     """
     # Local import: slot_queue_repository reaches this module at call time.
     from kiro_crew.dashboard.queue_edit_hold import edit_held
-    from kiro_crew.dashboard.slot_queue_repository import (
-        RESTORED_HELD_AGAIN_KEY,
-        RESTORED_QUEUE_KEY,
-        RESTORED_SEND_CHOSEN_KEY,
-    )
+    from kiro_crew.dashboard.slot_queue_repository import restored_card_waits
 
     release = is_system_injection_item if system_only else releases_past_subagent_hold
     for i, item in enumerate(slot._queue):
-        if item.get(RESTORED_QUEUE_KEY) and (
-            not item.get(RESTORED_SEND_CHOSEN_KEY) or item.get(RESTORED_HELD_AGAIN_KEY)
-        ):
+        if restored_card_waits(item):
             continue
         # A steer that fell back to the queue passes the user hold, but not
         # while the person has its card's editor open.

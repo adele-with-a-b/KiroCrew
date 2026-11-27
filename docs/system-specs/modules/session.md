@@ -5346,20 +5346,32 @@ so absence clears it.
   The readers that count queued work (`restored_card_waits` in
   `slot_queue_repository.py`: `is_held_queue_entry`, the completion sound's
   "work continues", `_has_user_queued_followup`) treat a marked card as held
-  even when a press marked it chosen. A held card has one way out, the owner's
-  press, across a restart too: the keep retires the card's parked work row
-  (`admission_parked.retire_parked`, which writes the row unparked), so the
-  startup scan (`_drain_restored_parked_work`) no longer accepts it and the card
-  comes back as an ordinary held card. The mark is for this process's drains,
-  the startup drain's accepted ids among them. A restored peer's note (it
+  even when a press marked it chosen; every reader asks that one function, and
+  `test_kept_card_restart.py` fails when another function reads the chosen
+  mark. A held card has one way out, the owner's press, across a restart too,
+  and no write has to land for that. A parked work row proves a send for one
+  start only: the start whose own reconciliation ended the row as never started
+  (the reconcile listener records those ids in memory,
+  `host_hooks.restart_unstarted`), and the startup scan
+  (`_drain_restored_parked_work`) spends that proof when it accepts the card. At
+  any later start the row reads the same whether its card was sent, kept or
+  never started, so the scan does not accept it: a card still in the queue line
+  comes back as an ordinary held card with its words, also a card that was sent
+  when the save of its removal never landed. The durable writer
+  (`durable_queue_entries`) leaves a restored card's parked-work link out of the
+  line and the restore stamps the line as read, so the next flush writes the
+  card without it; a start that finds admission off closes the proof for its
+  whole run (`host_hooks.close_restart_unstarted`). The mark is for this
+  process's drains, the startup drain's accepted ids among them. A restored
+  peer's note (it
   carries its sender's address) and a card queued since the restart are still
   dropped with the drop notice, the sender told. Known limit: Send now on a
   running chat promotes its card to the front, and a card held again there stays
   at the front. A drain whose opening pass holds chosen cards and whose accepted-id
-  pick then holds the startup drain's cards posts two notices, one per pass. The
-  row is retired off the drain (a background task), so a gateway stopped in the
-  moment between the keep and that write still finds the row parked at its next
-  start. On an
+  pick then holds the startup drain's cards posts two notices, one per pass. A
+  gateway that starts with admission off and stops before its first queue flush
+  leaves the link in the line, so the next start with admission on resumes that
+  card as the first start after its park would. On an
   idle slot the route starts the drain through Send now's own start (`turn_stop.start_queued_card`, its checks
   under the slot's lock) with no card named, so the queue's holds still apply.
   The marked cards keep their restored provenance. A mark set while the
