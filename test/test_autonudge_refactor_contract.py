@@ -287,7 +287,9 @@ _BASE_SERVICE_MEMBERS: dict[str, tuple[str, str]] = {
     "monitor_dispatch_is_authorized": ("method+async", "909258b72a58"),
     "notify_approval_stalled": ("method", "2a34976b11b0"),
     "notify_cycle_failed": ("method+async", "64f8660b7bbb"),
-    "notify_cycle_landed": ("method", "2a34976b11b0"),
+    # ``succeeded`` says the turn ended ok: only that restarts a loop already
+    # stopped for a failure stand-down, where any landed turn clears the streaks.
+    "notify_cycle_landed": ("method", "6481abcd98cf"),
     "notify_cycle_start_failed": ("method", "2a34976b11b0"),
     "notify_turn_complete": ("method", "295ffab180e4"),
     "notify_user_input": ("method", "fad3ce03aadf"),

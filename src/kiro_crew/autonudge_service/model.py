@@ -114,6 +114,16 @@ CONSECUTIVE_FAILURE_REASON = "consecutive_failures"
 _CONSECUTIVE_FAILURE_STANDDOWN_AFTER = 5
 
 
+#: The stand-downs a completed turn on the slot ends. Both say one thing, that turns
+#: there kept failing, so a turn that completed there is the evidence the cause is
+#: gone: the same evidence that clears the two streaks restarts the loop
+#: (``timers.notify_cycle_landed``). Without it an outage that fails every model call
+#: stops every loop and nothing starts them once the calls work again. No other stop
+#: is in here: a person's pause, a finished subject, the stop file and a spent bound
+#: each say something a completed turn does not answer.
+FAILURE_STANDDOWN_REASONS = frozenset({SESSION_START_FAILURE_REASON, CONSECUTIVE_FAILURE_REASON})
+
+
 # Persisted reason for a loop stopped because its LAST delivered cycle ended on
 # a STRUCTURAL terminal error -- the backend rejected the prompt's shape as
 # malformed, deterministically, so re-firing the identical context every
@@ -291,7 +301,10 @@ _REPLACEABLE_LOOP_STOP_REASONS = (
 #: reaching a row one of these already stopped keeps the earlier reason: the record
 #: keeps why the loop ended, which the popover words its state by -- and for a
 #: finished loop the reason is also what refuses the revival, so ``manual`` stamped
-#: over it would hand Play back on a loop with nothing to resume.
+#: over it would hand Play back on a loop with nothing to resume. One exception, for
+#: the reasonless pause only: on a ``FAILURE_STANDDOWN_REASONS`` stop it records
+#: ``manual``, because a completed turn restarts those and must not restart a loop a
+#: person paused.
 _KEPT_STOP_REASONS = _TERMINAL_BOUND_REASONS | FINISHED_LOOP_REASONS
 
 

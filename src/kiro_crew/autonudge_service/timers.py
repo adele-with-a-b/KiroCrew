@@ -34,6 +34,7 @@ from kiro_crew.autonudge_service.model import (
     _START_FAILURE_BACKOFF_AFTER,
     _START_FAILURE_STANDDOWN_AFTER,
     APPROVAL_HOLD,
+    FAILURE_STANDDOWN_REASONS,
     PERSON_WAIT_HOLD,
     SUBJECT_READ_SECS,
     NudgeAdmissionRefused,
@@ -45,6 +46,7 @@ from kiro_crew.autonudge_service.model import (
     hold_span,
     is_structured_monitor_loop,
     note_hold_start,
+    reason_in,
     runtime_elapsed,
 )
 from kiro_crew.autonudge_service.subject import loop_subject
@@ -834,12 +836,74 @@ async def notify_cycle_failed(
         )
 
 
-def notify_cycle_landed(self: AutoNudgeService, slot_key: str) -> None:
+def _stood_down_for_failures(loop: NudgeLoop) -> bool:
+    """Whether *loop* is stopped for one of the two failure stand-downs and nothing else."""
+    return not loop.active and reason_in(loop.stopped_reason, FAILURE_STANDDOWN_REASONS)
+
+
+def _resume_after_standdown(svc: AutoNudgeService, loop: NudgeLoop) -> None:
+    """Restart *loop* if it stood down for failing turns, now that one completed.
+
+    The revival is ``update(active=True)``, the writer every other resume uses, so
+    it clears the reason and both streaks, advances the config generation and arms
+    one fresh countdown. Run detached and supervised through ``_inflight_adds``,
+    because the caller is synchronous. The stop is read again under the lock as the
+    update's precondition: a pause, a re-arm or a replacement that got there first
+    is left as it is. Never raises, and with no running event loop it does nothing.
+    """
+    if not _stood_down_for_failures(loop):
+        return
+    stood_down_for = loop.stopped_reason
+    try:
+        task = asyncio.get_running_loop().create_task(
+            svc.update(loop.id, active=True, precondition=_stood_down_for_failures)
+        )
+    except RuntimeError:
+        return
+    svc._inflight_adds.add(task)
+
+    def _finish(t: "asyncio.Task[NudgeLoop | None]") -> None:
+        svc._inflight_adds.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if isinstance(exc, NudgeAdmissionRefused):
+            logger.debug(
+                "AutoNudge: loop %s not resumed after its %s stand-down: %s",
+                loop.id,
+                stood_down_for,
+                exc,
+            )
+        elif exc is not None:
+            logger.warning(
+                "AutoNudge: loop %s could not be resumed after its %s stand-down; "
+                "it stays stopped",
+                loop.id,
+                stood_down_for,
+                exc_info=exc,
+            )
+        elif (resumed := t.result()) is not None and resumed.active:
+            logger.info(
+                "AutoNudge: loop %s resumed — a turn completed on its slot after "
+                "it stood down (%s)",
+                loop.id,
+                stood_down_for,
+            )
+
+    task.add_done_callback(_finish)
+
+
+def notify_cycle_landed(self: AutoNudgeService, slot_key: str, *, succeeded: bool = False) -> None:
     """Clear *slot_key*'s failure streaks: a turn on it completed.
 
     Any landed turn counts, a human's too: it proves the session can start
     (``consecutive_start_failures``) and make progress (``consecutive_failed_cycles``),
     and clearing can only keep a loop running, never stop one.
+
+    *succeeded* says the turn ended with outcome ``ok``, which a turn the person
+    stopped did not. Only that restarts a loop already stopped for a failure
+    stand-down (:func:`_resume_after_standdown`); unknown reads as not succeeded,
+    since a loop restarted on no evidence spends five more turns failing.
 
     SYNCHRONOUS and lock-free, because the turn-completion path calls it while a
     baseline commit may hold ``_lock`` mid-write (see
@@ -852,6 +916,8 @@ def notify_cycle_landed(self: AutoNudgeService, slot_key: str) -> None:
     if loop is not None:
         # A landed turn read the board, so the work-ledger wake it answers owes no retry.
         self._ledger_wake_streak.pop(loop.id, None)
+        if succeeded:
+            _resume_after_standdown(self, loop)
     if not loop or not (loop.consecutive_start_failures or loop.consecutive_failed_cycles):
         return
     loop.consecutive_start_failures = 0
