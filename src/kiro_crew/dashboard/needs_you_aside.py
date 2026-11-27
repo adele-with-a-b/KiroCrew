@@ -104,7 +104,7 @@ async def api_chat_slot_set_aside(request: web.Request) -> web.Response:
             outcome=outcome,
             source=source,
             resources=name,
-            **({"error": error} if error else {}),
+            error=error,
         )
 
     async with chat_folders._slot_meta_txn_lock(state):
