@@ -420,35 +420,111 @@ async def test_a_kept_turn_that_does_not_come_back_gets_its_interrupted_row(monk
     assert not chat_keeper_adopt.kept_by_a_keeper(slot), "a slot built later owes its row"
 
 
-@pytest.mark.asyncio
-async def test_the_kept_set_is_empty_once_the_pass_ends(monkeypatch) -> None:
-    from kiro_crew.dashboard import chat_keeper_adopt
-    from kiro_crew.dashboard.state import _ChatSlot
+#: The two chats the restore rebuilds, as ``kept_by_a_keeper`` reads a slot.
+_CHAT_1_AND_2 = [SimpleNamespace(key=f"chat-{n}", linked_session_key="") for n in (1, 2)]
 
-    adopted, gone = _ChatSlot("chat-1"), _ChatSlot("chat-2")
-    keys = frozenset({"dashboard:chat-1", "dashboard:chat-2", "dashboard:chat-3"})
-    monkeypatch.setattr(chat_keeper_adopt, "_KEPT_SESSION_KEYS", keys)
-    seen: list[bool] = []
 
-    async def _attached(_state: Any, slot: Any, *_: Any) -> bool:
-        seen.append(chat_keeper_adopt.kept_by_a_keeper(gone))
-        return True
+async def _boot_with_kept_chats(
+    monkeypatch, tmp_path, adopt_one: Any, *, restore_raises: bool = False
+) -> None:
+    """Run the startup restore over live keepers of chat-1, chat-2 and chat-3.
+
+    The restore rebuilds chat-1 and chat-2; chat-3's keeper names no restored chat,
+    so the pass ends it last. *adopt_one* stands in for each attach.
+    """
+    from dataclasses import replace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from kiro_crew.chat_keeper import records
+    from kiro_crew.dashboard import chat_keeper_adopt, restart_receipt
+    from kiro_crew.dashboard import server as srv
+    from kiro_crew.dashboard.state import DashboardState
+
+    live = [
+        replace(_record(), created=float(n), session_key=f"dashboard:chat-{n}", instance=f"i{n}")
+        for n in (3, 1, 2)
+    ]
+    monkeypatch.setattr(chat_keeper_adopt, "_KEPT_SESSION_KEYS", frozenset())
+    monkeypatch.setattr(chat_keeper, "supported", lambda: True)
+    monkeypatch.setattr(records, "prune_dead", lambda: None)
+    monkeypatch.setattr(records, "live_records", lambda: live)
 
     async def _end(record: Any, why: str, **_: Any) -> None:
         pass
 
-    monkeypatch.setattr(chat_keeper_adopt, "_adopt_one", _attached)
+    monkeypatch.setattr(chat_keeper_adopt, "_adopt_one", adopt_one)
     monkeypatch.setattr(client_keeper, "_end_unadopted", _end)
-    state = SimpleNamespace(_slots={"chat-1": adopted, "chat-2": gone})
-    cfg = SimpleNamespace(agent=SimpleNamespace(chat_keeper=True, agent_started_turns=True))
-    from dataclasses import replace
+    monkeypatch.setattr(restart_receipt, "_append", lambda _path, _record: None)
+    monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
 
-    gone_record = replace(_record(), created=1.0, session_key="dashboard:chat-3")
-    live = [gone_record, replace(_record(), created=2.0)]
-    assert await chat_keeper_adopt.adopt_kept_chats(state, cfg, live) == 1
-    assert seen == [True], "chat-2's keeper is still live while the pass runs"
-    assert not chat_keeper_adopt.kept_by_a_keeper(adopted)
-    assert not chat_keeper_adopt.kept_by_a_keeper(gone), "a later reconcile owes no held row"
+    async def _open(st: Any) -> int:
+        for slot in _CHAT_1_AND_2:
+            st.get_or_create_slot(slot.key)
+        assert all(map(chat_keeper_adopt.kept_by_a_keeper, _CHAT_1_AND_2)), "armed"
+        return 0
+
+    recent = AsyncMock(side_effect=RuntimeError("restore")) if restore_raises else None
+    monkeypatch.setattr(srv.cautious_boot, "pause_before", AsyncMock(return_value=None))
+    monkeypatch.setattr(srv.chat, "restore_open_slots_async", _open)
+    monkeypatch.setattr(
+        srv.chat, "restore_recent_sessions_async", recent or AsyncMock(return_value=0)
+    )
+    state = DashboardState(
+        sessions=MagicMock(count=0), crons=MagicMock(), lessons=MagicMock(), start_time=0.0
+    )
+    cfg = SimpleNamespace(
+        agent=SimpleNamespace(chat_keeper=True, agent_started_turns=True),
+        dashboard=SimpleNamespace(
+            restore_window_minutes=30,
+            restore_sessions=True,
+            idle_slot_sweep_days=0,
+            surface_channel_sessions=False,
+        ),
+    )
+    await srv._restore_dashboard_sessions(state, cfg)
+
+
+@pytest.mark.asyncio
+async def test_the_kept_set_is_empty_once_the_pass_ends(monkeypatch, tmp_path) -> None:
+    from kiro_crew.dashboard import chat_keeper_adopt
+
+    seen: list[str] = []
+
+    async def _attached(_state: Any, slot: Any, *_: Any) -> bool:
+        if chat_keeper_adopt.kept_by_a_keeper(_CHAT_1_AND_2[1]):
+            seen.append(slot.key)
+        return True
+
+    await _boot_with_kept_chats(monkeypatch, tmp_path, _attached)
+    assert seen == ["chat-1", "chat-2"], "chat-2's keeper is still live while the pass runs"
+    assert not any(map(chat_keeper_adopt.kept_by_a_keeper, _CHAT_1_AND_2))
+
+
+@pytest.mark.asyncio
+async def test_a_pass_whose_attach_raises_leaves_no_chat_kept(monkeypatch, tmp_path) -> None:
+    from kiro_crew.dashboard import chat_keeper_adopt
+
+    async def _raises(*_: Any) -> bool:
+        raise RuntimeError("attach")
+
+    with pytest.raises(RuntimeError, match="attach"):
+        await _boot_with_kept_chats(monkeypatch, tmp_path, _raises)
+    # Their keepers end after ``ADOPT_SECS``: "kept, do not message it" must not outlive them.
+    assert not any(map(chat_keeper_adopt.kept_by_a_keeper, _CHAT_1_AND_2))
+
+
+@pytest.mark.asyncio
+async def test_a_restore_that_raises_after_arming_leaves_no_chat_kept(
+    monkeypatch, tmp_path
+) -> None:
+    from kiro_crew.dashboard import chat_keeper_adopt
+
+    async def _not_reached(*_: Any) -> bool:
+        raise AssertionError("no attach runs after a failed restore")
+
+    with pytest.raises(RuntimeError, match="restore"):
+        await _boot_with_kept_chats(monkeypatch, tmp_path, _not_reached, restore_raises=True)
+    assert not any(map(chat_keeper_adopt.kept_by_a_keeper, _CHAT_1_AND_2))
 
 
 def _six_keepers(slots: dict[str, Any]) -> tuple[Any, list[Any]]:
