@@ -68,43 +68,53 @@ async def _restore_dashboard_sessions(state: DashboardState, cfg: KiroCrewConfig
         # The chats a chat keeper kept running, read before the restore so it does
         # not mark their turns interrupted (``chat_keeper_adopt``).
         kept = await asyncio.to_thread(chat_keeper_adopt.arm, cfg)
-        # Session restores spawn a kiro-cli process per restored tab — the last
-        # large group of the startup battery, so it too gets a cautious-boot window.
-        await cautious_boot.pause_before("session restore")
-        from kiro_crew.shared_crew.host_hooks import mark_sessions_restored
-
         try:
-            with state.suspend_slots_push():
-                await chat.restore_open_slots_async(state)
-                restored = await chat.restore_recent_sessions_async(
-                    state,
-                    cfg.dashboard.restore_window_minutes if cfg.dashboard.restore_sessions else 0,
-                    folders_only=not cfg.dashboard.restore_sessions,
-                )
-                if restored:
-                    logger.info("Restored %d session(s)", restored)
+            # Session restores spawn a kiro-cli process per restored tab — the last
+            # large group of the startup battery, so it too gets a cautious-boot window.
+            await cautious_boot.pause_before("session restore")
+            from kiro_crew.shared_crew.host_hooks import mark_sessions_restored
 
-                # Both restore paths above rehydrate tabs under their original
-                # "chat-<N>-<ts>" keys but leave _slot_counter at its boot value of 0.
-                # Reseed it past the highest restored index so the next new chat can't
-                # re-mint a colliding low index (which scrambles the tab -> session map).
-                state.reseed_slot_counter()
+            try:
+                with state.suspend_slots_push():
+                    await chat.restore_open_slots_async(state)
+                    restored = await chat.restore_recent_sessions_async(
+                        state,
+                        (
+                            cfg.dashboard.restore_window_minutes
+                            if cfg.dashboard.restore_sessions
+                            else 0
+                        ),
+                        folders_only=not cfg.dashboard.restore_sessions,
+                    )
+                    if restored:
+                        logger.info("Restored %d session(s)", restored)
+
+                    # Both restore paths above rehydrate tabs under their original
+                    # "chat-<N>-<ts>" keys but leave _slot_counter at its boot value of 0.
+                    # Reseed it past the highest restored index so the next new chat can't
+                    # re-mint a colliding low index (which scrambles the tab -> session map).
+                    state.reseed_slot_counter()
+            finally:
+                # Restart notes reconciliation owes a session land only once the slots
+                # the restore builds exist (``shared_crew.host_hooks``).
+                mark_sessions_restored(state)
+                # Give those chats their mode back before any queued turn runs or a kept
+                # chat is adopted. In the ``finally`` because it is also what lets this
+                # process write its own record: a restore that raised must not leave a
+                # revoke made later unrecorded. Never raises.
+                await chat_trust_restart.restore(state, held_modes.restore)
+
+            # Tell the owner which of them still came back without it (the policy
+            # denies it now, or an older build's record named it).
+            await chat_trust_restart.report(state, held_modes.every_chat())
+            # Attach to those chats now, so a turn that was running and any approval it
+            # waits on reach the dashboard without waiting for a message.
+            await chat_keeper_adopt.adopt_kept_chats(state, cfg, kept)
         finally:
-            # Restart notes reconciliation owes a session land only once the slots
-            # the restore builds exist (``shared_crew.host_hooks``).
-            mark_sessions_restored(state)
-            # Give those chats their mode back before any queued turn runs or a kept
-            # chat is adopted. In the ``finally`` because it is also what lets this
-            # process write its own record: a restore that raised must not leave a
-            # revoke made later unrecorded. Never raises.
-            await chat_trust_restart.restore(state, held_modes.restore)
-
-        # Tell the owner which of them still came back without it (the policy
-        # denies it now, or an older build's record named it).
-        await chat_trust_restart.report(state, held_modes.every_chat())
-        # Attach to those chats now, so a turn that was running and any approval it
-        # waits on reach the dashboard without waiting for a message.
-        await chat_keeper_adopt.adopt_kept_chats(state, cfg, kept)
+            # Every keeper is adopted or ended now, or the restore raised and each one
+            # ends itself after ``ADOPT_SECS``: no chat reads "kept" past this point,
+            # and a later reconcile (Recent, Resume) holds back no row nothing appends.
+            chat_keeper_adopt.disarm()
 
         from kiro_crew.dashboard.member_slot_retry import schedule_member_slot_retry
         from kiro_crew.dashboard.slot_queue_repository import drain_restored_parked_sends

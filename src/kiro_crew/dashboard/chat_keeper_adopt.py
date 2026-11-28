@@ -11,7 +11,9 @@ Runs from the startup restore (``server_runtime.session_restore``) in two steps:
   first (:func:`_attach_order`), so ``AcpClient._spawn`` attaches to its
   keeper (``acp.client_keeper.adopt_for``). It then registers the chat's
   agent-started-turn watch and starts the idle reader, so the turn that was running,
-  and any approval it waits on, reaches the dashboard without waiting for a message.
+  and any approval it waits on, reaches the dashboard without waiting for a message;
+* :func:`disarm`, in the restore's ``finally`` around both, empties the kept set
+  however the restore or the pass ends.
 
 A keeper whose chat did not come back, or any keeper while ``agent.chat_keeper`` is
 off, is ended here, so no second adapter runs its session. Design:
@@ -110,9 +112,6 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
             restart_receipt.note_ended(record.session_key, slot, why)
             _no_longer_kept(record.session_key)
             _owe_no_longer(slot)
-    # Every keeper is adopted or ended now: a later reconcile of these chats (Recent,
-    # Resume) holds back no row that nothing would append.
-    _clear_kept()
     if adopted:
         logger.info("chat keeper: adopted %d chat(s) kept running across the restart", adopted)
     return adopted
@@ -201,7 +200,8 @@ async def _await_held_start(
         await asyncio.sleep(_HELD_START_POLL_SECS)
 
 
-def _clear_kept() -> None:
+def disarm() -> None:
+    """Forget every kept chat; the restore calls it on every way out of its adopt pass."""
     global _KEPT_SESSION_KEYS
     _KEPT_SESSION_KEYS = frozenset()
 

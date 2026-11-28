@@ -1137,9 +1137,14 @@ ends the chat after `ADOPT_SECS` with no gateway, while a pass under load has ta
 over two minutes. "Running" here is what the restore saw
 (`restart_receipt.turn_in_flight_at_restore`: the owed "interrupted" row, or a turn
 marker not ended before the restart), because a keeper reports `turn_at_detach` only
-once attached. A keeper the pass ends (the flag is off, or no slot was restored for
-it) keeps its creation-order place among the idle ones. The order changes no
-outcome: what is kept, left, cut and ended follows from each chat alone.
+once attached. A keeper with no restored chat is ended after every running attach,
+not at its creation place: it sorts with the idle ones by creation (with the flag
+off there is no running group, so every keeper is ended in creation order). The
+order changes no outcome: what is kept, left, cut and ended follows from each chat
+alone. The kept set is emptied on every way out of the pass: the restore calls
+`chat_keeper_adopt.disarm` in a `finally` that spans `arm` to the end of
+`adopt_kept_chats`, so an attach that raises, or a restore that raises after
+arming, leaves no chat reading `kept`, and the exception still propagates.
 
 **What a waiting chat reads as.** From `arm` until the pass reaches it, a kept chat
 has no session in this gateway, yet its process runs on under its keeper. Its
