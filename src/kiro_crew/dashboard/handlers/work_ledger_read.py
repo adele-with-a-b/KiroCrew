@@ -21,6 +21,7 @@ from aiohttp import web
 
 from kiro_crew import conductor_patrol, ledger_wake, session_ledger, work_ledger
 from kiro_crew.dashboard import queue_age, session_control
+from kiro_crew.dashboard.handlers.crew_board_flight import BoardAnswer, answer_of, shared_board
 from kiro_crew.dashboard.handlers.work_ledger_caller import (
     _caller_key,
     _code_channel_caller,
@@ -74,13 +75,7 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     if bad is not None:
         return bad
     assert options is not None
-    compact = bool(options.get("compact", False))
-    # A code channel's conductor reads the published-fields projection alone, so
-    # there is no event tail to read for it.
     published_only = _code_channel_caller(request)
-    if published_only:
-        compact = True
-    tail = int(options.get("events", _MAX_EVENT_TAIL))
     remote_on = await asyncio.to_thread(_remote_dispatch_on)
     if remote_on:
         # Remote dispatch (preview): pull each open remote item's peer copy and file
@@ -89,6 +84,64 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
 
         remote_puller.ensure_running(request.app["state"])
         await remote_ingest.ingest_board(request.app["state"], key)
+    state: DashboardState = request.app["state"]
+    # Single flight (see crew_board_flight). The tool behind this route gives up after
+    # ten seconds and its caller asks again, so the same read can arrive while one is
+    # being built. Reads of one board with the same arguments share ONE build, and only
+    # a build that started after each of them arrived, so no answer is older than its
+    # request; nothing is kept afterwards. The gate, the validation and the remote pull
+    # above ran for this caller, and the channel re-check and the audit line below run
+    # for it too, shared build or not.
+    answer = await shared_board(
+        _READ_FLIGHT + key,
+        json.dumps([options, published_only, remote_on], sort_keys=True),
+        lambda: _build_read(state, key, options, published_only, remote_on),
+    )
+    if answer.status != 200:
+        return _json_bytes(answer)
+    if why := _contained_channel_caller(request, request.headers.get("X-Session-Key", "")):
+        # Same post-await re-check as ``work_brief``. This payload is larger: every
+        # item's acceptance bar plus worker-authored prose for the whole fleet.
+        _audit(
+            request.headers.get("X-Session-Key", "") or "anonymous",
+            "work_ledger_read",
+            "denied",
+            resources="channel_agent_block_post_read",
+        )
+        return _refuse_403(
+            "channel_session",
+            "This session stopped being a private surface while the ledger was being "
+            f"read, so it is no longer one to return it to: {why}.",
+        )
+    _audit(key, "work_ledger_read", "ok", resources=f"{answer.items} item(s)")
+    return _json_bytes(answer)
+
+
+#: Names this route's builds in :mod:`crew_board_flight`, whose Crew board builds are
+#: keyed by the bare ledger key: the two reads of one board never share an answer.
+_READ_FLIGHT = "work-ledger-read:"
+
+
+def _json_bytes(answer: BoardAnswer) -> web.Response:
+    """*answer* as the response ``web.json_response`` gives for the same body."""
+    return web.Response(
+        body=answer.body, status=answer.status, content_type="application/json", charset="utf-8"
+    )
+
+
+async def _build_read(
+    state: DashboardState, key: str, options: dict[str, Any], published_only: bool, remote_on: bool
+) -> BoardAnswer:
+    """One build of the read's answer: the snapshot under the board lock, then the rows.
+
+    Takes the gateway state and plain values, never the request: reads with the same
+    arguments may share the build (:func:`api_work_ledger_get`), so nothing in it may
+    depend on which of them started it.
+    """
+    # A code channel's conductor reads the published-fields projection alone, so
+    # there is no event tail to read for it.
+    compact = published_only or bool(options.get("compact", False))
+    tail = int(options.get("events", _MAX_EVENT_TAIL))
     # Under the board lock for the same reason the brief read is: a write's
     # cache commit and its record append are two steps, and a read between them
     # would publish a mutation the record may yet roll back. The header and the
@@ -96,10 +149,10 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     async with _board_lock(key):
         record, lrefusal = await _own_ledger(key, "work_ledger_read")
         if lrefusal is not None:
-            return lrefusal
+            return answer_of(lrefusal)
         dirty = await _refuse_if_dirty(key, key, "work_ledger_read")
         if dirty is not None:
-            return dirty
+            return answer_of(dirty)
         # One executor hop for the whole snapshot (:func:`_snapshot`): this hold is
         # the one every write and the Crew board's build wait on, so it must not
         # grow with the board.
@@ -108,7 +161,6 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
         )
     assert record is not None
 
-    state: DashboardState = request.app["state"]
     # Liveness is read straight off the dashboard's own slot table rather than
     # over HTTP: this handler runs in the process that owns it. ``orphaned`` asks
     # whether the CONDUCTOR's slot is still open and ``stale`` whether the
@@ -165,27 +217,11 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
         row["events"] = [event.to_dict() for event in events]
         rows.append(row)
 
-    if why := _contained_channel_caller(request, request.headers.get("X-Session-Key", "")):
-        # Same post-await re-check as ``work_brief``. This payload is larger: every
-        # item's acceptance bar plus worker-authored prose for the whole fleet.
-        _audit(
-            request.headers.get("X-Session-Key", "") or "anonymous",
-            "work_ledger_read",
-            "denied",
-            resources="channel_agent_block_post_read",
-        )
-        return _refuse_403(
-            "channel_session",
-            "This session stopped being a private surface while the ledger was being "
-            f"read, so it is no longer one to return it to: {why}.",
-        )
-    _audit(key, "work_ledger_read", "ok", resources=f"{len(rows)} item(s)")
     if published_only:
-        return web.json_response(
-            _published_payload(
-                record, [(item, bool(row.get("stale"))) for item, row in zip(shown, rows)]
-            )
+        published = _published_payload(
+            record, [(item, bool(row.get("stale"))) for item, row in zip(shown, rows)]
         )
+        return answer_of(web.json_response(published), len(rows))
     # ``goal_items_used`` is derived, never stored: the goal's item count, read
     # off the header. The compact read carries it so a round report can state
     # the goal's total from a patrol that reads only the status columns.
@@ -206,7 +242,7 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     else:
         # The whole board, never the filtered rows.
         payload["accept_batch"] = work_ledger.accept_batch(items)
-    return web.json_response(payload)
+    return answer_of(web.json_response(payload), len(rows))
 
 
 #: What a code channel's ``accept_eval`` answer may carry per item: which item, its

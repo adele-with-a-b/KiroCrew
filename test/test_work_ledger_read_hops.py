@@ -122,7 +122,8 @@ async def test_each_row_carries_what_the_per_item_readers_give(hops):
     ids = [_create(n, remote=n % 2 == 0) for n in range(4)]
     wl.apply_worker_report(CONDUCTOR, ids[1], status="done", summary="finished item 1")
     body = await _read()
-    assert [row["item_id"] for row in body["items"]] == ids
+    # Items made within one second list in id order, so the rows are compared as a set.
+    assert sorted(row["item_id"] for row in body["items"]) == sorted(ids)
     assert body["conductor"]["max_depth"] == wl.max_depth()
     for row in body["items"]:
         item = wl.read_work_item(CONDUCTOR, row["item_id"])
