@@ -188,6 +188,19 @@ describe('AnsweringBar', () => {
     expect(document.activeElement).toBe(line())
   })
 
+  it('tells the card’s host how tall the bar under the card is, and gives the room back when the mode ends', async () => {
+    cleanup()
+    const reserved: Array<[PreviewFrame, number]> = []
+    const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(130)
+    render(<AnsweringBar mode={mode} reserve={(f, px) => reserved.push([f, px])} />)
+    enter()
+    expect(reserved.length).toBeGreaterThan(0)
+    expect(reserved.every(([f, px]) => f === frame && px === 130)).toBe(true)
+    await press(line(), { key: 'Escape' })
+    expect(reserved.at(-1)).toEqual([frame, 0])
+    height.mockRestore()
+  })
+
   it('Escape leaves the mode and sends nothing', async () => {
     enter()
     hand('Q1a go', 1)
