@@ -35,6 +35,7 @@ import {
   type ToFrame,
 } from './linkPreviewProtocol'
 import { MAX_OPEN_PAYLOAD_BYTES, jsonBytes, type AppOpenTarget, type OpenRefusal } from './linkPreviewNav'
+import { MARGIN, beside } from './linkPreviewPlace'
 import { MAX_ANSWERING_MESSAGE_BYTES, type AnsweringMessage, type AnsweringRefusal } from './answering/answeringProtocol'
 
 export { FRAME_SANDBOX, type Minted } from '../appFrame/sandboxFrame'
@@ -44,8 +45,6 @@ export const READY_TIMEOUT_MS = 10_000
 export const MAX_PINNED = 8
 /** An overlay frame keeps the scope of this many latest shows: its windows outlive the hover. */
 const MAX_SCOPES = 16
-const MARGIN = 8
-const GAP = 6
 const DEFAULT_SIZE = { width: 360, height: 200 }
 const MIN_SIZE = { width: 40, height: 24 }
 const MAX_SIZE = { width: 720, height: 800 }
@@ -89,7 +88,12 @@ export interface PreviewFrame {
   left: number
   top: number
   width: number
+  /** The height the app asked for. Next to its link the card is drawn shorter
+   *  when the room there is smaller (`place`); this stays, so the card is that
+   *  tall again once it has the room. */
   height: number
+  /** Px Crew draws of its own under the card (`setBelow`), kept free there. */
+  below: number
   anchor: AnchorRect | null
   frameId?: string
   /** Overlay mode (`regions`): the frame covers the viewport, clipped to `regions`. */
@@ -177,11 +181,6 @@ export function mintFrame(appName: string, frameId?: string, providerId = ''): P
 const providerIdOf = (frame: { key: string; appName: string }): string => frame.key.slice(frame.appName.length + 1)
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(n, Math.max(lo, hi)))
-/** A card `h` tall goes below its anchor when it fits, otherwise above it. */
-const beside = (a: AnchorRect, h: number, vh: number): { top: number; side: Placement } => {
-  const below = a.top + a.height + GAP
-  return below + h <= vh - MARGIN ? { top: below, side: 'below' } : { top: a.top - GAP - h, side: 'above' }
-}
 
 export class FrameHost {
   private readonly opts: FrameHostOptions
@@ -235,12 +234,13 @@ export class FrameHost {
   }
 
   /** Where a card of the default size would sit next to `anchor`: the same rule
-   *  `place` uses, so a host-drawn card lands where the app's card would. */
+   *  `place` uses, so a host-drawn card lands where the app's card would. A
+   *  host-drawn card has one height, so it is never drawn shorter. */
   static cardSpot(anchor: AnchorRect, height: number): { left: number; top: number; width: number } {
     const vw = window.innerWidth
     const vh = window.innerHeight
     const w = clamp(DEFAULT_SIZE.width, MIN_SIZE.width, Math.min(MAX_SIZE.width, vw - 2 * MARGIN))
-    const { top } = beside(anchor, height, vh)
+    const { top } = beside(anchor, height, height)
     return { left: clamp(anchor.left, MARGIN, vw - w - MARGIN), top: clamp(top, MARGIN, vh - height - MARGIN), width: w }
   }
 
@@ -395,7 +395,7 @@ export class FrameHost {
       key, appName, el, state: 'loading', ready, visible: false, pinned: false, moved: false, dock: null,
       left: 0, top: 0, width: DEFAULT_SIZE.width, height: DEFAULT_SIZE.height, anchor: null,
       overlay: false, regions: [], invocation: 0, scopes: new Map(), rate: freshRate(),
-      placement: null, toldPlacement: null, clickGrant: null, clickPendingUntil: 0,
+      below: 0, placement: null, toldPlacement: null, clickGrant: null, clickPendingUntil: 0,
     }
     const fail = (why: string, cause: FailureCause) => {
       if (frame.state !== 'loading') return
@@ -478,6 +478,15 @@ export class FrameHost {
     this.opts.onFramesChanged(this.frames().map((f) => f.el))
   }
 
+  /** Crew draws `px` of its own under this card (the answering bar): the card
+   *  is placed so that fits under it too, above the message box. 0 takes it back. */
+  setBelow(frame: PreviewFrame, px: number): void {
+    const below = Math.max(0, Math.round(px))
+    if (frame.below === below) return
+    frame.below = below
+    if (frame.visible && !frame.overlay && frame.el.isConnected) this.place(frame)
+  }
+
   private setVisible(frame: PreviewFrame, visible: boolean): void {
     frame.visible = visible
     frame.el.style.visibility = visible ? 'visible' : 'hidden'
@@ -489,16 +498,19 @@ export class FrameHost {
     const vh = window.innerHeight
     frame.width = clamp(frame.width, MIN_SIZE.width, Math.min(MAX_SIZE.width, vw - 2 * MARGIN))
     frame.height = clamp(frame.height, MIN_SIZE.height, Math.min(MAX_SIZE.height, vh - 2 * MARGIN))
-    const { width: w, height: h } = frame
+    const w = frame.width
+    // A card the person dragged or docked keeps its wanted height: the window bounds it.
+    let h = frame.height
     if (frame.dock) {
       frame.left = frame.dock === 'left' ? MARGIN : vw - w - MARGIN
       frame.placement = null
     } else if (!frame.moved && frame.anchor) {
       const a = frame.anchor
-      const at = beside(a, h, vh)
+      const at = beside(a, h, MIN_SIZE.height, frame.below)
       frame.left = a.left
       frame.top = at.top
       frame.placement = at.side
+      h = at.height
     } else if (frame.moved) {
       frame.placement = null
     }

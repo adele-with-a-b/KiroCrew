@@ -1455,7 +1455,14 @@ Two ways to draw:
 - **Card mode** (the default). The module renders its card into the frame's
   `document.body`, reports the size with `link.card.resize`, and shows it with
   `link.card.open`. The dashboard places the frame below the link (above when there is
-  no room) and keeps it on screen. `card.pin(true)` keeps the card when the
+  no room) and keeps it on screen, clear of the chat's header, its message box and
+  what Kiro Crew stacks on the message box (queued messages, question and approval
+  cards, the jump-to-bottom pill).
+  When neither side of the link has room for the height you asked for, the frame is
+  shorter than that: let the card's body scroll (`overflow-y: auto` under a
+  `max-height: 100vh` card) rather than assume the frame is as tall as `resize`
+  asked, and keep reporting the height the content wants, so the card grows back
+  when there is room. `card.pin(true)` keeps the card when the
   pointer leaves or the chat scrolls; the next hover then gets a fresh frame, and
   at most 8 cards stay pinned. `card.dragBy` moves it (use `screenX`/`screenY`
   deltas: the frame moves under the pointer) and `card.dock` sticks it to an edge.

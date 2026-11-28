@@ -14,7 +14,7 @@
  *
  * @module linkPreview/LinkPreviewLayer
  */
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { RotateCw } from 'lucide-react'
 import { api } from '../api/client'
@@ -26,7 +26,7 @@ import { i18nT } from '../i18n/t'
 import { resolveLinkPreviews, providerFor, setServedLinkPreviews, type ResolvedLinkPreview } from './linkPreviewRegistry'
 import { withoutQuery } from '../appFrame/hosts'
 import { currentTheme } from '../appFrame/sandboxFrame'
-import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions, type ShowScope } from './linkPreviewFrames'
+import { FrameHost, mintFrame, type FailureCause, type FrameHostOptions, type PreviewFrame, type ShowScope } from './linkPreviewFrames'
 import { resolveTextPreview, setLinkPreviewTextPatterns, setTextPatternsOff } from './textPatterns'
 import { readMessageRef, type PreviewLink, type ShowTrigger } from './linkPreviewProtocol'
 import { sendAppNav, sendLinkPreviewNav, setClickOpenProbe } from './linkPreviewNav'
@@ -132,6 +132,8 @@ export default function LinkPreviewLayer() {
   // The live frames, for the link bridge: a card's links open through it.
   const [frameRefs, setFrameRefs] = useState<RefObject<HTMLIFrameElement | null>[]>([])
   const hostRef = useRef<FrameHost | null>(null)
+  // What Crew draws under a card is kept free there when the card is placed.
+  const reserveBelow = useCallback((frame: PreviewFrame, px: number) => hostRef.current?.setBelow(frame, px), [])
   const hideAllRef = useRef<(reason: string) => void>(() => {})
   // Set by the hover effect: a card closed itself.
   const closedRef = useRef<(key: string) => void>(() => {})
@@ -638,7 +640,7 @@ export default function LinkPreviewLayer() {
   return (
     <>
       {chip}
-      <AnsweringBar mode={answering} />
+      <AnsweringBar mode={answering} reserve={reserveBelow} />
       {notice ? (
         <div
           ref={cardRef}

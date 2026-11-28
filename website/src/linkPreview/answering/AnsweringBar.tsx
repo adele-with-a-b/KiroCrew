@@ -4,7 +4,9 @@
  * - under the pinned card, in the card's width: Crew's answer line, the preview
  *   line (the count, the chat's name and the exact message, cut with "..."; a
  *   click opens it whole), and the button row: the buttons the card asked for and
- *   Crew's own "keep, next", which reads "send prompt" while Shift is held;
+ *   Crew's own "keep, next", which reads "send prompt" while Shift is held. Its
+ *   height is told to the card's host (`reserve`), which places the card so the
+ *   bar fits under it and above the message box;
  * - the mode line under the message box: the app, the card's place, the keys.
  *
  * Keys: in Crew's line and on the page (but never in the message box or any
@@ -17,6 +19,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { i18nT } from '../../i18n/t'
 import { isEditableTarget } from '../../utils/editableTarget'
+import type { PreviewFrame } from '../linkPreviewFrames'
 import type { AnsweringMode, ModeState } from './answeringMode'
 import { keyName } from './answeringProtocol'
 import { isPersonPress } from './personPress'
@@ -71,12 +74,15 @@ function takeKey(mode: AnsweringMode, e: KeyboardEvent, inLine: boolean): boolea
   return name !== null && mode.key(name, e)
 }
 
-export default function AnsweringBar({ mode }: { mode: AnsweringMode }) {
+/** Tells the card's host how many px Crew draws under `frame`; 0 when none. */
+type Reserve = (frame: PreviewFrame, px: number) => void
+
+export default function AnsweringBar({ mode, reserve }: { mode: AnsweringMode; reserve?: Reserve }) {
   const s = useSyncExternalStore(mode.subscribe, mode.getSnapshot)
-  return s ? <AnsweringOn key={s.token} mode={mode} s={s} /> : null
+  return s ? <AnsweringOn key={s.token} mode={mode} s={s} reserve={reserve} /> : null
 }
 
-function AnsweringOn({ mode, s }: { mode: AnsweringMode; s: ModeState }) {
+function AnsweringOn({ mode, s, reserve }: { mode: AnsweringMode; s: ModeState; reserve?: Reserve }) {
   const barRef = useRef<HTMLDivElement | null>(null)
   const lineRef = useRef<HTMLInputElement | null>(null)
   const card = useFollow(() => {
@@ -87,6 +93,20 @@ function AnsweringOn({ mode, s }: { mode: AnsweringMode; s: ModeState }) {
     const box = document.querySelector('[data-testid="input-wrapper"]')?.getBoundingClientRect()
     return box && box.width > 0 ? { left: box.left, top: box.bottom + 6, width: box.width } : null
   })
+
+  // The bar hangs under the card: its height is kept free there, as it changes
+  // (the preview opened whole, a notice line), and given back when it goes.
+  const frame = s.frame
+  const drawn = card !== null
+  useLayoutEffect(() => {
+    const bar = barRef.current
+    if (!bar || !reserve) return
+    const tell = () => reserve(frame, bar.offsetHeight)
+    tell()
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(tell)
+    watch?.observe(bar)
+    return () => { watch?.disconnect(); reserve(frame, 0) }
+  }, [drawn, frame, reserve])
 
   // Focus moves to Crew's line when the mode starts; the message box's draft is
   // left as it was. When the mode ends with focus in Crew's bar, it goes back to
