@@ -720,7 +720,9 @@ next turn into the same slot:
   lines after the message: the gateway's count of seats with no worker, the
   backlog's next pick while a seat is free, room here and on each crew, and
   finished workers still open, then one fixed instruction ([monitor-architecture](../modules/monitor-architecture.md)). They
-  are absent when the board has nothing to say.
+  are absent when the board has nothing to say, and in a Conductor chat whose
+  context already holds them: there the fact line is sent only when it differs
+  from the last one sent in that context and the instruction once per context.
 - `{{STOP_FILE}}` in the configured message is substituted with the resolved stop
   sentinel path before the tag is prepended.
 - The slot entry uses role `nudge` with a structured `nudge` meta block (`cycle`,
@@ -731,8 +733,15 @@ next turn into the same slot:
   existing loop's transcript is unchanged and `content` is what the model reads. With
   a banner set, `content` carries that short stand-in instead of the message body and
   is no longer what the model reads — the prompt still carries the full message. The
-  prompt is never shortened: re-delivering the whole instruction every cycle is the
-  guarantee the nudge exists to provide.
+  prompt is never shortened by a banner: delivering the whole instruction is the
+  guarantee the nudge exists to provide. One thing does shorten it, in the row
+  and the prompt alike: a Conductor chat's context that already holds a fixed
+  line of a work-ledger wake (its footer, its read pointer, the shipped patrol
+  instruction, the `[seats]` instruction, an unchanged `[seats]` fact line) is
+  not sent that line again until the context ends
+  ([context-management](../../architecture/context-management.md), "What a
+  Conductor's context already holds"). The loop's stored message is never
+  changed, and any other chat gets the whole text every cycle.
 - **`banner` is optional on every arming surface** and defaults to absent.
   `POST /api/autonudge` and `PATCH /api/autonudge/{loop_id}` accept it; accepting it
   on `PATCH` is what lets a running loop be quieted without resetting its budgets. The

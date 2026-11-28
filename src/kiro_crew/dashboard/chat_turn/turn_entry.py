@@ -563,6 +563,7 @@ async def _turn_open(turn: _ChatTurn) -> _Flow | None:
     # reached in _turn_settle_answer after the stream loop, which does not have the event.
     _terminal_synthetic = False
     turn._terminal_synthetic = _terminal_synthetic
+    turn._terminal_reported_usage = False
     _saw_text_chunk = False
     turn._saw_text_chunk = _saw_text_chunk
     _turn_billed = False

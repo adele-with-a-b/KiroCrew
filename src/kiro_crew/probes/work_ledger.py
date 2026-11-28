@@ -61,6 +61,13 @@ logger = logging.getLogger(__name__)
 #: one; the two must stay equal.
 WORK_LEDGER_KIND = "work-ledger"
 
+#: The footer of every work-ledger wake. A name, because ``held_blocks`` leaves it
+#: out of a wake whose Conductor context already holds it.
+WAKE_SUFFIX = (
+    "The work-ledger watch stays armed. Read the items with work_ledger_read "
+    "before acting: this text names what changed, not the whole board."
+)
+
 #: Events read per item per tick. The kernel masks a repeat by key, so the tail
 #: only has to be long enough that a BURST between two ticks is not missed: a
 #: worker that reports ``blocked`` and then ``progress`` before the next tick must
@@ -331,10 +338,7 @@ class WorkLedgerProbe(irq.Probe):
 
     def wake_suffix(self) -> str:
         """Said once per wake, not once per item."""
-        return (
-            "The work-ledger watch stays armed. Read the items with work_ledger_read "
-            "before acting: this text names what changed, not the whole board."
-        )
+        return WAKE_SUFFIX
 
     # -- internals --------------------------------------------------------
 

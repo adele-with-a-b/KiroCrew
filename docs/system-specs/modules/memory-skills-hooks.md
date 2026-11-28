@@ -7943,6 +7943,18 @@ it is not the public turn's slim-resume path.
 | Critical rules | Existing restored context; no full duplicate |
 | Cross-tab history | Not injected |
 
+A Conductor chat is resumed many times inside one model context (its session
+is reloaded after every Stop and every idle hour). While `held_blocks` records
+that its context holds them, a slim resume there leaves out the
+`[SESSION RESUMED …]` header with the critical rules, sends the reply-language
+line in place of `[RESPONSE PREFERENCES]`, and does not mint
+`[REPLY FORMAT RULES]`; the refreshed date, identity, runtime and member lines
+stay. `build_message` records the three blocks it finds in the message it
+built, and the record ends with the context
+([context-management](../../architecture/context-management.md), "What a
+Conductor's context already holds"). A session with no record gets every block
+as before.
+
 Post-compaction reinjection separately refreshes bounded skill discovery,
 protected skill bodies, memory navigation, reply preferences and member identity,
 and on the Claude Code and Codex backends the steering resources, under the session-start gate

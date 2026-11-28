@@ -56,6 +56,7 @@ def _to_llm_event(e: Any) -> LLMEvent:
         stop_reason=e.stop_reason,
         refusal=e.refusal,
         synthetic_completion=e.synthetic_completion,
+        answer_reported_usage=e.answer_reported_usage,
         request_id=e.request_id,
         options=e.options,
         tool_input=e.tool_input,

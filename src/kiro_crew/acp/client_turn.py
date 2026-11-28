@@ -52,6 +52,7 @@ from kiro_crew.acp._dispatch import (
     _loggable_request_id,
     error_is_refusal_terminal,
     parse_message_id,
+    parse_prompt_token_usage,
 )
 from kiro_crew.acp.client_timeouts import (
     _COMPACTION_FAILED_TURN_BUDGET,
@@ -1154,6 +1155,7 @@ async def _dispatch_events(
                 stop_reason=reason,
                 refusal=_refusal,
                 usage=self.last_prompt_stats.to_turn_usage(),
+                answer_reported_usage=parse_prompt_token_usage(result) is not None,
             )
             return
         if action == "error":

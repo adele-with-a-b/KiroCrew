@@ -49,6 +49,7 @@ from kiro_crew.dashboard.slot_queue_repository import (
     is_owner_queue_entry,
     restored_card_waits,
 )
+from kiro_crew.held_blocks import steer_read as held_steer_read
 
 if TYPE_CHECKING:
     from kiro_crew.dashboard.chat_runner import (
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
         DashboardState,
         _ChatSlot,
         crew_log_emit,
+        effective_session_key,
         logger,
         possibly_consumed_steers,
         settle_consumed_steers,
@@ -271,8 +273,12 @@ def _settle_consumed_steers(
         responsive_chat.forget_steer(slot, settled_msg)
         slot._steer_attachment_meta.pop(settled_msg, None)
         slot._steer_act_now.discard(settled_msg)
-        wake = _steered_wake(slot._steer_automation.pop(settled_msg, None))
+        _automation = slot._steer_automation.pop(settled_msg, None)
+        wake = _steered_wake(_automation)
         consumed_wake = wake or consumed_wake
+        if _automation is not None:
+            # The turn read a steered wake: its fixed lines are in the context now.
+            held_steer_read(effective_session_key(slot), settled_msg)
         # Consumed by this turn, so no requeue will read them. The successful steer
         # RPC leaves the admission and both origin marks in place for that requeue.
         slot._steer_admissions.pop(settled_msg, None)

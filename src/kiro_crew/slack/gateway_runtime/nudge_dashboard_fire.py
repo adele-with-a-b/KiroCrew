@@ -301,10 +301,26 @@ async def _fire_dashboard_nudge(
         # charge) must scope to the generation this turn fired under here as
         # well -- otherwise the read below is unbound on this path.
         _fired_generation = loop.config_generation
+    # A Conductor's context holds the fixed lines an earlier wake carried (the
+    # how-to lines of a work-ledger wake, the patrol instruction, the ``[seats]``
+    # instruction, a ``[seats]`` fact line whose numbers have not moved), and its
+    # harness replays them with every request. ``held_blocks`` leaves those out, so
+    # a later wake is its header and its news; they go out again once the context
+    # is compacted, reset or replaced. A chat with no record there (every chat that
+    # is not a Conductor's, and every harness whose compaction Crew cannot see)
+    # gets the text below unchanged.
+    from kiro_crew import held_blocks
+    from kiro_crew.dashboard.chat_utils import effective_session_key
+
+    _held_key = effective_session_key(slot)
+    if not _seats and self._work_ledger_wake_loop(loop, wake_message):
+        held_blocks.seats_silent(_held_key)
+    tagged = held_blocks.lean_wake(_held_key, tagged, starts_turn=True)
     # ONE STRING, TWO CONSUMERS, and only an opt-in ``banner`` splits them.
-    # ``tagged`` is the PROMPT and is never shortened — re-delivering the
-    # whole instruction every cycle is the guarantee the nudge exists to
-    # provide. ``visible`` is the transcript row, which a reader consults
+    # ``tagged`` is the PROMPT. Its news and its cycle header are never
+    # shortened, and the standing instruction reaches every context once (above):
+    # a context always holds the whole instruction, which is the guarantee the
+    # nudge exists to provide. ``visible`` is the transcript row, which a reader consults
     # only to learn that a cycle happened. Without a banner it IS ``tagged``,
     # so an existing loop's row is byte-identical to today's.
     #
@@ -375,7 +391,9 @@ async def _fire_dashboard_nudge(
     # multi-kilobyte instruction payload behind a turn would stack identical
     # copies and blow out the context window.
     # Only a wake with news is steered; its seat lines ride with it.
-    _steer_text = f"{_wake_text}\n\n{_seats}" if _seats else _wake_text
+    _steer_text = held_blocks.lean_wake(
+        _held_key, f"{_wake_text}\n\n{_seats}" if _seats else _wake_text
+    )
     if _wake_text and await self._steer_work_ledger_wake(loop, slot, _steer_text):
         # DISPATCHED, because the news reached a model turn: that is what the
         # fire exists to do, and the loop must not re-owe a wake it has
@@ -900,6 +918,12 @@ async def _steer_work_ledger_wake(
             outcome,
         )
         return False
+    # The harness accepted it: a later steer into this turn leaves the same fixed
+    # lines out, and the turn's reading of this one makes them the context's.
+    from kiro_crew import held_blocks
+    from kiro_crew.dashboard.chat_utils import effective_session_key
+
+    held_blocks.steer_sent(effective_session_key(slot), text)
     logger.info(
         "AutoNudge: loop %s steered its work-ledger wake into the turn already "
         "running on slot %s",

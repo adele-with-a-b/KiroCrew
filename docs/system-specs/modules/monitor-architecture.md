@@ -296,7 +296,11 @@ itself, through its own identity-gated, audited and containment-judged route.
 Every turn a work-ledger watch delivers on a dashboard slot, quiet cycle or
 wake, also ENDS with the `[seats]` lines (`dashboard/patrol_seats.py`), because
 conductors left worker seats empty while tasks waited and a prompt rule alone
-did not change that. A seat is a `concurrency_cap` slot, counted as the store
+did not change that. A Conductor chat whose context already holds them is the
+one exception: the fact line goes out only when it differs from the last one
+sent in that context, and the instruction line once per context
+(`held_blocks.py`; [context-management](../../architecture/context-management.md),
+"What a Conductor's context already holds"). A seat is a `concurrency_cap` slot, counted as the store
 refuses on (`work_ledger.count_seated`, read by `probes.work_ledger.seat_facts`).
 The fact line names the open stories holding a seat with no worker, in
 `next_pick` order (`work_plan_vocab.pick_key`); then, only while a seat is free
@@ -353,8 +357,9 @@ turn's whole life, and the fence now belongs to the read route alone.
 
 A wake that lands while the slot is already running is STEERED into that running
 turn (`_steer_work_ledger_wake`) rather than declined, because its payload is small.
-The steer and the fire now carry the SAME text, which the pointer is what makes
-possible: a steer can be requeued, a requeue drops the running turn's fence, and the
+The steer and the fire are composed from the SAME text (each then leaves out the
+fixed lines the Conductor's context already holds, `held_blocks.lean_wake`), which
+the pointer is what makes possible: a steer can be requeued, a requeue drops the running turn's fence, and the
 board could therefore never ride one -- while briefs and a read pointer disclose only
 item ids and statuses, the same text `irq` may already persist outside the store's
 gated read path. `AutoNudgeService.notify_turn_complete` brings the busy-retry

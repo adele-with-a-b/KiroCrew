@@ -348,7 +348,7 @@ it adds:
 | `[CURRENT USER] <name>` | the sender's display name (for example WeCom `allowed_users[].name`) | a channel turn that carries a display name |
 | `[Task checklist — automatic recovery]` | `todo_recovery_prompt`, prepended to the message by `dashboard/chat_turn/prompt_assembly.py`; task text inside the untrusted TODO fence | a cold start without provider history, or a recovery still pending; it settles on the provider's first event. Never on a harness that keeps its checklist itself (`SessionCapabilities.keeps_own_checklist`, claude), which has no `todo_list` tool |
 | `[Task checklist — person edited]` | `todo_sync_prompt`, prepended the same way | a warm turn with person edits not yet stated to the agent; marked stated on the provider's first event. Never on a harness that keeps its checklist itself, as above |
-| `[REPLY FORMAT RULES]` + guidance | `_interactive_guidance` | interactive sessions, in every built message. At the wire, on a harness whose compaction Kiro Crew sees (kiro, kas, codex, claude) and a turn with no member essentials: once per engine conversation, and again after anything that can drop it. Everywhere else: every message |
+| `[REPLY FORMAT RULES]` + guidance | `_interactive_guidance` | interactive sessions, in every built message. At the wire, on a harness whose compaction Kiro Crew sees (kiro, kas, codex, claude) and a turn with no member essentials: once per engine conversation, and again after anything that can drop it. Everywhere else: every message. A Conductor chat's built message leaves the block out while its context holds it ("What a Conductor's context already holds") |
 | `[CURRENT USER REQUEST …]` + the user's text | the turn | always last |
 
 The guidance paragraphs sit **before** the request header on purpose: trailing
@@ -365,9 +365,10 @@ essentials, `build_message` binds the block as the provider's delivery envelope
 (`EssentialDelivery.bind`, the send-once writer the essentials already use, see
 [providers](../system-specs/modules/providers.md)), and the provider takes the
 block out of the prompt at the wire while this conversation has acknowledged
-it. There is no second record of what was sent: the delivery is the one place
-that knows when a conversation may have lost it, and it decides at the send,
-after the client is ready.
+it. The delivery is the place that knows when a conversation may have lost it,
+and it decides at the send, after the client is ready. It lives on the provider
+object, so a resumed session starts with none; a Conductor chat keeps a record
+of its own beside it (next section), and no other chat has a second record.
 
 | What happens | Why the next prompt carries the block again |
 |---|---|
@@ -411,6 +412,93 @@ known to send: that turn sets the session's flag for a compaction only
 read at the wire). The marker scrub (`_neutralize_reply_format_markers`) is not
 part of any of this: it runs over the assembled prefix on every message, so
 nothing else can mint the header.
+
+### What a Conductor's context already holds
+
+A Conductor chat is woken many times inside one model context, and its harness
+replays that context with every request. Measured on a live Conductor
+conversation over one day, 37% of the characters Kiro Crew sent it were lines
+the same context already held. `kiro_crew/held_blocks.py` is the record of the
+fixed blocks one session's context holds, and each block below goes out once
+per context:
+
+| Block | Composed into | Sent |
+|---|---|---|
+| the footer and the `accept_eval` pointer of a work-ledger wake, the default patrol instruction, the `[seats]` instruction | every fired and every steered wake | with the first wake of a context; a later wake is its news, its `[auto-nudge cycle N]` header and its budget line |
+| the `[seats]` fact line | every wake | only when it differs from the last one sent in this context (a board that had none in between makes the same line news again) |
+| `[SESSION RESUMED …]` with the critical rules, `[RESPONSE PREFERENCES]`, `[REPLY FORMAT RULES]` | every resumed turn (a session is reloaded after a gateway restart, a forced Stop and an idle hour) | once per wording; a resumed turn carries the refreshed date, identity and runtime, and the reply-language line in place of the preferences. The reply-format rules of a typed turn and of a wake differ by one paragraph, and the record holds each wording it sent |
+| the after-compaction re-send and the first-turn history | the turn after a compaction, and again after a turn that did not land | once, a Stop on Claude Code of a prompt it had started included (below) |
+
+**Who has a record.** The dashboard turn's build opens one
+(`dashboard/held_context.py`, `held_open_for_turn`) for a chat that runs a
+Conductor (`conductor_step.is_conductor_slot`) on a harness whose compaction
+Kiro Crew sees (`LLMProvider.reports_compaction is True`, the same set and the
+same reading as the reply-format rules above). A session with no record is
+told nothing: every other chat, and a Conductor on a harness outside the set,
+gets the text it had before, byte for byte (`test_held_blocks.py`,
+`TestAChatWithNoRecord`).
+
+**What ends a record's knowledge**, each one a point where the context it
+describes is gone:
+
+| Event | Where |
+|---|---|
+| a compaction, whoever started it | a compaction Kiro Crew ran or saw inside a turn ends in `SessionManager.mark_needs_reinjection`, which drops the record. Three signals set the re-send flag without that call (a compact that timed out after it was sent, one that ended with no status, and a late completion the status reader dropped: `session_compaction.py`), and the record ends at the next build, through `fresh` (`needs_reinjection`). A wake fired between such a signal and that build is shortened against the old record; it gets its lines back when it starts that turn (`held_blocks.owed_wake_lines`) |
+| a context that starts with no history: a new conversation, a reset, a context-cap trim | the build passes `fresh` (`_context_is_new and not _provider_has_history`) |
+| the turn that re-sends after a compaction | the build passes `fresh` (`needs_reinjection`) |
+| `/clear`, `/compact` | the slash arm of the build drops it |
+| a gateway restart | the record is in memory only |
+
+Every one errs toward sending a block again, never toward leaving one out. The
+fire shortens a wake before the turn it starts is admitted, and only that
+turn's build learns that its context is new (a context-cap trim is decided at
+admission): the lines the fire left out are kept, and the build puts them back
+ahead of the request (`held_blocks.owed_wake_lines`).
+
+**When a block counts as held.** The build records what the prompt carries
+and the turn's end settles it (`held_settle`, in `_turn_settle_debts`): kept
+when the turn landed or the harness kept a stopped prompt it had started,
+rolled back otherwise (a prompt stopped while it waited in Claude Code's queue
+included), so the next message carries the block again. A build runs on a
+worker and goes on after a Stop ended its turn; it reads the record's turn
+number before its first blocking step (`held_blocks.turn_of`), and a build
+whose turn is over records nothing, so the next turn does not leave out rules
+that no message carried. A wake steered into a
+running turn is held apart until the turn reads it (`steer_read`, from
+`_settle_consumed_steers`): a second steer into the same turn leaves the lines
+out, and a steer the turn never read is forgotten at the turn's end, because
+its text then waits as a queue card. Wakes that waited together as cards reach
+the model as one message, with one copy of each fixed line and the newest
+`[seats]` lines (`held_blocks.one_copy`, for a Conductor on any harness: one
+message is one context).
+
+**A Stop on Claude Code keeps a prompt it had started**
+(`stopped_prompt_kept`). Claude Code writes a prompt it started to its
+conversation at once and a Stop adds an interruption row after it; Kiro CLI
+writes a prompt only once the model answered it. The re-injection re-arm and
+the first-turn history debt both assumed the Kiro CLI contract on every
+harness, so on Claude Code every message waiting behind a Stop carried the
+whole after-compaction re-send again, on top of the copies the conversation
+kept (measured: seven messages of about 80,000 characters each within 18
+seconds). A stopped turn there now settles both debts when Claude Code had
+started its prompt and the conversation is not being discarded.
+
+A prompt Claude Code had not started is not kept. While Claude Code is busy
+with a reply it began on its own (a background command finished), a new prompt
+waits in its queue; a Stop then answers that prompt `cancelled` and removes it
+from the queue, so it never reaches the conversation. The adapter's answer
+tells the two apart: it carries the turn's token counts, zero or not, only for
+a prompt Claude Code started (`AcpEvent.answer_reported_usage`, set where the
+client reads the answer). An ending without them, an ending Kiro Crew wrote
+itself included, leaves both debts owed and rolls the record back, as on every
+other harness. This rule applies to every dashboard chat on Claude Code, not
+only a Conductor's; a member chat's session-start re-arm is unchanged.
+
+The wake lines are matched as whole lines against their owners' constants
+(`probes.work_ledger.WAKE_SUFFIX`, `ledger_wake.WAKE_READ_POINTER`,
+`patrol_seats.SEATS_INSTRUCTION`, `conductor_patrol.SHIPPED_PATROL_MESSAGES`),
+so text a worker or a person wrote is never taken out, and the loop's stored
+patrol text is never changed (`is_fixed_patrol_payload` still holds).
 
 ### Trigger-matched skills
 
@@ -609,7 +697,9 @@ re-adds, once:
    tools on the binding). Workers, plain chats and minimal turns get nothing.
 
 If that turn does not land (cancelled, refused, errored), `rearm_reinjection` puts
-the flag back, so the context is never lost to a failed turn. A minimal-context turn
+the flag back, so the context is never lost to a failed turn. One stopped turn
+counts as landed for this: a Stop on Claude Code of a prompt it had started, which its
+conversation keeps (`stopped_prompt_kept`, "What a Conductor's context already holds"). A minimal-context turn
 gets back only the agent contract and the reply-style preferences; the memory index,
 skills index, lessons, steering resources, folder steering, member section and work
 ledger stay withheld

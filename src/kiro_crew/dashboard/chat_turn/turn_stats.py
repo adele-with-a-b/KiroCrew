@@ -768,6 +768,7 @@ async def _on_complete(turn: _ChatTurn, event) -> Literal[_Flow.BREAK] | None:
     turn._saw_terminal_event = _saw_terminal_event
     _terminal_synthetic = bool(event.synthetic_completion)
     turn._terminal_synthetic = _terminal_synthetic
+    turn._terminal_reported_usage = getattr(event, "answer_reported_usage", False) is True
     _turn_billed = usage_has_billing(event.usage)
     turn._turn_billed = _turn_billed
     # Hang-attribution snapshot BEFORE the close-all safety net

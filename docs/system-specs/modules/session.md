@@ -4398,7 +4398,8 @@ when a switch is detected (stored SID exists AND providers differ).
    during allocation and consume the lease directly. Cancelled, failed, empty, or
    synthetic terminals leave it armed for the next prompt. One of those that kept
    its prompt on the live session (`_kiro_cli_kept_the_prompt`, the first-turn
-   history rule below) also notes the replay delivered to the provider's
+   history rule below; on Claude Code `stopped_prompt_kept`, a Stop there keeps
+   a prompt Claude Code had started in the conversation) also notes the replay delivered to the provider's
    current `context_incarnation` (`note_provider_switch_replay_delivered`):
    later prompts on that native conversation do not rebuild it, and the next
    landed non-slash `end_turn` commits the SID. A respawned process reloading
@@ -5016,7 +5017,10 @@ does, so the turn has one actor and one budget; at a second loop's wake; and at
 nor stops the run: it keeps its place, and the live rows behind it still drain
 together. A run of one drains as before.
 
-The model reads the run as one prompt (`agent_run_prompt`): a header, then each
+The model reads the run as one prompt (`agent_run_prompt`); in a Conductor chat
+the texts first lose every repeated copy of a fixed work-ledger wake line, and
+keep the newest `[seats]` lines only (`held_blocks.one_copy`), since each wake
+was written for a turn of its own. The prompt is a header, then each
 text between `[message N/M <id>]` and `[end N/M <id>]`, with an id drawn fresh for
 the run, so a text cannot close its own message early or pass a line of its own
 (a forged `[work-ledger wake]` line; a forged sender line is already defused at

@@ -841,7 +841,17 @@ def _dequeue_agent_run(slot) -> tuple[str, list[dict]] | None:
     run_id = secrets.token_hex(6)
     for item in run:
         item["meta"][AGENT_RUN_META] = run_id
-    return agent_run_prompt([item["content"] for item in run], run_id), run
+    texts = [item["content"] for item in run]
+    # A Conductor's wakes that waited together were each written to stand alone; as
+    # one message they need each fixed line once and the newest ``[seats]`` lines
+    # only. One message is one context on every harness, so this asks nothing of it.
+    from kiro_crew import held_blocks
+    from kiro_crew.conductor_step import is_conductor_slot
+    from kiro_crew.dashboard.chat_utils_slots import effective_session_key
+
+    if is_conductor_slot(slot, effective_session_key(slot)):
+        texts = held_blocks.one_copy(texts)
+    return agent_run_prompt(texts, run_id), run
 
 
 def agent_run_prompt(texts: list[str], run_id: str) -> str:
