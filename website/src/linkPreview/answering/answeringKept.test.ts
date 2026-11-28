@@ -196,13 +196,30 @@ describe('the answering mode: words typed and not kept wait at their question', 
     expect(line()).toBe('')
   })
 
-  it('typing while the card names no question waits there too', () => {
+  it('the first question a card names takes the line as it stands: words typed before it stay, as that question’s', () => {
     enter()
     mode.setLine('early words')
+    const rev = mode.state?.lineRev
+    at('q1')
+    expect(line()).toBe('early words')
+    expect(mode.state?.lineRev).toBe(rev)
+    at('q2')
+    expect(line()).toBe('')
+    at('q1')
+    expect(line()).toBe('early words')
+    // Nothing was put by under "no question".
+    at('')
+    expect(line()).toBe('')
+  })
+
+  it('once a question was named, typing while the card names none waits there too', () => {
+    enter('q1')
+    at('')
+    mode.setLine('loose words')
     at('q1')
     expect(line()).toBe('')
     at('')
-    expect(line()).toBe('early words')
+    expect(line()).toBe('loose words')
   })
 
   it('a shown draft is a new line: a message handed for the older line is not sent until the card hands again', async () => {

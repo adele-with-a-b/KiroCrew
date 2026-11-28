@@ -1623,7 +1623,8 @@ answer kept so far in one press:
   message again, as after any draft. Words typed and not kept are no answer: you
   are told `kept` only on their Enter. Enter keeps the line's words and drops the
   unkept ones for that question; Enter on an emptied line forgets both. Naming the
-  same question again changes nothing. You supply the key only: no call puts text
+  same question again changes nothing. If your card names its first question only
+  after the person typed, the line stays as it is and is that question's line. You supply the key only: no call puts text
   in Crew's line, and what Shift+Enter sends is still the text you handed, as the
   preview shows it. Without `question` the line is one line for the whole mode, as
   at level 22; a dashboard older than level 23 ignores `question`.

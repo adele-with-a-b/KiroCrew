@@ -112,6 +112,8 @@ export class AnsweringMode {
    *  left a question, by that question's key ('' while the card names none).
    *  Written only from the line, in `showLine`. Gone with the mode. */
   private readonly drafts = new Map<string, string>()
+  /** The card has named a question in this mode (`showLine`'s first naming). */
+  private named = false
 
   constructor(private readonly deps: ModeDeps) {}
 
@@ -204,6 +206,7 @@ export class AnsweringMode {
         }
         this.pendingEnd = null
         this.forget()
+        this.named = Boolean(msg.setup.question)
         reply(true)
         this.emit()
         if (!s) this.deps.say?.('entered', 0)
@@ -285,12 +288,17 @@ export class AnsweringMode {
    * line; the card supplies the key and nothing else. A changed line is a new
    * line number, so a message handed for the older line is not sent until the
    * card hands again.
+   * The first question a card names in a mode takes the line as it stands:
+   * what they typed before any question had a name stays in sight, as that
+   * question's line.
    */
   private showLine(before: string): void {
     const s = this.s
-    if (!s || s.status === 'sending') return
+    if (!s) return
     const question = s.setup.question ?? ''
-    if (question === before) return
+    const first = !this.named
+    if (question) this.named = true
+    if (first || question === before || s.status === 'sending') return
     if (s.line && s.line !== this.keptLines.get(before)) this.drafts.set(before, s.line)
     else this.drafts.delete(before)
     const text = this.drafts.get(question) ?? this.keptLines.get(question) ?? ''
@@ -302,6 +310,7 @@ export class AnsweringMode {
     this.press = null
     this.keptLines.clear()
     this.drafts.clear()
+    this.named = false
   }
 
   /** A key the card declared, pressed in Crew's line or on the page. */
