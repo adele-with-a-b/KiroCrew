@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from kiro_crew import chat_keeper
 from kiro_crew.acp import client_keeper
 from kiro_crew.chat_keeper.transport import AttachState
 from kiro_crew.dashboard import restart_receipt
@@ -266,6 +267,73 @@ async def test_the_receipt_lists_cut_queued_and_ended_chats_and_is_appended(
     assert restart_receipt.build(gateway) is None, "the receipt ends with the boot"
     assert await restart_receipt.finish(gateway) is None, "a second finish writes nothing"
     assert len(restart_receipt.receipts_path(tmp_path).read_text().splitlines()) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not chat_keeper.supported(), reason="the chat keeper is POSIX only")
+@pytest.mark.parametrize("oldest_first", [True, False])
+async def test_the_order_of_the_pass_changes_no_count_of_the_receipt(
+    monkeypatch, oldest_first: bool
+) -> None:
+    # One start's chats, whichever keeper is the oldest: what is kept, cut, left,
+    # ended and queued follows from each chat, not from its place in the pass.
+    from dataclasses import replace
+
+    from kiro_crew.dashboard import chat_keeper_adopt
+    from kiro_crew.dashboard import state as dashboard_state
+    from kiro_crew.dashboard.slot_queue_repository import RESTORED_QUEUE_KEY
+
+    running = _slot(owed=True, key="chat-1")
+    idle = _slot(owed=False, key="chat-2")
+    # Its eager start stood down: the keeper is ended and the turn reads as cut.
+    lost = _slot(owed=False, key="chat-3", marker={"generation": 2, "cut": True})
+    # A message started its turn before the pass reached it.
+    taken = _slot(owed=True, key="chat-4")
+    taken.running = True
+    idle._queue = [{"id": "q1", RESTORED_QUEUE_KEY: True}]
+    slots = {slot.key: slot for slot in (running, idle, lost, taken)}
+    attaches = {
+        "chat-1": _state(detached_secs=90.0, turn_at_detach=True, permission_waits=1),
+        "chat-2": _state(detached_secs=40.0),
+    }
+
+    async def _adopt_one(state: Any, slot: Any, cfg: Any, record: Any) -> bool:
+        if slot.key not in attaches:
+            return False
+        await restart_receipt.note_kept(state, slot, attaches[slot.key])
+        return True
+
+    async def _end(record: Any, why: str, **_: Any) -> None:
+        pass
+
+    monkeypatch.setattr(chat_keeper_adopt, "_adopt_one", _adopt_one)
+    monkeypatch.setattr(client_keeper, "_end_unadopted", _end)
+    monkeypatch.setattr(dashboard_state, "append_and_surface", lambda *a, **k: None)
+    # chat-5's keeper names no restored chat.
+    names = ["chat-1", "chat-2", "chat-3", "chat-4", "chat-5"]
+    ages = range(1, 6) if oldest_first else range(5, 0, -1)
+    live = [
+        replace(_record(), created=float(age), session_key=f"dashboard:{name}", instance=name)
+        for name, age in zip(names, ages)
+    ]
+    restart_receipt.begin()
+    gateway = SimpleNamespace(_slots=slots)
+    cfg = SimpleNamespace(agent=SimpleNamespace(chat_keeper=True, agent_started_turns=True))
+    assert await chat_keeper_adopt.adopt_kept_chats(gateway, cfg, live) == 2
+    record = restart_receipt.build(gateway)
+    assert record is not None
+    assert {k["slot"]: k["running"] for k in record["kept"]} == {"chat-1": True, "chat-2": False}
+    assert [e["slot"] for e in record["left"]] == ["chat-4"]
+    assert [e["slot"] for e in record["cut"]] == ["chat-3"]
+    assert record["queued"] == [{"slot": "chat-2", "title": "Fix the build", "count": 1}]
+    assert sorted(e["session_key"] for e in record["ended"]) == [
+        "dashboard:chat-3",
+        "dashboard:chat-5",
+    ]
+    assert record["summary"] == (
+        "2 kept (1 running), 1 cut, 1 queued, 1 left to another start, "
+        "2 keeper(s) ended, 1 approval(s) waited"
+    )
 
 
 def test_the_keepers_gap_report_measures_on_its_own_clock(monkeypatch) -> None:

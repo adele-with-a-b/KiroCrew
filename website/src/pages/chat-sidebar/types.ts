@@ -160,7 +160,7 @@ export interface Slot {
   /** The per-row mute (see ChatSlot.muted); drawn as a marker at rest. */
   muted?: boolean
   /** A worker tab's process: `released` once the idle sweep stopped it. */
-  process?: 'live' | 'released'
+  process?: 'live' | 'kept' | 'released'
   tags?: string[]
   forked_from?: string | null
   source_links?: Array<{

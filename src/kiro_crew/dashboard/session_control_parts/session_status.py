@@ -257,13 +257,21 @@ def _bounded_status_title(value: object) -> str:
 
 
 def process_state(state: "DashboardState", slot: Any) -> str:
-    """``"live"`` while *slot*'s session holds a running process, else ``"released"``.
+    """*slot*'s ``process`` value (``kiro_crew.session_process``): live, kept or released.
 
-    A released session keeps its conversation: the idle sweep stops the process
-    and the next turn resumes it through ``session/load`` (session.md, "Idle
-    cleanup"). Read from the session manager's live table
-    (``SessionManager.has_session``, keyed by the slot's effective session key).
+    ``live`` while its session holds a running process, read from the session
+    manager's live table (``SessionManager.has_session``, keyed by the slot's
+    effective session key). A released session keeps its conversation: the idle
+    sweep stops the process and the next turn resumes it through ``session/load``
+    (session.md, "Idle cleanup").
+
+    ``kept`` only after a restart, until the boot's adopt pass reaches the chat: a
+    chat keeper kept its process running and this gateway has not attached to it
+    yet (``chat_keeper_adopt.kept_by_a_keeper``). Such a chat is not stopped, and a
+    message is not what it waits for.
     """
+    from kiro_crew import session_process
+    from kiro_crew.dashboard.chat_keeper_adopt import kept_by_a_keeper
     from kiro_crew.dashboard.chat_utils_slots import effective_session_key
 
     sessions = getattr(state, "sessions", None)
@@ -272,7 +280,9 @@ def process_state(state: "DashboardState", slot: Any) -> str:
     except Exception:  # noqa: BLE001 - an unanswerable probe reads as released
         logger.debug("process probe failed for %s", getattr(slot, "key", "?"), exc_info=True)
         live = False
-    return "live" if live else "released"
+    if live:
+        return session_process.LIVE
+    return session_process.KEPT if kept_by_a_keeper(slot) else session_process.RELEASED
 
 
 def _activity_fields(slot: Any) -> dict[str, Any]:
@@ -443,6 +453,9 @@ async def created_session_status(
     * ``idle`` — open and doing nothing. This is the one that needs a decision,
       unless the row's ``looping`` is true: the session's own bounded loop (a
       ``monitor_start`` waiting on CI) will wake it, so wait, as for ``working``.
+      Wait too while the row's ``process`` is ``kept`` (:func:`process_state`):
+      after a restart the chat runs on under its keeper and this gateway has not
+      attached to it yet, so what it is doing is not known here.
     * ``closed`` — the crew log names it, the dashboard does not hold it, and the
       log records a ``session/closed`` edge: a worker that FINISHED and closed its
       tab. Carries ``closed_at``. Ignore it; there is nothing here to message, and

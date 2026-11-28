@@ -202,6 +202,15 @@ def _was_running(slot: Any, attach: Any, detached_secs: Any) -> bool:
     return isinstance(marker, dict) and marker.get("cut") is not False
 
 
+def turn_in_flight_at_restore(slot: Any) -> bool:
+    """Whether the restore found *slot*'s turn in flight.
+
+    All that is known of a kept chat before its keeper attaches and reports
+    ``turn_at_detach``; the adopt pass orders its attaches by it.
+    """
+    return _was_running(slot, None, None)
+
+
 def note_left(slot: Any) -> None:
     """Record a kept chat the pass left to another start of it, which reports nothing here."""
     receipt = _RECEIPT

@@ -16,7 +16,7 @@ from collections.abc import Callable
 from typing import Any, NamedTuple
 from urllib.parse import quote
 
-from kiro_crew import steer_refusal
+from kiro_crew import session_process, steer_refusal
 from kiro_crew.conductor_patrol import reply_line
 from kiro_crew.mcp_dashboard_caller_scope import (
     CREW_MODE_FOLDER_NOTE,
@@ -1163,13 +1163,14 @@ def _run_session_status(args: dict[str, Any], ctx: ToolContext) -> str:
                 f"{_pending_approval_phrase(row)}{queued}{extra}"
             )
             continue
-        # A turn admitted to a released worker reads `working` before its
-        # process exists, so only a resting row may say released.
-        released = (
-            ", released (no process running; the next message starts or resumes it)"
-            if row.get("process") == "released" and status != "working"
-            else ""
-        )
+        # A turn admitted to a released worker reads `working` before its process
+        # exists, so only a resting row may say released, or kept and waiting.
+        resting = row.get("process") if status != "working" else None
+        if resting == session_process.KEPT:
+            kept = session_process.KEPT_WORDS
+            status_lines.append(f"  \u23f3 `{target}` ({title}) — {kept}{queued}{extra}")
+            continue
+        released = session_process.RELEASED_WORDS if resting == session_process.RELEASED else ""
         # Idle between checks of its own loop (waiting on CI): wait, nothing to decide.
         looping = (
             ", its own loop will wake it (waiting on a check: wait)"
