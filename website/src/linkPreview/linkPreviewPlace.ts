@@ -4,38 +4,45 @@
  *
  * A card stands in the part of the window its chat leaves free: under the
  * chat's header (the title row and the pinned-prompt banner, the transcript's
- * top overlay) and above its message box. It goes below its link when its
- * wanted height fits there, else above; when neither side holds it, it takes
- * the side with more room and is drawn that much shorter, so the app's own
- * document scrolls inside the frame. It is never laid over the header, the
- * message box or its own link.
+ * top overlay) and above its message box and what Crew stacks on it (the
+ * composer dock: progress bars, an app's docked box, queued messages, the
+ * question, follow-up and approval cards; and the jump-to-bottom or Back pill
+ * floating over the dock). It goes below its link when its wanted height fits
+ * there, else above; when neither side holds it, it takes the side with more
+ * room and is drawn that much shorter, so the app's own document scrolls
+ * inside the frame. It is never laid over the header, the dock, the pill or
+ * its own link.
  *
- * The header and the message box are measured from layout by the hooks that
- * already mark them (`topOverlays`, a pane's `data-pane-title-row`, the
- * composer's `input-wrapper`); nothing is added to either.
+ * All of them are measured from layout by the hooks that already mark them
+ * (`topOverlays`, a pane's `data-pane-title-row`, the composer's
+ * `input-wrapper`, `composer-dock-root`, `back-to-spot`, `jump-to-bottom`);
+ * nothing is added to any.
  *
  * @module linkPreview/linkPreviewPlace
  */
 import { topOverlays } from '../pages/chat/browserLiveClearance'
 import type { AnchorRect, Placement } from './linkPreviewProtocol'
 
-/** Kept between a card and the window's edge, the chat's header and the message box. */
+/** Kept between a card and the window's edge, the chat's header and the composer dock. */
 export const MARGIN = 8
 /** Kept between a card and its link. */
 export const GAP = 6
 
 const PANE_TITLE_ROW = '[data-pane-title-row]'
 const MESSAGE_BOX = '[data-testid="input-wrapper"]'
+const DOCK = '[data-testid="composer-dock-root"]'
+const PILL = '[data-testid="back-to-spot"], [data-testid="jump-to-bottom"]'
 
 /**
  * The band of the window, top to bottom, a card for the link at `a` may stand
- * in. Only the header and the message box of the link's own chat bound it: the
- * ones that share its column, the header above it and the box below it. A link
- * that is in no chat gets the window less its margin.
+ * in. Only the header and the composer dock of the link's own chat bound it:
+ * the ones that share its column, the header above it and the dock below it. A
+ * chat with no dock (or one with no height) is bounded by its message box
+ * alone; a link that is in no chat gets the window less its margin.
  *
  * shortcut: read when a card is placed (a show, its `resize`, a step's landing,
- * the window's resize), so a message box that grows under a pinned card is
- * cleared at the next of those, not as it grows.
+ * the window's resize), so a dock that grows, or a pill that comes, under a
+ * pinned card is cleared at the next of those, not as it happens.
  */
 export function cardRoom(a: AnchorRect): { top: number; bottom: number } {
   let top = MARGIN
@@ -51,6 +58,17 @@ export function cardRoom(a: AnchorRect): { top: number; bottom: number } {
   for (const el of document.querySelectorAll<HTMLElement>(MESSAGE_BOX)) {
     const r = el.getBoundingClientRect()
     if (sameColumn(r) && r.bottom > a.top) bottom = Math.min(bottom, r.top - MARGIN)
+  }
+  for (const dock of document.querySelectorAll<HTMLElement>(DOCK)) {
+    const r = dock.getBoundingClientRect()
+    if (!sameColumn(r) || r.bottom <= a.top) continue
+    bottom = Math.min(bottom, r.top - MARGIN)
+    // The pill floats above the dock's box, centred and narrower than a card:
+    // it bounds every card of its dock's column, not only a link right over it.
+    for (const pill of dock.querySelectorAll<HTMLElement>(PILL)) {
+      const p = pill.getBoundingClientRect()
+      if (p.height > 0) bottom = Math.min(bottom, p.top - MARGIN)
+    }
   }
   return { top, bottom }
 }

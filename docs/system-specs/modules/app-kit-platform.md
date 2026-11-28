@@ -5239,16 +5239,20 @@ The boundary:
   its link and sized from `resize`, inside the room its chat leaves free
   (`linkPreviewPlace.ts`, `cardRoom`): under the chat's header (the transcript's
   top overlay, `topOverlays()`, and a pane's `data-pane-title-row`) and above
-  its message box (`input-wrapper`), counting only the ones in the link's own
-  column, the header above the link and the box below it; with neither, the
-  window less its margin. The card goes below the link when the height it asked
-  for fits there, else above; when neither side holds it, it takes the side with
-  more room and is drawn that much shorter, so the app's document scrolls
-  inside the frame. It is never laid over the header, the message box or its
-  own link. The height the app asked for is kept (`PreviewFrame.height`) and
-  drawn again once there is room. The room is measured when the card is placed
-  (a show, its `resize`, a step's landing, the window's resize), not while the
-  message box grows. `FrameHost.setBelow` keeps px free under the card, inside
+  its composer dock (`composer-dock-root`: the message box with the progress
+  bars, an app's docked box, the queued messages and the question, follow-up
+  and approval cards stacked on it) and the jump-to-bottom or Back pill
+  floating over that dock (`jump-to-bottom`, `back-to-spot`), counting only the
+  ones in the link's own column, the header above the link and the dock below
+  it; a chat with no dock is bounded by its message box (`input-wrapper`), and
+  with neither it is the window less its margin. The card goes below the link
+  when the height it asked for fits there, else above; when neither side holds
+  it, it takes the side with more room and is drawn that much shorter, so the
+  app's document scrolls inside the frame. It is never laid over the header,
+  the dock, the pill or its own link. The height the app asked for is kept
+  (`PreviewFrame.height`) and drawn again once there is room. The room is
+  measured when the card is placed (a show, its `resize`, a step's landing, the
+  window's resize), not while the dock grows or a pill comes. `FrameHost.setBelow` keeps px free under the card, inside
   the same room, for what Crew hangs there (the answering bar, §18w). `pin`,
   `drag` and `dock` move it; a dragged or docked card keeps the height it asked
   for, clamped to the viewport. Tests:

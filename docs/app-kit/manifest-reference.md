@@ -1455,7 +1455,9 @@ Two ways to draw:
 - **Card mode** (the default). The module renders its card into the frame's
   `document.body`, reports the size with `link.card.resize`, and shows it with
   `link.card.open`. The dashboard places the frame below the link (above when there is
-  no room) and keeps it on screen, clear of the chat's header and its message box.
+  no room) and keeps it on screen, clear of the chat's header, its message box and
+  what Kiro Crew stacks on the message box (queued messages, question and approval
+  cards, the jump-to-bottom pill).
   When neither side of the link has room for the height you asked for, the frame is
   shorter than that: let the card's body scroll (`overflow-y: auto` under a
   `max-height: 100vh` card) rather than assume the frame is as tall as `resize`
