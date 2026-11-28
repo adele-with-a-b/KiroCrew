@@ -638,12 +638,20 @@ QUIET_END_REFUSED_USER_TURN = (
 )
 
 
+QUIET_END_REFUSED_ANSWER_OWED = (
+    "Error: nothing_to_do was not applied — a worker you sent for a person's "
+    "question has reported, and that person has no answer yet. Tell them the "
+    "result in text (even one line) first."
+)
+
+
 def _nothing_to_do(
     args: dict[str, Any],
     *,
     producer_is_user_facing: bool,
     producer_is_self_wake: bool,
     producer_is_channel: bool,
+    answer_owed: bool = False,
 ) -> DirectiveOutcome:
     """Record the deliberate quiet end of this turn.
 
@@ -660,6 +668,11 @@ def _nothing_to_do(
     conservative answer until it carries that provenance; the patrol then gets
     the pre-existing "ended without a closing reply" notice, not silence.
 
+    One turn nobody opened still has a person waiting on it: a crewmate's wake on
+    the report of a worker it sent for a person's question (*answer_owed*,
+    ``mate_thread_wakes.answer_owed``). It is refused the same way, so the same
+    ladder gives it its one continuation to answer in.
+
     No slot or surface gate otherwise: the quiet end mutates nothing, so there
     is no effect a wrong identity could misdirect. The outcome text is what the
     transcript's tool step shows — the low-key, inspectable record that the turn
@@ -670,6 +683,8 @@ def _nothing_to_do(
     opened_by_person = producer_is_user_facing or producer_is_channel
     if opened_by_person and not producer_is_self_wake:
         raise _DirectiveDenied(QUIET_END_REFUSED_USER_TURN)
+    if answer_owed:
+        raise _DirectiveDenied(QUIET_END_REFUSED_ANSWER_OWED)
     note = str(args.get("note") or "").strip()
     text = QUIET_END_OUTCOME_PREFIX if not note else f"{QUIET_END_OUTCOME_PREFIX} {note}"
     return DirectiveOutcome(text, ends_turn=True)

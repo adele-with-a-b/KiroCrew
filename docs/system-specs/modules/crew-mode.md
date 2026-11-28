@@ -3323,7 +3323,9 @@ draft guard, so a veto neither remounts the card nor loses its pushed form.
   The quiet end is admitted on that turn because a hidden turn is opened by the
   gateway (`_turn_actor="gateway"`, no user, channel or self-wake origin), and
   `session_directive_apply._nothing_to_do` refuses it only on a turn a person or
-  a channel opened. A hidden turn's text is not folded or held: text the model
+  a channel opened, or on a thread whose worker, sent for a person's question,
+  has reported with no answer written since ("A report wake for a person's
+  question owes them the answer"). A hidden turn's text is not folded or held: text the model
   writes before a tool call is an ordinary reply row, shown in the chat like on
   any other turn, so the prompt carries the silent end (session.md, "Who may
   end quietly"). The hidden turns are exactly
@@ -4946,6 +4948,31 @@ the Bot (`app_wakes`, written by `dashboard/app_bot_wake.py`, see
 [app-kit-platform](app-kit-platform.md) §32c) as one turn with crew-log actor
 `app`, after an owed upgrade notice and after the reports. While the app is stopping
 (`mate_welcome.app_is_stopping`) no hidden turn starts and reports stay pending.
+
+**A report wake for a person's question owes them the answer**
+(`mate_thread_wakes.note_dispatch`, `answer_owed`, `_settle_answers_owed`). A
+Bot that messages its own worker (`session_messaging.send_to_target`, at the
+`_reports_to_creator` stamp, so `session_send`, a creation seed and a dispatch
+alike) from a turn a person sent (`holds_persons_standing`) has that worker
+recorded on its thread (`_mate_answers_owed`: thread, worker, where it stands).
+The wake that delivers that worker's report marks it reported and closes its
+prompt on one more line (`worker_report.answer_owed`, after the guidance; a
+wake with no such worker gets the prompt unchanged), which tells the Bot a
+person is waiting and that the quiet end is refused until it has answered. From
+then until a turn on the thread writes reply text `nothing_to_do` is refused there
+(`QUIET_END_REFUSED_ANSWER_OWED`), whoever opened the turn, so the empty-reply
+ladder gives the wake its one continuation, whose message says the request
+looks unanswered. Text the turn wrote before the call is the answer, and the
+call applies. A thread that answers in neither the wake nor the next turn is let
+go (its continuation ends on the no-reply notice), so no later wake is refused
+for it. A wake that messages the worker again, or another worker, moves the
+question onto that worker and may end quietly; the holding line of the turn
+that sent the worker answers nothing. A worker sent from a turn nobody sent (a
+check-in, a patrol, another report wake with nothing owed) is not recorded, and
+its report wake ends quietly as before. The record lives in memory like the
+pending reports: after a restart that worker's report wake ends as any other.
+Not covered: a person's message that arrived over a channel, and a turn that
+lost the person's standing to a peer's steer before it sent the worker.
 
 **Adding abilities to a Bot** (`kiro_crew.mate_worker_kit`, owner-only
 `GET/PUT /api/agents/{name}/worker-kit` and `POST .../worker-kit/preview`,

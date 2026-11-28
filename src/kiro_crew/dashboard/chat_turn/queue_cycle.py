@@ -875,6 +875,7 @@ async def _end_turn_tail(
     if turn_exit.actor != AGENT_STARTED_ACTOR:
         _notify_autonudge_turn_end(slot, **(outcome.nudge_facts if outcome is not None else {}))
     if turn_exit.depth == 0:
+        wrote_text = slot._turn_wrote_text is True
         slot._turn_wrote_text = False
         # A crewmate's worker reports back to the crewmate's thread on its own.
         _note_mate_wakes(
@@ -882,6 +883,7 @@ async def _end_turn_tail(
             slot,
             outcome.nudge_facts["reply_text"] if outcome else None,
             quiet_end=outcome.quiet_end if outcome else False,
+            wrote_text=wrote_text,
         )
         # A crewmate session owed a reload onto an updated spec while it was busy.
         from kiro_crew.dashboard.crewmate_worker_reload import note_turn_end

@@ -1916,12 +1916,19 @@ against sweep completeness, and are torn down at `close_all`.
   placeholder, so it is kept even when the echo never comes; only text held for
   a steer with no tool call after it is dropped. That is a known trade-off: a
   turn whose steer is requeued keeps the text it wrote before a tool call.
-  **Who may end quietly.** The applier's one gate is who opened the turn: a
+  **Who may end quietly.** The applier's first gate is who opened the turn: a
   monitor wake (`_directive_self_wake`) or a headless producer (cron, crew, app,
   task runner — `_directive_user_origin` False) may; a turn a person opened
   (`_directive_user_origin` True, or any channel turn) is REFUSED
   (`QUIET_END_REFUSED_USER_TURN`), so the ladder, Resume and the channel notice
   run as before and a model that dodged a question fails VISIBLY, not silently.
+  Its second gate is a person still waiting on a turn nobody opened: on a Bot's
+  thread whose worker, sent from a person's turn, has reported, the quiet end is
+  REFUSED (`QUIET_END_REFUSED_ANSWER_OWED`) until a turn there writes reply
+  text, for the report wake and one turn after it
+  (`mate_thread_wakes.answer_owed`; crew-mode.md, "A report wake for a person's
+  question owes them the answer"). Every other turn ends quietly as the first
+  gate decides.
   A quiet end is also a FINISHED turn for the interrupted-turn scan: its tail
   (`[nudge, tool…]`) is shape-identical to a gateway that died mid-turn, so
   `state.is_turn_interrupted` and its mirror `selectTurnInterrupted` treat the

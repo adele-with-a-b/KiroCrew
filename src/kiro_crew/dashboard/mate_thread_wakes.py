@@ -215,6 +215,7 @@ def report_prompt(
     *,
     manual: bool | None = None,
     worker_spec: dict[str, Any] | None = None,
+    answer_owed: bool = False,
 ) -> str:
     """The hidden turn that hands crewmate *member* its workers' latest replies.
 
@@ -224,6 +225,8 @@ def report_prompt(
     as off. The wake loop reads it off the event loop and passes it in, and with
     it *member*'s *worker_spec*, which picks the servers a report names as ones
     its worker could not use (``mate_capability_catalog.unusable_line``).
+    *answer_owed* is a worker here having been sent for a person's question
+    (``note_dispatch``): the prompt then closes on the line that says to answer.
     """
     from kiro_crew.mate_capability_catalog import unusable_line
 
@@ -261,6 +264,8 @@ def report_prompt(
             lines.append(unusable)
         lines.append("")
     lines.append(_GUIDANCE)
+    if answer_owed:
+        lines.append(crewmate_prompts.text("worker_report.answer_owed"))
     return "\n".join(lines)
 
 
@@ -289,6 +294,84 @@ def _tasks(state: Any) -> dict[str, asyncio.Task[Any]]:
         tasks = {}
         state._mate_wake_tasks = tasks
     return tasks
+
+
+#: Where a worker sent for a person's question stands (``_answers_owed``): still
+#: out, its report delivered to the thread, and one unanswered turn past that.
+_WORKER_OUT, _WORKER_REPORTED, _WORKER_STEERED = 0, 1, 2
+
+
+def _answers_owed(state: Any) -> dict[str, dict[str, int]]:
+    """Workers sent for a person's question: thread key -> worker key -> where it stands.
+
+    shortcut: in memory, like the pending reports, so a restart drops the record and that
+    worker's report wake ends as any other; keep it in the crew log if that shows in use.
+    """
+    owed = getattr(state, "_mate_answers_owed", None)
+    if not isinstance(owed, dict):
+        owed = {}
+        state._mate_answers_owed = owed
+    return owed
+
+
+def note_dispatch(state: Any, thread: Any, worker_key: str) -> None:
+    """Record that crewmate *thread* messaged its worker *worker_key* for a person's question.
+
+    Called where a creator's message to its own session is witnessed
+    (``session_messaging.send_to_target``). The worker is recorded when the thread's
+    running turn is one a person sent (``holds_persons_standing``), or when the thread
+    already owes an answer: a wake that sends the worker on, or sends a second one,
+    keeps the question on that worker. Any other turn records nothing.
+    """
+    from kiro_crew.dashboard.session_control_parts.session_messaging import holds_persons_standing
+
+    if not worker_key or not is_crewmate_thread(thread):
+        return
+    if holds_persons_standing(thread) or any(_owed_on(state, thread.key).values()):
+        _answers_owed(state).setdefault(thread.key, {})[worker_key] = _WORKER_OUT
+
+
+def _owed_on(state: Any, key: str) -> dict[str, int]:
+    """The workers recorded on thread *key*; empty, and creating nothing, when none is."""
+    owed = getattr(state, "_mate_answers_owed", None)
+    return (owed.get(key) or {}) if isinstance(owed, dict) else {}
+
+
+def answer_owed(state: Any, slot: Any) -> bool:
+    """Whether *slot*'s running turn must answer a person before it may end quietly.
+
+    True on a crewmate thread from the wake that delivers the report of a worker sent
+    for a person's question, through one more turn (the continuation a refused quiet
+    end is given), until a turn there writes reply text. Text the running turn already
+    wrote is that answer.
+    """
+    if not is_crewmate_thread(slot) or getattr(slot, "_turn_wrote_text", False) is True:
+        return False
+    return any(_owed_on(state, slot.key).values())
+
+
+def _settle_answers_owed(state: Any, key: str, wrote_text: bool) -> None:
+    """A turn ended on thread *key*: text answers every delivered report, silence ages it.
+
+    A report still unanswered after its wake and one more turn is dropped, so a thread
+    that will not answer is refused twice (the wake, then its continuation, which ends
+    on the visible no-reply notice) and its later wakes end as any other. A worker
+    still out stays recorded while its session exists.
+    """
+    recorded = _owed_on(state, key)
+    if not recorded:
+        return
+    left: dict[str, int] = {}
+    for worker, stands in recorded.items():
+        if stands == _WORKER_OUT:
+            if state.get_slot(worker) is not None:
+                left[worker] = stands
+        elif stands == _WORKER_REPORTED and not wrote_text:
+            left[worker] = _WORKER_STEERED
+    if left:
+        _answers_owed(state)[key] = left
+    else:
+        _answers_owed(state).pop(key, None)
 
 
 def app_wakes(state: Any) -> dict[str, dict[str, list[str]]]:
@@ -571,12 +654,21 @@ async def _flush(state: Any, key: str) -> None:
             return
         if reports and _idle(slot):
             _pending(state).pop(key, None)
+            # A report from a worker sent for a person's question makes this wake
+            # owe that person the answer (``answer_owed``), and its prompt says so.
+            sent = _owed_on(state, key)
+            asked = {worker: _WORKER_REPORTED for worker in reports if worker in sent}
+            sent.update(asked)
             dispatch_hidden_turn(
                 state,
                 slot,
                 with_page(
                     report_prompt(
-                        list(reports.values()), slot.agent, manual=manual, worker_spec=worker_spec
+                        list(reports.values()),
+                        slot.agent,
+                        manual=manual,
+                        worker_spec=worker_spec,
+                        answer_owed=bool(asked),
                     ),
                     page,
                 ),
@@ -701,7 +793,12 @@ async def note_cron_result(state: Any, job: Any, session_key: str, reply_text: s
 
 
 def note_turn_end(
-    state: Any, slot: Any, reply_text: str | None, *, quiet_end: bool = False
+    state: Any,
+    slot: Any,
+    reply_text: str | None,
+    *,
+    quiet_end: bool = False,
+    wrote_text: bool = False,
 ) -> None:
     """Called once at the end of every top-level turn. Never raises.
 
@@ -711,9 +808,14 @@ def note_turn_end(
     ending a turn that wrote no reply text: a quiet cycle, which reports nothing
     either and leaves a report already pending as it was. A
     crewmate thread's own turn end schedules the delivery of anything still
-    pending for it.
+    pending for it. *wrote_text* is the turn having written reply text anywhere
+    in it: on a crewmate thread that is the answer to every person's question
+    whose worker has reported (``answer_owed``, ``_settle_answers_owed``); a turn
+    that never reached the model settles nothing.
     """
     try:
+        if reply_text is not None and is_crewmate_thread(slot):
+            _settle_answers_owed(state, slot.key, wrote_text)
         quiet = quiet_end and not (reply_text or "").strip()
         creator = reporting_creator(state, slot) if reply_text is not None and not quiet else None
         if creator is not None:

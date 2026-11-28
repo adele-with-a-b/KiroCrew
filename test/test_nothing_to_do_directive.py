@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from chat_test_helpers import _make_state
 
-from kiro_crew import session_directive
+from kiro_crew import crewmate_prompts, session_directive
 from kiro_crew.acp.types import (
     EVENT_COMPACTION_STATUS,
     EVENT_COMPLETE,
@@ -262,6 +262,95 @@ class TestApplierTerminalSignal:
             producer_is_self_wake=True,
         )
         assert out.ends_turn is True
+
+    @staticmethod
+    def _bot_thread(*, wrote_text: bool = False):
+        """A Bot's own thread on a gateway that has recorded nothing for it."""
+        from types import SimpleNamespace
+
+        from kiro_crew import members as members_mod
+
+        thread = SimpleNamespace(
+            key="member-atlas",
+            mode=members_mod.DM_SLOT_MODE,
+            agent="atlas",
+            executor="",
+            _turn_wrote_text=wrote_text,
+        )
+        return SimpleNamespace(), thread
+
+    def _owing_thread(self, *, wrote_text: bool = False):
+        """A Bot thread whose worker, sent for a person's question, has reported."""
+        from kiro_crew.dashboard import mate_thread_wakes as wakes
+
+        state, thread = self._bot_thread(wrote_text=wrote_text)
+        wakes._answers_owed(state)[thread.key] = {"chat-worker-1": wakes._WORKER_REPORTED}
+        return state, thread
+
+    def test_a_wake_that_owes_a_person_an_answer_is_refused(self):
+        """Nobody opened the report wake, but the person who asked is waiting on
+        it: the refusal keeps the ladder armed, which is its one steer to answer."""
+        state, thread = self._owing_thread()
+        out = _apply("nothing_to_do", {"note": "worker done"}, slot=thread, state=state)
+        assert out.ends_turn is False
+        assert out.text == sda.QUIET_END_REFUSED_ANSWER_OWED
+        assert out.text.startswith("Error:")
+        # A monitor wake on that thread owes the same answer.
+        woken = _apply("nothing_to_do", {}, slot=thread, state=state, producer_is_self_wake=True)
+        assert woken.text == sda.QUIET_END_REFUSED_ANSWER_OWED
+
+    def test_text_the_wake_already_wrote_is_the_answer(self):
+        state, thread = self._owing_thread(wrote_text=True)
+        out = _apply("nothing_to_do", {}, slot=thread, state=state)
+        assert out.ends_turn is True
+        assert out.text == "Nothing new to report."
+
+    def test_a_worker_still_out_or_one_no_person_asked_for_refuses_nothing(self):
+        from kiro_crew.dashboard import mate_thread_wakes as wakes
+
+        state, thread = self._owing_thread()
+        wakes._answers_owed(state)[thread.key] = {"chat-worker-1": wakes._WORKER_OUT}
+        assert _apply("nothing_to_do", {}, slot=thread, state=state).ends_turn is True
+        wakes._answers_owed(state).clear()
+        assert _apply("nothing_to_do", {}, slot=thread, state=state).ends_turn is True
+
+    @pytest.mark.parametrize(
+        ("args", "producer", "text", "ends"),
+        [
+            ({}, {}, "Nothing new to report.", True),
+            ({"note": "no news"}, {}, "Nothing new to report. no news", True),
+            ({}, {"producer_is_self_wake": True}, "Nothing new to report.", True),
+            (
+                {"note": "no news"},
+                {"producer_is_self_wake": True, "producer_is_user_facing": True},
+                "Nothing new to report. no news",
+                True,
+            ),
+            (
+                {},
+                {"producer_is_user_facing": True},
+                "Error: nothing_to_do was not applied — a person opened this turn, so it "
+                "owes them a reply. Answer in text (even one line) instead.",
+                False,
+            ),
+            (
+                {},
+                {"producer_is_channel": True},
+                "Error: nothing_to_do was not applied — a person opened this turn, so it "
+                "owes them a reply. Answer in text (even one line) instead.",
+                False,
+            ),
+        ],
+    )
+    def test_a_turn_with_no_answer_owed_ends_word_for_word_as_it_did(
+        self, args, producer, text, ends
+    ):
+        """The unchanged side, pinned as literals: a Bot thread with nothing owed, a
+        plain chat and a turn with no slot all get the same outcome for one producer."""
+        state, thread = self._bot_thread()
+        for slot in (thread, MagicMock(), None):
+            out = _apply("nothing_to_do", args, slot=slot, state=state, **producer)
+            assert (out.text, out.ends_turn) == (text, ends)
 
     def test_ask_question_is_not_a_directive_and_never_ends_the_turn(self):
         """``ask_question`` blocks and returns the answers as its own tool
@@ -565,11 +654,14 @@ def _stub_state(tmp_path):
     return state
 
 
-async def _drive_turn(state, slot, events, monkeypatch, *, self_wake: bool = True):
+async def _drive_turn(
+    state, slot, events, monkeypatch, *, self_wake: bool = True, hidden: bool = False
+):
     """Stream *events* through the REAL ``_run_chat`` with the REAL applier, and
     record every recovery turn the runner queued. ``self_wake`` drives the turn
     as a monitor wake (the designed caller); False drives it as a person's
-    message."""
+    message. ``hidden`` drives it as the gateway's own hidden turn, the way
+    ``mate_welcome.dispatch_hidden_turn`` starts one: no opener row, no origin."""
     from kiro_crew.dashboard import chat_runner
 
     async def _stream(_msg):
@@ -595,17 +687,23 @@ async def _drive_turn(state, slot, events, monkeypatch, *, self_wake: bool = Tru
     # The opener row the HANDLER (not the runner) writes before a turn: a
     # monitor wake's nudge row, or the person's own message. The interrupted
     # scan reads it, so a transcript without one is not a turn at all.
-    slot.messages.append(
-        {"role": "nudge" if self_wake else "user", "content": "patrol", "ts": "t0", "cls": ""}
-    )
-    try:
-        await chat_runner._run_chat(
-            state,
-            slot,
-            "patrol",
-            _directive_user_origin=not self_wake,
-            _directive_self_wake=self_wake,
+    if not hidden:
+        slot.messages.append(
+            {"role": "nudge" if self_wake else "user", "content": "patrol", "ts": "t0", "cls": ""}
         )
+    try:
+        if hidden:
+            await chat_runner._run_chat(
+                state, slot, "patrol", _synthetic_payload=True, _turn_actor="gateway"
+            )
+        else:
+            await chat_runner._run_chat(
+                state,
+                slot,
+                "patrol",
+                _directive_user_origin=not self_wake,
+                _directive_self_wake=self_wake,
+            )
     finally:
         tasks = list(state._background_tasks)
         for task in tasks:
@@ -629,6 +727,81 @@ def _crewmate_worker(state, key: str):
     worker._created_by = mate.key
     worker._lineage_minted = True
     return mate, worker
+
+
+async def _worker_reports_to_its_bot(state, monkeypatch, *, person_sent: bool):
+    """A Bot's turn messages its worker through the REAL ``send_to_target``, ends
+    with a holding line, and the worker's turn end starts the report wake.
+
+    *person_sent* is who sent that Bot turn: a person, or nobody (a check-in, a
+    patrol). Returns the Bot's thread, idle, and the wake prompts dispatched to it.
+    """
+    from kiro_crew import members as members_mod
+    from kiro_crew.dashboard import mate_thread_wakes as wakes
+    from kiro_crew.dashboard import session_control as sc
+    from kiro_crew.config.loader import KiroCrewAgentConfig, KiroCrewConfig
+    from kiro_crew.dashboard.chat_utils import slot_history_key
+    from kiro_crew.memory_stores import provision_member_memory
+
+    # The Bot itself, so the real turn admission resolves the thread's member.
+    cfg = KiroCrewConfig.load()
+    cfg.agents["atlas"] = KiroCrewAgentConfig(kiro_agent="kirocrew")
+    provision_member_memory(cfg, "atlas")
+    cfg.save()
+    mate = state.get_or_create_slot("chat-mate-thread")
+    mate.mode = members_mod.DM_SLOT_MODE
+    mate.agent = "atlas"
+    mate._titled = True
+    worker = state.get_or_create_slot("chat-worker-1")
+    worker._titled = True
+    worker._created_by = mate.key
+    worker._lineage_minted = True
+    prompts: list[str] = []
+
+    async def _no_turn(_state, _slot, _prompt, **_kw):
+        return None
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sc, "session_control_enabled", lambda: True)
+        patch.setattr("kiro_crew.dashboard.chat_runner._run_chat", _no_turn)
+        patch.setattr(
+            "kiro_crew.dashboard.mate_welcome.dispatch_hidden_turn",
+            lambda _state, _slot, prompt, **_kw: prompts.append(prompt),
+        )
+        patch.setattr(wakes, "page_line", lambda slug: "")
+        turn = asyncio.get_running_loop().create_future()
+        mate.task = turn
+        mate._turn_user_sent = person_sent
+        await sc.send_to_target(
+            state,
+            caller_session_key=slot_history_key(mate),
+            target=worker.key,
+            message="Find the answer to what they asked.",
+        )
+        mate._turn_user_sent = False
+        turn.set_result(None)
+        mate.task = None
+        wakes.note_turn_end(state, mate, "On it, a worker is looking.")
+        wakes.note_turn_end(state, worker, "The answer is 42.")
+        for task in list(getattr(state, "_mate_wake_tasks", {}).values()):
+            await await_until(task)
+    return mate, prompts
+
+
+def _quiet_end_rows(slot) -> list[dict]:
+    return [
+        m
+        for m in slot.messages
+        if m.get("role") == "tool" and (m.get("meta") or {}).get("tool_name") == "nothing_to_do"
+    ]
+
+
+def _tool_outputs(state) -> list[str]:
+    return [
+        c.args[1].get("output", "")
+        for c in state.broadcast_ws.call_args_list
+        if c.args and c.args[0] == "tool_result"
+    ]
 
 
 async def _pending_reports(state, mate) -> dict:
@@ -859,6 +1032,68 @@ class TestDashboardRunnerHonoursTheSignal:
         from kiro_crew.dashboard.state import is_turn_interrupted
 
         assert is_turn_interrupted(slot.messages) is True
+
+    @pytest.mark.asyncio
+    async def test_a_report_wake_for_a_person_s_question_cannot_end_quietly(
+        self, tmp_path, monkeypatch
+    ):
+        """A Bot sent a worker from a person's turn; the worker's report wakes it.
+        Nobody opened that wake, yet the person is waiting on it: the quiet end is
+        refused, the ladder queues its one continuation, and the Bot's text there
+        settles it, so the wake after that ends quietly again."""
+        from kiro_crew.dashboard import mate_thread_wakes as wakes
+        from kiro_crew.dashboard.chat_utils_injected_rows import _ACTIVITY_NO_REPLY_CONTINUE_MSG
+
+        state = _stub_state(tmp_path)
+        mate, prompts = await _worker_reports_to_its_bot(state, monkeypatch, person_sent=True)
+        assert len(prompts) == 1 and "The answer is 42." in prompts[0]
+
+        queue_calls = await _drive_turn(state, mate, _quiet_turn_events(), monkeypatch, hidden=True)
+        assert queue_calls, "the report wake ended quietly with the person's question unanswered"
+        [(queued, _kwargs)] = queue_calls  # the one continuation the ladder gives
+        assert any(_ACTIVITY_NO_REPLY_CONTINUE_MSG in str(arg) for arg in queued)
+        assert mate._empty_response_retries > 0
+        rows = _quiet_end_rows(mate)
+        assert rows and not any(m["meta"].get("ends_turn") for m in rows)
+        assert any(o.startswith(sda.QUIET_END_REFUSED_ANSWER_OWED) for o in _tool_outputs(state))
+        assert wakes.answer_owed(state, mate) is True
+        # The wake's own prompt said so first; the refusal is what holds when it is ignored.
+        assert prompts[0].endswith(crewmate_prompts.text("worker_report.answer_owed"))
+
+        # The continuation: the Bot tells the person. That text is the answer.
+        mate._queue.clear()
+        answer = [
+            AcpEvent(kind=EVENT_TEXT_CHUNK, text="The worker found it: 42."),
+            AcpEvent(kind=EVENT_COMPLETE, stop_reason="end_turn"),
+        ]
+        await _drive_turn(state, mate, answer, monkeypatch, hidden=True)
+        assert wakes.answer_owed(state, mate) is False
+        assert not getattr(state, "_mate_answers_owed", {})
+
+        state.broadcast_ws.reset_mock()
+        assert await _drive_turn(state, mate, _quiet_turn_events(), monkeypatch, hidden=True) == []
+        assert _tool_outputs(state) == ["Nothing new to report."]
+
+    @pytest.mark.asyncio
+    async def test_a_report_wake_no_person_asked_for_ends_quietly_as_before(
+        self, tmp_path, monkeypatch
+    ):
+        """The unchanged side: the same chain from a Bot turn nobody sent (a check-in,
+        a patrol). Its report wake ends quietly: no continuation, no notice, no reply
+        row, and the tool step reads the quiet line and nothing else."""
+        state = _stub_state(tmp_path)
+        mate, prompts = await _worker_reports_to_its_bot(state, monkeypatch, person_sent=False)
+        assert len(prompts) == 1 and "The answer is 42." in prompts[0]
+        assert prompts[0].endswith(crewmate_prompts.text("worker_report.guidance"))
+        assert not getattr(state, "_mate_answers_owed", {})
+
+        queue_calls = await _drive_turn(state, mate, _quiet_turn_events(), monkeypatch, hidden=True)
+        assert queue_calls == [], "a quiet report wake queued a recovery turn"
+        assert mate._empty_response_retries == 0
+        assert [m for m in mate.messages if m.get("role") in ("notice", "assistant")] == []
+        rows = _quiet_end_rows(mate)
+        assert rows and all(m["meta"].get("ends_turn") is True for m in rows)
+        assert _tool_outputs(state) == ["Nothing new to report."]
 
     @pytest.mark.asyncio
     async def test_a_bare_tool_stop_still_gets_recovery(self, tmp_path, monkeypatch):

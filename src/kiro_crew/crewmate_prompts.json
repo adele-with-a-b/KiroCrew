@@ -99,6 +99,7 @@
     "welcome.preamble": "dashboard/mate_welcome.py:_KICKOFF_PREAMBLE, opens every welcome kickoff. No placeholders.",
     "worker.coding_rules": "How both workers write code: mate_worker.py:mate_worker_prompt after worker.principles, and agent_materialization/worker_agent.py:_install_worker_agent after the kirocrew-worker prompt. Adapted from the Ponytail skill (MIT), https://github.com/DietrichGebert/ponytail. No placeholders.",
     "worker.principles": "mate_worker.py:mate_worker_prompt, appended to the worker's prompt by service_agents._install_mate_worker_agent. {missing_prefix} = MISSING_CAPABILITY_PREFIX; every other placeholder is the work-protocol rule of that name in agent_parts/spec_prompts.py _LEDGER_WORKER_RULES, the one copy kirocrew-worker's prompt is assembled from (test/test_mate_worker_parity.py).",
+    "worker_report.answer_owed": "dashboard/mate_thread_wakes.py:report_prompt, after worker_report.guidance when a worker in the wake was sent from a turn a person sent. No placeholders.",
     "worker_report.cron_title": "dashboard/mate_thread_wakes.py:note_cron_result, the {title} of a scheduled turn's report. {name} the cron job's name.",
     "worker_report.ended_many": "dashboard/mate_thread_wakes.py:report_prompt, as {ended} after several turns. {turns} the count.",
     "worker_report.ended_one": "dashboard/mate_thread_wakes.py:report_prompt, as {ended} after one turn. No placeholders.",
@@ -379,6 +380,7 @@
     "",
     "Your project directory is your Bot's own git worktree of the repository, on the branch `<prefix><Bot>/<repo>`, where the prefix is `crew/` unless another is set (`git branch --show-current` shows it): edit and commit there, never in the repository's own checkout, and name any further branch you need under the same `<prefix><Bot>/`. Rebase onto the default branch yourself when you need its changes. Before you push a branch, run `git merge-tree --write-tree <base> HEAD`; rebase only when it reports a conflict, and say so in your report."
   ],
+  "worker_report.answer_owed": "A person asked you for this and has no answer yet. Unless you give the worker its next step now, tell them the result in this thread in your own words before you end this turn, even in one line: nothing_to_do is refused until you have.",
   "worker_report.cron_title": "your scheduled job {name}",
   "worker_report.ended_many": "ended {turns} turns since you last heard",
   "worker_report.ended_one": "just ended a turn",
