@@ -34,6 +34,13 @@ from kiro_crew.dashboard.chat_utils import (
     user_text_span,
 )
 from kiro_crew.dashboard.handlers import _prompt_read_within_root
+from kiro_crew.dashboard.held_context import (
+    held_forget_on_command,
+    held_note_prompt,
+    held_open_for_turn,
+    held_settle,
+    stopped_prompt_kept,
+)
 from kiro_crew.dashboard.state import TURN_OPENING_INJECT_KINDS
 from kiro_crew.executors import (
     EmbedAdmissionTimeout,
@@ -657,6 +664,7 @@ async def _turn_build_prompt(turn: _ChatTurn) -> None:
     if is_slash:
         full_message = message
         turn.full_message = full_message
+        held_forget_on_command(turn)
         sel().log_tool_invocation(
             session_key=session_key,
             agent=slot.agent or "kirocrew",
@@ -994,6 +1002,20 @@ async def _turn_build_prompt(turn: _ChatTurn) -> None:
         # here so this turn re-injects the index exactly once.
         _needs_reinjection = consume_reinjection(state.sessions, session_key)
         turn._needs_reinjection = _needs_reinjection
+        # What this chat's context already holds (``held_blocks``; a Conductor's
+        # only). A wake the fire shortened against a context that turns out to be
+        # gone gets its lines back here, ahead of the request, and the fixed wake
+        # lines this prompt carries are recorded until the turn's end settles them.
+        _owed_wake_lines = held_open_for_turn(
+            turn,
+            context_is_new=_context_is_new,
+            provider_has_history=_provider_has_history,
+            needs_reinjection=_needs_reinjection,
+        )
+        if _owed_wake_lines:
+            _request_prefix_context = f"{_owed_wake_lines}\n\n{_request_prefix_context}"
+            turn._request_prefix_context = _request_prefix_context
+        held_note_prompt(turn, _owed_wake_lines, message)
         # Folder steering directories, resolved LIVE from the committed
         # folder tree rather than from a value cached on the slot, so a
         # folder edit or a re-file reaches the chats already inside it at
@@ -1281,13 +1303,21 @@ async def _turn_settle_debts(turn: _ChatTurn) -> None:
     # Re-arming here (run from _run_chat's finally, the one block on EVERY exit
     # path) makes the next turn rebuild the member section; the rules read inside
     # stays fail-closed until the user repairs or clears the file.
+    #
+    # A stopped turn whose prompt the harness kept (``stopped_prompt_kept``, the
+    # claude contract) is not re-armed for the compaction re-send: the conversation
+    # holds the copy that prompt carried, and a re-arm would stack another whole
+    # re-send on it with each message waiting behind the Stop. A member's
+    # session-start re-arm is not waived.
     rearm_reinjection(
         state.sessions,
         session_key,
         consumed=turn._needs_reinjection or turn._member_session_start_pending,
-        landed=turn._turn_landed,
+        landed=turn._turn_landed
+        or (stopped_prompt_kept(turn) and not turn._member_session_start_pending),
     )
     rollback_skill_bodies(state.context_builder, session_key, landed=turn._turn_landed)
+    held_settle(turn)
     if (
         turn._turn_landed
         and not _stop_pressed(turn)
@@ -1363,7 +1393,12 @@ async def _turn_settle_debts(turn: _ChatTurn) -> None:
     # (``not _turn_emitted``: a pre-stream 5xx re-queue, a bare early return)
     # never streamed, so the history did NOT reach the provider and the debt
     # correctly stays armed for the re-queue to rebuild.
-    _first_turn_history_delivered = _kiro_cli_kept_the_prompt(turn)
+    #
+    # A Stop on a harness that keeps a stopped prompt (``stopped_prompt_kept``, the
+    # claude contract) is the opposite of the kiro-cli Stop above: the conversation
+    # holds the prompt and the history it carried, so the debt settles and the next
+    # message is not a second session start on top of the first.
+    _first_turn_history_delivered = _kiro_cli_kept_the_prompt(turn) or stopped_prompt_kept(turn)
     if turn._first_turn_history_assembled and _first_turn_history_delivered:
         try:
             state.sessions.consume_first_turn_history_owed(session_key)

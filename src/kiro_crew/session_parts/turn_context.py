@@ -53,6 +53,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from kiro_crew import held_blocks
 from kiro_crew.config.loader import AUTOCOMPACT_PCT_MAX, AUTOCOMPACT_PCT_MIN
 from kiro_crew.session_map import SUPPRESS_REPLAY_FLAG
 from kiro_crew.session_parts.policy import _resolve_compact_wait_secs
@@ -197,7 +198,17 @@ def compaction_waits_for_turn(self: SessionManager, key: str) -> bool:
 
 
 def mark_needs_reinjection(self: SessionManager, key: str) -> None:
-    """Mark a live session for one-shot context reinjection."""
+    """Mark a live session for one-shot context reinjection.
+
+    A compaction Crew ran or saw inside a turn ends here, so this is also where
+    the record of what the session's context holds is dropped (``held_blocks``):
+    the fixed blocks a compacted context lost go out again with the next message.
+    A signal that sets the flag in the compaction service itself (a compact that
+    timed out, ended with no status or completed late) does not pass here; the
+    build that consumes the flag starts the record anew.
+    """
+    held_blocks.drop(key)
+    held_blocks.drop(self._fold_key(key))
     self._compaction.mark_needs_reinjection(key)
 
 

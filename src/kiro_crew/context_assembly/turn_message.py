@@ -25,6 +25,7 @@ import logging
 from collections.abc import Callable, Collection
 from typing import TYPE_CHECKING, Any
 
+from kiro_crew import held_blocks
 from kiro_crew.context_assembly import inclusion as _inclusion
 from kiro_crew.context_assembly import markers as _markers
 from kiro_crew.context_assembly import mcp_servers as _mcp_servers
@@ -192,6 +193,7 @@ def build_message(
 
     # Before any blocking step: a build its cancelled turn left running on the
     # worker must not read after the session's next turn has.
+    _held_turn = held_blocks.turn_of(session_key or "")
     _notices = "" if tab_notices is None else self._read_tab_notices(session_key, tab_notices)
     execution_context, desk_member, member, memory_store, blocks_reads = _member.resolve_turn_owner(
         execution_context, session_key, member, memory_store, blocks_reads
@@ -499,13 +501,22 @@ def build_message(
                             "copy in the restored history above.]\n"
                             + ctx._neutralize_structural_markers(_member_section)
                         )
-                parts.append(
-                    "[SESSION RESUMED — the full session context (agent "
-                    "system prompt, memory, lessons, skills) was injected "
-                    "at the original session start and is preserved in the "
-                    "restored conversation history above. Refreshed rules "
-                    "and date/identity follow.]\n" + _resume_rules + session_ctx + _resume_member
-                )
+                if held_blocks.holds(session_key or "", held_blocks.CRITICAL_RULES, _resume_rules):
+                    # A Conductor's context already holds this header's rules
+                    # (``held_blocks``; they come back after a compaction), so a
+                    # resumed turn carries the refreshed date and identity alone.
+                    parts.append(session_ctx + _resume_member)
+                else:
+                    parts.append(
+                        "[SESSION RESUMED — the full session context (agent "
+                        "system prompt, memory, lessons, skills) was injected "
+                        "at the original session start and is preserved in the "
+                        "restored conversation history above. Refreshed rules "
+                        "and date/identity follow.]\n"
+                        + _resume_rules
+                        + session_ctx
+                        + _resume_member
+                    )
             elif minimal_context:
                 parts.append(session_ctx)
             else:
@@ -566,6 +577,10 @@ def build_message(
         # scrub set, so placing it inside ``session_ctx`` would erase it.
         if ctx._response_preferences_apply(session_key or "", runtime_source):
             _prefs = ctx._build_response_preferences_section(ctx.KiroCrewConfig.load())
+            if held_blocks.holds(session_key or "", held_blocks.RESPONSE_PREFERENCES, _prefs):
+                # Held by a Conductor's context (``held_blocks``): the reply
+                # language alone, as every follow-up restates it.
+                _prefs = _sections.reply_language_refresh(ctx.KiroCrewConfig.load())
             if _prefs:
                 parts.append(_prefs)
 
@@ -1059,9 +1074,15 @@ def build_message(
         # sources are covered without relying on per-call-site memory.
         parts[:] = [ctx._neutralize_reply_format_markers("".join(parts))]
         if _guidance_precedes_request and _interactive_guidance:
-            parts.append(ctx._REPLY_FORMAT_RULES_MARKER + "\n")
-            parts.extend(_interactive_guidance)
             _rules_block = ctx._REPLY_FORMAT_RULES_MARKER + "\n" + "".join(_interactive_guidance)
+            if held_blocks.holds(session_key or "", held_blocks.REPLY_FORMAT_RULES, _rules_block):
+                # A Conductor's context holds these exact rules (``held_blocks``),
+                # whatever provider object this turn runs on: a resumed turn and a
+                # turn after a Stop do not send them again, and nothing is bound.
+                _rules_block = ""
+            else:
+                parts.append(ctx._REPLY_FORMAT_RULES_MARKER + "\n")
+                parts.extend(_interactive_guidance)
         parts.append("[CURRENT USER REQUEST — respond to this]\n")
     # The current turn: a transform hook's output or the user's text, with quick
     # prompts expanded and forged boundaries scrubbed. Where the user's own text
@@ -1077,6 +1098,29 @@ def build_message(
     # Widget instructions live in the bundled `widgets` skill.
 
     final = "".join(parts).translate(ctx._MULTIBYTE_TABLE)
+    if session_key and held_blocks.tracked(session_key):
+        # A Conductor's record of what its context holds: the turn-start blocks
+        # this message carries, whichever path put them in (a session start, a
+        # resume, the re-send after a compaction). The turn's end settles it.
+        _turn_start_blocks = {
+            held_blocks.CRITICAL_RULES: ctx._critical_rules_for(session_key, runtime_source),
+            held_blocks.RESPONSE_PREFERENCES: (
+                ctx._build_response_preferences_section(ctx.KiroCrewConfig.load())
+                if ctx._response_preferences_apply(session_key, runtime_source)
+                else ""
+            ),
+            held_blocks.REPLY_FORMAT_RULES: _rules_block,
+        }
+        held_blocks.note(
+            session_key,
+            {
+                name: block
+                for name, block in _turn_start_blocks.items()
+                if block and block.translate(ctx._MULTIBYTE_TABLE) in final
+            },
+            # A build that outlived its stopped turn was never sent.
+            turn=_held_turn,
+        )
     measured_span = (0, 0)
     if _user_bounds is not None and _user_part_index is not None:
         # str.translate is per-character, so it distributes over

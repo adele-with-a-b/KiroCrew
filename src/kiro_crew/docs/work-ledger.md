@@ -126,7 +126,9 @@ name is refused: update a release instead of adding one.
   (`null` until a goal is recorded). It can exceed the stories with a worker,
   because an unmarked story with no worker is a backlog row yet holds a seat.
 - A work-ledger patrol turn ends with two `[seats]` lines when the board has
-  something to start or close, counted the same way: the stories holding a seat
+  something to start or close (a Conductor is sent the first only when it
+  changed since the last one it was sent, and the second once per context),
+  counted the same way: the stories holding a seat
   with no worker, then, only while a seat is free (`concurrency_cap` minus the
   seats held, or with no goal recorded), the marked backlog and its next pick,
   the room on this computer and each crew, and the finished worker sessions still

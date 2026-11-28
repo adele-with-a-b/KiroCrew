@@ -1041,6 +1041,9 @@ class AcpEvent:
     #: omitted its result frame. Consumers must not treat it as raw completion
     #: evidence even when compatibility requires ``stop_reason=end_turn``.
     synthetic_completion: bool = False
+    #: True on ``EVENT_COMPLETE`` when the harness's own answer to the prompt carried
+    #: token counts. Claude Code's adapter sends them only for a prompt it started.
+    answer_reported_usage: bool = False
     request_id: str | int = ""
     options: list[dict[str, str]] = field(default_factory=list)
     tool_input: str = ""

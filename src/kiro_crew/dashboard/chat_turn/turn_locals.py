@@ -282,6 +282,7 @@ class _ChatTurn:
     _terminal_directive_kind: "str"
     _terminal_directive_text: "str"
     _terminal_directive_tcids: "set[str]"
+    _terminal_reported_usage: "bool"
     _terminal_synthetic: "bool"
     _thinkred: "StreamRedactor"
     _slash_withholds_mirror: "bool"

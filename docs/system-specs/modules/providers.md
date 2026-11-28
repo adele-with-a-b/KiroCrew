@@ -1024,7 +1024,10 @@ those. A turn with no member owner, on a provider that reports its compaction
 instead, so the same receipt keeps the engine from being sent the rules on every
 message; that bind is forced only by `needs_reinjection` (see
 [context-management](../../architecture/context-management.md)). It shares the
-limit in the paragraph above.
+limit in the paragraph above. The receipt lives on the provider object, so a
+resumed session starts without one; a Conductor chat's `held_blocks` record,
+keyed by session, is what carries "this context holds the rules" across a
+resume.
 
 ### Native harness notifications relied on
 
@@ -1372,6 +1375,14 @@ Terminal events also carry `synthetic_completion`. It is false for a provider's
 raw result frame and true when Kiro Crew fabricates a compatibility terminal
 because the result frame never arrived; consumers that account completed work
 must require the raw form.
+
+`answer_reported_usage` is true on a terminal event when the harness's own
+answer to the prompt carried token counts (`parse_prompt_token_usage` read
+them, zero or not). Claude Code's adapter sends them only for a prompt Claude
+Code started, so the dashboard reads it to tell a stopped prompt the
+conversation kept from one stopped while it waited in Claude Code's queue
+(`stopped_prompt_kept`, context-management.md). It is false on every terminal
+Kiro Crew writes itself.
 
 ## AcpProvider (`providers/acp.py`)
 
