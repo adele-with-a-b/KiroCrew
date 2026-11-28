@@ -75,7 +75,8 @@ def _own_home_and_no_records(tmp_path, _floor_monkeypatch, close_skills_loaders)
     _floor_monkeypatch.setenv("KIROCREW_HOME", str(tmp_path / "home"))
     yield
     if held_blocks is not None:
-        held_blocks.drop(KEY)
+        # Not ``drop``: that keeps a shortened wake no turn kept, for its retry.
+        held_blocks._records.pop(KEY, None)
 
 
 def _wake(item: str) -> str:
@@ -927,11 +928,27 @@ def _whole(state: dict, item: str = "it_1") -> str:
     return f"{_wake(item)}\n\n[auto-nudge cycle 1]\n{_snapshot(state)}\n\n{PATROL}"
 
 
-def _wake_turn(prompt: str, *, fresh: bool = False, kept: bool = True, around: str = "{}") -> str:
+def _no_ledger_block(prompt: str) -> bool:
+    """Whether a fired wake carries neither the snapshot nor a changes block."""
+    return _snapshot(_ledger()).split("\n")[0] not in prompt and CHANGES not in prompt
+
+
+def _wake_turn(
+    prompt: str,
+    *,
+    fresh: bool = False,
+    kept: bool = True,
+    around: str = "{}",
+    own: bool = True,
+    gate: bool = True,
+) -> str:
     """The build and the end of the turn a fire started with *prompt*; the lines owed it.
 
     The route a real turn takes: ``held_open_for_turn``, ``held_note_prompt`` and the
     settle. *around* is what a build may put around the wake before it gets there.
+    *own* False is the retry of a wake turn that failed: the same text from the
+    queue, in a turn no fire started. *gate* False is a chat that is no Conductor's
+    by the time the turn is built.
     """
     import inspect
 
@@ -941,11 +958,11 @@ def _wake_turn(prompt: str, *, fresh: bool = False, kept: bool = True, around: s
         session_key=KEY,
         slot=_slot(),
         client=SimpleNamespace(reports_compaction=True),
-        _directive_self_wake=True,
+        _directive_self_wake=own,
     )
     text = around.format(prompt)
     takes_text = "wake_text" in inspect.signature(held_open_for_turn).parameters
-    with patch("kiro_crew.dashboard.held_context.is_conductor_slot", return_value=True):
+    with patch("kiro_crew.dashboard.held_context.is_conductor_slot", return_value=gate):
         owed = held_open_for_turn(
             turn,
             context_is_new=fresh,
@@ -1106,6 +1123,62 @@ class TestTheLedgerSnapshot:
         assert await _fired_on(moved, "it_3") == NEWS_ONLY.format(
             "it_3"
         ), "the new context holds it"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("first_context_was_new", [False, True])
+    async def test_a_shortened_wake_retried_into_a_new_context_gets_the_whole_block_back(
+        self, first_context_was_new
+    ):
+        """The wake turn failed; its retry is the same text in a turn no fire started."""
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(next_step="rebase pr-7")
+        short = await _fired_on(moved, "it_2")
+        assert _snapshot(moved) not in short
+        _wake_turn(short, fresh=first_context_was_new, kept=False)
+
+        owed = _wake_turn(short, fresh=True, own=False)
+
+        assert owed == _snapshot(moved)
+        assert _no_ledger_block(await _fired_on(moved, "it_3")), "the new context holds it"
+
+    @pytest.mark.asyncio
+    async def test_a_retried_wake_is_recorded_as_the_turn_the_fire_started_would_be(self):
+        """The same conversation: nothing is owed, and what the retry carried is held."""
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(next_step="rebase pr-7")
+        short = await _fired_on(moved, "it_2")
+        _wake_turn(short, kept=False)
+
+        assert _wake_turn(short, own=False) == ""
+
+        assert await _fired_on(moved, "it_3") == NEWS_ONLY.format("it_3"), "the row went out twice"
+
+    @pytest.mark.asyncio
+    async def test_a_compaction_inside_the_failed_wake_turn_keeps_the_block_owed_its_retry(self):
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(next_step="rebase pr-7")
+        short = await _fired_on(moved, "it_2")
+        _wake_turn(short, kept=False)
+        held_blocks.drop(KEY)  # what mark_needs_reinjection does
+
+        assert _wake_turn(short, fresh=True, own=False) == _snapshot(moved)
+
+    @pytest.mark.asyncio
+    async def test_a_chat_that_left_the_gate_after_a_shortened_fire_gets_the_whole_block_back(
+        self,
+    ):
+        """Moved to another harness, or no Conductor any more, between the fire and the build."""
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(next_step="rebase pr-7")
+        short = await _fired_on(moved, "it_2")
+        assert _snapshot(moved) not in short
+
+        owed = _wake_turn(short, gate=False, kept=False)
+
+        assert owed == "\n".join([SUFFIX, POINTER, PATROL, "", _snapshot(moved)])
+        assert not held_blocks.tracked(KEY)
+        assert _wake_turn(short, gate=False, own=False) == _snapshot(moved), "its retry"
+        assert await _fired_on(moved, "it_3") == _whole(moved, "it_3")
 
     @pytest.mark.asyncio
     async def test_the_block_owed_to_a_compacted_context_is_not_sent_beside_the_re_send(

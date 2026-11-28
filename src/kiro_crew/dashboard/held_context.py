@@ -46,24 +46,32 @@ def held_open_for_turn(
     already shortened against the context that is gone then gets its lines back:
     they are returned here, for the build to put before the request.
 
-    *wake_text* is the turn's own text. When a fire started the turn with it, the
-    ledger snapshot that fire composed is recorded here, and a context that cannot
-    hold the earlier one gets the whole block back with the lines, set apart.
+    *wake_text* is the turn's own text. When it holds a fired wake, the ledger
+    snapshot that fire composed is recorded here, and a context that cannot hold
+    the earlier one gets the whole block back with the lines, set apart. That is
+    the turn the fire started and equally the retry of a wake turn that failed: the
+    retry carries the wake's text as the fire shortened it, and it may run in a new
+    conversation.
+
+    A chat that left the gate after a fire shortened its wake gets both back
+    whatever its context holds, before its record is dropped: no record vouches
+    for that context any more.
     """
     key = turn.session_key
+    own = bool(turn._directive_self_wake)
     if not (
         is_conductor_slot(turn.slot, key)
         and getattr(turn.client, "reports_compaction", False) is True
     ):
+        owed = held_blocks.owed_wake_lines(key) if own else ""
+        snapshot = held_blocks.fired_whole(key, wake_text)
         held_blocks.drop(key)
-        return ""
+        return "\n\n".join(part for part in (owed, snapshot) if part)
     fresh = (context_is_new and not provider_has_history) or needs_reinjection
-    owed = held_blocks.owed_wake_lines(key) if fresh and turn._directive_self_wake else ""
+    owed = held_blocks.owed_wake_lines(key) if fresh and own else ""
     held_blocks.begin_turn(key, fresh=fresh)
-    if turn._directive_self_wake:
-        snapshot = held_blocks.fired_snapshot(key, wake_text, fresh=fresh)
-        owed = "\n\n".join(part for part in (owed, snapshot) if part)
-    return owed
+    snapshot = held_blocks.fired_snapshot(key, wake_text, fresh=fresh, own=own)
+    return "\n\n".join(part for part in (owed, snapshot) if part)
 
 
 def held_forget_on_command(turn: _ChatTurn) -> None:

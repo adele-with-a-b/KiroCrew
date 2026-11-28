@@ -498,21 +498,29 @@ The snapshot is never looked for in a text. The fire hands over the body
 `compose_nudge_body` returned, which opens with the snapshot or has none, and
 gets back the body to send and what that body leaves the context holding. That
 is kept in the record under the wake's text once the fire's turn is on its way
-(`held_blocks.keep_fired`), and the build of the turn that text starts records
+(`held_blocks.keep_fired`), and every build whose text holds that text records
 it (`held_blocks.fired_snapshot`, from `held_open_for_turn`), with the same
-settle as every other block. A fire on a session with no record keeps it in a
+settle as every other block. The fire shortens before anyone knows which
+context its text will reach, and the same text can reach more than one: the
+turn the fire started, and the retry of that turn when it failed, which is a
+queue entry holding the wake's text as the fire shortened it and runs as a turn
+no fire started. So the wake stays in the record until a turn that carried it
+is kept, and one that carried less than the whole snapshot stays through a
+dropped record too. A fire on a session with no record keeps it in a
 record that is not open: every reader takes that session as having none, and
 its build opens the record or drops it. What follows from that:
 
 | Case | What happens |
 |---|---|
 | a wake that fired and started no turn (the chat was busy, the turn was refused) | nothing was recorded, so the next fired wake carries the same difference again |
-| a wake steered into a running turn, the queue card of a steer that was not kept, a run of queued wakes read as one message | none of them carries the snapshot (a steer is the news and the `[seats]` lines), so none is shortened by this and none moves a row |
+| a wake steered into a running turn, the queue card of a steer that was not kept, a run of queued steers read as one message | none of them carries the snapshot (a steer is the news and the `[seats]` lines), so none is shortened by this and none moves a row. The queue entry of a retried wake turn is not one of them: it holds the fired wake's own text (two rows down) |
 | the fire shortened the snapshot and the turn's context turned out to be new, or re-sends after a compaction | the build records the whole snapshot and puts the whole block back ahead of the request, after the fixed lines and set apart by an empty line; the after-compaction re-send reads the request prefix too, so the block is not sent twice |
+| a wake turn failed and is retried: the backend keeps rejecting the conversation, a reasoning mismatch, a rejected image history (each discards the conversation), or the first turn of a new context failed before output | the retry carries the shortened text. Its build finds the fired wake by that text (`fired_snapshot`, whether or not a fire started the turn): in a context that is new it records the whole snapshot and puts the whole block back ahead of the request; in the same conversation it records the rows the text carries |
+| the chat left the gate between the fire and the build: it moved to a harness outside the set, or is no Conductor's any more | the build drops the record, and first hands back the fixed lines the fire left out and the whole block (`held_blocks.fired_whole`), whatever its context holds, because no record vouches for that context; a retry of that turn gets the whole block again |
 | a compaction, a context that starts with no history, a gateway restart | the record is gone or forgets, and the next fired wake carries the whole snapshot |
-| the turn was not kept | its rows are rolled back, and the next fired wake carries them again |
+| the turn was not kept | its rows are rolled back, and the next fired wake carries them again; the fired wake stays in the record for a retry |
 | a block that only looks like a snapshot: a monitor's evidence, a pasted message | neither shortened nor recorded. A fired turn whose text carries a snapshot header no fire answers for makes the record forget every row, which sends the next snapshot whole |
-| more than `MAX_FIRED_SNAPSHOTS` fired wakes wait for their build | the oldest is forgotten; when it carried less than the whole, so are the record's rows |
+| more than `MAX_FIRED_SNAPSHOTS` fired wakes that no turn has kept | the oldest is forgotten; when it carried less than the whole, so are the record's rows |
 
 **The project and runtime blocks.** Nothing reads either block but the model.
 The runtime block rides every follow-up because a turn in a dashboard chat can
