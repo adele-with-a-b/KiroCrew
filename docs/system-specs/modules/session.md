@@ -5021,7 +5021,9 @@ together. A run of one drains as before.
 The model reads the run as one prompt (`agent_run_prompt`); in a Conductor chat
 the texts first lose every repeated copy of a fixed work-ledger wake line, and
 keep the newest `[seats]` lines only (`held_blocks.one_copy`), since each wake
-was written for a turn of its own. The prompt is a header, then each
+was written for a turn of its own. A queued wake is a steer's text and carries
+no session-ledger snapshot, and `one_copy` reads no text for one: a message in
+the run that quotes a snapshot block keeps it whole. The prompt is a header, then each
 text between `[message N/M <id>]` and `[end N/M <id>]`, with an id drawn fresh for
 the run, so a text cannot close its own message early or pass a line of its own
 (a forged `[work-ledger wake]` line; a forged sender line is already defused at

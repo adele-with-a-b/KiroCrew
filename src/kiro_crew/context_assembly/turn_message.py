@@ -608,8 +608,24 @@ def build_message(
     # The stable session key describes conversation identity, not
     # necessarily the interface carrying this turn: refresh the runtime on
     # every follow-up from trusted dispatcher metadata.
+    # A Conductor's context holds the line its last dashboard turn carried
+    # (``held_blocks``), so that line goes out again only when it differs. A turn
+    # another interface carries always names itself: the model must not answer it
+    # under the dashboard's rules.
+    _on_dashboard = (
+        _sections._resolve_runtime_source(session_key or "", runtime_source) == "dashboard"
+    )
+    _runtime_line = ""
     if not is_new_session and runtime_source:
-        parts.extend(_sections.runtime_refresh_blocks(session_key or "", runtime_source))
+        _runtime_line, *_this_turn_only = _sections.runtime_refresh_blocks(
+            session_key or "", runtime_source
+        )
+        if not (
+            _on_dashboard
+            and held_blocks.holds(session_key or "", held_blocks.RUNTIME, _runtime_line)
+        ):
+            parts.append(_runtime_line)
+        parts.extend(_this_turn_only)
 
     # A live model switch keeps the conversation, so the session-start
     # [ACTIVE MODEL] fact goes stale; every follow-up names the model serving
@@ -688,7 +704,11 @@ def build_message(
         # read by other people, and a read-blocked (incognito) turn keeps no
         # ledger, so neither gets it.
         if not minimal_context and not blocks_reads:
-            _ledger_part = _turn.ledger_reinjection_part(session_key, text)
+            # The request prefix is part of what the turn carries: a wake that was
+            # shortened for a context now gone has its whole snapshot there.
+            _ledger_part = _turn.ledger_reinjection_part(
+                session_key, f"{request_prefix_context or ''}\n{text}"
+            )
             if _ledger_part:
                 parts.append(_ledger_part)
         # Member identity is session-start context too, so a compaction
@@ -788,19 +808,24 @@ def build_message(
     # sessions; V2 fragments use explicit recall. ACP native history supplies
     # the current conversation without a second episodic injection here.
 
-    parts.extend(
-        _turn.rail_parts(
-            project=project,
-            context_groups=context_groups,
-            board_tags=board_tags,
-            session_dashboard=session_dashboard,
-            minimal_context=minimal_context,
-            folder_path=folder_path,
-            session_key=session_key,
-            agent=agent,
-            request_prefix_context=request_prefix_context,
-        )
+    _rail = _turn.rail_parts(
+        project=project,
+        context_groups=context_groups,
+        board_tags=board_tags,
+        session_dashboard=session_dashboard,
+        minimal_context=minimal_context,
+        folder_path=folder_path,
+        session_key=session_key,
+        agent=agent,
+        request_prefix_context=request_prefix_context,
     )
+    # The standing ``[PROJECT]`` line opens the rail. A Conductor's context holds
+    # the one its last dashboard turn carried (``held_blocks``), so it goes out
+    # again when the project changes; a one-time notice behind it is never held.
+    _project_line = _rail[0] if _rail and _rail[0].startswith("[PROJECT] ") else ""
+    if _on_dashboard and held_blocks.holds(session_key or "", held_blocks.PROJECT, _project_line):
+        del _rail[0]
+    parts.extend(_rail)
     # The MCP servers this session cannot use yet, so the model says a server is
     # still starting (and waits for it) instead of saying it does not exist.
     if not minimal_context and (
@@ -1117,14 +1142,21 @@ def build_message(
                 else ""
             ),
             held_blocks.REPLY_FORMAT_RULES: _rules_block,
+            held_blocks.PROJECT: _project_line,
+            held_blocks.RUNTIME: _runtime_line,
         }
+        _carried = {
+            name: block
+            for name, block in _turn_start_blocks.items()
+            if block and block.translate(ctx._MULTIBYTE_TABLE) in final
+        }
+        if not _on_dashboard:
+            # This turn's reader is on another interface and the context now ends
+            # on its lines: the next dashboard turn sends its own again.
+            _carried.update({held_blocks.PROJECT: "", held_blocks.RUNTIME: ""})
         held_blocks.note(
             session_key,
-            {
-                name: block
-                for name, block in _turn_start_blocks.items()
-                if block and block.translate(ctx._MULTIBYTE_TABLE) in final
-            },
+            _carried,
             # A build that outlived its stopped turn was never sent.
             turn=_held_turn,
         )

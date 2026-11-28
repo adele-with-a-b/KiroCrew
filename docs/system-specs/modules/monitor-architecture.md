@@ -300,7 +300,11 @@ did not change that. A Conductor chat whose context already holds them is the
 one exception: the fact line goes out only when it differs from the last one
 sent in that context, and the instruction line once per context
 (`held_blocks.py`; [context-management](../../architecture/context-management.md),
-"What a Conductor's context already holds"). A seat is a `concurrency_cap` slot, counted as the store
+"What a Conductor's context already holds"). The session-ledger snapshot a
+fired cycle opens with follows the same record: whole once per context, then
+the rows that changed, and no ledger block when none did
+(`held_blocks.lean_snapshot`). A steered wake never carried the snapshot and
+is not touched by that. A seat is a `concurrency_cap` slot, counted as the store
 refuses on (`work_ledger.count_seated`, read by `probes.work_ledger.seat_facts`).
 The fact line names the open stories holding a seat with no worker, in
 `next_pick` order (`work_plan_vocab.pick_key`); then, only while a seat is free

@@ -431,8 +431,9 @@ A Conductor chat is woken many times inside one model context, and its harness
 replays that context with every request. Measured on a live Conductor
 conversation over one day, 37% of the characters Kiro Crew sent it were lines
 the same context already held. `kiro_crew/held_blocks.py` is the record of the
-fixed blocks one session's context holds, and each block below goes out once
-per context:
+fixed blocks one session's context holds, and of the last content it was sent
+of the blocks that change. Each block below goes out once per context, and a
+block that changes goes out again when it differs:
 
 | Block | Composed into | Sent |
 |---|---|---|
@@ -440,6 +441,8 @@ per context:
 | the `[seats]` fact line | every wake | only when it differs from the last one sent in this context (a board that had none in between makes the same line news again) |
 | `[SESSION RESUMED …]` with the critical rules, `[RESPONSE PREFERENCES]`, `[REPLY FORMAT RULES]` | every resumed turn (a session is reloaded after a gateway restart, a forced Stop and an idle hour) | once per wording; a resumed turn carries the refreshed date, identity and runtime, and the reply-language line in place of the preferences. The reply-format rules of a typed turn and of a wake differ by one paragraph, and the record holds each wording it sent |
 | the after-compaction re-send and the first-turn history | the turn after a compaction, and again after a turn that did not land | once, a Stop on Claude Code of a prompt it had started included (below) |
+| the session-ledger snapshot (`[work ledger — …]`) | the body of every fired wake (`compose_nudge_body`) | whole with the first fired wake of a context; a later one carries the rows that differ from what the context was last sent, or no ledger block when none differs (below) |
+| the `[PROJECT]` block and the `[RUNTIME]` block | the project block on every turn, the runtime block on every follow-up turn | once per context, and again when its text differs from the last one sent; a turn another interface carries sends both (below) |
 
 **Who has a record.** The dashboard turn's build opens one
 (`dashboard/held_context.py`, `held_open_for_turn`) for a chat that runs a
@@ -483,6 +486,65 @@ its text then waits as a queue card. Wakes that waited together as cards reach
 the model as one message, with one copy of each fixed line and the newest
 `[seats]` lines (`held_blocks.one_copy`, for a Conductor on any harness: one
 message is one context).
+
+**The session-ledger snapshot goes out whole once, then by row.** The record
+keeps each row the context was sent: `goal`, `phase`, `next` and each
+`artifact <key>` under its label, so a new value takes the old one's place; a
+`tried` row under its own text, because it is an entry in a list. A later fired
+wake is measured against those rows (`held_blocks.lean_snapshot`):
+
+| The snapshot, against the rows the context holds | The wake carries |
+|---|---|
+| no row differs | no ledger block |
+| a row is new or its text differs | `[work ledger — changed rows only; every row of the last snapshot that is not named here still stands; session_ledger_read shows it whole]` and those rows, each written as the whole snapshot writes it |
+| a labelled row is in the record and not in the snapshot | under the same header, `removed: <label>`; when the snapshot is cut at `_SNAPSHOT_MAX_CHARS`, `no longer shown, the snapshot is cut at its size limit: <label>`, because a cut snapshot cannot tell a removed row from one pushed past the cut |
+| the changes would be no shorter than the snapshot | the whole snapshot |
+| the record says the context holds no snapshot | the whole snapshot |
+
+The header is a different line from the whole snapshot's, so a part never
+reads as the whole: it says that every row it does not name stands, and where
+the whole is. A `tried` row that left the three the snapshot shows is not
+named: it was tried all the same.
+
+The snapshot is never looked for in a text. The fire hands over the body
+`compose_nudge_body` returned, which opens with the snapshot or has none, and
+gets back the body to send and what that body leaves the context holding. That
+is kept in the record under the wake's text once the fire's turn is on its way
+(`held_blocks.keep_fired`), and every build whose text holds that text records
+it (`held_blocks.fired_snapshot`, from `held_open_for_turn`), with the same
+settle as every other block. The fire shortens before anyone knows which
+context its text will reach, and the same text can reach more than one: the
+turn the fire started, and the retry of that turn when it failed, which is a
+queue entry holding the wake's text as the fire shortened it and runs as a turn
+no fire started. So the wake stays in the record until a turn that carried it
+is kept, and one that carried less than the whole snapshot stays through a
+dropped record too. A fire on a session with no record keeps it in a
+record that is not open: every reader takes that session as having none, and
+its build opens the record or drops it. What follows from that:
+
+| Case | What happens |
+|---|---|
+| a wake that fired and started no turn (the chat was busy, the turn was refused) | nothing was recorded, so the next fired wake carries the same difference again |
+| a wake steered into a running turn, the queue card of a steer that was not kept, a run of queued steers read as one message | none of them carries the snapshot (a steer is the news and the `[seats]` lines), so none is shortened by this and none moves a row. The queue entry of a retried wake turn is not one of them: it holds the fired wake's own text (two rows down) |
+| the fire shortened the snapshot and the turn's context turned out to be new, or re-sends after a compaction | the build records the whole snapshot and puts the whole block back ahead of the request, after the fixed lines and set apart by an empty line; the after-compaction re-send reads the request prefix too, so the block is not sent twice |
+| a wake turn failed and is retried: the backend keeps rejecting the conversation, a reasoning mismatch, a rejected image history (each discards the conversation), or the first turn of a new context failed before output | the retry carries the shortened text. Its build finds the fired wake by that text (`fired_snapshot`, whether or not a fire started the turn): in a context that is new it records the whole snapshot and puts the whole block back ahead of the request; in the same conversation it records the rows the text carries |
+| the chat left the gate between the fire and the build: it moved to a harness outside the set, or is no Conductor's any more | the build drops the record, and first hands back the fixed lines the fire left out and the whole block (`held_blocks.fired_whole`), whatever its context holds, because no record vouches for that context; a retry of that turn gets the whole block again |
+| a compaction, a context that starts with no history, a gateway restart | the record is gone or forgets, and the next fired wake carries the whole snapshot |
+| the turn was not kept | its rows are rolled back, and the next fired wake carries them again; the fired wake stays in the record for a retry |
+| a block that only looks like a snapshot: a monitor's evidence, a pasted message | neither shortened nor recorded. A fired turn whose text carries a snapshot header no fire answers for makes the record forget every row, which sends the next snapshot whole |
+| more than `MAX_FIRED_SNAPSHOTS` fired wakes that no turn has kept | the oldest is forgotten; when it carried less than the whole, so are the record's rows |
+
+**The project and runtime blocks.** Nothing reads either block but the model.
+The runtime block rides every follow-up because a turn in a dashboard chat can
+be carried by another interface (a message typed in a linked Slack thread runs
+in the same conversation), and the project block rides every turn because a
+project can be set or changed after the session started. Both reasons are
+about a change, so `build_message` sends each block when its text differs from
+the last one the context was sent (`held_blocks.PROJECT`, `RUNTIME`). That
+holds for a turn the dashboard carries. A turn another interface carries sends
+both blocks and the `For THIS turn` diff rule, and the record forgets both, so
+the next dashboard turn names the dashboard and the project again. A one-time
+`[PROJECT]` notice (a remote workspace that was recreated) is never held.
 
 **A Stop on Claude Code keeps a prompt it had started**
 (`stopped_prompt_kept`). Claude Code writes a prompt it started to its
@@ -726,8 +788,10 @@ by `_SNAPSHOT_MAX_CHARS`) and `dashboard/handlers/autonudge.py` prepends it to a
 auto-nudge cycle message**, so each cycle starts from durable state rather than
 transcript memory. `build_message` adds the same block once on the first turn
 after a compaction (item 6 above), scrubbed of structural markers, unless that
-turn's text already carries it. It is empty when the session has no ledger or its phase is
-terminal. See [Session Ledger](../../src/kiro_crew/docs/session-ledger.md), [Monitor Loops](../../src/kiro_crew/docs/monitor-loops.md).
+turn's text or its request prefix already carries it. It is empty when the session has no ledger or its phase is
+terminal. A Conductor's fired wake carries it whole once per model context and
+then the rows that changed
+([What a Conductor's context already holds](#what-a-conductors-context-already-holds)). See [Session Ledger](../../src/kiro_crew/docs/session-ledger.md), [Monitor Loops](../../src/kiro_crew/docs/monitor-loops.md).
 
 ## 3. Sub-agent sessions (`spawn_run`)
 

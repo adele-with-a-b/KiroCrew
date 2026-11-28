@@ -37,6 +37,32 @@ then waits as a queue card or was dropped.
 
 The wake blocks are matched as whole lines against the owners' own constants, so a
 line a worker or a person wrote is never taken out unless it is that constant.
+
+Three blocks are not fixed text, and the record keeps the last content sent of each,
+so they go out again when it changes: the ``[seats]`` fact line, the project and
+runtime lines of a turn (``PROJECT``, ``RUNTIME``; ``context_assembly``), and the
+session-ledger snapshot a fired wake's body opens with (``LEDGER``). The snapshot is
+kept row by row. A context's first wake carries it whole; a later one carries nothing
+when no row differs, and otherwise the rows that do under
+``LEDGER_CHANGES_HEADER``, which says in its own words that every other row stands.
+
+The snapshot is never looked for in a text. The fire hands over the body it composed
+(:func:`lean_snapshot`), which opens with the snapshot or has none, and what the wake
+then carries waits in the record under the wake's own text (:func:`keep_fired`) for
+the build of a turn that holds that text (:func:`fired_snapshot`). So a block that only looks like a
+snapshot, in a monitor's evidence or in a message someone pasted, is neither
+shortened nor recorded, and a steer, the queue card of a steer and a run of queued
+steers never carry one. A wake that started no turn changes nothing: the next one is
+measured against the same record.
+
+The fire shortens before anyone knows which context its text will reach, and the
+same text can reach more than one: a wake turn that failed is retried with it, as a
+queue entry, and the retry may run in a new conversation. So a fired wake stays in
+the record until a turn that carried it is kept (:func:`settle_turn`), and one that
+carried less than the whole snapshot outlives a :func:`drop`. Every build whose text
+holds it and whose context cannot hold the earlier snapshot is handed the whole
+block: a retry as much as the fire's own turn, and a chat that has left the record's
+gate (:func:`fired_whole`).
 """
 
 from __future__ import annotations
@@ -68,12 +94,58 @@ PATROL = "patrol"
 SEATS = "seats"
 SEATS_INSTRUCTION = "seats-instruction"
 
+#: Record names of the two rail lines a turn carries: the value is the last one sent,
+#: so a line goes out again only when its content changes.
+PROJECT = "project"
+RUNTIME = "runtime"
+
+#: The session-ledger snapshot a fired wake's body opens with
+#: (``session_ledger.render_snapshot``). ``LEDGER`` says the context holds one, and
+#: each row it was sent has a place under ``_LEDGER_ROW``: its label for ``goal``,
+#: ``phase``, ``next`` and each ``artifact <key>``, so a new value takes the old
+#: one's place; its own text for a ``tried`` row, which is an entry in a list, and
+#: for a row cut inside its label.
+LEDGER = "ledger"
+_LEDGER_ROW = LEDGER + "/"
+_LEDGER_BY_TEXT = _LEDGER_ROW + ":"
+_LEDGER_ONE_ROW = frozenset({"goal", "phase", "next"})
+_LEDGER_ARTIFACT = "artifact "
+#: What a later wake carries in place of a snapshot whose rows the context holds:
+#: this line, the rows that are new or differ, and one line for each labelled row
+#: the context holds and the snapshot does not have. The line says what a reader of it alone must know:
+#: that it is a part, that the rest stands, and where the whole is.
+LEDGER_CHANGES_HEADER = (
+    "[work ledger — changed rows only; every row of the last snapshot that is not "
+    "named here still stands; session_ledger_read shows it whole]"
+)
+#: Opens the line for a row that is gone. A snapshot cut at its ceiling cannot tell
+#: a removed row from one pushed past the cut, so it says only what it knows.
+LEDGER_ROW_REMOVED = "removed: "
+LEDGER_ROW_CUT_OFF = "no longer shown, the snapshot is cut at its size limit: "
+#: Fired wakes one session may have that no turn has kept. Past it the oldest is
+#: forgotten, and with it what the record knew of the snapshot.
+MAX_FIRED_SNAPSHOTS = 4
+
 #: Lines of which a text keeps the newest copy; of any other the first.
 _KEEP_NEWEST = frozenset({SEATS, SEATS_INSTRUCTION})
 #: Blocks with more than one wording (the reply-format rules of a typed turn and of
 #: a wake differ by a paragraph): the context holds every wording it was sent, so a
 #: chat that alternates between the two is not sent one of them at every switch.
 _EVERY_WORDING = frozenset({CRITICAL_RULES, RESPONSE_PREFERENCES, REPLY_FORMAT_RULES})
+
+
+@dataclass(frozen=True)
+class FiredSnapshot:
+    """What the snapshot of one fired wake leaves a context holding.
+
+    *sent* is what the wake's text carries (place to row, ``""`` for a row said
+    gone, ``LEDGER`` with a whole block), *whole* the whole block the same way, and
+    *owed* the whole block's text when the wake carries less than it.
+    """
+
+    sent: Mapping[str, str]
+    whole: Mapping[str, str]
+    owed: str = ""
 
 
 @dataclass
@@ -84,6 +156,13 @@ class _Record:
     left_out: tuple[str, ...] = ()
     #: The open turn's number, unique in the process; see :func:`turn_of`.
     turn: int = 0
+    #: Fired wakes no turn has kept yet, by the wake's text.
+    fired: OrderedDict[str, FiredSnapshot] = field(default_factory=OrderedDict)
+    #: The fired wake the open turn's text holds; it leaves *fired* when the turn is kept.
+    turn_fired: str = ""
+    #: False until a build opens the record: a fire on a session with none keeps
+    #: only *fired* here, and every reader takes the session as having no record.
+    opened: bool = True
 
 
 _turns = itertools.count(1)
@@ -102,7 +181,8 @@ def _place(name: str, value: str) -> str:
 
 def _record(key: object) -> _Record | None:
     """*key*'s record; the caller holds the lock. A key that is no string has none."""
-    return _records.get(key) if isinstance(key, str) and key else None
+    record = _records.get(key) if isinstance(key, str) and key else None
+    return record if record is not None and record.opened else None
 
 
 def begin_turn(key: str, *, fresh: bool) -> None:
@@ -118,21 +198,32 @@ def begin_turn(key: str, *, fresh: bool) -> None:
         if record is None:
             record = _Record()
         _records[key] = record
+        record.opened = True
         if fresh:
             record.blocks.clear()
         record.unread_steers.clear()
         record.turn_undo.clear()
         record.left_out = ()
+        record.turn_fired = ""
         record.turn = next(_turns)
         while len(_records) > MAX_SESSIONS:
             _records.popitem(last=False)
 
 
 def drop(key: str) -> None:
-    """*key*'s context is gone, or the chat has no record: every block goes out again."""
+    """*key*'s context is gone, or the chat has no record: every block goes out again.
+
+    A fired wake that carried less than the whole snapshot and that no turn has kept
+    stays, in a record that is not open: its text can still be retried into the
+    context that comes next, and that build owes it the whole block.
+    """
     with _lock:
-        if isinstance(key, str):
-            _records.pop(key, None)
+        record = _records.pop(key, None) if isinstance(key, str) else None
+        if record is None:
+            return
+        short = OrderedDict((text, sent) for text, sent in record.fired.items() if sent.owed)
+        if short:
+            _records[key] = _Record(fired=short, opened=False)
 
 
 def tracked(key: str) -> bool:
@@ -170,6 +261,8 @@ def note(key: str, blocks: Mapping[str, str], *, turn: int | None = None) -> Non
     *turn* is the :func:`turn_of` the build read when it started: a build whose
     turn is over by now records nothing. :func:`settle_turn` undoes the writes
     when the harness did not keep the prompt.
+
+    An empty text forgets its block.
     """
     if not key or not blocks:
         return
@@ -177,19 +270,40 @@ def note(key: str, blocks: Mapping[str, str], *, turn: int | None = None) -> Non
         record = _record(key)
         if record is None or (turn is not None and record.turn != turn):
             return
-        for name, text in blocks.items():
-            value = _digest(text)
-            place = _place(name, value)
-            if record.blocks.get(place) == value:
-                continue
-            record.turn_undo.setdefault(place, record.blocks.get(place))
+        _note(record, blocks)
+
+
+def _note(record: _Record, blocks: Mapping[str, str]) -> None:
+    """Write *blocks* to *record*, undoably; the caller holds the lock.
+
+    A whole ledger snapshot (``LEDGER``) takes the place of every row held. Rows
+    without it change the snapshot the context holds, and are not taken by a record
+    that holds none: its next wake is whole.
+    """
+    whole = LEDGER in blocks
+    if whole:
+        for place in [p for p in record.blocks if p.startswith(_LEDGER_ROW) and p not in blocks]:
+            record.turn_undo.setdefault(place, record.blocks.pop(place))
+    for name, text in blocks.items():
+        if name.startswith(_LEDGER_ROW) and not whole and LEDGER not in record.blocks:
+            continue
+        value = _digest(text) if text else None
+        place = _place(name, value or "")
+        if record.blocks.get(place) == value:
+            continue
+        record.turn_undo.setdefault(place, record.blocks.get(place))
+        if value is None:
+            del record.blocks[place]
+        else:
             record.blocks[place] = value
 
 
 def settle_turn(key: str, *, kept: bool) -> None:
     """The turn on *key* ended; *kept* says the harness holds the prompt it sent.
 
-    A steer the turn never read is forgotten either way.
+    A steer the turn never read is forgotten either way. The fired wake the turn's
+    text held is answered for once the turn is kept; one that was not kept stays,
+    for the retry that carries the same text.
     """
     if not key:
         return
@@ -197,6 +311,9 @@ def settle_turn(key: str, *, kept: bool) -> None:
         record = _record(key)
         if record is None:
             return
+        if kept:
+            record.fired.pop(record.turn_fired, None)
+        record.turn_fired = ""
         if not kept:
             for name, prior in record.turn_undo.items():
                 if prior is None:
@@ -230,6 +347,169 @@ def _fixed_lines() -> dict[str, str]:
     }
     lines.update(dict.fromkeys(conductor_patrol.SHIPPED_PATROL_MESSAGES, PATROL))
     return lines
+
+
+def _row_place(row: str) -> str:
+    """Where the snapshot row *row* is kept: by its label, or by its own text."""
+    label, colon, _value = row.partition(": ")
+    if colon and (label in _LEDGER_ONE_ROW or label.startswith(_LEDGER_ARTIFACT)):
+        return _LEDGER_ROW + label
+    return _LEDGER_BY_TEXT + _digest(row)
+
+
+def _ledger_changes(
+    block: list[str], held: Mapping[str, str]
+) -> tuple[list[str], dict[str, str]] | None:
+    """The whole snapshot *block* (its lines) as what differs from the rows *held*.
+
+    Returns the lines to send, none when nothing differs, and what they leave a
+    context holding (place to row, ``""`` for a row said gone). ``None`` when the
+    changes would be no shorter than the block, which then goes out whole.
+    """
+    from kiro_crew.session_ledger import snapshot_is_cut
+
+    rows = block[1:]
+    places = {_row_place(row) for row in rows}
+    changed = [row for row in rows if held.get(_row_place(row)) != _digest(row)]
+    absent = [
+        place
+        for place in held
+        if place.startswith(_LEDGER_ROW)
+        and not place.startswith(_LEDGER_BY_TEXT)
+        and place not in places
+    ]
+    if not changed and not absent:
+        return [], {}
+    gone = LEDGER_ROW_CUT_OFF if snapshot_is_cut("\n".join(block)) else LEDGER_ROW_REMOVED
+    lines = [
+        LEDGER_CHANGES_HEADER,
+        *changed,
+        *(gone + place[len(_LEDGER_ROW) :] for place in absent),
+    ]
+    if len("\n".join(lines)) >= len("\n".join(block)):
+        return None
+    sent = {_row_place(row): row for row in changed}
+    sent.update(dict.fromkeys(absent, ""))
+    return lines, sent
+
+
+def lean_snapshot(key: str, body: str) -> tuple[str, FiredSnapshot | None]:
+    """A fired wake's *body* with the ledger snapshot it opens with as *key* needs it.
+
+    *body* is what ``compose_nudge_body`` returned: the snapshot, an empty line and
+    the loop's message, or the message alone. The snapshot is read at that place
+    and nowhere else. Whole for a context the record does not say holds one;
+    otherwise the rows that differ, or nothing when none does.
+
+    Returns the body to send and what its snapshot leaves a context holding, for
+    :func:`keep_fired` once the wake starts a turn; ``None`` when the body has no
+    snapshot. Nothing is written here, so a wake that starts no turn changes nothing.
+    """
+    from kiro_crew.session_ledger import SNAPSHOT_HEADER
+
+    block, gap, message = body.partition("\n\n")
+    lines = block.split("\n")
+    if lines[0] != SNAPSHOT_HEADER or not gap:
+        return body, None
+    whole = {LEDGER: lines[0], **{_row_place(row): row for row in lines[1:]}}
+    with _lock:
+        record = _record(key)
+        held = dict(record.blocks) if record is not None else {}
+    changes = _ledger_changes(lines, held) if LEDGER in held else None
+    if changes is None:
+        return body, FiredSnapshot(sent=whole, whole=whole)
+    rows, sent = changes
+    lean = "\n".join(rows) + gap + message if rows else message
+    return lean, FiredSnapshot(sent=sent, whole=whole, owed=block)
+
+
+def keep_fired(key: str, text: str, snapshot: FiredSnapshot) -> None:
+    """The wake *text* is starting a turn: keep *snapshot* for the builds that carry it.
+
+    *snapshot* is what :func:`lean_snapshot` returned for the body inside *text*.
+    It stays until a turn that carried *text* is kept, so the retry of one that was
+    not finds it too. A session with no record gets one that is not open: it holds
+    this and nothing else, until a build opens it or drops it.
+    """
+    if not isinstance(key, str) or not key or not text:
+        return
+    with _lock:
+        record = _records.get(key)
+        if record is None:
+            record = _records[key] = _Record(opened=False)
+            while len(_records) > MAX_SESSIONS:
+                _records.popitem(last=False)
+        record.fired.pop(text, None)
+        record.fired[text] = snapshot
+        while len(record.fired) > MAX_FIRED_SNAPSHOTS:
+            _, lost = record.fired.popitem(last=False)
+            if lost.owed:
+                # Its wake carried less than the whole and may yet reach the
+                # context unrecorded.
+                _forget_ledger(record)
+
+
+def _forget_ledger(record: _Record) -> None:
+    """*record* stops vouching for any snapshot row: the next wake carries it whole."""
+    for place in [p for p in record.blocks if p == LEDGER or p.startswith(_LEDGER_ROW)]:
+        del record.blocks[place]
+        record.turn_undo.pop(place, None)
+
+
+def _fired_in(record: _Record, text: str) -> str | None:
+    """The newest fired wake of *record* that *text* holds; the caller holds the lock."""
+    return next((sent for sent in reversed(record.fired) if sent in text), None)
+
+
+def fired_snapshot(key: str, text: str, *, fresh: bool, own: bool = True) -> str:
+    """Record the snapshot a fired wake brings the turn being built for *key*.
+
+    Called by every build, after :func:`begin_turn`, with the turn's text: a fired
+    wake as the fire sent it, whatever the build put around it, in the turn the
+    fire started (*own*) or in a later one that carries the same text, as the retry
+    of a wake turn that failed does. *fresh* is a context that holds nothing: it is
+    recorded as holding the whole snapshot, and the whole block is returned when
+    the wake carried less, for the build to send ahead of the request. Otherwise
+    what the wake carries is recorded and ``""`` returned. :func:`settle_turn`
+    undoes it when the harness did not keep the prompt, and lets the wake go when
+    it did.
+
+    A text no fire answers for records nothing. Should the fire's *own* turn carry
+    a snapshot header all the same, the record forgets every row, which sends the
+    next one whole.
+    """
+    from kiro_crew.session_ledger import SNAPSHOT_HEADER
+
+    if not key or not text:
+        return ""
+    with _lock:
+        record = _record(key)
+        if record is None:
+            return ""
+        wake = _fired_in(record, text)
+        if wake is None:
+            if own and (SNAPSHOT_HEADER in text or LEDGER_CHANGES_HEADER in text):
+                _forget_ledger(record)
+            return ""
+        snapshot = record.fired[wake]
+        record.turn_fired = wake
+        _note(record, snapshot.whole if fresh else snapshot.sent)
+    return snapshot.owed if fresh else ""
+
+
+def fired_whole(key: str, text: str) -> str:
+    """The whole block the fired wake inside *text* left out; ``""`` if it left none out.
+
+    For the build of a chat that keeps no record (it has left the gate): the fire
+    shortened its wake against a record this turn does not continue, so the turn
+    sends the whole block whatever its context holds. Nothing is written.
+    """
+    if not isinstance(key, str) or not key or not text:
+        return ""
+    with _lock:
+        record = _records.get(key)
+        wake = _fired_in(record, text) if record is not None else None
+        return record.fired[wake].owed if record is not None and wake is not None else ""
 
 
 def _lean_each(

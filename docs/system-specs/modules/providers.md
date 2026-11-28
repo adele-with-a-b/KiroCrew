@@ -1027,7 +1027,9 @@ message; that bind is forced only by `needs_reinjection` (see
 limit in the paragraph above. The receipt lives on the provider object, so a
 resumed session starts without one; a Conductor chat's `held_blocks` record,
 keyed by session, is what carries "this context holds the rules" across a
-resume.
+resume. The same record holds the session-ledger rows and the project and
+runtime blocks that context was last sent, and it is opened only for a provider
+whose `reports_compaction` is True.
 
 ### Native harness notifications relied on
 

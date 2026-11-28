@@ -7960,6 +7960,14 @@ built, and the record ends with the context
 Conductor's context already holds"). A session with no record gets every block
 as before.
 
+The same record keeps the last `[PROJECT]` block and the last `[RUNTIME]` block
+a Conductor's context was sent. On a turn the dashboard carries, `build_message`
+leaves out a block whose text is the one held and sends it when the text
+differs; a turn another interface carries sends both, with the `For THIS turn`
+diff rule, and the record forgets both. Nothing reads either block but the
+model, and each rode every turn only so that a change would reach it. Every
+other chat gets both on every turn, as before.
+
 Post-compaction reinjection separately refreshes bounded skill discovery,
 protected skill bodies, memory navigation, reply preferences and member identity,
 and on the Claude Code and Codex backends the steering resources, under the session-start gate

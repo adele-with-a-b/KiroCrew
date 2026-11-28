@@ -397,7 +397,7 @@ _BASE_SURFACE: dict[str, tuple[tuple[str, str, str], ...]] = {
         (
             "_start_dashboard_wake_turn",
             "async method",
-            "(self, loop: 'NudgeLoop', slot: 'Any', wake_message: 'str | None', tagged: 'str', visible: 'str', trigger_text: 'str | None', fired_generation: 'int', *, fixed_patrol: 'bool' = False) -> 'MonitorDispatchResult'",
+            "(self, loop: 'NudgeLoop', slot: 'Any', wake_message: 'str | None', tagged: 'str', visible: 'str', trigger_text: 'str | None', fired_generation: 'int', *, fixed_patrol: 'bool' = False, held_snapshot: 'Any' = None) -> 'MonitorDispatchResult'",
         ),
         (
             "_work_ledger_wake_loop",
