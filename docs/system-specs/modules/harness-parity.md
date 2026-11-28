@@ -616,6 +616,24 @@ build none and their first message is unchanged. The records
 it writes are read by an exact match, so a harness that writes none keeps every
 block in its message (`test_session_head.py`).
 
+### Claude session head
+
+A dashboard chat of the default agent on claude sends its agent prompt and critical
+rules as ACP's `systemPrompt` in `append` mode (`claude_session_head.py`,
+[claude-code-provider.md](claude-code-provider.md)). It adapts to the seams the KAS
+head runs through and changes none: the blocks are composed by
+`session_head.head_prompt`, recorded under its keys, and left out of a message by
+`session_head.holds`. The gate is positive (H5) and is the adapter's own
+`initialize` answer (`sessionCapabilities.systemPrompt`), not a backend set: the
+hooks are bound on `ClaudeAcpClient` (`acp/client_claude_head.py`), and an adapter
+that does not advertise the field is sent none. The shared sites in `acp/client_start.py` call in-memory hooks
+(H13): `_harness_session_params` returns `{}` and `_keep_session_head` is not
+awaited (`_keeps_session_head` is False) on every other client, so their
+`session/new` and `session/load` are unchanged byte for byte. The two re-sends a
+compaction and a resume make are skipped only for a provider that answers
+`session_head_in_system_prompt` (H14, False on `LLMProvider`), so KAS, whose head a
+compaction can summarize, keeps both (`test_claude_session_head.py`).
+
 ### KAS skill scope
 
 A KAS session loads the skill set its kiro-cli twin loads under Crew. kiro-cli

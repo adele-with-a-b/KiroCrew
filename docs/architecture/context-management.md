@@ -83,6 +83,18 @@ from the render by one byte is sent here as before. A held block keeps its prote
 charge (`ContextParts.charge_held`), so memory admission is the same as when it was
 in the message.
 
+**On claude, rows 1 and 2 ride the adapter's system prompt.** For the same kind of
+chat on an adapter that advertises `sessionCapabilities.systemPrompt`, those two
+blocks are sent as ACP's `systemPrompt` in `append` mode on `session/new`, and a
+restore sends the recorded bytes again (`claude_session_head.py`;
+[claude-code-provider](../system-specs/modules/claude-code-provider.md), "The
+session head"). There is no row 4a on claude, so the head holds none. Because a
+compaction summarizes messages and never the system prompt, the turn after one
+leaves out its `[AGENT SYSTEM PROMPT]` re-send, and a resumed turn leaves out
+`[SESSION RESUMED …]` with its critical rules (it carries the refreshed date,
+identity and runtime alone), each only while the session's record equals the block
+byte for byte.
+
 **A Memory V2 member is the one exception to this order.** Its essentials
 envelope (`_build_v2_essentials`) is not a row in the table: the last step of
 `build_session_context` splices it in immediately after the critical-rules block,

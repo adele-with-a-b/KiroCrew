@@ -1219,8 +1219,14 @@ on `session/new` and `session/load`, and the session-start build leaves a block 
 only when its record equals it byte for byte. A resumed chat that started with a head
 (`head_sid` on the session map) and whose resumed session holds none gets
 `[AGENT SYSTEM PROMPT]` back in its resume message, because the engine then rebuilt
-its first message from the stub. Another agent, a prompt a person wrote, a
-non-dashboard key and every other harness keep the message path. Resource
+its first message from the stub. Another agent, a prompt a person wrote and a
+non-dashboard key keep the message path. A per-session claude client records a head
+of its own, the agent prompt and the critical rules sent as ACP's `systemPrompt`
+(`claude_session_head.py`, [claude-code-provider.md](claude-code-provider.md)):
+`AcpProvider.native_context_documents` and `session_head_held` read it from the
+client, and `session_head_in_system_prompt` (False on `LLMProvider` and for the
+shared runtime) says the record is system text a compaction keeps. Every other
+harness records none. Resource
 URIs and their order remain unchanged on the wire, and conditional, skill and knowledge resources keep native selection.
 Exact template and body matches omit initial manual copies. The complete-envelope
 budget is checked BEFORE omission: 64,000 characters including wrappers, with

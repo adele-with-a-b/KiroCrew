@@ -76,7 +76,9 @@ def post_compaction_parts(
     reply-style preferences. The operator's memory, lessons, skills, steering
     resources and folder steering stay out of a prompt other people read.
     """
+    from kiro_crew import claude_session_head as _claude_session_head
     from kiro_crew import context as ctx  # circular import: the facade imports this owner
+    from kiro_crew import session_head as _session_head
 
     parts: list[str] = []
     _essentials = essentials
@@ -97,7 +99,11 @@ def post_compaction_parts(
         private_owner=private_owner,
         session_start=False,
     )
-    if _agent_prompt:
+    # Not when the harness holds this exact text as the session's system prompt
+    # (a claude session head): the compaction summarized messages, never that.
+    if _agent_prompt and not _claude_session_head.in_system_prompt(
+        context_provider, _session_head.AGENT_PROMPT_KEY, _agent_prompt
+    ):
         parts.append(f"[AGENT SYSTEM PROMPT]\n{_agent_prompt}\n[END AGENT SYSTEM PROMPT]\n\n")
     # The tool-name rule went with the session start too, and the contract just
     # restored names the tools bare again. Minimal turns carried it as well.

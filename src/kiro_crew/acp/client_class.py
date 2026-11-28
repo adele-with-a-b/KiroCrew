@@ -1084,6 +1084,26 @@ class AcpClient:
         or None for none of this backend's own (the caller's default stands)."""
         return None
 
+    #: Whether this backend records a session head once its session exists
+    #: (``_keep_session_head``). Only the claude client does.
+    _keeps_session_head: bool = False
+
+    def _harness_session_params(self, *, restoring: bool) -> dict[str, Any]:
+        """This backend's own top-level fields of a ``session/new`` (or, *restoring*,
+        of a restore) beside ``cwd``, ``mcpServers`` and ``_meta``: none here."""
+        return {}
+
+    async def _keep_session_head(self, *, adopted: bool = False) -> None:
+        """Record the session head the live session holds; *adopted* when no
+        request was sent for it. Reached only where ``_keeps_session_head`` is True."""
+
+    @property
+    def session_head_documents(self) -> dict[str, str]:
+        """The session-head blocks the harness holds as this live session's system
+        prompt, through a compaction and a restore (``kiro_crew.session_head``
+        keys); empty without one."""
+        return {}
+
     async def _retry_after_model_substitution(
         self, new_params: dict[str, Any], session_resp: dict, substitute: str
     ) -> dict:

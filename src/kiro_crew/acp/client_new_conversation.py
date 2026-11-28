@@ -85,6 +85,7 @@ async def new_conversation(self: ClaudeAcpClient) -> None:
         await self._prepare_claude_side_read_denies()
         await self._prepare_session_mcp()
         await self._prepare_claude_held_asks()
+        await self._prepare_session_head()
         req_id = await self._send_request(METHOD_SESSION_CLOSE, {"sessionId": old_sid})
         await self._wait_for_response(req_id, timeout=_READ_TIMEOUT, method=METHOD_SESSION_CLOSE)
         if old_bridges:
@@ -99,6 +100,7 @@ async def new_conversation(self: ClaudeAcpClient) -> None:
         if not new_sid:
             raise AcpError("session/new returned no sessionId for the fresh conversation")
         self._session_id = new_sid
+        await self._keep_session_head()
         self._capture_available_models(resp)
         if self._uses_advertised_model_selection:
             await self._persist_advertised_models_if_changed()

@@ -751,6 +751,8 @@ async def _new_session_following_substitution(self: AcpClient) -> dict:
     meta = self._harness_session_meta(new_params["mcpServers"])
     if meta is not None:
         new_params["_meta"] = meta
+    # An in-memory read, empty on this class, as the two MCP hooks above are.
+    new_params.update(self._harness_session_params(restoring=False))
 
     # The roster this session put ON THE WIRE. Distinct from the agent spec
     # on disk: the backend starts the spec's own servers too, so the frames
@@ -851,6 +853,8 @@ async def _initialize_session(self: AcpClient) -> None:
         # The process is a chat keeper the previous gateway left, and the session
         # in it is live: its own handshake, never a load (``acp.client_keeper``).
         await client_keeper.adopt_session(self)
+        if self._keeps_session_head:
+            await self._keep_session_head(adopted=True)
         return
     # 1. Initialize, once systemd has admitted the spawn's scope. Inside the try, so
     # a start that ends at admission discards the launch MCP config as well.
@@ -1002,6 +1006,7 @@ async def _initialize_session(self: AcpClient) -> None:
                     # so it gets neither key rather than a kiro session_file
                     # it would not know what to do with.
                     load_params["_meta"] = {"_kiro.dev/session_file": session_file}
+                load_params.update(self._harness_session_params(restoring=True))
                 self._begin_session_report(_roster_of(self, load_params.get("mcpServers")))
                 # A resumed session re-declares everything Crew mounts on it, so it
                 # can be short of a referenced server exactly as a fresh one can.
@@ -1119,6 +1124,10 @@ async def _initialize_session(self: AcpClient) -> None:
         logger.info("ACP session created: %s (model=%s)", self._session_id, _model_log)
         if self._pins_starting_mode:
             await self._pin_starting_mode(session_resp)
+    # The session exists, by whichever route. Gated here, as the mode pin is, so
+    # the kiro path gains no call in service of an adapter (harness-parity H13).
+    if self._keeps_session_head:
+        await self._keep_session_head()
     self._last_activity = time.monotonic()
     # The session exists, so the pi process that read the MCP handoff file has
     # started; the file has no further reader and goes now.

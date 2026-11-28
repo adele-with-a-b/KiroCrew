@@ -7756,6 +7756,11 @@ the one renderer of the agent prompt that `_resolve_agent_prompt` also calls, wi
 live readings; `_critical_rules_for`; `tool_names_block`), and `session_start.py` and
 `turn_message.py` import it function-locally to leave out a block the session's head
 holds byte for byte (`holds`), or to re-send the agent prompt on a resume that lost it.
+`src/kiro_crew/claude_session_head.py` is the claude harness's side of that seam
+([claude-code-provider.md](claude-code-provider.md), "The session head"): it renders
+the same two blocks through the same renderers, and `turn.post_compaction_parts`
+and `turn_message.py` ask its `in_system_prompt` before the agent-prompt re-send
+after a compaction and the critical rules of a resumed turn.
 
 Assembles all sources into prompts:
 - New session: `_CRITICAL_RULES` (runtime-conditional diff blocks + OPTIONS buttons) + agent prompt + static preference/project anchors + activity index + budgeted `[Memory activity]` block (projects, daily history (14 full days, then decayed summaries and counts to day 180), task facts, relevant episodes; `memory.inject_activity`, default on) + memory tool guidance + skills + scoped lessons + conversation history (last 20 messages, thread history at TOP with explicit framing)
