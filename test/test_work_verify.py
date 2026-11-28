@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -437,6 +438,35 @@ def test_a_document_is_still_evaluated_as_given_and_reads_only_for_admission(led
     out = json.loads(_call("accept_eval", {"items": [entry]}))
     assert reads == [("/api/work-ledger?compact=true", "chat-conductor")]
     assert [(r["id"], r["verdict"]) for r in out["results"]] == [("x", "pass")]
+
+
+def test_one_named_item_reads_that_item_alone_and_answers_as_the_whole_read_would(
+    ledger, monkeypatch
+):
+    """The read for one named item asks for that item's row only, so a large board's
+    other rows and event tails are not fetched to check it. The route still builds
+    ``accept_batch`` from the whole board, and the answer is the one the whole read
+    gives: a verdict, a skip reason, or "no such item"."""
+    board, reads = ledger
+
+    def _narrowing(path: str, *, session_key: str) -> dict[str, Any]:
+        reads.append((path, session_key))
+        query = parse_qs(urlsplit(path).query)
+        assert set(query) <= {"item_id"}, "only the item filter narrows this read"
+        wanted = query.get("item_id")
+        rows = [row for row in board["items"] if wanted is None or row["item_id"] in wanted]
+        return {**board, "items": rows}
+
+    monkeypatch.setattr(mcp_work, "_get", _narrowing)
+    unknown = "it_0000000d"
+    for item_id in (ITEM_A, ITEM_B, ITEM_C, unknown):
+        reads.clear()
+        answer = _call("accept_eval", {"item_id": item_id})
+        assert reads == [(f"/api/work-ledger?item_id={item_id}", "chat-conductor")]
+        assert answer == mcp_work._accept_eval({"item_id": item_id}, board)
+    assert json.loads(answer)["skipped"] == [
+        {"id": unknown, "why": "no item with this id is on your ledger"}
+    ]
 
 
 def test_an_item_id_beside_a_document_is_refused(ledger):

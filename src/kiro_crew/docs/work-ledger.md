@@ -451,7 +451,8 @@ evaluator against the item's own condition and records the answer with
 The evaluator is the `accept_eval` tool on `kirocrew-work`. Called with no
 arguments it reads the stored condition of every item whose worker reported
 `done` from the conductor's own ledger, so the conductor reads nothing first and
-copies no document; an item that is not `done` is never evaluated. Each answer
+copies no document; an item that is not `done` is never evaluated. With
+`item_id` it checks that one item and reads only its row. Each answer
 carries what the worker reported (`reported`: its summary and claimed `pr`), the
 `fails` so far and the worker's session key; an item that has read `pending` past
 its budget also carries `pending_overdue`, the conductor's last `decision` and its

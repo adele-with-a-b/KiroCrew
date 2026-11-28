@@ -1058,10 +1058,17 @@ def _call_tool_inner(name: str, args: dict[str, Any]) -> str:
         # channel, restricted-session and unknown-session refusals every ledger
         # route applies. A caller with no ledger has no batch to evaluate.
         #
-        # With no document the same read is taken whole: it is also where the bars
+        # With no document the same read is taken in full: it is also where the bars
         # come from, so the caller's own ledger gate admits the call and feeds it.
+        # For one named item it is that item's row alone: ``accept_batch`` rides on
+        # every full read built from the whole board, and nothing else of the other
+        # items is read (``work_verify.select_done``), so a large board's rows and
+        # event tails are not fetched to check one item.
         from_ledger = name == "accept_eval" and args.get("items") is None
-        if from_ledger:
+        if from_ledger and args.get("item_id") is not None:
+            one = urlencode({"item_id": args["item_id"]})
+            resp = _get(f"{_READ_PATH}?{one}", session_key=caller_key)
+        elif from_ledger:
             resp = _get(_READ_PATH, session_key=caller_key)
         else:
             resp = _get(f"{_READ_PATH}?compact=true", session_key=caller_key)

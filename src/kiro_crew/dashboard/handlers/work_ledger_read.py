@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, NamedTuple
 
 from aiohttp import web
 
@@ -100,14 +100,12 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
         dirty = await _refuse_if_dirty(key, key, "work_ledger_read")
         if dirty is not None:
             return dirty
-        items = await asyncio.to_thread(work_ledger.list_work_items, key)
-        shown = [item for item in items if _passes_filters(item, options)]
-        event_tails: dict[str, list[work_ledger.WorkEvent]] = {}
-        if not compact:
-            for item in shown:
-                event_tails[item.item_id] = await asyncio.to_thread(
-                    _tail_events, key, item.item_id, tail
-                )
+        # One executor hop for the whole snapshot (:func:`_snapshot`): this hold is
+        # the one every write and the Crew board's build wait on, so it must not
+        # grow with the board.
+        items, shown, event_tails = await asyncio.to_thread(
+            _snapshot, key, options, None if compact else tail
+        )
     assert record is not None
 
     state: DashboardState = request.app["state"]
@@ -123,29 +121,24 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     # work-ledger watch has nobody reading its reports, and the flag puts that in
     # front of the conductor's next turn.
     patrolled = conductor_patrol.has_active_patrol(state, key)
-    undelivered = await asyncio.to_thread(
-        lambda: {item.item_id: work_ledger.read_undelivered(key, item) for item in shown}
-    )
-    remote_live = await asyncio.to_thread(work_ledger.remote_liveness_map, key, shown)
+    # Everything else the rows and the header read off disk, in one hop as well.
+    side = await asyncio.to_thread(_side_reads, state, key, shown, remote_on, not published_only)
     rows: list[dict[str, Any]] = []
-    crew_names: dict[str, str] | None = None
     for item in shown:
         row = _row_with_flags(
             state,
             item,
             conductor_alive=conductor_alive,
             patrolled=patrolled,
-            report_undelivered=undelivered.get(item.item_id),
+            report_undelivered=side.undelivered.get(item.item_id),
             board=key,
-            remote_live=remote_live.get(item.item_id),
+            remote_live=side.remote_live.get(item.item_id),
         )
         show_step(row, record.releases)
-        if item.worker_instance_id or item.retired_bindings:
-            row.update(await asyncio.to_thread(_remote_row_fields, key, item))
+        if item.item_id in side.remote_rows:
+            row.update(side.remote_rows[item.item_id])
         if remote_on and item.worker_session_key:
-            if item.worker_instance_id and crew_names is None:
-                crew_names = await asyncio.to_thread(_crew_names, state)
-            row["runs_on"] = _runs_on(item, crew_names or {})
+            row["runs_on"] = _runs_on(item, side.crew_names)
         if compact:
             compact_row = {name: row[name] for name in _COMPACT_ROW_FIELDS}
             if item.plan:
@@ -198,15 +191,13 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     # the goal's total from a patrol that reads only the status columns.
     # ``max_depth`` is the conducting depth cap in force right now (never stored),
     # so a conductor can see how many levels may still dispatch below its own.
-    # Read off the loop: it consults the config file.
-    depth_cap = await asyncio.to_thread(work_ledger.max_depth)
     # ``next_pick`` is derived, never stored: the top of the backlog by rank, over
     # the whole board (never the filtered rows), which is the item to dispatch
     # next when a seat frees (``work_plan_vocab.next_pick``).
     conductor = dict(
         record.to_dict(),
         goal_items_used=record.goal_items_used,
-        max_depth=depth_cap,
+        max_depth=side.depth_cap,
         next_pick=next_pick(items),
     )
     payload: dict[str, Any] = {"conductor": conductor, "items": rows}
@@ -605,6 +596,66 @@ def _remote_row_fields(key: str, item: work_ledger.WorkItem) -> dict[str, Any]:
 def _tail_events(key: str, item_id: str, limit: int) -> list[work_ledger.WorkEvent]:
     """The newest *limit* events for one item. ``limit`` is keyword-only downstream."""
     return work_ledger.read_events(key, item_id, limit=limit)
+
+
+def _snapshot(key: str, options: dict[str, Any], tail: int | None) -> tuple[
+    list[work_ledger.WorkItem],
+    list[work_ledger.WorkItem],
+    dict[str, list[work_ledger.WorkEvent]],
+]:
+    """The board's items, the ones this read shows, and each shown item's event tail.
+
+    BLOCKING, and the whole of what the read takes under the board lock. It is one
+    executor hop however large the board is: the handler waits for each hop on the
+    gateway's loop, so a hop per item made the read as slow as the board is large
+    times the loop is busy. *tail* is ``None`` for a read that carries no events.
+    """
+    items = work_ledger.list_work_items(key)
+    shown = [item for item in items if _passes_filters(item, options)]
+    if tail is None:
+        return items, shown, {}
+    return items, shown, {item.item_id: _tail_events(key, item.item_id, tail) for item in shown}
+
+
+class _SideReads(NamedTuple):
+    """What a read's rows and header take off disk beside the board's snapshot."""
+
+    undelivered: dict[str, dict[str, str] | None]
+    remote_live: dict[str, tuple[bool, bool]]
+    #: The extra row fields of each item that is, or was, bound to a remote worker.
+    remote_rows: dict[str, dict[str, Any]]
+    crew_names: dict[str, str]
+    #: The conducting depth cap in force; ``0`` when the read does not carry it.
+    depth_cap: int
+
+
+def _side_reads(
+    state: DashboardState,
+    key: str,
+    shown: list[work_ledger.WorkItem],
+    remote_on: bool,
+    with_depth_cap: bool,
+) -> _SideReads:
+    """Every file read the rows of *shown* and the header need, in one go. BLOCKING.
+
+    One executor hop for the same reason as :func:`_snapshot`. The crew registry is
+    read only when a row names a crew, and the depth cap (it consults the config
+    file) only for a read that answers with it.
+    """
+    names_a_crew = remote_on and any(
+        item.worker_session_key and item.worker_instance_id for item in shown
+    )
+    return _SideReads(
+        undelivered={item.item_id: work_ledger.read_undelivered(key, item) for item in shown},
+        remote_live=work_ledger.remote_liveness_map(key, shown),
+        remote_rows={
+            item.item_id: _remote_row_fields(key, item)
+            for item in shown
+            if item.worker_instance_id or item.retired_bindings
+        },
+        crew_names=_crew_names(state) if names_a_crew else {},
+        depth_cap=work_ledger.max_depth() if with_depth_cap else 0,
+    )
 
 
 def _slot_running(state: DashboardState, key: str) -> bool:
