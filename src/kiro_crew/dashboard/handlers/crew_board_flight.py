@@ -18,6 +18,9 @@ The rule, per board:
   built for.
 
 The access check and request validation run in the handler BEFORE this module.
+
+``GET /api/work-ledger``, the conductor's own read, shares its builds by the same rule
+under keys of its own (``work_ledger_read._READ_FLIGHT``).
 """
 
 from __future__ import annotations
@@ -26,12 +29,19 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import NamedTuple
 
+from aiohttp import web
+
 
 class BoardAnswer(NamedTuple):
     status: int
     body: bytes
     #: Items on the answer, for the read's audit line.
     items: int = 0
+
+
+def answer_of(response: web.Response, items: int = 0) -> BoardAnswer:
+    """A response built by a shared helper, as a shareable (status, bytes) answer."""
+    return BoardAnswer(response.status, bytes(response.body or b""), items)  # type: ignore[arg-type]
 
 
 Build = Callable[[], Awaitable[BoardAnswer]]

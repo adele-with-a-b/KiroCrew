@@ -294,6 +294,11 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
     from kiro_crew.dashboard.handlers._shared import (  # noqa: F401
         _is_restricted_session,
     )
+    from kiro_crew.dashboard.handlers.crew_board_flight import (  # noqa: F401
+        BoardAnswer,
+        answer_of,
+        shared_board,
+    )
     from kiro_crew.dashboard.handlers.cron import (  # noqa: F401
         _recognize_session,
     )

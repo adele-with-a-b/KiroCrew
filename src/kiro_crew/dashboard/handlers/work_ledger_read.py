@@ -15,12 +15,14 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any
+from datetime import datetime
+from typing import Any, NamedTuple
 
 from aiohttp import web
 
 from kiro_crew import conductor_patrol, ledger_wake, session_ledger, work_ledger
 from kiro_crew.dashboard import queue_age, session_control
+from kiro_crew.dashboard.handlers.crew_board_flight import BoardAnswer, answer_of, shared_board
 from kiro_crew.dashboard.handlers.work_ledger_caller import (
     _caller_key,
     _code_channel_caller,
@@ -74,13 +76,7 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     if bad is not None:
         return bad
     assert options is not None
-    compact = bool(options.get("compact", False))
-    # A code channel's conductor reads the published-fields projection alone, so
-    # there is no event tail to read for it.
     published_only = _code_channel_caller(request)
-    if published_only:
-        compact = True
-    tail = int(options.get("events", _MAX_EVENT_TAIL))
     remote_on = await asyncio.to_thread(_remote_dispatch_on)
     if remote_on:
         # Remote dispatch (preview): pull each open remote item's peer copy and file
@@ -89,6 +85,77 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
 
         remote_puller.ensure_running(request.app["state"])
         await remote_ingest.ingest_board(request.app["state"], key)
+    state: DashboardState = request.app["state"]
+    # Single flight (see crew_board_flight). The tool behind this route gives up after
+    # ten seconds and its caller asks again, so the same read can arrive while one is
+    # being built. Reads of one board with the same arguments share ONE build, and only
+    # a build that started after each of them arrived, so no answer is older than its
+    # request; nothing is kept afterwards. The gate, the validation and the remote pull
+    # above ran for this caller, and the channel re-check and the audit line below run
+    # for it too, shared build or not.
+    answer = await shared_board(
+        _READ_FLIGHT + key,
+        _shared_by(options, published_only, remote_on),
+        lambda: _build_read(state, key, options, published_only, remote_on),
+    )
+    if answer.status != 200:
+        return _json_bytes(answer)
+    if why := _contained_channel_caller(request, request.headers.get("X-Session-Key", "")):
+        # Same post-await re-check as ``work_brief``. This payload is larger: every
+        # item's acceptance bar plus worker-authored prose for the whole fleet.
+        _audit(
+            request.headers.get("X-Session-Key", "") or "anonymous",
+            "work_ledger_read",
+            "denied",
+            resources="channel_agent_block_post_read",
+        )
+        return _refuse_403(
+            "channel_session",
+            "This session stopped being a private surface while the ledger was being "
+            f"read, so it is no longer one to return it to: {why}.",
+        )
+    _audit(key, "work_ledger_read", "ok", resources=f"{answer.items} item(s)")
+    return _json_bytes(answer)
+
+
+#: Names this route's builds in :mod:`crew_board_flight`, whose Crew board builds are
+#: keyed by the bare ledger key: the two reads of one board never share an answer.
+_READ_FLIGHT = "work-ledger-read:"
+
+
+def _shared_by(options: dict[str, Any], published_only: bool, remote_on: bool) -> str:
+    """The arguments of :func:`_build_read` as text: reads share a build when it is equal.
+
+    The schema's options are text, integers and booleans. ``since`` is the one the route
+    holds parsed (:func:`_read_options`), so it goes in as its ISO text, wall time and
+    offset: two stamps give one text only when they are the same stamp. A value of any
+    other type raises instead of being folded to a text that might not tell two apart.
+    """
+    return json.dumps(
+        [options, published_only, remote_on], sort_keys=True, default=datetime.isoformat
+    )
+
+
+def _json_bytes(answer: BoardAnswer) -> web.Response:
+    """*answer* as the response ``web.json_response`` gives for the same body."""
+    return web.Response(
+        body=answer.body, status=answer.status, content_type="application/json", charset="utf-8"
+    )
+
+
+async def _build_read(
+    state: DashboardState, key: str, options: dict[str, Any], published_only: bool, remote_on: bool
+) -> BoardAnswer:
+    """One build of the read's answer: the snapshot under the board lock, then the rows.
+
+    Takes the gateway state and plain values, never the request: reads with the same
+    arguments may share the build (:func:`api_work_ledger_get`), so nothing in it may
+    depend on which of them started it.
+    """
+    # A code channel's conductor reads the published-fields projection alone, so
+    # there is no event tail to read for it.
+    compact = published_only or bool(options.get("compact", False))
+    tail = int(options.get("events", _MAX_EVENT_TAIL))
     # Under the board lock for the same reason the brief read is: a write's
     # cache commit and its record append are two steps, and a read between them
     # would publish a mutation the record may yet roll back. The header and the
@@ -96,21 +163,18 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     async with _board_lock(key):
         record, lrefusal = await _own_ledger(key, "work_ledger_read")
         if lrefusal is not None:
-            return lrefusal
+            return answer_of(lrefusal)
         dirty = await _refuse_if_dirty(key, key, "work_ledger_read")
         if dirty is not None:
-            return dirty
-        items = await asyncio.to_thread(work_ledger.list_work_items, key)
-        shown = [item for item in items if _passes_filters(item, options)]
-        event_tails: dict[str, list[work_ledger.WorkEvent]] = {}
-        if not compact:
-            for item in shown:
-                event_tails[item.item_id] = await asyncio.to_thread(
-                    _tail_events, key, item.item_id, tail
-                )
+            return answer_of(dirty)
+        # One executor hop for the whole snapshot (:func:`_snapshot`): this hold is
+        # the one every write and the Crew board's build wait on, so it must not
+        # grow with the board.
+        items, shown, event_tails = await asyncio.to_thread(
+            _snapshot, key, options, None if compact else tail
+        )
     assert record is not None
 
-    state: DashboardState = request.app["state"]
     # Liveness is read straight off the dashboard's own slot table rather than
     # over HTTP: this handler runs in the process that owns it. ``orphaned`` asks
     # whether the CONDUCTOR's slot is still open and ``stale`` whether the
@@ -123,29 +187,24 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     # work-ledger watch has nobody reading its reports, and the flag puts that in
     # front of the conductor's next turn.
     patrolled = conductor_patrol.has_active_patrol(state, key)
-    undelivered = await asyncio.to_thread(
-        lambda: {item.item_id: work_ledger.read_undelivered(key, item) for item in shown}
-    )
-    remote_live = await asyncio.to_thread(work_ledger.remote_liveness_map, key, shown)
+    # Everything else the rows and the header read off disk, in one hop as well.
+    side = await asyncio.to_thread(_side_reads, state, key, shown, remote_on, not published_only)
     rows: list[dict[str, Any]] = []
-    crew_names: dict[str, str] | None = None
     for item in shown:
         row = _row_with_flags(
             state,
             item,
             conductor_alive=conductor_alive,
             patrolled=patrolled,
-            report_undelivered=undelivered.get(item.item_id),
+            report_undelivered=side.undelivered.get(item.item_id),
             board=key,
-            remote_live=remote_live.get(item.item_id),
+            remote_live=side.remote_live.get(item.item_id),
         )
         show_step(row, record.releases)
-        if item.worker_instance_id or item.retired_bindings:
-            row.update(await asyncio.to_thread(_remote_row_fields, key, item))
+        if item.item_id in side.remote_rows:
+            row.update(side.remote_rows[item.item_id])
         if remote_on and item.worker_session_key:
-            if item.worker_instance_id and crew_names is None:
-                crew_names = await asyncio.to_thread(_crew_names, state)
-            row["runs_on"] = _runs_on(item, crew_names or {})
+            row["runs_on"] = _runs_on(item, side.crew_names)
         if compact:
             compact_row = {name: row[name] for name in _COMPACT_ROW_FIELDS}
             if item.plan:
@@ -172,41 +231,23 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
         row["events"] = [event.to_dict() for event in events]
         rows.append(row)
 
-    if why := _contained_channel_caller(request, request.headers.get("X-Session-Key", "")):
-        # Same post-await re-check as ``work_brief``. This payload is larger: every
-        # item's acceptance bar plus worker-authored prose for the whole fleet.
-        _audit(
-            request.headers.get("X-Session-Key", "") or "anonymous",
-            "work_ledger_read",
-            "denied",
-            resources="channel_agent_block_post_read",
-        )
-        return _refuse_403(
-            "channel_session",
-            "This session stopped being a private surface while the ledger was being "
-            f"read, so it is no longer one to return it to: {why}.",
-        )
-    _audit(key, "work_ledger_read", "ok", resources=f"{len(rows)} item(s)")
     if published_only:
-        return web.json_response(
-            _published_payload(
-                record, [(item, bool(row.get("stale"))) for item, row in zip(shown, rows)]
-            )
+        published = _published_payload(
+            record, [(item, bool(row.get("stale"))) for item, row in zip(shown, rows)]
         )
+        return answer_of(web.json_response(published), len(rows))
     # ``goal_items_used`` is derived, never stored: the goal's item count, read
     # off the header. The compact read carries it so a round report can state
     # the goal's total from a patrol that reads only the status columns.
     # ``max_depth`` is the conducting depth cap in force right now (never stored),
     # so a conductor can see how many levels may still dispatch below its own.
-    # Read off the loop: it consults the config file.
-    depth_cap = await asyncio.to_thread(work_ledger.max_depth)
     # ``next_pick`` is derived, never stored: the top of the backlog by rank, over
     # the whole board (never the filtered rows), which is the item to dispatch
     # next when a seat frees (``work_plan_vocab.next_pick``).
     conductor = dict(
         record.to_dict(),
         goal_items_used=record.goal_items_used,
-        max_depth=depth_cap,
+        max_depth=side.depth_cap,
         next_pick=next_pick(items),
     )
     payload: dict[str, Any] = {"conductor": conductor, "items": rows}
@@ -215,7 +256,7 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     else:
         # The whole board, never the filtered rows.
         payload["accept_batch"] = work_ledger.accept_batch(items)
-    return web.json_response(payload)
+    return answer_of(web.json_response(payload), len(rows))
 
 
 #: What a code channel's ``accept_eval`` answer may carry per item: which item, its
@@ -605,6 +646,66 @@ def _remote_row_fields(key: str, item: work_ledger.WorkItem) -> dict[str, Any]:
 def _tail_events(key: str, item_id: str, limit: int) -> list[work_ledger.WorkEvent]:
     """The newest *limit* events for one item. ``limit`` is keyword-only downstream."""
     return work_ledger.read_events(key, item_id, limit=limit)
+
+
+def _snapshot(key: str, options: dict[str, Any], tail: int | None) -> tuple[
+    list[work_ledger.WorkItem],
+    list[work_ledger.WorkItem],
+    dict[str, list[work_ledger.WorkEvent]],
+]:
+    """The board's items, the ones this read shows, and each shown item's event tail.
+
+    BLOCKING, and the whole of what the read takes under the board lock. It is one
+    executor hop however large the board is: the handler waits for each hop on the
+    gateway's loop, so a hop per item made the read as slow as the board is large
+    times the loop is busy. *tail* is ``None`` for a read that carries no events.
+    """
+    items = work_ledger.list_work_items(key)
+    shown = [item for item in items if _passes_filters(item, options)]
+    if tail is None:
+        return items, shown, {}
+    return items, shown, {item.item_id: _tail_events(key, item.item_id, tail) for item in shown}
+
+
+class _SideReads(NamedTuple):
+    """What a read's rows and header take off disk beside the board's snapshot."""
+
+    undelivered: dict[str, dict[str, str] | None]
+    remote_live: dict[str, tuple[bool, bool]]
+    #: The extra row fields of each item that is, or was, bound to a remote worker.
+    remote_rows: dict[str, dict[str, Any]]
+    crew_names: dict[str, str]
+    #: The conducting depth cap in force; ``0`` when the read does not carry it.
+    depth_cap: int
+
+
+def _side_reads(
+    state: DashboardState,
+    key: str,
+    shown: list[work_ledger.WorkItem],
+    remote_on: bool,
+    with_depth_cap: bool,
+) -> _SideReads:
+    """Every file read the rows of *shown* and the header need, in one go. BLOCKING.
+
+    One executor hop for the same reason as :func:`_snapshot`. The crew registry is
+    read only when a row names a crew, and the depth cap (it consults the config
+    file) only for a read that answers with it.
+    """
+    names_a_crew = remote_on and any(
+        item.worker_session_key and item.worker_instance_id for item in shown
+    )
+    return _SideReads(
+        undelivered={item.item_id: work_ledger.read_undelivered(key, item) for item in shown},
+        remote_live=work_ledger.remote_liveness_map(key, shown),
+        remote_rows={
+            item.item_id: _remote_row_fields(key, item)
+            for item in shown
+            if item.worker_instance_id or item.retired_bindings
+        },
+        crew_names=_crew_names(state) if names_a_crew else {},
+        depth_cap=work_ledger.max_depth() if with_depth_cap else 0,
+    )
 
 
 def _slot_running(state: DashboardState, key: str) -> bool:

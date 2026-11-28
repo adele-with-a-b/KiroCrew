@@ -42,7 +42,7 @@ from aiohttp import web
 from kiro_crew import session_ledger, work_ledger
 from kiro_crew.dashboard.conditional_get import conditional_json_response
 from kiro_crew.dashboard.handlers._shared import require_owner_dashboard_request
-from kiro_crew.dashboard.handlers.crew_board_flight import BoardAnswer, shared_board
+from kiro_crew.dashboard.handlers.crew_board_flight import BoardAnswer, answer_of, shared_board
 from kiro_crew.dashboard.handlers.work_ledger import (
     _MAX_EVENT_TAIL,
     _audit,
@@ -724,11 +724,6 @@ async def api_work_ledger_board(request: web.Request) -> web.Response:
     return await conditional_json_response(request, answer.body)
 
 
-def _answer_of(response: web.Response) -> BoardAnswer:
-    """A refusal built by a shared helper, as a shareable (status, bytes) pair."""
-    return BoardAnswer(response.status, bytes(response.body or b""))  # type: ignore[arg-type]
-
-
 async def _build_board(state: DashboardState, requested: str, key: str, caller: str) -> BoardAnswer:
     """One build of the board answer: ledger snapshot, liveness join, mask, redaction.
 
@@ -745,20 +740,22 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
         async with _board_lock(key):
             record, refusal = await _own_ledger(key, "work_ledger_board", caller)
             if refusal is not None:
-                return _answer_of(refusal)
+                return answer_of(refusal)
             dirty = await _refuse_if_dirty(key, caller, "work_ledger_board")
             if dirty is not None:
-                return _answer_of(dirty)
+                return answer_of(dirty)
             items = await asyncio.to_thread(work_ledger.list_work_items, key)
-            event_tails: dict[str, list[work_ledger.WorkEvent]] = {}
-            for item in items:
-                event_tails[item.item_id] = await asyncio.to_thread(
-                    _tail_events, key, item.item_id, _MAX_EVENT_TAIL
-                )
+            # Every item's tail in one executor hop: each hop queues behind the
+            # shared pool, so the hop count must not grow with the board.
+            event_tails = await asyncio.to_thread(
+                lambda: {
+                    item.item_id: _tail_events(key, item.item_id, _MAX_EVENT_TAIL) for item in items
+                }
+            )
     except work_ledger.WorkLedgerError as exc:
         if exc.code != work_ledger.CODE_INVALID_VALUE:
             raise
-        return _answer_of(
+        return answer_of(
             web.json_response(
                 {"error": _INVALID_CONDUCTOR[1], "code": _INVALID_CONDUCTOR[0]},
                 status=400,
@@ -895,7 +892,7 @@ async def _build_board(state: DashboardState, requested: str, key: str, caller: 
     # up to 32 items and their event tails, which is real CPU and would otherwise
     # block the gateway's loop for the duration.
     redacted = await asyncio.to_thread(_redact_deep, payload)
-    return BoardAnswer(200, web.json_response(redacted).body, len(rows))  # type: ignore[arg-type]
+    return answer_of(web.json_response(redacted), len(rows))
 
 
 def _refuse(code: str, message: str, status: int) -> web.Response:
