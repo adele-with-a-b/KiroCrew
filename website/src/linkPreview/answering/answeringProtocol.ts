@@ -4,10 +4,11 @@
  * Frame to dashboard, `answering { op, invocation, ..., request? }` (read by
  * `readAnsweringMessage`, which drops anything else):
  *
- * - `enter { place?, hint?, keys?, buttons?, keepAt? }` put the card's chat into the
- *   answering mode. Only a pinned card of a provider the owner approved for
+ * - `enter { place?, hint?, keys?, buttons?, keepAt?, question? }` put the card's chat
+ *   into the answering mode. Only a pinned card of a provider the owner approved for
  *   `answering` (and `sessionKey`), right after the person's click or key in it.
- * - `update { place?, hint?, buttons?, keepAt? }` change what the mode shows.
+ * - `update { place?, hint?, buttons?, keepAt?, question? }` change what the mode
+ *   shows, and which question (the card's own key, never text) the card is at.
  * - `hand { text, count, rev }` the message the answers so far make, and how many
  *   answers it holds, built from the answer line's text number `rev`.
  * - `leave` end the mode; nothing is sent.
@@ -31,6 +32,8 @@ export const MAX_ANSWERS = 999
 export const MAX_PLACE_CHARS = 40
 export const MAX_HINT_CHARS = 120
 export const MAX_LABEL_CHARS = 32
+/** Longest question key (`AnsweringSetup.question`), as a button's id. */
+export const MAX_QUESTION_KEY_CHARS = 64
 /** Largest answering message, as JSON text: a handed message is up to 32,000 characters. */
 export const MAX_ANSWERING_MESSAGE_BYTES = 40_000
 
@@ -53,6 +56,10 @@ export interface AnsweringSetup {
   buttons: DeclaredButton[]
   /** Where Crew's own "keep, next" button sits among `buttons`, or null for none. */
   keepAt: number | null
+  /** The card's own key for the question it is at; '' or absent for none. A key
+   *  only: never shown, never sent, never put in Crew's line. Crew keeps the
+   *  words the person kept in its line under it (`AnsweringMode.showKept`). */
+  question?: string
 }
 
 export type AnsweringRefusal =
@@ -122,6 +129,8 @@ function readSetup(m: Record<string, unknown>, whole: boolean): Partial<Answerin
   const keepAt = readKeepAt(m.keepAt, (out.buttons ?? []).length || MAX_ANSWERING_BUTTONS)
   if (keepAt !== undefined) out.keepAt = keepAt
   else if (whole) out.keepAt = 0
+  // A key, as a button's id is: anything else names no question.
+  if ('question' in m) out.question = typeof m.question === 'string' && m.question.length <= MAX_QUESTION_KEY_CHARS ? m.question : ''
   return out
 }
 

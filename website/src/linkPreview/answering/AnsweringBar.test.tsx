@@ -156,6 +156,24 @@ describe('AnsweringBar', () => {
     expect(mode.takePress(frame)).toBe(false)
   })
 
+  it('back at a question they answered, Crew’s line holds the words they kept there, to edit', async () => {
+    const at = (question: string) => act(() => {
+      mode.onFrameMessage(frame, { type: 'answering', op: 'update', invocation: 1, setup: { question } }, null, () => {})
+    })
+    enter()
+    at('q1')
+    fireEvent.change(line(), { target: { value: 'yes, after lunch' } })
+    await press(line(), { key: 'Enter' })
+    at('q2')
+    expect(line().value).toBe('')
+    at('q1')
+    expect(line().value).toBe('yes, after lunch')
+    expect(document.activeElement).toBe(line())
+    fireEvent.change(line(), { target: { value: 'yes, after lunch, at two' } })
+    await press(line(), { key: 'Enter' })
+    expect(told.at(-1)).toEqual({ type: 'answering', event: { kind: 'kept', text: 'yes, after lunch, at two', rev: mode.state?.lineRev } })
+  })
+
   it('Escape leaves the mode and sends nothing', async () => {
     enter()
     hand('Q1a go', 1)

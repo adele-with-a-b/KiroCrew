@@ -2341,7 +2341,9 @@ a provider's `answering` and a pinned card's `card.answering` (Crew draws the an
 line, the card hands over the message, and the person's Shift+Enter sends it once as
 their message, [manifest reference](manifest-reference.md)), and level 22 lets that
 card move while the person answers (one `card.step` or `card.jumpTo` right after Crew
-tells it their Enter, declared key or button, [manifest reference](manifest-reference.md)); each level
+tells it their Enter, declared key or button, [manifest reference](manifest-reference.md)), and level 23
+adds the answering setup's `question` (the card's own key for the question it is at:
+Crew's line shows again the words the person kept there, [manifest reference](manifest-reference.md)); each level
 includes every level below it. Several seams share level 7, and three share level 8, so an app that needs one
 feature-detects it, never the level alone. Read it
 with `getattr(ctx, "sdk_level", 0)`. When it is lower than your app needs, call

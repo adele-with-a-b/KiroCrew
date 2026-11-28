@@ -104,6 +104,13 @@ export class AnsweringMode {
   /** When Crew last relayed the person's own press to the card of the mode that
    *  is on, until a step or jump uses it up (`takePress`); null with none. */
   private press: number | null = null
+  /** The words the person kept in Crew's line, by the question key the card had
+   *  named (`setup.question`) when they kept them. Written only from the line, in
+   *  `keep`: a card names a key, never the words. Gone with the mode. */
+  private readonly keptLines = new Map<string, string>()
+  /** The kept words Crew last put back in the line (`showKept`), to tell a line
+   *  that still holds them untouched from one the person typed. */
+  private shownCopy: string | null = null
 
   constructor(private readonly deps: ModeDeps) {}
 
@@ -195,7 +202,7 @@ export class AnsweringMode {
           line: '', lineRev: s ? s.lineRev + 1 : 0, handed: null, status: 'on', note: null, shift: false, full: false,
         }
         this.pendingEnd = null
-        this.press = null
+        this.forget()
         reply(true)
         this.emit()
         if (!s) this.deps.say?.('entered', 0)
@@ -205,6 +212,7 @@ export class AnsweringMode {
         if (!s || s.frame !== frame) { reply('not_on'); return }
         this.patch({ setup: { ...s.setup, ...msg.setup } })
         reply(true)
+        this.showKept(s.setup.question ?? '')
         return
       }
       case 'hand': {
@@ -239,7 +247,8 @@ export class AnsweringMode {
   // -- Crew's own line, buttons and keys. Called only from the person's events
   //    on Crew's page (`AnsweringBar.tsx`).
 
-  /** The person changed the text in Crew's answer line. */
+  /** The person changed the text in Crew's answer line (or `showKept` put their
+   *  own kept words back in it): a new line number, told to the card as a draft. */
   setLine(text: string): void {
     const s = this.s
     if (!s || s.status === 'sending') return
@@ -253,9 +262,45 @@ export class AnsweringMode {
   keep(by?: Event): void {
     const s = this.s
     if (!s || s.status === 'sending') return
+    // Crew's own copy of what they kept for the question the card is at; an
+    // emptied line kept forgets it.
+    const question = s.setup.question
+    if (question && s.line) this.keptLines.set(question, s.line)
+    else if (question) this.keptLines.delete(question)
+    this.shownCopy = null
     const lineRev = s.lineRev + 1
     this.patch({ line: '', lineRev, note: null })
     this.relay(s, { kind: 'kept', text: s.line, rev: lineRev }, by)
+  }
+
+  /**
+   * The card named another question than `before` (`update`): when Crew holds
+   * words the person kept for it in this mode, Crew's line shows them, to edit.
+   * They are Crew's copy of what was typed in this line; the card supplies the
+   * key and nothing else. A question with none: the line empties when it still
+   * holds a copy Crew put there untouched, and otherwise stays as the person
+   * left it, as before. The change is a new line number, so a message handed
+   * for the older line is not sent until the card hands again.
+   * shortcut: words typed and not kept are replaced by the kept ones on a move to
+   * a kept question; keep a draft per question if that proves to lose work.
+   */
+  private showKept(before: string): void {
+    const s = this.s
+    if (!s || s.status === 'sending') return
+    const question = s.setup.question ?? ''
+    if (question === before) return
+    const copy = question ? this.keptLines.get(question) : undefined
+    const untouched = this.shownCopy !== null && s.line === this.shownCopy
+    this.shownCopy = copy ?? null
+    const text = copy ?? (untouched ? '' : s.line)
+    if (text !== s.line) this.setLine(text)
+  }
+
+  /** What a mode holds besides its state; none of it outlives the mode. */
+  private forget(): void {
+    this.press = null
+    this.keptLines.clear()
+    this.shownCopy = null
   }
 
   /** A key the card declared, pressed in Crew's line or on the page. */
@@ -330,7 +375,7 @@ export class AnsweringMode {
     if (s.status === 'sending') { this.pendingEnd = this.pendingEnd ?? why; return }
     this.s = null
     this.pendingEnd = null
-    this.press = null
+    this.forget()
     this.tell(s, { kind: 'ended', why })
     this.emit()
     this.deps.say?.(why, count)

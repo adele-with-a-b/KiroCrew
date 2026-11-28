@@ -1432,7 +1432,8 @@ export function activate(ctx: {
     | { kind: 'button'; id: string }
     | { kind: 'ended'; why: 'sent' | 'escaped' | 'left' | 'chat' | 'closed' }): void
   // AnsweringSetup = { place?: string; hint?: string; keys?: { key: string; label?: string }[];
-  //   buttons?: { id: string; label: string; hint?: string }[]; keepAt?: number | null }
+  //   buttons?: { id: string; label: string; hint?: string }[]; keepAt?: number | null;
+  //   question?: string }   // your own key for the question the card is at (level 23)
   // AnsweringResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' | 'not_pinned' |
   //   'not_approved' | 'not_on_screen' | 'not_granted' | 'busy' | 'not_on' | 'not_literal' |
   //   'too_large' | 'bad_count' | 'stale' | 'not_json' | 'no_answer' }
@@ -1610,11 +1611,26 @@ answer kept so far in one press:
   nothing your card posts makes a press. Only the card whose mode is on may use it,
   and it ends with the mode. A dashboard at level 21 answers such a `step`
   `no_click` and drops the `jumpTo`.
+- Going back to a kept answer (level 23). Name the question your card is at with
+  `question`, your own key for it (a string of at most 64 characters, e.g. the
+  label's id; never shown and never sent), in `enter(setup)` and in
+  `update({ question })` each time the card moves. Crew keeps, under that key, the
+  words the person kept in its line while this mode is on. When `update` names
+  another question Crew holds words for, Crew's line shows them again for editing,
+  and you are told that line as a `{ kind: 'draft', text, rev }`: hand your message
+  again, as after any draft. Enter there keeps the edited words (`kept`); Enter on
+  an emptied line forgets them. A question with nothing kept leaves the line as it
+  was, except that an untouched copy Crew had put there is emptied. Naming the
+  same question again changes nothing. You supply the key only: no call puts text
+  in Crew's line, and what Shift+Enter sends is still the text you handed, as the
+  preview shows it. Words typed and not kept are replaced when the card moves to
+  a question that has kept words. Without `question`, or on a dashboard older
+  than level 23 (which ignores it), the line starts empty at every question.
 - No message from the card ever sends: the card cannot press, and a key or click the
   card's own frame saw is never Crew's. The mode ends with nothing sent on Escape
   (`escaped`), on `card.answering.leave()` (`left`), when the chat on screen changes
   (`chat`), and when the card closes, is unpinned or goes (`closed`).
-- `update(setup)` changes `place`, `hint`, `buttons` or `keepAt` while the mode is on.
+- `update(setup)` changes `place`, `hint`, `buttons`, `keepAt` or `question` while the mode is on.
   `update`, `hand` and `leave` act only on the mode this card started (`not_on`).
   Each call resolves `{ ok: true }` or `{ ok: false, reason }`; `no_answer` after
   5 seconds means a dashboard older than level 21: keep your card's own field there.

@@ -36,5 +36,8 @@
  * right after Crew tells it their Enter (`kept`), a declared `key` or a `button`,
  * one `card.step` or `card.jumpTo` counts as their press, though focus is in
  * Crew's line.
+ * Level 23 adds the answering setup's `question`, the card's own key for the
+ * question it is at: Crew keeps the words the person kept in its line under that
+ * key, and shows them in the line again when the card comes back to it.
  */
-export const APP_SDK_LEVEL = 22
+export const APP_SDK_LEVEL = 23
