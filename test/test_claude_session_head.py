@@ -608,6 +608,15 @@ def test_the_provider_hands_the_builder_the_claude_clients_head(fixed_readings):
     assert empty.session_head_in_system_prompt is False
 
 
+def test_a_client_without_a_head_record_answers_no_head():
+    # Not every client carries the record (a stand-in, or one written before it):
+    # the provider answers as it did before the head existed.
+    provider = _acp_provider(SimpleNamespace(backend="kiro"))
+    assert provider.native_context_documents == {}
+    assert provider.session_head_held is False
+    assert provider.session_head_in_system_prompt is False
+
+
 def test_the_shared_runtimes_record_is_never_read_as_a_system_prompt(fixed_readings):
     shared = AcpSessionProvider.__new__(AcpSessionProvider)
     provider = _acp_provider(shared)

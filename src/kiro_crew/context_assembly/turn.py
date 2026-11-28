@@ -22,8 +22,6 @@ import logging
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew import claude_session_head as _claude_session_head
-from kiro_crew import session_head as _session_head
 from kiro_crew.context_assembly import inclusion as _inclusion
 from kiro_crew.context_assembly import markers as _markers
 from kiro_crew.context_assembly import sections as _sections
@@ -78,7 +76,9 @@ def post_compaction_parts(
     reply-style preferences. The operator's memory, lessons, skills, steering
     resources and folder steering stay out of a prompt other people read.
     """
+    from kiro_crew import claude_session_head as _claude_session_head
     from kiro_crew import context as ctx  # circular import: the facade imports this owner
+    from kiro_crew import session_head as _session_head
 
     parts: list[str] = []
     _essentials = essentials

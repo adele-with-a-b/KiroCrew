@@ -1039,8 +1039,9 @@ class AcpProvider(LLMProvider):
         if isinstance(self._client, AcpSessionProvider):
             return self._client.native_context_documents
         # The per-session client holds only its session head, and only the claude
-        # one records any (``kiro_crew.claude_session_head``).
-        return dict(self._client.session_head_documents)
+        # one records any (``kiro_crew.claude_session_head``). A client without
+        # the record holds none.
+        return dict(getattr(self._client, "session_head_documents", {}))
 
     @property
     def session_head_held(self) -> bool:
@@ -1048,7 +1049,7 @@ class AcpProvider(LLMProvider):
         # client on claude (``kiro_crew.session_head``); empty everywhere else.
         if isinstance(self._client, AcpSessionProvider):
             return self._client.session_head_held
-        return session_head.applied(self._client.session_head_documents)
+        return session_head.applied(getattr(self._client, "session_head_documents", {}))
 
     @property
     def session_head_in_system_prompt(self) -> bool:
@@ -1057,7 +1058,7 @@ class AcpProvider(LLMProvider):
         # engine's first message.
         if isinstance(self._client, AcpSessionProvider):
             return False
-        return session_head.applied(self._client.session_head_documents)
+        return session_head.applied(getattr(self._client, "session_head_documents", {}))
 
     def note_user_message(self, text: str) -> None:
         # Only the shared runtime's session starts a KAS sign-in; the direct
