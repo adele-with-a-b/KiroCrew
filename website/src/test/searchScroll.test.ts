@@ -5,6 +5,9 @@ import {
   scrollCurrentMatchIntoView,
   scrollRangeToCenter,
   pollRowSettled,
+  drawnClock,
+  STALL_CAP_MS,
+  CONVERGE_MAX_MS,
   glideOnceStep,
   attachUserScrollIntent,
   pointerOnScrollbar,
@@ -428,6 +431,54 @@ describe('pollRowSettled', () => {
     expect(onEnd).toHaveBeenCalledWith('cancelled')
     cancel()                 // idempotent
     expect(onEnd).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('drawnClock: a poll backstop that does not run while the page cannot draw', () => {
+  it('moves with the real clock frame by frame, and counts a long gap as one capped step', () => {
+    let real = 5000
+    const clock = drawnClock(() => real)
+    expect(clock()).toBe(0)
+    real += 16
+    expect(clock()).toBe(16)
+    // The thread is held for 3 s: no frame ran, so the wait has not been used.
+    real += 3000
+    expect(clock()).toBe(16 + STALL_CAP_MS)
+    real += 16
+    expect(clock()).toBe(32 + STALL_CAP_MS)
+    // A clock that steps back (a suspended tab) never runs the wait backwards.
+    real -= 500
+    expect(clock()).toBe(32 + STALL_CAP_MS)
+  })
+
+  it('a target drawn a frame after a stall longer than the backstop is still stepped to; on the wall clock the poll had given up', () => {
+    const run = (clockOf: (real: () => number) => () => number) => {
+      let real = 0
+      let frame: (() => void) | null = null
+      let shown = false
+      const step = vi.fn()
+      const ended: string[] = []
+      pollRowSettled({
+        measure: () => (shown ? 10 : null),
+        step,
+        raf: (cb) => { frame = cb; return 1 },
+        now: clockOf(() => real),
+        onEnd: (reason) => ended.push(reason),
+      })
+      const tick = () => { const f = frame; frame = null; f?.() }
+      real += 16
+      tick()
+      // One commit holds the thread past the whole backstop. The target is not
+      // drawn in the first frame after it, and is in the next.
+      real += CONVERGE_MAX_MS + 500
+      tick()
+      real += 16
+      shown = true
+      tick()
+      return { steps: step.mock.calls.length, ended }
+    }
+    expect(run((real) => real)).toEqual({ steps: 0, ended: ['timeout'] })
+    expect(run((real) => drawnClock(real))).toEqual({ steps: 1, ended: [] })
   })
 })
 

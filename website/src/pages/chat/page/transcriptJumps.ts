@@ -71,6 +71,8 @@ interface TranscriptJumpsOptions {
   /** The same map through a ref, so a rebuilt map does not re-run the search scroll. */
   messageToDisplayIdxRef: MutableRefObject<Map<number, number>>
   navToDisplayIndex: (idx: number, opts?: { behavior?: ScrollBehavior; align?: ScrollLogicalPosition; offset?: number }) => void
+  /** Scroll to the row that draws a message; false when no row on screen draws it. */
+  navToMessage: (msg: ChatMessage, opts?: { behavior?: ScrollBehavior; align?: ScrollLogicalPosition; offset?: number }) => boolean
   activeSlot: string | null
   cursorIsForActiveSlot: boolean
   slotHasMore: boolean
@@ -104,6 +106,7 @@ export function useTranscriptJumps({
   messageToDisplayIdx,
   messageToDisplayIdxRef,
   navToDisplayIndex,
+  navToMessage,
   activeSlot,
   cursorIsForActiveSlot,
   slotHasMore,
@@ -289,6 +292,13 @@ export function useTranscriptJumps({
   atBottomRef.current = isAtBottom
   const scrollBottomRef = useRef(scrollBottom)
   scrollBottomRef.current = scrollBottom
+  /** The chat back at `spot`: its bottom, or the reply the spot names at the
+   *  height it had. By the message, whose row is found in the rows on screen. */
+  const returnTo = useCallback((spot: BackSpot, behavior: ScrollBehavior) => {
+    if (spot.bottom && scrollBottomRef.current) { scrollBottomRef.current(behavior === 'auto'); return }
+    const idx = indexOf(messagesRef.current, spot.from)
+    if (idx >= 0) navToMessage(messagesRef.current[idx], { behavior, align: 'start', offset: -spot.offset })
+  }, [navToMessage])
   useEffect(() => onLinkPreviewNav((req) => {
     if (req.kind !== 'jump' || !activeSlot || req.slot !== activeSlot || splitRef.current) return false
     const list = messagesRef.current
@@ -326,28 +336,38 @@ export function useTranscriptJumps({
       // person has moved the view by hand since. The spot is measured now, before
       // the scroll, and kept only if the jump lands: one that does not moves
       // nothing and leaves the pill as it was.
-      const kept = movedRef.current ? null : backSpotRef.current
+      const before = backSpotRef.current
+      const kept = movedRef.current ? null : before
       const spot = kept ? { ...kept, down: toIdx < 0 || toIdx < indexOf(list, kept.from) } : fresh
       const answer = req.onDone
+      // A jump that landed can be taken back by its caller (a card's step whose
+      // label is not in the message after all): the chat returns at once to the
+      // spot measured above, the Back pill to what it was, and the highlight goes.
+      const putBack = fresh ? () => {
+        returnTo(fresh, 'auto')
+        setBackSpot(before)
+        setHighlightTs(null)
+      } : undefined
       handleJumpToPinnedMessage(req.target.ts, req.target.id, {
         origin: 'link',
-        onDone: (o) => { if (o === true) setBackSpot(spot); answer?.(o) },
+        onDone: (o) => {
+          if (o !== true) { answer?.(o); return }
+          setBackSpot(spot)
+          if (putBack) answer?.(o, putBack)
+          else answer?.(o)
+        },
       })
       return true
     }
     setBackSpot(fresh && there ? fresh : null)
     handleJumpToPinnedMessage(req.target.ts, req.target.id, { origin: 'link', ...(req.onDone ? { onDone: req.onDone } : {}) })
     return true
-  }), [activeSlot, handleJumpToPinnedMessage, messageToDisplayIdxRef, scrollerRef])
+  }), [activeSlot, handleJumpToPinnedMessage, messageToDisplayIdxRef, returnTo, scrollerRef, setHighlightTs])
   /** Back to where the chat was before the card's jump; the pill goes. */
   const goBack = useCallback(() => {
     const spot = backSpot
     setBackSpot(null)
-    if (!spot) return
-    if (spot.bottom && scrollBottomRef.current) { scrollBottomRef.current(); return }
-    const idx = indexOf(messagesRef.current, spot.from)
-    const di = idx < 0 ? undefined : messageToDisplayIdxRef.current.get(idx)
-    if (di !== undefined) navToDisplayIndex(di, { behavior: 'smooth', align: 'start', offset: -spot.offset })
-  }, [backSpot, messageToDisplayIdxRef, navToDisplayIndex])
+    if (spot) returnTo(spot, 'smooth')
+  }, [backSpot, returnTo])
   return { jumpToSearchResult, backSpot, goBack }
 }

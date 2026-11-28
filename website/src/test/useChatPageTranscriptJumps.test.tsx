@@ -62,6 +62,7 @@ function harness(over: Partial<Opts> = {}) {
     messageToDisplayIdx: map,
     messageToDisplayIdxRef: { current: map },
     navToDisplayIndex: vi.fn(),
+    navToMessage: vi.fn(() => true),
     activeSlot: 'slot-a',
     cursorIsForActiveSlot: true,
     slotHasMore: false,
@@ -184,7 +185,7 @@ describe("a link-preview card's jump", () => {
     // The reply at t2 sat 240px below the scroller's top; the target is above it, so Back goes down.
     expect(hook.result.current.backSpot).toEqual({ from: { ts: 't2', id: 'm2' }, offset: 240, down: true })
     act(() => { hook.result.current.goBack() })
-    expect(opts.navToDisplayIndex).toHaveBeenCalledWith(12, { behavior: 'smooth', align: 'start', offset: -240 })
+    expect(opts.navToMessage).toHaveBeenCalledWith(opts.messages[2], { behavior: 'smooth', align: 'start', offset: -240 })
     expect(hook.result.current.backSpot).toBeNull()
   })
 
@@ -288,10 +289,58 @@ describe("a session control's jump (from: 'view')", () => {
     const onDone = vi.fn()
     act(() => { jump({ ts: 't0', id: 'm0' }, onDone) })
     expect(opts.handleJumpToPinnedMessage).toHaveBeenCalledWith('t0', 'm0', { origin: 'link', onDone: expect.any(Function) })
-    expect(onDone).toHaveBeenCalledWith(true)
+    expect(onDone).toHaveBeenCalledWith(true, expect.any(Function))
     expect(hook.result.current.backSpot).toEqual({ from: { ts: 't2', id: 'm2' }, offset: 300, down: true })
     act(() => { hook.result.current.goBack() })
-    expect(opts.navToDisplayIndex).toHaveBeenCalledWith(12, { behavior: 'smooth', align: 'start', offset: -300 })
+    expect(opts.navToMessage).toHaveBeenCalledWith(opts.messages[2], { behavior: 'smooth', align: 'start', offset: -300 })
+  })
+
+  // A card's step takes the jump back when the label it came for is not in the
+  // message after all (`linkPreviewStep.ts`).
+  it('a jump that landed hands back a put-back: the chat returns at once to where it left from, with no pill and no highlight', () => {
+    const { opts, hook } = harness({ scrollerRef: { current: scroller([[10, 20, 380], [12, 400, 900]]) }, handleJumpToPinnedMessage: ending() })
+    let putBack: (() => void) | undefined
+    act(() => { jump({ ts: 't0', id: 'm0' }, (_o, back) => { putBack = back }) })
+    expect(hook.result.current.backSpot).not.toBeNull()
+    act(() => { putBack?.() })
+    // The reply at t2 goes back to 300px below the scroller's top, with no glide.
+    expect(opts.navToMessage).toHaveBeenCalledWith(opts.messages[2], { behavior: 'auto', align: 'start', offset: -300 })
+    expect(opts.navToMessage).toHaveBeenCalledTimes(1)
+    expect(hook.result.current.backSpot).toBeNull()
+    expect(opts.setHighlightTs).toHaveBeenLastCalledWith(null)
+  })
+
+  it('a put-back leaves the pill of an earlier jump as it was, and returns to where THIS jump left from', () => {
+    const sc = scroller([[10, 20, 380], [12, 400, 900]])
+    const { opts, hook } = harness({ scrollerRef: { current: sc }, handleJumpToPinnedMessage: ending() })
+    act(() => { jump({ ts: 't0', id: 'm0' }) })
+    const first = hook.result.current.backSpot
+    expect(first).toMatchObject({ from: { ts: 't2', id: 'm2' }, offset: 300 })
+    // The first jump moved the chat: t0 (10) now starts on screen at 150.
+    sc.replaceChildren(...scroller([[10, 150, 600]]).children)
+    let putBack: (() => void) | undefined
+    act(() => { jump({ ts: 't2', id: 'm2' }, (_o, back) => { putBack = back }) })
+    act(() => { putBack?.() })
+    expect(opts.navToMessage).toHaveBeenLastCalledWith(opts.messages[0], { behavior: 'auto', align: 'start', offset: -50 })
+    expect(hook.result.current.backSpot).toBe(first)
+  })
+
+  it('a put-back from the bottom of the chat returns to the bottom at once, through the chat’s own scroll', () => {
+    const scrollBottom = vi.fn()
+    const { opts, hook } = harness({ scrollerRef: { current: scroller([[10, 20, 380], [12, 400, 900]]) }, isAtBottom: true, scrollBottom, handleJumpToPinnedMessage: ending() })
+    let putBack: (() => void) | undefined
+    act(() => { jump({ ts: 't0' }, (_o, back) => { putBack = back }) })
+    act(() => { putBack?.() })
+    expect(scrollBottom.mock.calls).toEqual([[true]])
+    expect(opts.navToMessage).not.toHaveBeenCalled()
+    expect(hook.result.current.backSpot).toBeNull()
+  })
+
+  it('a jump that did not land hands back nothing to undo', () => {
+    harness({ scrollerRef: { current: scroller([[10, 20, 380], [12, 400, 900]]) }, slotHasMore: true, slotOldestIndex: 40, handleJumpToPinnedMessage: ending('load_failed') })
+    const onDone = vi.fn()
+    act(() => { jump({ ts: 'older' }, onDone) })
+    expect(onDone.mock.calls).toEqual([['load_failed']])
   })
 
   it('a jump from the bottom of the chat (a card’s too) gives a Back to the bottom, through the chat’s own scroll', () => {

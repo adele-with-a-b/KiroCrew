@@ -41,6 +41,37 @@ function mount(loadingOlder: boolean) {
   return { scrollerRef, virt, ...utils }
 }
 
+// The sign's place by the header is under the chat page's pinned prompt band for
+// a reader below the first prompt. A host that shows the sign there names the
+// band (`spinnerBelow`), and the sign sits under it.
+describe('TranscriptScrollShell: the loading sign under an overlay that covers its place', () => {
+  const shell = (over?: () => Element | null) => {
+    const scrollerRef = ref()
+    const virt = { topSentinelRef: ref(), bottomSentinelRef: ref(), offsetBefore: 0, offsetAfter: 0 }
+    const { unmount } = render(<TranscriptScrollShell scrollerRef={scrollerRef} onScroll={() => {}} virt={virt} loadingOlder spinnerBelow={over}><div /></TranscriptScrollShell>)
+    const top = screen.getByTestId('older-messages-loading').style.top
+    unmount()
+    return top
+  }
+  const band = (bottom: number) => {
+    const el = document.createElement('div')
+    el.getBoundingClientRect = () => ({ bottom }) as DOMRect
+    return el
+  }
+
+  it('sits under the overlay, clear of its fade, when the overlay reaches it', () => {
+    // jsdom lays nothing out: the sign's own top reads 0, so the band's bottom
+    // (90) is how far the band reaches past it. 64 is the sign's own top.
+    expect(shell(() => band(90))).toBe(`${64 + 90 + 16}px`)
+  })
+
+  it('keeps its own place when the overlay ends above it, is not there, or is not named', () => {
+    expect(shell(() => band(-40))).toBe('')
+    expect(shell(() => null)).toBe('')
+    expect(shell()).toBe('')
+  })
+})
+
 describe('TranscriptScrollShell DOM contract', () => {
   it('renders the skeleton in order: header spacer, aboveRows, top sentinel, top spacer, rows, bottom spacer, bottom sentinel, trailing wrapper (belowRows)', () => {
     const { scrollerRef, virt } = mount(false)
@@ -200,7 +231,8 @@ describe('ChatPage invocation: slot membership and prop threading', () => {
       'scrollerRef={scrollerRef}',
       'onScroll={onScrollPin}',
       'virt={virt}',
-      'loadingOlder={loadingOlder}',
+      // The loading sign also shows while a jump is still looking for its message.
+      'loadingOlder={loadingOlder || jumpLooking}',
       // A PREFIX, not the whole literal: the style object also carries the
       // restore-gate visibility flip, so pinning the closing braces would pin the
       // gate's presence into a test about prop THREADING. This still fails on a

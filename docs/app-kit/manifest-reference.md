@@ -1561,7 +1561,10 @@ on (level 22, below):
   newer step, another jump, or the person's own scroll took its place) or
   `no_answer` (no answer within 30 seconds: a dashboard older than level 20). A
   step never reads or writes the message box and sends nothing: it changes only
-  where the card sits and what is in view.
+  where the card sits and what is in view. A step that ends `not_found` or
+  `load_failed` leaves the chat where it was before the step, the card still
+  pinned where it was; while a far step pages older history in, the chat shows
+  its own loading sign.
 
 **The answering mode** (level 21, `answering: true` approved). A card that asks the
 person several questions can let them answer from Crew's own line and send every

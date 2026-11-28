@@ -3,7 +3,10 @@ import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 
 import type { useScrollManager } from './useScrollManager'
 import { usePinnedPrompt } from './usePinnedPrompt'
 import { jumpAnchorIdx } from '../../utils/pinnedPrompt'
-import { attachUserScrollIntent, glideOnceStep, pollRowSettled } from '../../utils/searchScroll'
+import { attachUserScrollIntent, drawnClock, glideOnceStep, pollRowSettled } from '../../utils/searchScroll'
+import { leadMessage, rowOfMessage as rowOfMessageIn } from '../../chat-core/transcript/rowKeys'
+import { useStableMessageKey } from '../../chat-core/transcript/useStableMessageKey'
+import type { ChatMessage } from '../../types'
 import { glideDurationMs, runConvergingGlide } from '../../utils/convergingGlide'
 import { releaseReadingPosition } from '../../utils/panelSlide'
 
@@ -148,7 +151,42 @@ export function useChatPageTranscriptEarlyController({
     composerBandObserverRef.current = ro
   }, [scrollBottom, autoFollowAllowed])
 
-  // Navigate to a (possibly off-window) display index: mount it first via the
+  // Pinned-prompt banner: geometry, expanded state and the fold/card refs live
+  // in the shared usePinnedPrompt hook (also worn by ChatPane). Only the JUMP is
+  // page-specific — a virtualized transcript must mount the target row before
+  // it can scroll to it — so that stays here, on top of the hook's chrome math.
+  const {
+    displayItemsRef,
+    pinFoldRef,
+    pinCardRef,
+    pinEnabledRef,
+    pinned,
+    setPinned,
+    pinExpanded,
+    setPinExpanded,
+    onPinCollapsedHeight,
+    scrollTranscriptBy,
+    updatePinnedPrompt,
+    onScrollPin,
+    pinnedJumpChrome,
+  } = usePinnedPrompt({ scrollerRef, requiresMountedHandoff: true })
+
+  // A jump aims at a MESSAGE (`navToMessage`) and finds the row that draws it
+  // again on every frame (`rowOfMessage`), in the rows on screen
+  // (`displayItemsRef`, the deferred list the virtualizer draws). A display
+  // index is good for the rows of one render only: a page of older history that
+  // lands while the poll is still running renumbers every row, and the index
+  // then names an older message. `navToDisplayIndex` is the jump for a caller
+  // that holds a row of the rows on screen (the turn minimap): it aims at that
+  // row's first message.
+  // The row identity rule the transcript keys its rows by.
+  const msgKey = useStableMessageKey()
+  /** The display index of the row on screen that draws `m`, or -1. */
+  const rowOfMessage = useCallback(
+    (m: ChatMessage) => rowOfMessageIn(displayItemsRef.current ?? [], m, msgKey),
+    [displayItemsRef, msgKey],
+  )
+  // Navigate to a (possibly off-window) message: mount its row first via the
   // virtualizer so the DOM-based scroll can find it, then scroll next frame.
   // Tracks the in-flight row-mount poll (below) so a newer navigation cancels
   // the previous one. Without this, an earlier far-jump loop whose target
@@ -159,16 +197,20 @@ export function useChatPageTranscriptEarlyController({
   // Cancel handle for the in-flight settle poll, so a newer navigation or an
   // unmount terminates it rather than letting it run to the wall-clock backstop.
   const navPollCancelRef = useRef<(() => void) | null>(null)
-  const navToDisplayIndex = useCallback((
-    idx: number,
+  /** Scroll to the row that draws `target`. False, and nothing moves, when no
+   *  row on screen draws it. */
+  const navToMessage = useCallback((
+    target: ChatMessage,
     opts?: { behavior?: ScrollBehavior; align?: ScrollLogicalPosition; offset?: number },
-  ) => {
+  ): boolean => {
+    const first = rowOfMessage(target)
+    if (first < 0) return false
     cancelAnimationFrame(navScrollRafRef.current)
     // Signal WidgetFrames that a jump is starting so the span of widgets
     // mountIndex is about to union doesn't all build their iframes in one
     // frame (see PROGRAMMATIC_BUILD_DELAY_MS in WidgetFrame).
     window.dispatchEvent(new Event('mc-chat-scroll-jump'))
-    const jumpedFar = mountIndexRef.current(idx)
+    const jumpedFar = mountIndexRef.current(first)
     // A FAR jump replaces the window, so the rows between the old viewport and
     // the target are NOT mounted — a smooth glide would scrub the scroller
     // through blank spacer (the "occasional flicker" on the ↑/jump pills when
@@ -192,8 +234,14 @@ export function useChatPageTranscriptEarlyController({
     // we never teleport to top (the "far jump jumps to top, second click works"
     // bug). navScrollRafRef holds the in-flight frame so a newer navigation
     // cancels this loop (rapid stepping / click-then-click).
-    const rowEl = (): HTMLElement | null =>
-      (scrollerRef.current?.querySelector(`[data-display-index="${idx}"]`) as HTMLElement | null) ?? null
+    // The row is found again each frame, and the step scrolls to the row the
+    // same frame's measure found.
+    let row = first
+    const rowEl = (): HTMLElement | null => {
+      row = rowOfMessage(target)
+      if (row < 0) return null
+      return (scrollerRef.current?.querySelector(`[data-display-index="${row}"]`) as HTMLElement | null) ?? null
+    }
     navPollCancelRef.current?.()
     // The poll re-scrolls every frame for up to CONVERGE_MAX_MS (~2s). If the
     // user tries to scroll during that window, continuing to step would drag
@@ -209,6 +257,11 @@ export function useChatPageTranscriptEarlyController({
     navPollCancelRef.current = pollRowSettled({
       measure: () => {
         const el = rowEl()
+        // The row is gone again before the first step scrolled to it: a landing
+        // that commits in the same frame recomputes the window from the scroll
+        // position the jump has not moved yet, and unmounts a far row. Mount it
+        // again; once the step has scrolled, the window follows the scroll.
+        if (!el && row >= 0) mountIndexRef.current(row)
         return el ? el.getBoundingClientRect().height : null
       },
       // Only the FIRST step may glide — see glideOnceStep. Re-issuing a smooth
@@ -216,17 +269,28 @@ export function useChatPageTranscriptEarlyController({
       // through the quiet window would leave a NEAR jump stuttering until the
       // poll ends (the same restart trap removed from the streaming pin).
       step: glideOnceStep(
-        (b) => { scrollToDisplayIndex(idx, { ...opts, behavior: b }) },
+        (b) => { scrollToDisplayIndex(row, { ...opts, behavior: b }) },
         behavior,
       ),
       raf: (cb) => (navScrollRafRef.current = requestAnimationFrame(cb)),
-      now: () =>
-        typeof performance !== 'undefined' && typeof performance.now === 'function'
-          ? performance.now()
-          : Date.now(),
+      // The backstop counts only time the page could draw in: the commit that
+      // mounts a far row can hold the thread past it, and on the wall clock the
+      // poll then gave up before the row had a frame to be scrolled to in.
+      now: drawnClock(),
       onEnd: () => { detachUserScroll(); navPollCancelRef.current = null },
     })
-  }, [scrollToDisplayIndex, scrollerRef, mountIndexRef])
+    return true
+  }, [scrollToDisplayIndex, scrollerRef, mountIndexRef, rowOfMessage])
+  /** Scroll to display row `idx` of the rows on screen: the jump aims at the
+   *  first message that row draws. */
+  const navToDisplayIndex = useCallback((
+    idx: number,
+    opts?: { behavior?: ScrollBehavior; align?: ScrollLogicalPosition; offset?: number },
+  ) => {
+    const item = displayItemsRef.current?.[idx]
+    const lead = item ? leadMessage(item) : null
+    if (lead) navToMessage(lead, opts)
+  }, [displayItemsRef, navToMessage])
 
   // Stop any in-flight settle poll on unmount. Without this the loop keeps
   // ticking rAFs against a null scroller until the ~2s backstop (harmless but
@@ -236,26 +300,6 @@ export function useChatPageTranscriptEarlyController({
     navPollCancelRef.current = null
     cancelAnimationFrame(navScrollRafRef.current)
   }, [])
-
-  // Pinned-prompt banner: geometry, expanded state and the fold/card refs live
-  // in the shared usePinnedPrompt hook (also worn by ChatPane). Only the JUMP is
-  // page-specific — a virtualized transcript must mount the target row before
-  // it can scroll to it — so that stays here, on top of the hook's chrome math.
-  const {
-    displayItemsRef,
-    pinFoldRef,
-    pinCardRef,
-    pinEnabledRef,
-    pinned,
-    setPinned,
-    pinExpanded,
-    setPinExpanded,
-    onPinCollapsedHeight,
-    scrollTranscriptBy,
-    updatePinnedPrompt,
-    onScrollPin,
-    pinnedJumpChrome,
-  } = usePinnedPrompt({ scrollerRef, requiresMountedHandoff: true })
   /** Jump the transcript back to the pinned prompt, landing it just below the
    *  banner so the prompt is read in context — which also un-pins the banner,
    *  since its prompt is no longer above the fold.
@@ -363,7 +407,9 @@ export function useChatPageTranscriptEarlyController({
     autoFollowAllowed,
     handleSurveyLayoutChange,
     composerBandRef,
+    navToMessage,
     navToDisplayIndex,
+    rowOfMessage,
     displayItemsRef,
     pinFoldRef,
     pinCardRef,

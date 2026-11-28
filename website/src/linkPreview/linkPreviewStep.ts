@@ -16,7 +16,7 @@
  * @module linkPreview/linkPreviewStep
  */
 import { sayStepLine } from '../pages/chat/turnStep'
-import { attachUserScrollIntent, pollRowSettled, scrollRangeToCenter } from '../utils/searchScroll'
+import { attachUserScrollIntent, drawnClock, pollRowSettled, scrollRangeToCenter } from '../utils/searchScroll'
 import { sendAppNav } from './linkPreviewNav'
 import type { AnchorRect, MessageRef, PreviewLink, StepRefusal } from './linkPreviewProtocol'
 import { resolveTextPreview } from './textPatterns'
@@ -102,6 +102,8 @@ export function runStep(ask: StepAsk, hooks: StepHooks): () => void {
   let landed = false
   let stopPoll: () => void = () => {}
   let detachUser: () => void = () => {}
+  // The chat as it was before this step's jump, from the jump that landed.
+  let putBack: (() => void) | undefined
   const end = (result: true | StepRefusal) => {
     if (over) return
     over = true
@@ -114,6 +116,10 @@ export function runStep(ask: StepAsk, hooks: StepHooks): () => void {
   const converge = () => {
     let span: HTMLElement | null = null
     stopPoll = pollRowSettled({
+      // The wait for the label counts only time the page could draw in: the
+      // commit that draws a far page's rows can hold the thread past the
+      // backstop, before the label has had a frame to show in.
+      now: drawnClock(),
       measure: () => {
         span = findStepLabel(ask)
         return span ? span.getBoundingClientRect().top : null
@@ -130,8 +136,15 @@ export function runStep(ask: StepAsk, hooks: StepHooks): () => void {
           hooks.done(true)
         }
       },
-      onEnd: () => {
+      onEnd: (reason) => {
         detachUser()
+        // The message is on screen and the label never showed in it: the step
+        // did not get there, so the chat goes back to where it left from. Only
+        // when the wait ran out: a newer scroll that took over owns the view.
+        // shortcut: a jump the person starts by a click inside the wait (a pin,
+        // a quote) has not stepped yet when the wait runs out, so this still
+        // reads `timeout` and returns from it; a scroll of theirs is seen.
+        if (!landed && !over && reason === 'timeout') putBack?.()
         if (!landed) end('not_found')
         over = true
       },
@@ -160,10 +173,10 @@ export function runStep(ask: StepAsk, hooks: StepHooks): () => void {
       slot: ask.slot,
       target: ask.target,
       from: 'view',
-      onDone: (o) => {
+      onDone: (o, back) => {
         if (waitingJump === mine) waitingJump = null
         if (over) return
-        if (o === true) converge()
+        if (o === true) { putBack = back; converge() }
         else end(o)
       },
     })

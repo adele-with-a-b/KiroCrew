@@ -217,6 +217,95 @@ describe('runStep: the host side', () => {
   })
 })
 
+describe('a step whose message is reached and whose label never shows in it', () => {
+  const ASK = { key: KEY, slot: 'chat-7', target: { ts: 't9' }, text: '[A9]', line: '[A9] · 9 of 9' }
+
+  /** A chat whose jump to any message lands at once and hands back `putBack`. */
+  function landingChat() {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance', 'Date'] })
+    vi.setSystemTime(new Date('2026-11-26T12:00:00Z'))
+    onTestFinished(() => { vi.useRealTimers() })
+    const order: string[] = []
+    const putBack = vi.fn(() => { order.push('put back') })
+    onTestFinished(onLinkPreviewNav((req) => {
+      if (req.kind !== 'jump') return false
+      req.onDone?.(true, putBack)
+      return true
+    }))
+    const done = vi.fn((r: unknown) => { order.push(`answered ${String(r)}`) })
+    return { putBack, done, order }
+  }
+
+  it('answers not_found once the wait runs out, after the chat is put back where the step left from', async () => {
+    const { putBack, done, order } = landingChat()
+    // The message is on screen; the label the card named is not in it.
+    message('t9', ['[A8]'])
+    runStep(ASK, { land: vi.fn(), done })
+    await vi.advanceTimersByTimeAsync(1900)
+    expect(done).not.toHaveBeenCalled()
+    expect(putBack).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(order).toEqual(['put back', 'answered not_found'])
+  })
+
+  it('a label that shows while it waits lands, and the chat stays there', async () => {
+    const { putBack, done } = landingChat()
+    const land = vi.fn()
+    runStep(ASK, { land, done })
+    await vi.advanceTimersByTimeAsync(500)
+    message('t9', ['[A9]'])
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(done.mock.calls).toEqual([[true]])
+    expect(land).toHaveBeenCalled()
+    expect(putBack).not.toHaveBeenCalled()
+  })
+
+  // Seen on a 480-message chat: the commit that draws the far page's rows held
+  // the thread for seconds after the jump had answered, the wait ran out on the
+  // wall clock with no frame run, and the step said not_found of a label that
+  // was drawn a moment later.
+  it('a commit that holds the page past the wait does not use the wait up: the label drawn after it lands', async () => {
+    const { putBack, done } = landingChat()
+    const land = vi.fn()
+    const clock = performance.now.bind(performance)
+    let held = 0
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => clock() + held)
+    onTestFinished(() => { now.mockRestore() })
+    runStep(ASK, { land, done })
+    await vi.advanceTimersByTimeAsync(100)
+    // 3 s pass with no frame run. The label is not drawn in the first frames
+    // after them (its row is; the label is marked a moment later), then it is.
+    held = 3000
+    await vi.advanceTimersByTimeAsync(48)
+    expect(done).not.toHaveBeenCalled()
+    message('t9', ['[A9]'])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(done.mock.calls).toEqual([[true]])
+    expect(land).toHaveBeenCalled()
+    expect(putBack).not.toHaveBeenCalled()
+  })
+
+  it('the person scrolling while it waits ends the step, and the chat stays where they took it', async () => {
+    const { putBack, done } = landingChat()
+    runStep(ASK, { land: vi.fn(), done })
+    await vi.advanceTimersByTimeAsync(500)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp' }))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(done.mock.calls).toEqual([['replaced']])
+    expect(putBack).not.toHaveBeenCalled()
+  })
+
+  it('a step cancelled while it waits (a newer step, the card going) puts nothing back', async () => {
+    const { putBack, done } = landingChat()
+    const cancel = runStep(ASK, { land: vi.fn(), done })
+    await vi.advanceTimersByTimeAsync(500)
+    cancel()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(done).not.toHaveBeenCalled()
+    expect(putBack).not.toHaveBeenCalled()
+  })
+})
+
 describe('a step while an earlier step is still paging older history in', () => {
   /** The chat's jump as the pin jump runs it (`transcriptPins.ts`): a loaded
    *  message is scrolled to at once, a message older than the loaded rows waits
