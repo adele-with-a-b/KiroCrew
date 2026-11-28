@@ -20,6 +20,10 @@ export interface LinkPreviewGrantRow {
   /** The chat's session key on `show()` approved, and asked for but waiting. */
   sessionKey?: boolean
   stagedSessionKey?: boolean
+  /** A pinned card's answering mode approved, and asked for but waiting
+   *  (`apps/link_preview_answering_grants.py`). */
+  answering?: boolean
+  stagedAnswering?: boolean
 }
 
 /** An app row's `messageActionGrant` (`apps/message_action_grants.py`): each action

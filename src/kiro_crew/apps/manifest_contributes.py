@@ -655,6 +655,13 @@ class LinkPreviewConfig:
     sessionKey: bool = False  # noqa: N815
     #: ``sessionKey`` present but not a boolean. Not serialized.
     bad_session_key: bool = False
+    # Optional: a pinned card may put its chat into the answering mode
+    # (``card.answering``): Crew draws an answer line and holds the keys, and the
+    # person's Shift+Enter sends the text the card handed over as their message.
+    # Needs ``sessionKey``; a grant of its own (``link_preview_answering_grants``).
+    answering: bool = False
+    #: ``answering`` present but not a boolean. Not serialized.
+    bad_answering: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {}
@@ -672,6 +679,8 @@ class LinkPreviewConfig:
             d["fullUrl"] = True
         if self.sessionKey:
             d["sessionKey"] = True
+        if self.answering:
+            d["answering"] = True
         return d
 
     @classmethod
@@ -709,6 +718,8 @@ class LinkPreviewConfig:
             bad_full_url="fullUrl" in data and not isinstance(data.get("fullUrl"), bool),
             sessionKey=data.get("sessionKey") is True,
             bad_session_key="sessionKey" in data and not isinstance(data.get("sessionKey"), bool),
+            answering=data.get("answering") is True,
+            bad_answering="answering" in data and not isinstance(data.get("answering"), bool),
         )
 
     def validate(self) -> list[str]:
@@ -735,6 +746,11 @@ class LinkPreviewConfig:
             errors.append(f"{where}: fullUrl must be true or false")
         if self.bad_session_key:
             errors.append(f"{where}: sessionKey must be true or false")
+        if self.bad_answering:
+            errors.append(f"{where}: answering must be true or false")
+        elif self.answering and not self.sessionKey:
+            # The mode acts in the card's chat, which only a sessionKey card knows.
+            errors.append(f"{where}: answering needs sessionKey: true")
         if self.bad_text_patterns:
             errors.append(
                 f"{where}: textPatterns must be an array of "

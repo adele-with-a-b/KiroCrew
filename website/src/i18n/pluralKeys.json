@@ -1,4 +1,6 @@
 [
+  "components.linkPreview.answering.answers_to",
+  "components.linkPreview.answering.answers_sent",
   "pages.chat.quickAsk.vault_more",
   "components.gitPanel.repos_omitted",
   "components.queueStack.queued_count",

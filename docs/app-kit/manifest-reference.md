@@ -1329,11 +1329,12 @@ No app code runs until a link on one of the provider's `hosts` is hovered.
 | `textPatterns` | object[] | Optional. Plain text in chat messages that also opens a card; see below |
 | `fullUrl` | boolean | Optional. `show` gets the URL without its query and fragment unless this is `true` and the owner approved it |
 | `sessionKey` | boolean | Optional. `show` also gets the session key of the chat the hovered link or text is in (`dashboard:<slot>`) and that message (`{ ts, id? }`) when this is `true` and the owner approved it; the card may then also `card.openPanelTab`, `card.openSessionControl` and `card.jumpTo` |
+| `answering` | boolean | Optional, needs `sessionKey: true` (level 21). A pinned card may put its chat into the answering mode (`card.answering`, below) when this is `true` and the owner approved it. Its own grant: an update that adds it waits for the owner |
 
-**Approval.** The hosts, the text patterns (id, flags and source), `fullUrl` and
-`sessionKey` are part of what the owner approves for the app, like
-`permissions.api`. An update that adds a host, changes a pattern or turns `fullUrl`
-or `sessionKey` on waits on the app's page until
+**Approval.** The hosts, the text patterns (id, flags and source), `fullUrl`,
+`sessionKey` and `answering` are part of what the owner approves for the app, like
+`permissions.api`. An update that adds a host, changes a pattern or turns `fullUrl`,
+`sessionKey` or `answering` on waits on the app's page until
 the owner approves it, and
 until then the app previews only what was approved before. An update that only
 removes entries needs nothing. A `sessionKey` approved before cards learned the
@@ -1414,8 +1415,27 @@ export function activate(ctx: {
       // into view and the card is shown again beside it (`trigger: 'step'`);
       // `line` is said by the chat's live region (level 20).
       step(to: { message: { ts: string; id?: string }; text: string; line?: string }): Promise<StepResult>
+      // The answering mode, for a provider approved for `answering` (level 21).
+      // Crew draws the answer line and sends; the card only hands text over.
+      answering: {
+        enter(setup: AnsweringSetup): Promise<AnsweringResult>   // a click or key in this PINNED card
+        update(setup: Partial<Omit<AnsweringSetup, 'keys'>>): Promise<AnsweringResult>
+        hand(h: { text: string; count: number; rev?: number }): Promise<AnsweringResult>
+        leave(): void
+      }
     }
   }): void
+  // The answering mode's events: what the person did in Crew's line, and why it ended.
+  answering?(event:
+    | { kind: 'draft' | 'kept'; text: string; rev: number }
+    | { kind: 'key'; key: string }
+    | { kind: 'button'; id: string }
+    | { kind: 'ended'; why: 'sent' | 'escaped' | 'left' | 'chat' | 'closed' }): void
+  // AnsweringSetup = { place?: string; hint?: string; keys?: { key: string; label?: string }[];
+  //   buttons?: { id: string; label: string; hint?: string }[]; keepAt?: number | null }
+  // AnsweringResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' | 'not_pinned' |
+  //   'not_approved' | 'not_on_screen' | 'not_granted' | 'busy' | 'not_on' | 'not_literal' |
+  //   'too_large' | 'bad_count' | 'stale' | 'not_json' | 'no_answer' }
   // OpenResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' |
   //   'not_approved' | 'not_on_screen' | 'not_declared' | 'too_large' | 'not_json' | 'no_answer' }
   // StepResult = { ok: true } | { ok: false; reason: 'no_click' | 'not_shown' | 'not_pinned' |
@@ -1539,7 +1559,54 @@ need a click (or a key) in the card:
   step never reads or writes the message box and sends nothing: it changes only
   where the card sits and what is in view.
 
-Feature-detect the calls (`'jumpTo' in link.card`, `'step' in link.card`,
+**The answering mode** (level 21, `answering: true` approved). A card that asks the
+person several questions can let them answer from Crew's own line and send every
+answer kept so far in one press:
+
+- `card.answering.enter(setup)`, right after a click or key in a PINNED card on the
+  chat on screen, starts the mode. Crew then draws, under the card and in its
+  width, an answer line (Crew's input, not the card's), a preview line and a button
+  row, and a mode line under the message box naming the app. Focus moves to the
+  line; the message box's draft is left as it is. `setup.place` (at most 40
+  characters, e.g. `"Q4a · 2 of 3"`) is shown in the mode line, `hint` (at most
+  120) in the empty line. `buttons` (up to 4, each `{ id, label, hint? }`) are drawn
+  by Crew in the row and a click on one is told to the card as `{ kind: 'button',
+  id }`; Crew's own "keep, next" sits at `keepAt` among them (`null` for none).
+  `keys` (up to 8) are the keys the card is told about as `{ kind: 'key', key }`
+  while the mode holds the keys: `Tab`, `ArrowUp`, `ArrowDown` (each with `Shift+`
+  or not), or a letter or digit with `Ctrl+` and/or `Alt+` (and `Shift+` or not),
+  written `Ctrl+Alt+Shift+K` in that order; Enter, Shift+Enter, Escape and Meta are
+  Crew's. A `label` shows the key in the mode line. One mode at a time: another
+  card's `enter` is answered `busy`.
+- What the person types in Crew's line reaches the card as `{ kind: 'draft', text,
+  rev }`; Enter keeps it (`{ kind: 'kept', text, rev }`, and the line empties). The
+  card keeps its own answers, builds the message they make, and calls
+  `card.answering.hand({ text, count })` after every change: the whole message
+  text (at most 32,000 characters, plain text only: a leading `/` or `!`, an `@`
+  mention, a `$skill`, a marker or a tag is answered `not_literal`) and how many
+  answers it holds (0 to 999; `bad_count` otherwise). `hand` names the line text it
+  was built from: by default the latest `rev` the card was told; pass `rev` when you
+  build later. A message for an older line is answered `stale` and not kept.
+- Crew shows, while one or more answers are kept, the count, the chat's name and the
+  exact message in one line, cut with "…"; a click opens it whole. With none it says
+  so. The person's Shift+Enter, in Crew's line or anywhere on the page but a text
+  field, or a Shift+click on "keep, next" (which reads "send prompt" while Shift is
+  held), sends that exact text to the chat as their own message, once, and ends
+  the mode (`{ kind: 'ended', why: 'sent' }`). It goes out like a message they typed
+  (steered or queued while a turn runs), never touches their draft, and their row is
+  folded as "N answers sent" with the app's name, the whole message behind "Show
+  full message". With nothing kept, or while the card has not yet handed a message
+  for the line as it stands, Shift+Enter sends nothing and the line says why.
+- No message from the card ever sends: the card cannot press, and a key or click the
+  card's own frame saw is never Crew's. The mode ends with nothing sent on Escape
+  (`escaped`), on `card.answering.leave()` (`left`), when the chat on screen changes
+  (`chat`), and when the card closes, is unpinned or goes (`closed`).
+- `update(setup)` changes `place`, `hint`, `buttons` or `keepAt` while the mode is on.
+  `update`, `hand` and `leave` act only on the mode this card started (`not_on`).
+  Each call resolves `{ ok: true }` or `{ ok: false, reason }`; `no_answer` after
+  5 seconds means a dashboard older than level 21: keep your card's own field there.
+
+Feature-detect the calls (`'jumpTo' in link.card`, `'step' in link.card`, `'answering' in link.card`,
 `'openSessionControl' in link.card`) and the hooks (`usePanelTabRequest`, `useSessionControlRequest` in the
 SDK's exports): a dashboard older than these has neither.
 

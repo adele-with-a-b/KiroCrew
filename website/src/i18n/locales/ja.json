@@ -7915,6 +7915,27 @@
       "remote_only_failed": "接続フォームを開けませんでした。もう一度お試しください。"
     },
     "linkPreview": {
+      "answering": {
+        "sending": "送信中…",
+        "send_prompt": "プロンプトを送信",
+        "keep_next": "保持して次へ",
+        "bar_label": "{{app}} への回答",
+        "line_label": "あなたの回答",
+        "crew_tag": "{{productName}}",
+        "answers_to_other": "{{chat}} への回答 {{count}} 件",
+        "open_whole": "メッセージ全体を表示",
+        "nothing_kept": "まだ何も保持していません",
+        "updating": "更新中です。もう一度押してください",
+        "not_sent": "送信されませんでした。⇧↵ で再試行してください。",
+        "help_next": "次へ",
+        "help_send": "送信",
+        "help_leave": "終了",
+        "mode_name": "回答中",
+        "say_entered": "回答モードです。Enter で回答を保持、Shift+Enter で送信、Escape で終了します。",
+        "say_ended": "回答モードを終了しました。",
+        "answers_sent_other": "回答 {{count}} 件を送信しました",
+        "grant_staged": "このアプリのピン留めカードは回答モードを開始できます。Shift+Enter を押すと、回答があなたのメッセージとして送信されます。"
+      },
       "copied": "コピー済み",
       "copy_url": "URL をコピー",
       "copy_url_of": "{{name}} の URL をコピー",

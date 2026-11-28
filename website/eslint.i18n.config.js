@@ -775,6 +775,12 @@ export default [
               // a closed DOM set cannot match prose — no English phrase is
               // `AltRight` — and a new key code has to be added here on purpose.
               '^(?:Alt|Control|Meta|Shift)(?:Left|Right)$',
+              // The answering mode's key-name prefixes (`Ctrl+Alt+Shift+K`,
+              // `linkPreview/answering/answeringProtocol.ts`, `DECLARED_KEY_RE`): the
+              // grammar a card declares its keys in and is told them back in, a
+              // wire string the mode line turns into glyphs and never shows as
+              // words. Enumerated like the key codes above: a closed set of three.
+              '^(?:Ctrl|Alt|Shift)\\+$',
               // The provider-CLI LOGIN COMMANDS: the pull-request panel offers
               // one as copyable recovery text (`pullRequestErrorDetails` returns
               // it verbatim and the panel renders it in a <code> block), and Issue

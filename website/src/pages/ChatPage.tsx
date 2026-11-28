@@ -22,6 +22,8 @@ import { useComposerDraftLifecycle, useComposerDraftStores, useStagedDraftPersis
 import { useComposerStaging, useStagedFolderRefs } from './chat/page/composerStaging'
 import { useFileMentionActions } from './chat/page/composerFileMentions'
 import { useChatEventBridges, useColdFileTabHydration } from './chat/page/eventBridges'
+import { useAnswersPage } from './chat/page/useAnswersPage'
+import { sessionDisplayTitle } from '../utils/sessionDisplayTitle'
 import { useChatPageEnvironment, usePageFlags } from './chat/page/pageEnvironment'
 import { useChatPanelTrackpadSwipe } from './chat/page/chatTrackpadSwipe'
 import { useActiveSlotState } from './chat/page/activeSlotState'
@@ -820,6 +822,15 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     void send(text, slot, flag)
     return 'sent'
   } })
+  // A card's answering mode sends through this composer, like a reply card's
+  // Start above, but isolated: the draft is never read, sent or cleared.
+  useAnswersPage({
+    slot: (splitMode && splitFeatureEnabled) || !activeSlot ? null : activeSlot,
+    chatTitle: currentSlot ? sessionDisplayTitle(currentSlot) : '',
+    canSend: (slot) => slot === activeSlotRef.current && composerSlotRef.current === slot && connected && !crewModeSwitching && !crewRootClosed && currentSlot?.stop_state !== 'killing',
+    steerFlag: (slot) => busySteerFlag({ slotKey: slot, busy: composerBusy, turnRunning: !!slotRunning, stopState: currentSlot?.stop_state, jevAutoConsented, busyMode: currentCrewRoot && currentSlot ? 'steer-only' : undefined }),
+    send,
+  })
   // Outside events feeding the side panel, the dock terminal and the composer,
   // then the cold file tabs' reads.
   const { runInTerminalScope } = useChatEventBridges({

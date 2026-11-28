@@ -67,6 +67,9 @@
  *
  * Dashboard to frame, for a step: `stepped { request, ok, reason? }`, with a
  * `StepRefusal` when it did not land.
+ * - `answering { op, ... }` the answering mode (`answering/answeringProtocol.ts`):
+ *   enter or leave it, change what it shows, hand over the message text. Never a
+ *   send: only the person's press on Crew's page sends.
  * - `regions { rects }` overlay mode, for a provider that manages several windows
  *   of its own (pinned cards, a dock, dialogs): the frame covers the viewport and
  *   is clipped to these rects, so everywhere else the page stays clickable. Its
@@ -85,6 +88,7 @@
 
 import { displaySafe, finite, readTagged, tagged } from '../appFrame/frameProtocol'
 import type { OpenRefusal } from './linkPreviewNav'
+import { readAnsweringMessage, type AnsweringEvent, type AnsweringMessage, type AnsweringRefusal } from './answering/answeringProtocol'
 
 export { BURST_CAPACITY, BURST_PER_SECOND, messageBytes } from '../appFrame/frameProtocol'
 
@@ -153,6 +157,9 @@ export type ToFrame =
   | { type: 'placement'; invocation: number; placement: Placement }
   | { type: 'opened'; request: number; ok: boolean; reason?: OpenRefusal }
   | { type: 'stepped'; request: number; ok: boolean; reason?: StepRefusal }
+  // The answering mode (`answering/answeringProtocol.ts`).
+  | { type: 'answering'; event: AnsweringEvent }
+  | { type: 'answered'; request: number; ok: boolean; reason?: AnsweringRefusal }
 
 export type FromFrame =
   | { type: 'ready' }
@@ -171,6 +178,7 @@ export type FromFrame =
   | { type: 'openSessionControl'; invocation: number; control: string; payload: unknown; request?: number }
   | { type: 'jump'; invocation: number; target: MessageRef }
   | { type: 'step'; invocation: number; target: MessageRef; text: string; line?: string; request?: number }
+  | AnsweringMessage
 
 /** Longest message `ts` or `mid` a frame may name, and longest tab or control id. */
 const MAX_ID_CHARS = 128
@@ -270,6 +278,8 @@ export function readFrameMessage(data: unknown): FromFrame | null {
       const spoken = line && line.length <= MAX_STEP_LINE_CHARS ? { line } : {}
       return { type: 'step', invocation, target, text, ...spoken, ...requestOf(m.request) }
     }
+    case 'answering':
+      return readAnsweringMessage(m, invocation)
     default:
       return null
   }
