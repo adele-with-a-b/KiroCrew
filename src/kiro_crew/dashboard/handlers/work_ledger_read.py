@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Any, NamedTuple
 
 from aiohttp import web
@@ -94,7 +95,7 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
     # for it too, shared build or not.
     answer = await shared_board(
         _READ_FLIGHT + key,
-        json.dumps([options, published_only, remote_on], sort_keys=True),
+        _shared_by(options, published_only, remote_on),
         lambda: _build_read(state, key, options, published_only, remote_on),
     )
     if answer.status != 200:
@@ -120,6 +121,19 @@ async def api_work_ledger_get(request: web.Request) -> web.Response:
 #: Names this route's builds in :mod:`crew_board_flight`, whose Crew board builds are
 #: keyed by the bare ledger key: the two reads of one board never share an answer.
 _READ_FLIGHT = "work-ledger-read:"
+
+
+def _shared_by(options: dict[str, Any], published_only: bool, remote_on: bool) -> str:
+    """The arguments of :func:`_build_read` as text: reads share a build when it is equal.
+
+    The schema's options are text, integers and booleans. ``since`` is the one the route
+    holds parsed (:func:`_read_options`), so it goes in as its ISO text, wall time and
+    offset: two stamps give one text only when they are the same stamp. A value of any
+    other type raises instead of being folded to a text that might not tell two apart.
+    """
+    return json.dumps(
+        [options, published_only, remote_on], sort_keys=True, default=datetime.isoformat
+    )
 
 
 def _json_bytes(answer: BoardAnswer) -> web.Response:

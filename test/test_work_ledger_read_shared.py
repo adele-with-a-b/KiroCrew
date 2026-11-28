@@ -3,9 +3,10 @@
 The tool behind the route gives up after ten seconds and its caller asks again, so the
 same read arrives while one is still being built. Pinned here: reads that arrive during
 a build share the ONE next build, which started after each of them arrived (it shows a
-write made while the first build was held); other arguments get a build of their own;
-every read still makes its own remote pull and writes its own audit line; a refusal is
-never handed to a read it was not built for; nothing is kept after a build.
+write made while the first build was held); other arguments get a build of their own,
+``since`` by its stamp; every read still makes its own remote pull and writes its own
+audit line; a refusal is never handed to a read it was not built for; nothing is kept
+after a build.
 """
 
 from __future__ import annotations
@@ -216,6 +217,31 @@ async def test_other_arguments_get_a_build_of_their_own(builds, arrivals):
     assert json.loads(compact_answer.text)["compact"] is True
     assert _titles(full_a) == _titles(compact_answer) == ["one", "two"]
     assert _titles(one_answer) == ["one"]
+
+
+@pytest.mark.asyncio
+async def test_reads_with_since_share_a_build_by_its_stamp(builds, arrivals):
+    """``since`` is the option the route holds parsed, not as the query's text: a read
+    with it answers, reads with one stamp share, and another stamp is never handed
+    their answer."""
+    _item("one")
+    long_ago = "since=2000-01-01T00:00:00%2B00:00"
+    first = await _held_read(builds, arrivals)
+    # Its build starts and waits for the board the held one has; the next two reads
+    # with its stamp arrive while it runs, so they join the one build after it.
+    ahead = _read(long_ago)
+    await arrivals.reached(2)
+    same = [_read(long_ago), _read(long_ago)]
+    other = _read("since=9999-12-31T23:59:59%2B00:00")
+    await arrivals.reached(5)
+    builds.release.set()
+    assert _titles((await _answers(first))[0]) == ["one"]
+    ahead_answer, same_a, same_b, other_answer = await _answers(ahead, *same, other)
+    # The held build, the first with the stamp, one its two repeats share, one for the other.
+    assert builds.count == 4
+    assert same_a.body == same_b.body
+    assert _titles(ahead_answer) == _titles(same_a) == ["one"]
+    assert _titles(other_answer) == []
 
 
 @pytest.mark.asyncio
