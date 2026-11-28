@@ -451,6 +451,83 @@ async def test_the_kept_set_is_empty_once_the_pass_ends(monkeypatch) -> None:
     assert not chat_keeper_adopt.kept_by_a_keeper(gone), "a later reconcile owes no held row"
 
 
+def _six_keepers(slots: dict[str, Any]) -> tuple[Any, list[Any]]:
+    """A gateway holding *slots*, and keepers for chat-1..chat-6 created in that order."""
+    from dataclasses import replace
+
+    live = [
+        replace(_record(), created=float(n), session_key=f"dashboard:chat-{n}", instance=f"i{n}")
+        for n in range(1, 7)
+    ]
+    # Handed over out of creation order, as a directory listing may give them.
+    return SimpleNamespace(_slots=slots), live[3:] + live[:3]
+
+
+def _restored_slots() -> dict[str, Any]:
+    """chat-1..chat-5 as the restore left them; chat-6's slot did not come back."""
+    from kiro_crew.dashboard.state import _ChatSlot
+
+    slots = {f"chat-{n}": _ChatSlot(f"chat-{n}") for n in range(1, 6)}
+    # A turn in flight whose "interrupted" row the restore holds back for the keeper.
+    for name in ("chat-2", "chat-5"):
+        slots[name]._restart_interruption_owed = True
+        slots[name]._restored_turn_marker = {"generation": 3, "cut": True}
+    # In flight too, on a transcript that already read as cut: the marker alone.
+    slots["chat-4"]._restored_turn_marker = {"generation": 2, "cut": True}
+    # The person's own Stop ended this turn before the restart.
+    slots["chat-3"]._restored_turn_marker = {"generation": 2, "cut": False}
+    return slots
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not chat_keeper.supported(), reason="the chat keeper is POSIX only")
+async def test_the_chats_that_were_running_a_turn_are_attached_before_the_idle_ones(
+    monkeypatch,
+) -> None:
+    from kiro_crew.dashboard import chat_keeper_adopt
+
+    attached: list[str] = []
+
+    async def _attaches(_state: Any, slot: Any, *_: Any) -> bool:
+        attached.append(slot.key)
+        return True
+
+    async def _end(record: Any, why: str, **_: Any) -> None:
+        attached.append(f"ended {record.session_key}")
+
+    monkeypatch.setattr(chat_keeper_adopt, "_adopt_one", _attaches)
+    monkeypatch.setattr(client_keeper, "_end_unadopted", _end)
+    state, live = _six_keepers(_restored_slots())
+    cfg = SimpleNamespace(agent=SimpleNamespace(chat_keeper=True, agent_started_turns=True))
+    assert await chat_keeper_adopt.adopt_kept_chats(state, cfg, live) == 5
+    assert attached == [
+        # Running a turn, by keeper creation time.
+        "chat-2",
+        "chat-4",
+        "chat-5",
+        # Idle, by keeper creation time; the keeper of no restored chat keeps its place.
+        "chat-1",
+        "chat-3",
+        "ended dashboard:chat-6",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_with_the_flag_off_the_keepers_are_ended_in_creation_order(monkeypatch) -> None:
+    from kiro_crew.dashboard import chat_keeper_adopt
+
+    ended: list[str] = []
+
+    async def _end(record: Any, why: str, **_: Any) -> None:
+        ended.append(record.session_key)
+
+    monkeypatch.setattr(client_keeper, "_end_unadopted", _end)
+    state, live = _six_keepers(_restored_slots())
+    cfg = SimpleNamespace(agent=SimpleNamespace(chat_keeper=False, agent_started_turns=True))
+    assert await chat_keeper_adopt.adopt_kept_chats(state, cfg, live) == 0
+    assert ended == [f"dashboard:chat-{n}" for n in range(1, 7)]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("spent, eligible", [(True, True), (False, False)])
 async def test_a_keeper_a_spawn_does_not_adopt_is_ended_before_it_spawns(

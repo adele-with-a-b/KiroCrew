@@ -186,6 +186,26 @@ class TestLiveness:
         row = _rows(_status(state, caller))["chat-2"]
         assert row["status"] == "idle" and row["queue_depth"] == 1
 
+    def test_a_chat_kept_through_a_restart_says_kept_until_the_app_attaches_it(
+        self, tmp_path, monkeypatch
+    ):
+        """Its process runs on under its keeper, so it is not ``released``: that
+        word tells the caller a message is what starts it."""
+        from kiro_crew.dashboard import chat_keeper_adopt
+
+        state = _make_state(tmp_path)
+        caller = _slot(state, "chat-1")
+        for name in ("chat-2", "chat-3", "chat-4"):
+            _child(state, name, caller)
+        # The boot found keepers for chat-2 and chat-4; the pass has reached chat-4.
+        kept = frozenset({"dashboard:chat-2", "dashboard:chat-4"})
+        monkeypatch.setattr(chat_keeper_adopt, "_KEPT_SESSION_KEYS", kept)
+        state.sessions.has_session = lambda key: key == "dashboard:chat-4"
+        rows = _rows(_status(state, caller))
+        assert rows["chat-2"]["process"] == "kept" and rows["chat-2"]["status"] == "idle"
+        assert rows["chat-3"]["process"] == "released", "no keeper: nothing runs for it"
+        assert rows["chat-4"]["process"] == "live", "attached: this gateway holds it"
+
     def test_a_row_carries_the_title_the_person_sees(self, tmp_path):
         state = _make_state(tmp_path)
         caller = _slot(state, "chat-1")
@@ -703,6 +723,23 @@ class TestTheMcpQualityCaveats:
         starting = self._one_row("working", process="released", running=True)
 
         assert "released" not in self._render(monkeypatch, starting)
+
+    def test_a_kept_chat_waiting_for_the_app_says_so_and_never_reads_idle(self, monkeypatch):
+        """``idle`` is the one status that asks for a decision, and ``released`` says
+        a message starts it; a chat its keeper still runs needs neither."""
+        row = self._one_row("idle", process="kept", queue_depth=2)
+        line = self._render(monkeypatch, row).splitlines()[1]
+
+        assert "kept running through the restart, waiting for the app to reconnect" in line
+        assert "do not message it" in line
+        assert "idle" not in line and "released" not in line
+        assert line.strip().split()[0] not in ("\U0001f4a4", "\U0001f503"), "its own mark"
+        assert "2 queued" in line
+
+    def test_a_kept_chat_already_running_a_turn_here_reads_working(self, monkeypatch):
+        working = self._one_row("working", process="kept", running=True)
+
+        assert "kept running" not in self._render(monkeypatch, working)
 
 
 # ── The fence applies to the rows ────────────────────────────────────────────

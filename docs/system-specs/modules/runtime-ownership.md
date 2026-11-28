@@ -1130,6 +1130,25 @@ keeper, and a turn already running, both below. A keeper record that names no re
 refusal path. Either way its session key leaves the kept set, so a slot built later
 gets its "interrupted" row.
 
+**The order of the pass.** The chats that were running a turn go first, then the
+idle ones, each group in keeper creation order (`_attach_order`). A running turn is
+what a late attach holds up: its tool calls that need an answer wait, and its keeper
+ends the chat after `ADOPT_SECS` with no gateway, while a pass under load has taken
+over two minutes. "Running" here is what the restore saw
+(`restart_receipt.turn_in_flight_at_restore`: the owed "interrupted" row, or a turn
+marker not ended before the restart), because a keeper reports `turn_at_detach` only
+once attached. A keeper the pass ends (the flag is off, or no slot was restored for
+it) keeps its creation-order place among the idle ones. The order changes no
+outcome: what is kept, left, cut and ended follows from each chat alone.
+
+**What a waiting chat reads as.** From `arm` until the pass reaches it, a kept chat
+has no session in this gateway, yet its process runs on under its keeper. Its
+`process` value is `kept` (`session_status.process_state`, from `kept_by_a_keeper`
+on a slot with no live session), not `released`, and the `session_status` tool
+says it is waiting for the app to reconnect and is not to be messaged: a message
+sent then starts the chat ahead of the pass (see Known gaps). Once attached it reads
+`live`; one the pass ended, or any chat after the pass, reads as before.
+
 **One start of a kept chat at a time.** A keeper hands its attachment to the last
 authenticated attach, so two starts of one chat in this gateway would take it from
 each other: a page left open across the restart reconnects and its own eager start
@@ -1351,6 +1370,9 @@ captured live in `test/fixtures/acp_frames/claude/chat-keeper-adopt-live.jsonl`
   tool call reads as idle until its next frame, and a message sent meanwhile is
   prompted into the same session. A first message that reaches the slot before the
   adopt pass starts it the same way (`AcpClient._spawn` adopts), ahead of the pass.
+- **The pass orders by what the restore saw.** A turn the agent started itself
+  leaves no turn marker, so a chat running only such a turn is attached with the
+  idle ones. The keeper record carries no running state to order by.
 - **A config option set through `session/set_config_option` is not cached.** The
   keeper caches the session answer with the later mode and model, not other
   options, so after an adopt the picker shows the option the session was created with

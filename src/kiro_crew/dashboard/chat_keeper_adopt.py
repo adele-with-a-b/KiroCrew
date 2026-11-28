@@ -7,7 +7,8 @@ Runs from the startup restore (``server_runtime.session_restore``) in two steps:
   was interrupted" on a chat whose turn is in fact still running
   (:func:`kept_by_a_keeper`, read by ``slot_persistence.turn_marker``);
 * :func:`adopt_kept_chats`, after the rebuild, starts each such chat's session
-  through the eager start, one at a time, so ``AcpClient._spawn`` attaches to its
+  through the eager start, one at a time and the chats that were running a turn
+  first (:func:`_attach_order`), so ``AcpClient._spawn`` attaches to its
   keeper (``acp.client_keeper.adopt_for``). It then registers the chat's
   agent-started-turn watch and starts the idle reader, so the turn that was running,
   and any approval it waits on, reaches the dashboard without waiting for a message.
@@ -83,7 +84,7 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
     enabled = _feature_on(cfg)
     slots = {effective_session_key(slot): slot for slot in list(state._slots.values())}
     adopted = 0
-    for record in sorted(live, key=lambda r: r.created):
+    for record in _attach_order(live, slots, enabled):
         slot = slots.get(record.session_key)
         if not enabled or slot is None:
             why = "the flag is off" if not enabled else "its chat was not restored"
@@ -115,6 +116,28 @@ async def adopt_kept_chats(state: Any, cfg: Any, live: list[KeeperRecord]) -> in
     if adopted:
         logger.info("chat keeper: adopted %d chat(s) kept running across the restart", adopted)
     return adopted
+
+
+def _attach_order(
+    live: list[KeeperRecord], slots: dict[str, Any], enabled: bool
+) -> list[KeeperRecord]:
+    """*live* in the order the pass takes it: the chats that were running a turn first.
+
+    A running turn is what a late attach holds up: its tool calls that need an answer
+    wait, and its keeper ends the chat after ``chat_keeper.ADOPT_SECS`` with no
+    gateway. Keeper creation order inside each group, and among the keepers the pass
+    ends (the flag is off, or no slot was restored for one).
+    """
+    from kiro_crew.dashboard import restart_receipt
+
+    def _key(record: KeeperRecord) -> tuple[bool, float]:
+        slot = slots.get(record.session_key) if enabled else None
+        # shortcut: what the restore saw, since a keeper says ``turn_at_detach`` only
+        # once attached, so a turn the agent started itself (no turn marker) goes
+        # with the idle chats; upgrade when the keeper record carries it.
+        return (not restart_receipt.turn_in_flight_at_restore(slot), record.created)
+
+    return sorted(live, key=_key)
 
 
 def _left_to_another_start(slot: Any, record: KeeperRecord) -> bool:

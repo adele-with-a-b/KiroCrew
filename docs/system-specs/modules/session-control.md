@@ -254,13 +254,22 @@ that edge can exist, but is a weaker, agent-editable source. The union is the
 answer, and every row names the sources that placed it (`crew_log`, `history`,
 `live`, joined with `+`).
 
-A live row also carries `process`: `live` while the session manager holds its
-process (`SessionManager.has_session` on the slot's effective key), `released`
-when it holds none (the idle sweep stopped it, or it never started); the
-conversation resumes on the next send either way (`session_status.process_state`).
+A live row also carries `process` (`session_status.process_state`; the values and
+the tool's words for them are `kiro_crew.session_process`): `live` while the session
+manager holds its process (`SessionManager.has_session` on the slot's effective key),
+`released` when it holds none (the idle sweep stopped it, or it never started); the
+conversation resumes on the next send either way. The third value, `kept`, exists
+only after a restart: a chat keeper kept the process running and the boot's adopt
+pass has not attached it yet (`chat_keeper_adopt.kept_by_a_keeper`;
+runtime-ownership.md, "What the adopting gateway rebuilds"). The row's `status` is
+still what this gateway knows (`idle` or `queued`), which for such a chat is
+nothing, so `kept` means wait.
 The MCP tool writes `released` on an `idle` or `queued` row's line, never on a
 `working` one: a turn admitted to a released worker reads `working` before its
-process exists.
+process exists. A `kept` row gets its own mark and line in place of `idle`: kept
+running through the restart, waiting for the app to reconnect, do not message it.
+A worker tab's frame carries the same value; the sidebar draws its "asleep" mark
+for `released` only.
 
 The row's `status` separates `working` / `queued` / `idle` / `closed` / `lost` /
 `unknown`. `queued` means an entry will start on its own: a queue holding only

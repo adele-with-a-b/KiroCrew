@@ -444,8 +444,9 @@ export interface ChatSlot extends TurnIdentityFields {
    * `session_create` and its first turn, which has no crew log to fold. */
   lineage_minted?: boolean
   /** A worker tab's process: held (`live`) or stopped by the idle sweep
-   * (`released`); the conversation resumes on the next message either way. */
-  process?: 'live' | 'released'
+   * (`released`); the conversation resumes on the next message either way.
+   * `kept` after a restart, until the app has reconnected to a chat that ran on. */
+  process?: 'live' | 'kept' | 'released'
   /** The user-owned "mute sessions it opens" rule. When true on a creating
    * session, every session it opens -- and anything those open, down the
    * `created_by` chain -- is muted for attention: no turn-done chime,

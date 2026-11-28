@@ -369,6 +369,11 @@ An `idle` or `queued` session with no process running (the idle sweep released
 it, or it never started) also says `released`. The next message starts a process
 for it and keeps its conversation.
 
+Right after the app restarts, a session that kept running through the restart
+says so until the app has reconnected to it: `kept running through the restart,
+waiting for the app to reconnect`. Wait and read the status again; do not message
+it. Its row's `process` is `kept`.
+
 `closed`, `lost` and `unknown` are why this tool exists rather than reading
 sessions one at
 a time. Live slots forget a session the moment it is closed or lost with the
