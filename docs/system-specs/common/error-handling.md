@@ -267,8 +267,8 @@ Notable terminal (non-retryable) classes:
   and the frame's trailing `data` repr is dropped from it.
 - **The model road is down**: `llm_helpers.model_road_down_cause(exc)` answers
   why an error says the chat's model account cannot be used at all, or `""`. It
-  is a fact about an error a turn has already ENDED on, never a retry verdict:
-  every arm above runs first and is unchanged, and no row wording depends on it.
+  is a fact about an error, never a retry verdict: every arm above runs first and
+  is unchanged. One row's wording reads it, the model-fallback notice (below).
   Three causes, the `credential_errors.MODEL_ROAD_*` values. `signed_out`:
   `acp_error_needs_sign_in` (an `AcpAuthRequired`, the `sign_in_needed` or
   `auth_required` tag, an expired-token `auth_error_code`).
@@ -287,9 +287,13 @@ Notable terminal (non-retryable) classes:
   verbatim (`user_worded` false, as `client_transport` raises a refused request).
   Curated prose is never read. A credential IAM has not propagated yet, a
   throttle, a plain 5xx, a spent usage limit and an unentitled model answer `""`.
-  Its one reader is the work ledger: a bound worker's dead turn is reported
+  It has two readers. The work ledger: a bound worker's dead turn is reported
   `blocked` for it (crew-mode.md, "A turn the model road ended is reported for
-  it").
+  it"). And the dashboard's fallback walk: when the retries a turn spent were the
+  model road and `agent.fallback_model` moves the chat to a candidate,
+  `_on_acp_transient_exhausted` writes the `model_account_fallback` notice, which
+  says the account could not sign in, in place of the row that calls the model
+  throttled (model-fallback.md, "Surfaces"). The walk itself does not read it.
 - **Preserved-thinking binding mismatch**: `AcpConversationBindingMismatch`
   (non-transient) means the stored native conversation carries thinking bound to
   another conversation prefix. A dashboard outer turn with no reply, thought or

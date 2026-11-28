@@ -327,10 +327,12 @@ def model_road_down_cause(exc: BaseException) -> str:
     Read from typed tags and the harness's own frame, never from Kiro Crew's wording:
     the frame is ``raw_detail`` when the message is curated, and the message itself
     only when it is the frame verbatim (``user_worded`` is false). It is no retry
-    verdict. A caller asks it once a turn has ENDED on *exc*; every retry arm runs
-    first and is unchanged, so a credential IAM has not propagated yet, which the
-    ladder absorbs, never reaches it. A spent usage limit, an unentitled model, a
-    throttle and a plain 5xx answer ``""``: the account works, or has its own remedy.
+    verdict. A caller asks it once a turn has ENDED on *exc*, or once the same-model
+    retries are spent on it (the dashboard's fallback walk words its row from the
+    answer); every retry arm runs first and is unchanged, so a credential IAM has not
+    propagated yet, which the ladder absorbs, never reaches it. A spent usage limit,
+    an unentitled model, a throttle and a plain 5xx answer ``""``: the account works,
+    or has its own remedy.
     """
     if acp_error_needs_sign_in(exc):
         return MODEL_ROAD_SIGNED_OUT

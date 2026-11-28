@@ -108,6 +108,14 @@ and each error surface must receive the same safe text.
   (`chat_turn/acp_recovery.py`) persists a notice and requeues the same message as a synthetic
   recovery item. The swap's condition excludes nested prompts. On exhaustion `_on_acp_error_card`
   (`chat_turn/turn_failures.py`) renders the slot-local walk in the terminal error.
+  The notice is one row per swap and names the model the chat was on, the candidate
+  it runs on, why, and how long: `model_throttled_fallback` ("until the primary
+  recovers"), or `model_account_fallback` when `llm_helpers.model_road_down_cause`
+  says the spent retries were the model account (a failed credential fetch reads
+  as a transient 5xx, so it walks the chain like a throttle). That row says the
+  account could not sign in and that the primary is tried again when the next turn
+  starts, which is what the restore below does. The walk, its budgets and the
+  restore are the same for both rows.
 - `subagent_manager/run_turn.py::_run_inner_impl`'s nested `_stream_with_transient_retry` follows the zero-activity branch,
   uses the shared candidate helper, and applies `annotate_model_fallback` to
   the completed result.
@@ -140,6 +148,18 @@ fallback selection from becoming a persistent user pin.
 together with the restore tests in
 `test/test_llm_helpers_fallback_restore.py`, pin the stale-record, explicit-pick, and backfill
 invariants.
+
+How long a dashboard fallback lasts, then: from the swap until the first
+prompt-sending turn that is not a recovery replay starts and the session accepts
+the primary again (`chat_turn/turn_dispatch_gates.py`). A refused restore keeps
+the fallback for that turn and is tried again at the next one; a person's pick in
+between clears the record and restores nothing. The cause ending does not end it:
+only that probe does.
+
+A session that refuses or withholds its model when it STARTS is not this walk and
+has no restore: it runs on the harness's default until the session starts again
+or a person picks a model (model-selection.md, "Where each choice comes from",
+the entitlement entries). `_say_refused_pin` writes its transcript row.
 
 ## Refusal fallback (`agent.refusal_fallback_model`)
 
@@ -550,7 +570,9 @@ the end-of-turn wording, and the handle, dispatcher and dashboard seams.
 `test/test_llm_helpers_fallback_chain.py` and
 `test/test_llm_helpers_fallback_restore.py` cover chain derivation, candidate
 selection, retry state, story handling, and unattended restore. `test/test_dashboard_chat.py`
-covers dashboard fallback and slot restore. `test/test_subagent_turn_resilience_retry.py`
+covers dashboard fallback and slot restore. `test/test_fallback_stamp_notice.py` covers the
+row each stamp writes: the account wording, the unchanged throttle row, and the row for a
+model a session refused at its start. `test/test_subagent_turn_resilience_retry.py`
 and `test/test_cron_gateway_integration_llm.py` cover sub-agent and gateway wiring.
 `test/test_config_loader_agent_section.py`, `test/test_role_models.py`, and
 `test/test_dashboard_handlers_core_coverage_agent_settings.py` cover configuration

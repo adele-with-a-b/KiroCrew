@@ -13862,6 +13862,8 @@
         "model_unavailable": "{{model}} não está disponível no momento — esta sessão está usando auto no lugar. Escolha outro modelo no compositor ou deixe como está: sua escolha de modelo é mantida e será usada automaticamente quando ele voltar a ser oferecido.",
         "compaction_continuing": "O contexto foi compactado no meio do turno e a resposta parou ali — continuando automaticamente.",
         "model_throttled_fallback": "{{primary}} está limitado — usando {{fallback}} até {{primary}} se recuperar.",
+        "model_account_fallback": "Não foi possível usar {{primary}}: a conta do modelo não conseguiu entrar. Este chat está usando {{fallback}} até o próximo turno começar, quando {{primary}} será tentado de novo.",
+        "model_pin_refused": "{{model}} não foi aceito quando esta sessão começou. Este chat está usando {{served}} até a sessão reiniciar ou você escolher um modelo.",
         "refusal_fallback_same_model": "A repetição automática foi ignorada porque o modelo de contingência (`agent.refusal_fallback_model`) é o mesmo do seu modelo atual — repetir no mesmo modelo esbarra no mesmo filtro. Escolha um modelo diferente para a contingência para que a repetição aconteça automaticamente.",
         "session_reconnecting": "O agente perdeu a sessão deste chat — reconectando…",
         "session_reconnect_give_up": "Não foi possível reconectar a sessão deste chat. Envie sua mensagem de novo ou inicie um novo chat se isso continuar acontecendo.",
