@@ -1812,6 +1812,11 @@ to this kind would store content no reader can parse.
   (5 s). Otherwise it does not open: an "Open <host>" button
   (`FrameLinkChip`), with the full URL as its title, appears at the frame's top
   right corner and takes focus, and the person's click on it opens the link.
+  For a frame in a floating layer that carries its own z-index (a pinned
+  link-preview card, the message-action popover) the button stacks one step
+  above that layer, read from the frame and its ancestors, and sits just outside
+  the layer's top right corner, or in the corner inside when there is no room
+  above: it is never drawn under the frame that asked.
   It has no timer, so a slow reader does not lose it. It goes on the next click
   or key elsewhere, on a scroll or resize, or on Escape. So a page that focuses its own frame cannot open a link on a click
   made in the dashboard or in another frame. Each web link gets its resolved URL
