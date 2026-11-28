@@ -766,6 +766,16 @@ def _crewmate_worker_prompt(agent: str, base_prompt: str, session_key: str) -> s
     return f"{worker_base}\n\n{addition}" if addition else worker_base
 
 
+def claude_default_prompt(prompt: str) -> str:
+    """The default agent's *prompt* as a Claude Code session reads it.
+
+    Only the ``kiro-cli`` transport name is respelled ``claude code``. The one
+    spelling for the message block and for the claude session head
+    (:mod:`kiro_crew.claude_session_head`), so the two agree byte for byte.
+    """
+    return prompt.replace("kiro-cli", "claude code").strip()
+
+
 def _resolve_agent_prompt(
     self,
     agent: str | None,
@@ -799,9 +809,7 @@ def _resolve_agent_prompt(
         # A custom agent keeps its own prompt on every provider.
         try:
             pp = ctx._prompt_path()
-            agent_prompt = _read_prompt_file(pp)
-            agent_prompt = agent_prompt.replace("kiro-cli", "claude code")
-            agent_prompt = agent_prompt.strip()
+            agent_prompt = claude_default_prompt(_read_prompt_file(pp))
         except Exception:
             agent_prompt = ""
     elif is_custom:

@@ -317,6 +317,9 @@ class ClaudeProcessSession(ProcessSession, Protocol):
     async def _prepare_claude_held_asks(self) -> None:
         """Read a Bot worker session's held-limit asks off the loop."""
 
+    async def _prepare_session_head(self) -> None:
+        """Render the session head and read back a restore's, off the loop."""
+
     def _refuse_claude_session_below_floor_before_spawn(self, installed_version: str) -> None:
         """Refuse an option-bound session the installed claude-agent-acp is too old for."""
 
@@ -365,6 +368,9 @@ async def prepare_claude_session(session: ClaudeProcessSession, argv: list[str])
     # A Bot worker's held-limit asks name its MCP servers, so they are read after
     # the array, and off the loop: the ledger and the execution record are files.
     await session._prepare_claude_held_asks()
+    # The session head is rendered, and the one a restore must send read back,
+    # here: both read files, and the request that carries it is built in memory.
+    await session._prepare_session_head()
     # Known before any process starts: an installed adapter below the
     # session-options floor cannot serve a session that needs them, so it is
     # refused here rather than after an adapter and a Claude Code process start.

@@ -186,6 +186,7 @@ def build_message(
     Returns:
         (full_message, hook_result) — hook_result may be a reply/modify/inject.
     """
+    from kiro_crew import claude_session_head as _claude_session_head
     from kiro_crew import context as ctx  # circular import: the facade imports this owner
     from kiro_crew import session_head as _session_head
     from kiro_crew.agent_sdk import context_provider_of
@@ -501,10 +502,16 @@ def build_message(
                             "copy in the restored history above.]\n"
                             + ctx._neutralize_structural_markers(_member_section)
                         )
-                if held_blocks.holds(session_key or "", held_blocks.CRITICAL_RULES, _resume_rules):
+                if held_blocks.holds(
+                    session_key or "", held_blocks.CRITICAL_RULES, _resume_rules
+                ) or _claude_session_head.in_system_prompt(
+                    context_provider, _session_head.RULES_KEY, _resume_rules
+                ):
                     # A Conductor's context already holds this header's rules
-                    # (``held_blocks``; they come back after a compaction), so a
-                    # resumed turn carries the refreshed date and identity alone.
+                    # (``held_blocks``; they come back after a compaction), and a
+                    # claude session head holds them as system text, which neither
+                    # a compaction nor a restore drops. So a resumed turn carries
+                    # the refreshed date and identity alone.
                     parts.append(session_ctx + _resume_member)
                 else:
                     parts.append(

@@ -14,7 +14,7 @@ from contextlib import aclosing  # noqa: F401
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncContextManager
 
-from kiro_crew import _facade_mirror, model_scope  # noqa: F401
+from kiro_crew import _facade_mirror, model_scope, session_head  # noqa: F401
 from kiro_crew.acp import client_keeper as _client_keeper
 from kiro_crew.acp import relaunch_reload as _relaunch_reload
 from kiro_crew.acp.client import (  # noqa: F401
@@ -1038,12 +1038,26 @@ class AcpProvider(LLMProvider):
     def native_context_documents(self) -> dict[str, str]:
         if isinstance(self._client, AcpSessionProvider):
             return self._client.native_context_documents
-        return {}
+        # The per-session client holds only its session head, and only the claude
+        # one records any (``kiro_crew.claude_session_head``).
+        return dict(self._client.session_head_documents)
 
     @property
     def session_head_held(self) -> bool:
-        # Only the shared runtime's session records a head (KAS, kiro_crew.session_head).
-        return isinstance(self._client, AcpSessionProvider) and self._client.session_head_held
+        # The shared runtime's session records a head on KAS, the per-session
+        # client on claude (``kiro_crew.session_head``); empty everywhere else.
+        if isinstance(self._client, AcpSessionProvider):
+            return self._client.session_head_held
+        return session_head.applied(self._client.session_head_documents)
+
+    @property
+    def session_head_in_system_prompt(self) -> bool:
+        # A per-session client records only blocks its harness holds as system
+        # text (claude). The shared runtime's record is KAS's, which rides the
+        # engine's first message.
+        if isinstance(self._client, AcpSessionProvider):
+            return False
+        return session_head.applied(self._client.session_head_documents)
 
     def note_user_message(self, text: str) -> None:
         # Only the shared runtime's session starts a KAS sign-in; the direct

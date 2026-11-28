@@ -44,6 +44,9 @@ class _Session:
     async def _prepare_claude_held_asks(self) -> None:
         self.steps.append(("held", self._seen()))
 
+    async def _prepare_session_head(self) -> None:
+        self.steps.append(("head", self._seen()))
+
     def _refuse_claude_session_below_floor_before_spawn(self, installed_version: str) -> None:
         self.steps.append((f"floor:{installed_version}", self._seen()))
 
@@ -61,6 +64,8 @@ def test_the_version_is_read_then_the_seed_then_side_denies_then_the_array_then_
         ("mcp", seen),
         # The held asks name the array's servers, so they are read after it.
         ("held", seen),
+        # The session head is rendered and read back off the loop, like the rest.
+        ("head", seen),
         ("floor:0.94.0", seen),
     ]
 

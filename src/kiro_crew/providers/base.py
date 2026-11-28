@@ -217,7 +217,19 @@ class LLMProvider(ABC):
         """Whether this live session's agent prompt carries a session head.
 
         Read from the launch record without any file access, so it is safe on the
-        event loop. False everywhere but a KAS session that recorded one.
+        event loop. False everywhere but a KAS or claude session that recorded one.
+        """
+        return False
+
+    @property
+    def session_head_in_system_prompt(self) -> bool:
+        """Whether the harness holds this live session's head as its system prompt,
+        where a compaction and a restore keep it, so the blocks it records
+        (``native_context_documents``) need no re-send after either.
+
+        False everywhere but a claude session that recorded one
+        (``kiro_crew.claude_session_head``). A KAS head rides the engine's first
+        message, and Crew re-sends its blocks as before.
         """
         return False
 

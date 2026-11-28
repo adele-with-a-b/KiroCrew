@@ -102,6 +102,87 @@ harness, and the `~/.kiro/crew/...` paths the prompt names are the real data hom
 (`KIROCREW_HOME`), which no `~/.claude/...` path stands in for. Pinned by
 `test/test_cc_prompt_branding.py`.
 
+### The session head
+
+A new dashboard chat of the default agent sends `[AGENT SYSTEM PROMPT]` and the
+dashboard `[CRITICAL RULES]` as ACP's `systemPrompt` on `session/new`, in `append`
+mode (after Claude Code's own preset, never `override`), instead of inside its first
+user message (`kiro_crew/claude_session_head.py`, the claude side of
+`session_head.py`). The adapter holds that text as the session's system prompt for
+the life of the session, so a compaction cannot summarize it away and a restored
+transcript does not have to carry it. Every other block stays in the message:
+learned corrections, response preferences and the reply-format rules are written
+from chat content or change within a session, and get no system authority.
+
+**What it holds.** The two blocks, folded as `build_message` folds the message and
+followed by the gateway note `session_head.head_prompt` adds. They are rendered by
+the functions that render them for the message (`agent_spec._render_contract` over
+`claude_default_prompt`, `_critical_rules_for`), with `session_head`'s own bot-name
+fill, so the head's bytes are the message's bytes. A claude chat carries no
+`[TOOL NAMES]` block, so its head holds none: a head never adds text the chat would
+not have had.
+
+**Who gets one.** A chat of the default agent under a dashboard key whose agent
+takes Crew's context (`claude_session_head.applies`), on an adapter whose
+`initialize` answer advertises `sessionCapabilities.systemPrompt`
+(`claude_session_head.advertised`; claude-agent-acp 0.109.0 does), with a trust
+root to sign the record with. Any other adapter is sent no field and records
+nothing, so its requests and messages are the ones it had before, byte for byte.
+A custom agent, a Conductor agent, a cron, channel or sub-agent start, a chat taken
+from the warm pool (`session.pool_size`) and the shared-runtime preview path send
+none.
+
+**The record.** `AcpClient.start` and `new_conversation` call the client's
+`_keep_session_head` once the session exists. The claude client writes, under
+`<data home>/claude-session-heads/`, `heads/<sha256 of the head>.json` (the two
+blocks, stored once per wording) and `sids/<session id>` (`<digest>:<signature>`).
+The data home is writable by an agent's shell and the text becomes system text, so
+the signature is an HMAC over the session id and the digest under a subkey derived
+from the gateway's trust root with its own domain label, as the session-token
+mapping is signed (`session_token_sig.py`). An entry that does not verify, an entry
+copied to another session's name, a head file that does not digest to its name, a
+symlink or a pipe at either name: each reads as no record. The newest 2,000 session
+entries are kept. In memory the client holds the same two blocks under
+`crew-head://agent-prompt` and `crew-head://critical-rules`
+(`AcpProvider.native_context_documents`), and only once the entry was written: a
+message never leaves out a block a later restore could not bring back.
+
+**A restore sends the recorded head, never a new render.** The adapter compares
+the `systemPrompt` of a `session/load` with the one a live session started under
+and replaces the session's Claude Code process when a byte differs, which restarts
+the query mid-chat. Shown on claude-agent-acp 0.109.0: the replaced process, and a
+session loaded on a new adapter process, still answer from the head the session was
+created with, whether the load carries a changed head or none (Claude Code's
+transcript records the session's system prompt). So a new render on a restore could
+cost a restart and change nothing, and `session/load` carries the head read back
+from the record, whatever the prompt file says now: a chat keeps the head it
+started with, and an updated prompt reaches new chats. A session with no record is
+sent none, its resumed turn carries the blocks as text, and its entry is removed, so the
+record always says what the session's last start or restore carried. A fork is
+restored under its source's head. A chat adopted from its keeper sends no request,
+and reads its entry.
+
+**What a message leaves out.** A block leaves a message only while the session's
+record equals it byte for byte (`session_head.holds`, the check the KAS head uses):
+
+| Turn | With a head | Without one, or with one that differs by a byte |
+|---|---|---|
+| first turn | neither block in the message | both in the message |
+| the turn after a compaction | no `[AGENT SYSTEM PROMPT]` re-send (`post_compaction_parts`) | the re-send |
+| a resumed turn | the refreshed date, identity and runtime alone: no `[SESSION RESUMED …]` header, whose body is the critical rules (the form a Conductor's held record already gives it) | the header with the rules; `[AGENT SYSTEM PROMPT]` too when the chat started under a head and the resumed session holds none (`session_head.resend_on_resume`) |
+
+The last two rows also need the provider to say its record is system text
+(`LLMProvider.session_head_in_system_prompt`, False on the base class and for the
+shared runtime): KAS's head rides the engine's first message, which a compaction
+does summarize, so a KAS chat keeps its re-sends. A Conductor chat's record of held
+blocks (`held_blocks.py`) and the head never leave a block out twice or send one
+twice: the resumed turn asks both, and either holding the rules is enough.
+
+`test/test_claude_session_head.py` pins the wire and the builder. The three
+behaviours (the model follows a rule found only in the head, still does after
+`/compact`, a load with the same bytes keeps the Claude Code process and one
+changed byte replaces it) were shown against claude-agent-acp 0.109.0.
+
 ### Stale cloud credentials
 
 When the adapter answers a prompt with `data.errorKind: cloud_credential_error`

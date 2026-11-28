@@ -22,6 +22,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from kiro_crew import claude_session_head as _claude_session_head
 from kiro_crew import pinned_fs
 from kiro_crew.acp import client_claude_seed as _client_claude_seed
 from kiro_crew.acp import client_claude_session as _client_claude_session
@@ -339,6 +340,12 @@ class ClaudeAcpClient(AcpClient, serves=ACP_BACKEND_CLAUDE):
     _ends_background_only_turns = True
     _harness_session_mcp_servers = _client_claude_session._harness_session_mcp_servers
     _harness_session_meta = _client_claude_session._harness_session_meta
+    # The session head as the adapter's ``systemPrompt``: ``kiro_crew.claude_session_head``.
+    _keeps_session_head = True
+    _prepare_session_head = _claude_session_head._prepare_session_head
+    _harness_session_params = _claude_session_head._harness_session_params
+    _keep_session_head = _claude_session_head._keep_session_head
+    session_head_documents = property(_claude_session_head._session_head_documents)
     _retry_after_model_substitution = _client_claude_session._retry_after_model_substitution
     _reissue_naming_model = _client_claude_session._reissue_naming_model
     _local_settings_exclusion = _client_claude_session._local_settings_exclusion

@@ -4472,7 +4472,8 @@ instead.
 **The session-head record.** Every claim runs `SessionManager.note_session_head`
 (`session_parts/claims.get_or_create`), so every surface that starts or resumes a
 session takes one path. A fresh session whose agent prompt carries a session head
-(the blocks KAS keeps in its first message, `session_head.py`) writes the mapped
+(the blocks KAS keeps in its first message, `session_head.py`, or the ones a claude
+session holds as its system prompt, `claude_session_head.py`) writes the mapped
 sid's `head_sid` field (`SessionMap.mark_sid_head`, written only over the sid the
 entry holds; `set` drops a field that names a different sid). A resumed one is told
 whether it started with a head (`LLMProvider.session_head_started`). `build_message`
