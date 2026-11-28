@@ -42,7 +42,9 @@ from kiro_crew.skills import SkillsLoader
 KEY = "dashboard:claude-head-chat"
 SID = "5c1f0c5e-0000-4000-8000-00000000a001"
 OTHER_SID = "5c1f0c5e-0000-4000-8000-00000000a002"
-AGENT_BLOCK = "[AGENT SYSTEM PROMPT]"
+# The block's opening line. The agent prompt names the bare marker in its own
+# prose, so a count of the marker alone counts that mention too.
+AGENT_BLOCK = "[AGENT SYSTEM PROMPT]\n"
 RULES_BLOCK = "[CRITICAL RULES"
 TOOLS_BLOCK = "[TOOL NAMES]"
 ADVERTISING = {
@@ -363,6 +365,9 @@ def test_a_record_an_agent_wrote_is_no_record(fixed_readings, record_home):
     (digest_file,) = [p for p in heads.iterdir() if p.stem != digest]
     digest_file.write_text(json.dumps(forged))
     assert claude_session_head.kept(SID) == ()
+    # The next start under that head writes the file again.
+    assert claude_session_head.keep(SID, blocks) is True
+    assert claude_session_head.kept(SID) == blocks
 
 
 def test_a_head_file_that_is_a_symlink_or_a_pipe_is_not_read(fixed_readings, record_home, tmp_path):

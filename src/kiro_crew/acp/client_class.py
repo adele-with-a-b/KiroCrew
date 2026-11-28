@@ -1086,7 +1086,7 @@ class AcpClient:
 
     #: Whether this backend records a session head once its session exists
     #: (``_keep_session_head``). Only the claude client does.
-    _keeps_session_head = False
+    _keeps_session_head: bool = False
 
     def _harness_session_params(self, *, restoring: bool) -> dict[str, Any]:
         """This backend's own top-level fields of a ``session/new`` (or, *restoring*,

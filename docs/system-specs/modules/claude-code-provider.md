@@ -133,7 +133,8 @@ from the warm pool (`session.pool_size`) and the shared-runtime preview path sen
 none.
 
 **The record.** `AcpClient.start` and `new_conversation` call the client's
-`_keep_session_head` once the session exists. The claude client writes, under
+`_keep_session_head` once the session exists (the claude client's members are
+bound from `acp/client_claude_head.py`). The claude client writes, under
 `<data home>/claude-session-heads/`, `heads/<sha256 of the head>.json` (the two
 blocks, stored once per wording) and `sids/<session id>` (`<digest>:<signature>`).
 The data home is writable by an agent's shell and the text becomes system text, so

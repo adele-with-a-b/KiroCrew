@@ -9,7 +9,7 @@ this class overrides the hook. Building ``AcpClient`` for the claude backend bui
 class (``AcpClient.__new__``), so no caller names it.
 
 The members are bound from the claude owner modules (``client_claude_session``,
-``client_claude_seed``, ``client_seed_ownership``) the way ``AcpClient`` binds its own
+``client_claude_seed``, ``client_seed_ownership``, ``client_claude_head``) the way ``AcpClient`` binds its own
 owners, and the class keeps the facade as its module for reprs, pickles and type hints.
 """
 
@@ -24,6 +24,7 @@ from typing import Any
 
 from kiro_crew import claude_session_head as _claude_session_head
 from kiro_crew import pinned_fs
+from kiro_crew.acp import client_claude_head as _client_claude_head
 from kiro_crew.acp import client_claude_seed as _client_claude_seed
 from kiro_crew.acp import client_claude_session as _client_claude_session
 from kiro_crew.acp import client_claude_turn as _client_claude_turn
@@ -46,6 +47,13 @@ class ClaudeAcpClient(AcpClient, serves=ACP_BACKEND_CLAUDE):
     # Fields first set by a member an owner module defines, declared so the class names them.
     _claude_shipped_restrictions: frozenset[tuple[str, str]]
     _adopted_substitute_model: str
+    # The session head (``kiro_crew.claude_session_head``): the one rendered for a
+    # new session, the recorded one a restore sends, the one the last request
+    # carried, and the blocks the live session is known to hold.
+    _session_head_new: _claude_session_head.Blocks
+    _session_head_kept: _claude_session_head.Blocks
+    _session_head_sent: _claude_session_head.Blocks
+    _session_head_held: dict[str, str]
 
     #: This backend seeds (and must re-seed) a per-session settings file.
     _seeds_local_settings = True
@@ -340,12 +348,16 @@ class ClaudeAcpClient(AcpClient, serves=ACP_BACKEND_CLAUDE):
     _ends_background_only_turns = True
     _harness_session_mcp_servers = _client_claude_session._harness_session_mcp_servers
     _harness_session_meta = _client_claude_session._harness_session_meta
-    # The session head as the adapter's ``systemPrompt``: ``kiro_crew.claude_session_head``.
+    # The session head as the adapter's ``systemPrompt`` (``client_claude_head``).
     _keeps_session_head = True
-    _prepare_session_head = _claude_session_head._prepare_session_head
-    _harness_session_params = _claude_session_head._harness_session_params
-    _keep_session_head = _claude_session_head._keep_session_head
-    session_head_documents = property(_claude_session_head._session_head_documents)
+    _prepare_session_head = _client_claude_head._prepare_session_head
+    _harness_session_params = _client_claude_head._harness_session_params
+    _keep_session_head = _client_claude_head._keep_session_head
+
+    @property
+    def session_head_documents(self) -> dict[str, str]:
+        return getattr(self, "_session_head_held", {})
+
     _retry_after_model_substitution = _client_claude_session._retry_after_model_substitution
     _reissue_naming_model = _client_claude_session._reissue_naming_model
     _local_settings_exclusion = _client_claude_session._local_settings_exclusion

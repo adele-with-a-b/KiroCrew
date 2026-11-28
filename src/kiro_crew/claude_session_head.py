@@ -10,6 +10,8 @@ It is the claude side of :mod:`kiro_crew.session_head` and adds no seam of its
 own: the blocks are rendered by the functions that render them for the first
 message, composed by ``session_head.head_prompt``, recorded under its keys, and
 left out of a message only by its byte-equal check (``session_head.holds``).
+The claude client's members that put the head on the wire and record it are in
+``kiro_crew.acp.client_claude_head``.
 
 A claude chat carries no ``[TOOL NAMES]`` block, so its head holds none: a head
 never adds text the chat would not have had.
@@ -36,7 +38,6 @@ record. With no trust root there is no head at all.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import json
@@ -46,12 +47,9 @@ import re
 import stat
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from kiro_crew import session_head
-
-if TYPE_CHECKING:
-    from kiro_crew.acp.client import ClaudeAcpClient
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +233,7 @@ def _read_head_file(path: Path) -> str | None:
         os.close(fd)
 
 
-def keep(session_id: str, blocks: Blocks) -> bool:
+def keep(session_id: object, blocks: Blocks) -> bool:
     """Record that *session_id*'s session carries *blocks*. Blocking; never raises.
 
     False when nothing was recorded (no trust root, an unusable id, a failed
@@ -256,8 +254,10 @@ def keep(session_id: str, blocks: Blocks) -> bool:
         heads.mkdir(parents=True, exist_ok=True)
         sids.mkdir(parents=True, exist_ok=True)
         head_file = heads / f"{digest}.json"
-        if _read_head_file(head_file) is None:
-            atomic_write(head_file, json.dumps(blocks), restrict_to_owner=True)
+        text = json.dumps(blocks)
+        # Written again when what sits at the name is not this head's text.
+        if _read_head_file(head_file) != text:
+            atomic_write(head_file, text, restrict_to_owner=True)
         atomic_write(
             sids / session_id,
             f"{digest}:{_signature(key, session_id, digest)}",
@@ -335,65 +335,3 @@ def _prepared(
     if not applies(agent, session_key) or signing_key() is None:
         return (), ()
     return head_blocks(agent, session_key), kept(restored) if restored else ()
-
-
-# ── The claude client's side (bound on ``ClaudeAcpClient``) ───────────────────
-
-
-async def _prepare_session_head(self: ClaudeAcpClient) -> None:
-    """Render a new session's head and read back the one a restore must send.
-
-    Off the loop, before the process starts: both read files, and the request
-    that carries the head is built in memory at a site shared with kiro-cli. A
-    fork is restored under its source's head, which is what the forked
-    transcript was written under.
-    """
-    fork = self._fork_request
-    restored = self._resume_session_id or (fork[0] if fork else None)
-    self._session_head_sent = ()
-    self._session_head_held = {}
-    self._session_head_new, self._session_head_kept = await asyncio.to_thread(
-        _prepared, self._agent, self._session_key, restored
-    )
-
-
-def _harness_session_params(self: ClaudeAcpClient, *, restoring: bool) -> dict[str, Any]:
-    """``systemPrompt`` for this session's request, or nothing.
-
-    A new session sends the head rendered for it; a restore sends the recorded
-    one and never a new render. In memory: ``_prepare_session_head`` did the
-    reads. The last request built is the one the session exists under, so it
-    decides what ``_keep_session_head`` records.
-    """
-    blocks: Blocks = ()
-    if advertised(self.initialize_result):
-        blocks = getattr(self, "_session_head_kept" if restoring else "_session_head_new", ())
-    self._session_head_sent = blocks
-    return {"systemPrompt": system_prompt(blocks)} if blocks else {}
-
-
-async def _keep_session_head(self: ClaudeAcpClient, *, adopted: bool = False) -> None:
-    """Record the head the live session holds, for the message builder (in
-    memory) and for the session's next restore (on disk).
-
-    A session is held to carry a head only when its entry was written, so a
-    message never leaves out a block a later restore could not bring back. A
-    restore that carried no head removes the entry: the session now runs
-    without one. *adopted*: the session is live in a process a previous gateway
-    started and no request was sent, so the entry says what it holds.
-    """
-    session_id = self._session_id
-    if adopted:
-        blocks = await asyncio.to_thread(kept, session_id)
-    else:
-        blocks = getattr(self, "_session_head_sent", ())
-        if blocks and not await asyncio.to_thread(keep, session_id, blocks):
-            blocks = ()
-        if not blocks and self._resumed:
-            await asyncio.to_thread(forget, session_id)
-    self._session_head_held = dict(blocks)
-
-
-def _session_head_documents(self: ClaudeAcpClient) -> dict[str, str]:
-    """The head blocks the live session's system prompt holds, by record key."""
-    return getattr(self, "_session_head_held", {})

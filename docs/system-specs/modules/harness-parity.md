@@ -625,8 +625,8 @@ head runs through and changes none: the blocks are composed by
 `session_head.head_prompt`, recorded under its keys, and left out of a message by
 `session_head.holds`. The gate is positive (H5) and is the adapter's own
 `initialize` answer (`sessionCapabilities.systemPrompt`), not a backend set: the
-hooks are bound on `ClaudeAcpClient`, and an adapter that does not advertise the
-field is sent none. The shared sites in `acp/client_start.py` call in-memory hooks
+hooks are bound on `ClaudeAcpClient` (`acp/client_claude_head.py`), and an adapter
+that does not advertise the field is sent none. The shared sites in `acp/client_start.py` call in-memory hooks
 (H13): `_harness_session_params` returns `{}` and `_keep_session_head` is not
 awaited (`_keeps_session_head` is False) on every other client, so their
 `session/new` and `session/load` are unchanged byte for byte. The two re-sends a
