@@ -58,7 +58,8 @@ export interface AnsweringSetup {
   keepAt: number | null
   /** The card's own key for the question it is at; '' or absent for none. A key
    *  only: never shown, never sent, never put in Crew's line. Crew keeps the
-   *  words the person kept in its line under it (`AnsweringMode.showKept`). */
+   *  words the person kept in its line under it, and the ones they left unkept
+   *  there (`AnsweringMode.showLine`). */
   question?: string
 }
 

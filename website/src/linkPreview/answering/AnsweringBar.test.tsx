@@ -174,6 +174,20 @@ describe('AnsweringBar', () => {
     expect(told.at(-1)).toEqual({ type: 'answering', event: { kind: 'kept', text: 'yes, after lunch, at two', rev: mode.state?.lineRev } })
   })
 
+  it('typing they left at a question is in Crew’s line again when the card comes back to it', () => {
+    const at = (question: string) => act(() => {
+      mode.onFrameMessage(frame, { type: 'answering', op: 'update', invocation: 1, setup: { question } }, null, () => {})
+    })
+    enter()
+    at('q1')
+    fireEvent.change(line(), { target: { value: 'half an ans' } })
+    at('q2')
+    expect(line().value).toBe('')
+    at('q1')
+    expect(line().value).toBe('half an ans')
+    expect(document.activeElement).toBe(line())
+  })
+
   it('Escape leaves the mode and sends nothing', async () => {
     enter()
     hand('Q1a go', 1)

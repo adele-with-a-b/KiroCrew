@@ -1614,18 +1614,19 @@ answer kept so far in one press:
 - Going back to a kept answer (level 23). Name the question your card is at with
   `question`, your own key for it (a string of at most 64 characters, e.g. the
   label's id; never shown and never sent), in `enter(setup)` and in
-  `update({ question })` each time the card moves. Crew keeps, under that key, the
-  words the person kept in its line while this mode is on. When `update` names
-  another question Crew holds words for, Crew's line shows them again for editing,
-  and you are told that line as a `{ kind: 'draft', text, rev }`: hand your message
-  again, as after any draft. Enter there keeps the edited words (`kept`); Enter on
-  an emptied line forgets them. A question with nothing kept leaves the line as it
-  was, except that an untouched copy Crew had put there is emptied. Naming the
+  `update({ question })` each time the card moves. Crew's line then goes with the
+  question. While this mode is on Crew keeps, under that key, the words the person
+  kept in its line (Enter), and the words they typed there and had not kept when
+  your card moved on. When `update` names another question, Crew's line shows what
+  they left unkept at it, else the words they kept at it, else nothing, and when
+  the line changed you are told it as a `{ kind: 'draft', text, rev }`: hand your
+  message again, as after any draft. Words typed and not kept are no answer: you
+  are told `kept` only on their Enter. Enter keeps the line's words and drops the
+  unkept ones for that question; Enter on an emptied line forgets both. Naming the
   same question again changes nothing. You supply the key only: no call puts text
   in Crew's line, and what Shift+Enter sends is still the text you handed, as the
-  preview shows it. Words typed and not kept are replaced when the card moves to
-  a question that has kept words. Without `question`, or on a dashboard older
-  than level 23 (which ignores it), the line starts empty at every question.
+  preview shows it. Without `question` the line is one line for the whole mode, as
+  at level 22; a dashboard older than level 23 ignores `question`.
 - No message from the card ever sends: the card cannot press, and a key or click the
   card's own frame saw is never Crew's. The mode ends with nothing sent on Escape
   (`escaped`), on `card.answering.leave()` (`left`), when the chat on screen changes

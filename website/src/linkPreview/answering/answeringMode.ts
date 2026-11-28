@@ -108,9 +108,10 @@ export class AnsweringMode {
    *  named (`setup.question`) when they kept them. Written only from the line, in
    *  `keep`: a card names a key, never the words. Gone with the mode. */
   private readonly keptLines = new Map<string, string>()
-  /** The kept words Crew last put back in the line (`showKept`), to tell a line
-   *  that still holds them untouched from one the person typed. */
-  private shownCopy: string | null = null
+  /** The words the person typed in Crew's line and had not kept when the card
+   *  left a question, by that question's key ('' while the card names none).
+   *  Written only from the line, in `showLine`. Gone with the mode. */
+  private readonly drafts = new Map<string, string>()
 
   constructor(private readonly deps: ModeDeps) {}
 
@@ -212,7 +213,7 @@ export class AnsweringMode {
         if (!s || s.frame !== frame) { reply('not_on'); return }
         this.patch({ setup: { ...s.setup, ...msg.setup } })
         reply(true)
-        this.showKept(s.setup.question ?? '')
+        this.showLine(s.setup.question ?? '')
         return
       }
       case 'hand': {
@@ -247,8 +248,9 @@ export class AnsweringMode {
   // -- Crew's own line, buttons and keys. Called only from the person's events
   //    on Crew's page (`AnsweringBar.tsx`).
 
-  /** The person changed the text in Crew's answer line (or `showKept` put their
-   *  own kept words back in it): a new line number, told to the card as a draft. */
+  /** The person changed the text in Crew's answer line (or `showLine` put their
+   *  own words for a question back in it): a new line number, told to the card
+   *  as a draft. */
   setLine(text: string): void {
     const s = this.s
     if (!s || s.status === 'sending') return
@@ -263,36 +265,35 @@ export class AnsweringMode {
     const s = this.s
     if (!s || s.status === 'sending') return
     // Crew's own copy of what they kept for the question the card is at; an
-    // emptied line kept forgets it.
-    const question = s.setup.question
+    // emptied line kept forgets it. Kept words are no draft any more.
+    const question = s.setup.question ?? ''
     if (question && s.line) this.keptLines.set(question, s.line)
-    else if (question) this.keptLines.delete(question)
-    this.shownCopy = null
+    else this.keptLines.delete(question)
+    this.drafts.delete(question)
     const lineRev = s.lineRev + 1
     this.patch({ line: '', lineRev, note: null })
     this.relay(s, { kind: 'kept', text: s.line, rev: lineRev }, by)
   }
 
   /**
-   * The card named another question than `before` (`update`): when Crew holds
-   * words the person kept for it in this mode, Crew's line shows them, to edit.
-   * They are Crew's copy of what was typed in this line; the card supplies the
-   * key and nothing else. A question with none: the line empties when it still
-   * holds a copy Crew put there untouched, and otherwise stays as the person
-   * left it, as before. The change is a new line number, so a message handed
-   * for the older line is not sent until the card hands again.
-   * shortcut: words typed and not kept are replaced by the kept ones on a move to
-   * a kept question; keep a draft per question if that proves to lose work.
+   * The card named another question than `before` (`update`): Crew's line goes
+   * with the question. What the line holds is first put by as the draft of the
+   * question they are leaving (none when the line is empty or still the words
+   * kept there, so an emptied draft falls back to the kept words). The line then
+   * shows, for the new question, the draft they left there, else the words they
+   * kept there, else nothing. Both are Crew's copies of what was typed in this
+   * line; the card supplies the key and nothing else. A changed line is a new
+   * line number, so a message handed for the older line is not sent until the
+   * card hands again.
    */
-  private showKept(before: string): void {
+  private showLine(before: string): void {
     const s = this.s
     if (!s || s.status === 'sending') return
     const question = s.setup.question ?? ''
     if (question === before) return
-    const copy = question ? this.keptLines.get(question) : undefined
-    const untouched = this.shownCopy !== null && s.line === this.shownCopy
-    this.shownCopy = copy ?? null
-    const text = copy ?? (untouched ? '' : s.line)
+    if (s.line && s.line !== this.keptLines.get(before)) this.drafts.set(before, s.line)
+    else this.drafts.delete(before)
+    const text = this.drafts.get(question) ?? this.keptLines.get(question) ?? ''
     if (text !== s.line) this.setLine(text)
   }
 
@@ -300,7 +301,7 @@ export class AnsweringMode {
   private forget(): void {
     this.press = null
     this.keptLines.clear()
-    this.shownCopy = null
+    this.drafts.clear()
   }
 
   /** A key the card declared, pressed in Crew's line or on the page. */

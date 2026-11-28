@@ -90,17 +90,6 @@ describe('the answering mode: going back to a kept answer', () => {
     expect(lastEvent()).toEqual({ kind: 'draft', text: '', rev: mode.state?.lineRev })
   })
 
-  it('words typed and not kept stay in the line on a move to a question with nothing kept', () => {
-    enter('q1')
-    answerWith('yes')
-    at('q2')
-    mode.setLine('half an ans')
-    const rev = mode.state?.lineRev
-    at('q3')
-    expect(line()).toBe('half an ans')
-    expect(mode.state?.lineRev).toBe(rev)
-  })
-
   it('Enter on an emptied line forgets the copy', () => {
     enter('q1')
     answerWith('yes')
@@ -124,6 +113,131 @@ describe('the answering mode: going back to a kept answer', () => {
     card('update', { place: 'still Q1a' })
     expect(line()).toBe('ye')
     expect(mode.state?.lineRev).toBe(rev)
+  })
+})
+
+describe('the answering mode: words typed and not kept wait at their question', () => {
+  it('typing at one question, a look at an answered one, and back: the typing is there again', () => {
+    enter('q1')
+    answerWith('yes')
+    at('q2')
+    mode.setLine('half an ans')
+    at('q1')
+    expect(line()).toBe('yes')
+    at('q2')
+    expect(line()).toBe('half an ans')
+    expect(lastEvent()).toEqual({ kind: 'draft', text: 'half an ans', rev: mode.state?.lineRev })
+  })
+
+  it('the next question starts empty, and the typing left behind is back on return', () => {
+    enter('q1')
+    mode.setLine('half an ans')
+    at('q2')
+    expect(line()).toBe('')
+    expect(lastEvent()).toEqual({ kind: 'draft', text: '', rev: mode.state?.lineRev })
+    mode.setLine('other')
+    at('q1')
+    expect(line()).toBe('half an ans')
+    at('q2')
+    expect(line()).toBe('other')
+  })
+
+  it('typing over a shown kept answer and moving away keeps the edit for the return; the kept words stay until Enter', () => {
+    enter('q1')
+    answerWith('yes')
+    at('q2')
+    at('q1')
+    mode.setLine('yes, but later')
+    at('q2')
+    expect(line()).toBe('')
+    at('q1')
+    expect(line()).toBe('yes, but later')
+    // Not kept: no `kept` was told for it, and emptying the edit shows the kept words again.
+    expect(events().filter((e) => e.kind === 'kept')).toEqual([{ kind: 'kept', text: 'yes', rev: 2 }])
+    mode.setLine('')
+    at('q2')
+    at('q1')
+    expect(line()).toBe('yes')
+  })
+
+  it('Enter makes the typing the kept words and leaves no draft behind', () => {
+    enter('q1')
+    answerWith('yes')
+    at('q2')
+    mode.setLine('ski')
+    at('q1')
+    at('q2')
+    expect(line()).toBe('ski')
+    mode.setLine('skip')
+    mode.keep()
+    at('q1')
+    at('q2')
+    expect(line()).toBe('skip')
+    // The kept words are what an emptied edit falls back to: the older draft is gone.
+    mode.setLine('')
+    at('q1')
+    at('q2')
+    expect(line()).toBe('skip')
+  })
+
+  it('Enter on an emptied line forgets the draft and the kept words', () => {
+    enter('q1')
+    answerWith('yes')
+    at('q2')
+    at('q1')
+    mode.setLine('yes, but later')
+    at('q2')
+    at('q1')
+    expect(line()).toBe('yes, but later')
+    mode.setLine('')
+    mode.keep()
+    at('q2')
+    at('q1')
+    expect(line()).toBe('')
+  })
+
+  it('typing while the card names no question waits there too', () => {
+    enter()
+    mode.setLine('early words')
+    at('q1')
+    expect(line()).toBe('')
+    at('')
+    expect(line()).toBe('early words')
+  })
+
+  it('a shown draft is a new line: a message handed for the older line is not sent until the card hands again', async () => {
+    enter('q1')
+    answerWith('yes')
+    at('q2')
+    mode.setLine('half an ans')
+    at('q1')
+    hand('Q1a yes', 1)
+    at('q2')
+    expect(line()).toBe('half an ans')
+    await mode.pressSend()
+    expect(sends).toEqual([])
+    expect(mode.state?.note).toBe('updating')
+    hand('Q1a yes', 1)
+    await mode.pressSend()
+    expect(sends).toEqual([{ text: 'Q1a yes', count: 1, app: 'Answer Cards' }])
+  })
+
+  it.each([
+    ['Escape', () => { mode.escape() }],
+    ['the card’s leave', () => card('leave')],
+    ['the card entering again', () => enter('q2')],
+  ])('the drafts end with the mode: after %s nothing comes back', (_name, end) => {
+    enter('q1')
+    mode.setLine('half an ans')
+    at('q2')
+    expect(line()).toBe('')
+    at('q1')
+    expect(line()).toBe('half an ans')
+    at('q2')
+    end()
+    enter('q2')
+    at('q1')
+    expect(line()).toBe('')
   })
 })
 
