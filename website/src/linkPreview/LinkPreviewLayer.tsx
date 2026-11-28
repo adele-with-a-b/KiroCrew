@@ -176,6 +176,9 @@ export default function LinkPreviewLayer() {
       // A card's answering-mode messages; none of them sends (`answeringMode.ts`).
       onAnswering: (frame, msg, gate, reply) => answering.onFrameMessage(frame, msg, gate, reply),
       onCardGone: (frame) => answering.cardGone(frame),
+      // A step or jump of the card whose answering mode is on, right after Crew
+      // relayed the person's Enter, declared key or button to it: one move a press.
+      relayedPress: (frame) => answering.takePress(frame),
     })
     hostRef.current = host
     // A popover a press on a label would close waits while that click may still open it.

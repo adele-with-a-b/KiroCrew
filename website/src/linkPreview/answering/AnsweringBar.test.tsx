@@ -124,6 +124,70 @@ describe('AnsweringBar', () => {
     expect(sends).toEqual([])
   })
 
+  it('Enter, a declared key, keep, next and a card button are each noted as the person’s press for the card, once', async () => {
+    enter()
+    expect(mode.takePress(frame)).toBe(false)
+    const presses: (() => Promise<void> | void)[] = [
+      () => press(line(), { key: 'Enter' }),
+      () => press(line(), { key: 'Tab', code: 'Tab' }),
+      () => press(document.body, { key: 'Tab', code: 'Tab' }),
+      () => { fireEvent.click(screen.getByTestId('answering-keep')) },
+      () => { fireEvent.click(screen.getAllByTestId('answering-button')[1]) },
+    ]
+    for (const p of presses) {
+      await p()
+      expect(mode.takePress(frame)).toBe(true)
+      expect(mode.takePress(frame)).toBe(false)
+    }
+    // Typing, Shift, and opening the whole message are not presses for the card.
+    fireEvent.change(line(), { target: { value: 'yes' } })
+    await press(document.body, { key: 'Shift', shiftKey: true })
+    expect(mode.takePress(frame)).toBe(false)
+  })
+
+  it('a key or click that is not the person’s is told to the card but noted as no press', async () => {
+    enter()
+    trust.all = false
+    await press(line(), { key: 'Enter' })
+    await press(line(), { key: 'Tab', code: 'Tab' })
+    fireEvent.click(screen.getByTestId('answering-keep'))
+    fireEvent.click(screen.getAllByTestId('answering-button')[1])
+    expect(told.map((m) => (m.type === 'answering' ? m.event.kind : m.type))).toEqual(['kept', 'key'])
+    expect(mode.takePress(frame)).toBe(false)
+  })
+
+  it('back at a question they answered, Crew’s line holds the words they kept there, to edit', async () => {
+    const at = (question: string) => act(() => {
+      mode.onFrameMessage(frame, { type: 'answering', op: 'update', invocation: 1, setup: { question } }, null, () => {})
+    })
+    enter()
+    at('q1')
+    fireEvent.change(line(), { target: { value: 'yes, after lunch' } })
+    await press(line(), { key: 'Enter' })
+    at('q2')
+    expect(line().value).toBe('')
+    at('q1')
+    expect(line().value).toBe('yes, after lunch')
+    expect(document.activeElement).toBe(line())
+    fireEvent.change(line(), { target: { value: 'yes, after lunch, at two' } })
+    await press(line(), { key: 'Enter' })
+    expect(told.at(-1)).toEqual({ type: 'answering', event: { kind: 'kept', text: 'yes, after lunch, at two', rev: mode.state?.lineRev } })
+  })
+
+  it('typing they left at a question is in Crew’s line again when the card comes back to it', () => {
+    const at = (question: string) => act(() => {
+      mode.onFrameMessage(frame, { type: 'answering', op: 'update', invocation: 1, setup: { question } }, null, () => {})
+    })
+    enter()
+    at('q1')
+    fireEvent.change(line(), { target: { value: 'half an ans' } })
+    at('q2')
+    expect(line().value).toBe('')
+    at('q1')
+    expect(line().value).toBe('half an ans')
+    expect(document.activeElement).toBe(line())
+  })
+
   it('Escape leaves the mode and sends nothing', async () => {
     enter()
     hand('Q1a go', 1)

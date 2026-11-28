@@ -32,5 +32,13 @@
  * answering mode, where Crew draws the answer line and holds the keys; the card
  * hands over the message text, and the person's Shift+Enter, received by Crew,
  * sends it once as their message and ends the mode.
+ * Level 22 lets the card whose answering mode is on move while the person answers:
+ * right after Crew tells it their Enter (`kept`), a declared `key` or a `button`,
+ * one `card.step` or `card.jumpTo` counts as their press, though focus is in
+ * Crew's line.
+ * Level 23 adds the answering setup's `question`, the card's own key for the
+ * question it is at: Crew keeps the words the person kept in its line under that
+ * key, and the words they typed there and had not kept, and shows them in the
+ * line again when the card comes back to it.
  */
-export const APP_SDK_LEVEL = 21
+export const APP_SDK_LEVEL = 23

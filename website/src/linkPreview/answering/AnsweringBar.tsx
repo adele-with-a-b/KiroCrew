@@ -64,11 +64,11 @@ function takeKey(mode: AnsweringMode, e: KeyboardEvent, inLine: boolean): boolea
   if (press === 'keep') {
     // On the page, Enter on a focused button or link stays its own click.
     if (!inLine) return false
-    if (!e.repeat) mode.keep()
+    if (!e.repeat) mode.keep(e)
     return true
   }
   const name = keyName(e)
-  return name !== null && mode.key(name)
+  return name !== null && mode.key(name, e)
 }
 
 export default function AnsweringBar({ mode }: { mode: AnsweringMode }) {
@@ -140,7 +140,7 @@ function AnsweringOn({ mode, s }: { mode: AnsweringMode; s: ModeState }) {
       onClick={(e) => {
         if (!isPersonPress(e.nativeEvent)) return
         if (e.shiftKey) void mode.pressSend()
-        else mode.keep()
+        else mode.keep(e.nativeEvent)
       }}
     >
       {keepLabel}
@@ -154,7 +154,7 @@ function AnsweringOn({ mode, s }: { mode: AnsweringMode; s: ModeState }) {
       data-testid="answering-button"
       disabled={sending}
       className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg px-2.5 py-1 text-[13px] text-text hover:border-accent"
-      onClick={(e) => { if (isPersonPress(e.nativeEvent)) mode.button(b.id) }}
+      onClick={(e) => { if (isPersonPress(e.nativeEvent)) mode.button(b.id, e.nativeEvent) }}
     >
       {b.label}
       {b.hint ? <kbd className="rounded border border-border px-1 text-[11px] font-mono text-muted">{b.hint}</kbd> : null}
