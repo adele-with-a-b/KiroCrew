@@ -59,8 +59,11 @@ export type LinkPreviewNav =
   | { kind: 'open'; slot: string; appName: string; target: AppOpenTarget; payload: unknown; via: 'link' | 'status' | 'control' }
   /** Scroll to `target`; `from` is the message the card's text sits in. A jump
    *  from a session control has no such message: `from: 'view'` keeps the view
-   *  on screen now as the Back pill's spot, and `onDone` is told how it ended. */
-  | { kind: 'jump'; slot: string; target: MessageRef; from?: MessageRef | 'view'; onDone?: (o: JumpOutcome) => void }
+   *  on screen now as the Back pill's spot, and `onDone` is told how it ended.
+   *  A `'view'` jump that landed also hands back `putBack`: the chat as it was
+   *  before the jump (its place, its Back pill, no highlight), for a caller
+   *  that then fails to find what it came for in the message. */
+  | { kind: 'jump'; slot: string; target: MessageRef; from?: MessageRef | 'view'; onDone?: (o: JumpOutcome, putBack?: () => void) => void }
 
 /** `true` took it, `false` not mine, a refusal: mine, and refused. */
 type Listener = (req: LinkPreviewNav) => boolean | OpenRefusal

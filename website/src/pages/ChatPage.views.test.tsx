@@ -18,6 +18,7 @@ const seen = vi.hoisted(() => ({
   pinnedPrompt: null as null | { onToggleExpanded: () => void; onJump: () => void },
   toolGroups: [] as Array<{ onApprove: (a: string) => Promise<void>; pendingPermCount: number; count: number }>,
   welcome: null as null | { agentWelcome?: string },
+  shell: null as null | { loadingOlder: boolean; spinnerNearTop?: boolean; spinnerBelow?: () => Element | null },
 }))
 
 vi.mock('./chat/crew-window/CrewChatWindow', () => ({
@@ -47,7 +48,12 @@ vi.mock('./chat', async (orig) => ({
   PinnedPrompt: (p: { onToggleExpanded: () => void; onJump: () => void }) => { seen.pinnedPrompt = p; return null },
   ChatFooter: () => null,
 }))
-vi.mock('./chat/TranscriptScrollShell', () => ({ default: ({ children, belowRows }: { children: ReactNode; belowRows?: ReactNode }) => <div data-testid="shell">{children}{belowRows}</div> }))
+vi.mock('./chat/TranscriptScrollShell', () => ({
+  default: (p: { children: ReactNode; belowRows?: ReactNode; loadingOlder: boolean; spinnerNearTop?: boolean; spinnerBelow?: () => Element | null }) => {
+    seen.shell = p
+    return <div data-testid="shell">{p.children}{p.belowRows}</div>
+  },
+}))
 vi.mock('./chat/CollapsibleToolGroup', () => ({
   default: (p: { onApprove: (a: string) => Promise<void>; pendingPermCount: number; count: number; children: ReactNode }) => {
     seen.toolGroups.push(p); return <div data-testid="tool-group">{p.children}</div>
@@ -303,6 +309,34 @@ describe('ChatTranscriptView', () => {
     expect((await screen.findByTestId('chat-preparing-catch-up', undefined, { timeout: LAZY_BUBBLE_TIMEOUT_MS })).querySelector('.message-bubble')).toHaveTextContent(caption)
     rerender(<ChatTranscriptView {...base([], { currentSlot: slot(false) })} />)
     await waitFor(() => expect(screen.queryByTestId('chat-preparing-catch-up')).toBeNull())
+  })
+
+  // The transcript's loading sign (`TranscriptScrollShell`, `older-messages-loading`)
+  // shows for a page in flight near the top; a jump that is still looking for
+  // its message shows it wherever the reader is, and between its pages too.
+  it('shows the loading sign while a jump is still looking for its message, wherever the reader is', () => {
+    const away = { loadingOlder: false, spinnerNearTop: false }
+    const { rerender } = render(<ChatTranscriptView {...base([], away)} />)
+    expect([seen.shell?.loadingOlder, seen.shell?.spinnerNearTop]).toEqual([false, false])
+    rerender(<ChatTranscriptView {...base([], { ...away, jumpLooking: true })} />)
+    expect([seen.shell?.loadingOlder, seen.shell?.spinnerNearTop]).toEqual([true, true])
+    rerender(<ChatTranscriptView {...base([], { ...away, jumpLooking: false })} />)
+    expect([seen.shell?.loadingOlder, seen.shell?.spinnerNearTop]).toEqual([false, false])
+  })
+
+  // A reader below the first prompt has the pinned prompt band over the sign's
+  // place by the header: a jump that looks names the band of its own pane, so
+  // the sign sits under it (`TranscriptScrollShell`, `spinnerBelow`).
+  it("names its pane's pinned prompt band to the loading sign only while a jump looks", () => {
+    const column = document.createElement('div')
+    const band = column.appendChild(document.createElement('div'))
+    band.setAttribute('data-pinned-prompt-band', '')
+    const scroller = column.appendChild(document.createElement('div'))
+    const props = (jumpLooking: boolean) => base([], { jumpLooking, scrollerRef: { current: scroller } })
+    const { rerender } = render(<ChatTranscriptView {...props(false)} />)
+    expect(seen.shell?.spinnerBelow).toBeUndefined()
+    rerender(<ChatTranscriptView {...props(true)} />)
+    expect(seen.shell?.spinnerBelow?.()).toBe(band)
   })
 
   it("hands the welcome page the chat's agent greeting from the slot", () => {

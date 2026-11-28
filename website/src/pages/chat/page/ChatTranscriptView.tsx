@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import type { RefObject, Dispatch, SetStateAction, ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import type { ChatNavigationData } from '../../../hooks/useChatNavigation'
@@ -50,6 +51,10 @@ interface ChatTranscriptViewProps {
   cursorIsForActiveSlot: boolean
   kiroCrewVersion: string
   loadingOlder: boolean
+  /** A jump is still looking for its message (paging older history in, or
+   *  waiting for a landed page to draw): the loading sign shows wherever the
+   *  reader is, since they asked for it. */
+  jumpLooking?: boolean
   olderFailed: boolean
   setTurnDisclosureFor: (key: string, expanded: boolean) => void
   slotHasMore: boolean
@@ -109,7 +114,7 @@ interface ChatTranscriptViewProps {
  * The transcript column: the welcome hero, or the turn minimap and the scroll shell with its rows, the earlier-messages bar, the measurement farm, the footer, the pulse survey and the tail spacer; and the restore skeleton.
  */
 export default function ChatTranscriptView({
-  embedded, popout, activeSlot, appToolCallIds, titleInTopbar, workerBreadcrumb = false, activityOpen, completedTurnCount, cursorIsForActiveSlot, kiroCrewVersion, loadingOlder, olderFailed, setTurnDisclosureFor, slotHasMore,
+  embedded, popout, activeSlot, appToolCallIds, titleInTopbar, workerBreadcrumb = false, activityOpen, completedTurnCount, cursorIsForActiveSlot, kiroCrewVersion, loadingOlder, jumpLooking = false, olderFailed, setTurnDisclosureFor, slotHasMore,
   slotLoading, slotRunning, slotState, environmentStart, slotStopping, slotSwitchTarget, turnDisclosure, turnRowMayBeLive, setInput, isWelcomeState, crewModeOn, openTaskBoard, chatConfig, scrollerRef, bindScroller, handleSurveyLayoutChange,
   onScrollPin, pinned, decideRow, currentSlot, projectDir = null, regenerating, sendUnconfirmed, dockH, lastRole, streamTick, footerActivityKey, footerSentHere = false, footerToolsReturned = false, toggleAct, renderedDisplayItems, stableMsgKey, virtualKey, handleLoadEarlier,
   spinnerNearTop, virt, visibleDisplayItems, chatNav, navigateToTurn, turnStepAnnouncement, renderFarmItem, renderMessage, renderTurnItem,
@@ -119,6 +124,9 @@ export default function ChatTranscriptView({
   // hides the rows behind the skeleton: loaded is not yet visible.
   // The scroller is what the on-screen backstop probes.
   useMarkTranscriptShown(activeSlot, !slotLoading && !virt.restoreGate && !isWelcomeState && renderedDisplayItems.length > 0, () => scrollerRef.current)
+  // The pinned prompt band of this pane: it is in the title overlay, beside the
+  // scroller in the chat column (`ChatTitleOverlay`, `data-pinned-prompt-band`).
+  const pinnedPromptBand = useCallback(() => scrollerRef.current?.parentElement?.querySelector('[data-pinned-prompt-band]') ?? null, [scrollerRef])
   return (
     <ChatProjectDirCtx.Provider value={projectDir}>
       {isWelcomeState ? (
@@ -183,8 +191,11 @@ export default function ChatTranscriptView({
         onScrollerElement={bindScroller}
         onScroll={onScrollPin}
         virt={virt}
-        loadingOlder={loadingOlder}
-        spinnerNearTop={spinnerNearTop}
+        loadingOlder={loadingOlder || jumpLooking}
+        spinnerNearTop={spinnerNearTop || jumpLooking}
+        // A jump shows the sign to a reader anywhere in the chat, where the
+        // pinned prompt band is up and paints over the sign's place.
+        spinnerBelow={jumpLooking ? pinnedPromptBand : undefined}
         // The strip of the scroller the floating dock covers, plus
         // DOCK_CLEARANCE_PX, alongside TRANSCRIPT_TAIL_SPACER_PX. Unlike
         // the tail spacer this one also applies to a transcript short

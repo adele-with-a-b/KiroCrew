@@ -17,7 +17,7 @@
  * dockClearance geometry stays with the page, which supplies the floating
  * dock's clearance padding via `scrollerStyle`.
  */
-import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Loader } from 'lucide-react'
 import { i18nT } from '../../i18n/t'
 import { afterSlide, forgetAfterSlide, holdReadingPosition, markSlideSettling, onReleaseReadingPosition, slideHeld, watchPanelSlide } from '../../utils/panelSlide'
@@ -241,12 +241,20 @@ export interface TranscriptVirtWiring {
   offsetAfter: number
 }
 
+/** The loading sign's own place: `top-16`, under the overlay header. */
+const SIGN_TOP_PX = 64
+/** The gap kept between an overlay the sign sits under (`spinnerBelow`) and the
+ *  sign's box: with the box's own `py-2` the glyph clears the 24px fade that
+ *  hangs off the pinned prompt band. */
+const SIGN_CLEAR_PX = 16
+
 export default function TranscriptScrollShell({
   scrollerRef,
   onScroll,
   virt,
   loadingOlder,
   spinnerNearTop,
+  spinnerBelow,
   scrollerStyle,
   headerSpacer = true,
   aboveRows,
@@ -264,6 +272,11 @@ export default function TranscriptScrollShell({
    *  has zero layout footprint, so a host that does not track this cannot be
    *  hurt by it. */
   spinnerNearTop?: boolean
+  /** An overlay that may paint over the loading sign's place by the header
+   *  (the chat page's pinned prompt band, which is up for a reader anywhere
+   *  below the first prompt): when it reaches the sign, the sign sits under it
+   *  instead. Read once as the sign comes up. Omitted: the sign's own place. */
+  spinnerBelow?: () => Element | null
   /** Host-owned geometry merged onto the scroller (e.g. the fade-band clearance padding). */
   scrollerStyle?: React.CSSProperties
   /** Reserve the main chat's overlay-header band (h-16) above the rows. On by
@@ -287,6 +300,19 @@ export default function TranscriptScrollShell({
     onScrollerElement(scrollerRef.current)
     return () => onScrollerElement(null)
   }, [scrollerRef, onScrollerElement])
+  const signRef = useRef<HTMLDivElement | null>(null)
+  const signUp = loadingOlder && spinnerNearTop !== false
+  useLayoutEffect(() => {
+    const sign = signRef.current
+    const over = signUp ? spinnerBelow?.() : null
+    if (!sign) return
+    // Set on the node, not through state: the sign is a new node each time it
+    // comes up, so there is nothing to take back when it goes.
+    sign.style.top = ''
+    if (!over) return
+    const lift = over.getBoundingClientRect().bottom + SIGN_CLEAR_PX - sign.getBoundingClientRect().top
+    if (lift > 0) sign.style.top = `${SIGN_TOP_PX + lift}px`
+  }, [signUp, spinnerBelow])
   return (
     <div
       ref={scrollerRef}
@@ -356,7 +382,7 @@ export default function TranscriptScrollShell({
            `spinnerNearTop` lets the page hide it once the reader has scrolled
            away from the top, where an overlay pinned to the header would
            otherwise float over unrelated content. */
-        <div className="absolute top-16 inset-x-0 z-[1] flex justify-center py-2 pointer-events-none" data-testid="older-messages-loading" role="status" aria-label={i18nT('pages.chatPage.loading_earlier_messages')} style={{ overflowAnchor: 'none' }}>
+        <div ref={signRef} className="absolute top-16 inset-x-0 z-[1] flex justify-center py-2 pointer-events-none" data-testid="older-messages-loading" role="status" aria-label={i18nT('pages.chatPage.loading_earlier_messages')} style={{ overflowAnchor: 'none' }}>
           <span className="rounded-full px-2 py-1" style={{ background: 'var(--bg)' }}>
             <Loader size={16} className="animate-spin text-muted" />
           </span>

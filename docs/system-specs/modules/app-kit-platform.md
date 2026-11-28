@@ -6406,6 +6406,58 @@ Back pill. It is one route, not a second scroller:
   with an `onDone` writes no chat notice (`pinStatus` / `pinError`): the caller
   says the refusal in its own words, and the dead-link notice would claim a reply
   of another chat had left this one.
+- **By the message, never a row number.** The rows on screen draw a deferred
+  copy of the chat's list (`useTranscriptRows`), which trails the list while a
+  page of older history that has landed is still being drawn (`rowsTrailList`,
+  `ChatPage.tsx`). In that window a loaded message has no row yet, and a row
+  number read from the list names another message, a page's length away: a far
+  step scrolled there, was answered `true`, and left the chat on the wrong reply
+  when its label did not show (a 480-message chat stopped 40 to 190 replies
+  short of the label, by the window's width). So the jump aims at the message.
+  `navToMessage(message, opts)` (`useChatPageTranscriptController.tsx`) finds
+  the row that draws it in the rows on screen (`rowOfMessage`,
+  `chat-core/transcript/rowKeys.ts`) again on every frame of its scroll, mounts
+  that row again when a commit took it away before the first scroll, and answers
+  `false`, moving nothing, when no row draws it. `handleJumpToPinnedMessage`
+  keeps a jump pending while the rows trail the list, and the pending effect
+  decides nothing until they catch up, so a message on the page that just landed
+  is neither scrolled past nor reported gone. Upstream fixed the same fault
+  (kirodotdev/KiroCrew#40641, `0a0410557811`); this is that change's jump part
+  as written. Not taken here, they come with the upstream sync: its find-in-chat
+  rework, the tool-focus and `?msg=` callers and the Back spot's row
+  (`transcriptJumps.ts`, still by row number), and the pinned-prompt glide.
+- **Still looking.** A pending jump shows the transcript's own loading sign for
+  older history (`older-messages-loading`, `TranscriptScrollShell`) wherever the
+  reader is: `useTranscriptPins` returns `jumpLooking` (a jump is pending, and
+  not on a bounded page, where a landed jump stays pending by design), and
+  `ChatTranscriptView` hands the shell `loadingOlder || jumpLooking` and
+  `spinnerNearTop || jumpLooking`. Without it the sign shows only near the top of
+  the chat, and a reader at the bottom saw nothing move while pages loaded. It is
+  the sign the chat already had; nothing new is drawn. Away from the top the
+  pinned prompt band (`PinnedPrompt`, in the title overlay above the scroller)
+  paints over the sign's place by the header, so while a jump looks the view
+  names its pane's band to the shell (`spinnerBelow`), and the shell sets the
+  sign under it, clear of its fade (measured once as the sign comes up; a band
+  that does not reach the sign moves nothing).
+- **Waits count drawable time.** The jump's row poll and the step's label poll
+  end at `CONVERGE_MAX_MS` (2 s) on `drawnClock()` (`utils/searchScroll.ts`),
+  never the wall clock: one gap between two frames counts for at most
+  `STALL_CAP_MS` (100 ms). The commit that draws a far page's rows can hold the
+  thread for seconds; on the wall clock that used the wait up before the row or
+  the label had one frame to show in, and a step that had reached its message
+  answered `not_found`.
+- **The bound.** A jump pages one page of 100 messages (`OLDER_PAGE_LIMIT`) per
+  round trip, with no page cap, until the message is loaded or the history
+  starts; each page's rows are waited for before the next is asked. The far end
+  of a 480-message chat is 4 pages.
+- **Put back.** A `from: 'view'` jump that lands answers `onDone(true, putBack)`.
+  `putBack()` returns the chat at once (`behavior: 'auto'`) to the spot this jump
+  left from (the bottom through `scrollBottom`, else that row and its offset, by
+  message through `navToMessage`), sets the Back pill to what it was before this
+  jump, and clears the landing highlight. Back and `putBack` are one `returnTo`.
+  A jump that does not land moved nothing, pages loaded above the reader keep
+  their place, and it hands back nothing. The one caller today is a card's step
+  (§18v).
 - **The Back pill.** A card's spot is the message its label sat in; a control has
   none, so `from: 'view'` keeps the view on screen: the last row whose top is on
   screen, else the row that fills it, with its offset from the scroller's top.
@@ -6436,6 +6488,11 @@ Writers: `website/src/app-sdk/sessionControlRequest.ts`,
 `website/src/linkPreview/linkPreviewNav.ts`,
 `website/src/pages/chat/page/transcriptJumps.ts`,
 `website/src/pages/chat/page/transcriptPins.ts`,
+`website/src/pages/chat/useChatPageTranscriptController.tsx` (`navToMessage`),
+`website/src/chat-core/transcript/rowKeys.ts` (`rowOfMessage`),
+`website/src/pages/chat/page/ChatTranscriptView.tsx` (the loading sign),
+`website/src/pages/chat/TranscriptScrollShell.tsx` (`spinnerBelow`),
+`website/src/utils/searchScroll.ts` (`drawnClock`),
 `website/src/pages/chat/page/BackToSpotPill.tsx`, `website/src/pages/ChatPage.tsx`
 (hands `scrollBottom` to the jumps), `website/src/components/SessionControlHost.tsx`,
 `apps/app_sdk_level.py`.
@@ -6804,7 +6861,7 @@ It is built on what Crew already had, not beside it:
 - **The call** (`apps/app_frame.py`, `_LINK_PREVIEW_POINT`). `link.card.step({ message, text, line? })` posts `step { invocation, ts, id?, text, line?, request }` for its own show and resolves with the `stepped { request, ok, reason? }` answer to that number, through the same numbered-answer table the opens use (§18n), with a 30 s `no_answer` (a far-up step may page older history first). A `message` without a string `ts`, or a `text` that is empty, not a string, or over 128 characters, resolves `not_found` unsent. A show the step lands on carries `trigger: 'step'`.
 - **The read** (`linkPreviewProtocol.ts`, `readFrameMessage`). `ts` and `id` as a `jump` reads them (`readMessageRef`); `text` 1-128 characters or the message is dropped; `line` cleaned by `displaySafe` (controls and bidi overrides) and trimmed, and dropped whole when blank or over 160 characters, never cut.
 - **The gates** (`linkPreviewFrames.ts`, `FrameHost.stepScope`), answered in order: `not_shown` (not visible, an overlay, or not the latest show), `not_pinned` (a step scrolls the chat, and a scroll closes an unpinned card), `no_click` (`hasGesture`: the person's click or key in the card a moment before; a key the dashboard forwards is never an arrow and never counts, as for `jumpTo`; the one other press that counts is the answering mode's relayed press, §18w), `not_approved` (no approved `sessionKey`: the step names a message), `not_on_screen` (no local slot). One step per card: a newer one, or the card going, ends the earlier with `replaced`.
-- **Into view** (`linkPreviewStep.ts`, `runStep`). A label already wholly in view (inside every scroller it sits in, and the window) moves the card and scrolls nothing: no highlight, no Back spot, so stepping through the labels on screen keeps the chat still. Not while an earlier step's jump still waits on older history: ending a step does not withdraw its jump, and only a newer jump replaces it (`transcriptPins.ts`, the older one told `replaced`), so that step jumps too, and the far jump can never land after it and scroll the chat away from the card. Otherwise the step is the card's own jump, `sendAppNav({ kind: 'jump', from: 'view', onDone })` (§18o): `handleJumpToPinnedMessage` pages older history in, lights the message, and the Back pill keeps the spot of the first of successive steps, as a control's jumps do. Its `onDone` refusal is the step's (`not_found`, `load_failed`, `not_on_screen`, `replaced`); no listener taking it is `not_on_screen`. On `true` the label is centred the way find-in-chat centres its hit: `pollRowSettled` with `scrollRangeToCenter` over the span, nested under the jump's row scroll by the one scroll-ownership claim (`claimScrollOwnership`), and ended by the person's own scroll (`attachUserScrollIntent`; before it landed that is `replaced`). A span never found before the poll's backstop is `not_found`.
+- **Into view** (`linkPreviewStep.ts`, `runStep`). A label already wholly in view (inside every scroller it sits in, and the window) moves the card and scrolls nothing: no highlight, no Back spot, so stepping through the labels on screen keeps the chat still. Not while an earlier step's jump still waits on older history: ending a step does not withdraw its jump, and only a newer jump replaces it (`transcriptPins.ts`, the older one told `replaced`), so that step jumps too, and the far jump can never land after it and scroll the chat away from the card. Otherwise the step is the card's own jump, `sendAppNav({ kind: 'jump', from: 'view', onDone })` (§18o): `handleJumpToPinnedMessage` pages older history in, lights the message, and the Back pill keeps the spot of the first of successive steps, as a control's jumps do. Its `onDone` refusal is the step's (`not_found`, `load_failed`, `not_on_screen`, `replaced`); no listener taking it is `not_on_screen`. On `true` the label is centred the way find-in-chat centres its hit: `pollRowSettled` with `scrollRangeToCenter` over the span, nested under the jump's row scroll by the one scroll-ownership claim (`claimScrollOwnership`), and ended by the person's own scroll (`attachUserScrollIntent`; before it landed that is `replaced`). A span never found before the poll's backstop (`CONVERGE_MAX_MS`, 2 s of time the page could draw in, `drawnClock`, §18o) is `not_found`, and the chat is put back first (the jump's `putBack`, §18o): the place it left from, the Back pill as it was, no highlight, the card still pinned where it was. So is every `not_found`: the two that come from the jump (no such message, at once or after paging to the history's start) and `load_failed` scrolled nothing. Not put back: a step the person's scroll ended (`replaced`), a cancelled step, and a wait a newer scroll took over (the poll ends `cancelled`, not `timeout`); that view is theirs. While the jump pages older history in, the chat shows its loading sign (§18o, "Still looking"). Shortcut: a jump the person starts by a click inside those 2 s (a pin, a quote) is not seen by the step, whose put-back then returns from it; a scroll is seen.
 - **The label** (`findStepLabel`). A `[data-link-preview-text]` whose whole text is `text`, whose owner (`resolveTextPreview`) is the asking provider, inside the preview scope of that chat (`data-link-preview-session`) and message (`data-link-preview-ts`, and `-mid` when both sides have one), drawn (has a client rect). Shortcut: a label written twice in one message resolves to its first copy.
 - **The pin** (`FrameHost.step`). The first landing is a new `show` of the same pinned frame beside the label (`trigger: 'step'`, a fresh scope `{ slot, origin: target, messages: true }`), so the card's next step, jump or open goes from that message; a card the person had dragged or docked comes back beside its label. Later landings while the scroll settles move the anchor and `place` it again, unless the person drags it meanwhile. `stepped ok` is posted after that show, so the app hears where its card is before the answer. The card stays detached and pinned on the host's side; an app that resets its own pin state on a new show keeps it for `trigger: 'step'`.
 - **The spoken line** (`pages/chat/turnStep.ts`, `sayStepLine`). The turn stepper's polite live region (`useTurnStepper`, rendered by `ChatTranscriptView`) is the chat's one announcer for stepping: `registerTurnStepper(stepper, say)` also registers it, and a landed step says its app's `line` there once. Saying it forgets the turn the last Alt+arrow landed on, so the next Alt+arrow reads where the reader is now.
@@ -6813,7 +6870,7 @@ Limits: a step changes only where the card sits and what is in view. It never re
 
 Not covered: a way back by Escape (Escape inside a card grants no user activation, and the Back pill already returns the chat); a step across chats; a step in overlay mode (the provider moves its own windows).
 
-Writers: `apps/app_frame.py`, `apps/app_sdk_level.py`, `website/src/app-sdk/sdkLevel.ts`, `website/src/linkPreview/linkPreviewProtocol.ts`, `website/src/linkPreview/linkPreviewFrames.ts`, `website/src/linkPreview/linkPreviewStep.ts`, `website/src/linkPreview/LinkPreviewLayer.tsx`, `website/src/pages/chat/turnStep.ts`, `website/src/pages/chat/useTurnStepper.ts`. Example: `docs/app-kit/examples/card-step-app/`. Tests: `test/test_app_frame.py`, `website/src/linkPreview/linkPreviewStep.test.ts`, `website/src/test/turnStep.test.ts`, `website/src/test/useTurnStepper.test.tsx`.
+Writers: `apps/app_frame.py`, `apps/app_sdk_level.py`, `website/src/app-sdk/sdkLevel.ts`, `website/src/linkPreview/linkPreviewProtocol.ts`, `website/src/linkPreview/linkPreviewFrames.ts`, `website/src/linkPreview/linkPreviewStep.ts`, `website/src/linkPreview/LinkPreviewLayer.tsx`, `website/src/pages/chat/turnStep.ts`, `website/src/pages/chat/useTurnStepper.ts`. Example: `docs/app-kit/examples/card-step-app/`. Tests: `test/test_app_frame.py`, `website/src/linkPreview/linkPreviewStep.test.ts`, `website/src/test/turnStep.test.ts`, `website/src/test/useTurnStepper.test.tsx`; the far step's jump and its put-back in `website/src/pages/ChatPage.transcriptPins.test.tsx`, `website/src/test/useChatPageTranscriptJumps.test.tsx`, `website/src/pages/ChatPage.views.test.tsx` and `website/src/test/ChatPage.scrollShell.render.test.tsx` (the loading sign), `website/src/test/searchScroll.test.ts` (`drawnClock`).
 
 ## 18w. A pinned card's answering mode: Crew's line, and one Shift+Enter sends the kept answers (seam levels 21-23)
 

@@ -535,6 +535,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     handleSurveyLayoutChange,
     composerBandRef,
     navToDisplayIndex,
+    navToMessage,
     displayItemsRef,
     pinFoldRef,
     pinCardRef,
@@ -927,6 +928,10 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
   const { renderedTranscript, renderedDisplayItems } = useTranscriptRows({
     messages, transcriptLoaded: !slotLoading && slotSwitchTarget !== activeSlot, slotRunning, activeSlot, appToolCallIds, displayItemsRef, scrollerRef,
   })
+  // The rows draw the deferred snapshot, which trails the live list while a
+  // landed page waits to render: in that window a loaded message can have no
+  // row yet, and the jumps wait for the rows instead of giving the message up.
+  const rowsTrailList = renderedTranscript.messages !== messages
 
   // Pinned prompt: keep the enablement ref in sync (updatePinnedPrompt is declared
   // above chatConfig and reads it through a ref), and recompute after the list
@@ -1011,11 +1016,11 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
   }
   const {
     messageToDisplayIdx, navigateToTurn, chatNav, turnStepAnnouncement, chatPins, chatPinsLoading, isPinned, setPendingPinnedJump, handleEditLastRequest, handleJumpToPinnedMessage, handleJumpToQuote,
-    handleJumpToPin, handlePutPinInComposer, handleTogglePinForMessage, handleUnpinById, pinError, pinStatus, dismissPinStatus, messageToDisplayIdxRef,
+    handleJumpToPin, handlePutPinInComposer, handleTogglePinForMessage, handleUnpinById, pinError, pinStatus, dismissPinStatus, messageToDisplayIdxRef, jumpLooking,
   } = useTranscriptPins({
     embedded, dispatch, isMobile, activeSlot, messages, messagesRef, slotRunning, splitMode, crewWindow, slotHasMore, slotOldestIndex, cursorIsForActiveSlot, loadingOlder, activeViewIsBoundedPage,
-    isWelcomeState, activeSlotRemoteBound, scrollerRef, search, navToDisplayIndex, pinnedJumpChrome, scrollToPinnedPrompt, setHighlightTs, splitFeatureEnabled, regenerating, setEditLast, editSeqRef,
-    renderedDisplayItems, renderedTranscript, insertIntoComposer: insertDashboardReply,
+    isWelcomeState, activeSlotRemoteBound, scrollerRef, search, navToDisplayIndex, navToMessage, pinnedJumpChrome, scrollToPinnedPrompt, setHighlightTs, splitFeatureEnabled, regenerating, setEditLast, editSeqRef,
+    renderedDisplayItems, renderedTranscript, rowsTrailList, insertIntoComposer: insertDashboardReply,
   })
   // Search steps and clicks, the approval bar's "Show in chat", and ?msg= deep links.
   const { jumpToSearchResult, backSpot, goBack } = useTranscriptJumps({
@@ -1024,6 +1029,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     messageToDisplayIdx,
     messageToDisplayIdxRef,
     navToDisplayIndex,
+    navToMessage,
     activeSlot,
     cursorIsForActiveSlot,
     slotHasMore,
@@ -1232,7 +1238,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
             <ChatDropOverlay active={dragOver} />
             <ChatTranscriptView
               embedded={embedded} popout={popout} activeSlot={activeSlot} appToolCallIds={appToolCallIds} titleInTopbar={titleInTopbar} workerBreadcrumb={workerBreadcrumb} activityOpen={activityOpen}
-              completedTurnCount={completedTurnCount} cursorIsForActiveSlot={cursorIsForActiveSlot} kiroCrewVersion={kiroCrewVersion} loadingOlder={loadingOlder} olderFailed={olderFailed}
+              completedTurnCount={completedTurnCount} cursorIsForActiveSlot={cursorIsForActiveSlot} kiroCrewVersion={kiroCrewVersion} loadingOlder={loadingOlder} jumpLooking={jumpLooking} olderFailed={olderFailed}
               setTurnDisclosureFor={setTurnDisclosureFor} slotHasMore={slotHasMore} slotLoading={slotLoading} slotRunning={slotRunning} slotState={slotState} environmentStart={environmentStart} slotStopping={slotStopping}
               slotSwitchTarget={slotSwitchTarget} turnDisclosure={turnDisclosure} turnRowMayBeLive={turnRowMayBeLive} setInput={setInput} isWelcomeState={transcriptWelcome} crewModeOn={crewModeOn || crewWelcomeHeld} openTaskBoard={openTaskBoard} chatConfig={chatConfig}
               scrollerRef={scrollerRef} bindScroller={bindScroller} handleSurveyLayoutChange={handleSurveyLayoutChange} onScrollPin={onScrollPin} pinned={pinned} decideRow={decideRow}

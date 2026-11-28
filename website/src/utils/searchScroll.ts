@@ -57,6 +57,29 @@ const defaultRaf: (cb: () => void) => number =
     ? (cb) => requestAnimationFrame(cb)
     : (cb) => setTimeout(cb, 16) as unknown as number
 
+/** The most one gap between two readings of a `drawnClock` counts, in ms. */
+export const STALL_CAP_MS = 100
+
+/**
+ * A clock for a converge poll that stands still while the page cannot draw:
+ * each reading moves on by the real time since the one before, at most
+ * `STALL_CAP_MS`. A poll's backstop is there for a target that never shows. A
+ * commit that holds the thread for seconds is not that (a far page of history
+ * landing, its rows drawn for the first time): on the wall clock the wait ran
+ * out before the target had one frame to show in, and a jump to a message that
+ * was there answered that it was not.
+ */
+export function drawnClock(now: () => number = defaultNow): () => number {
+  let last = now()
+  let t = 0
+  return () => {
+    const n = now()
+    t += Math.min(Math.max(0, n - last), STALL_CAP_MS)
+    last = n
+    return t
+  }
+}
+
 /**
  * Injectable dependencies for the generic converge poll.
  *
