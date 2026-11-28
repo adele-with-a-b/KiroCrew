@@ -256,6 +256,11 @@ async def _fire_dashboard_nudge(
         _seats = await patrol_seats.seats_text(self.dashboard_state, loop.slot_key)
     _terminal_line = ""
     _fixed_patrol = False
+    from kiro_crew import held_blocks
+    from kiro_crew.dashboard.chat_utils import effective_session_key
+
+    _held_key = effective_session_key(slot)
+    _held_snapshot = None
     if wake_message is None:
         # Snapshot message, sentinel AND config generation TOGETHER, before
         # the compose_nudge_body() await: a concurrent PATCH during that
@@ -273,6 +278,11 @@ async def _fire_dashboard_nudge(
 
         _fixed_patrol = conductor_patrol.is_fixed_patrol_payload(loop)
         msg = await compose_nudge_body(_fired_message, _fired_sentinel, loop.slot_key)
+        # The body opens with the session-ledger snapshot or has none. A Conductor's
+        # context holds the rows an earlier wake carried, so ``held_blocks`` sends
+        # the snapshot whole once per context and then the rows that differ. It is
+        # read here, where the composer put it, and never looked for in a text.
+        msg, _held_snapshot = held_blocks.lean_snapshot(_held_key, msg)
         tagged = f"{nudge_cycle_header(loop)}\n{msg}"
         if _seats:
             tagged = f"{tagged}\n\n{_seats}"
@@ -309,10 +319,6 @@ async def _fire_dashboard_nudge(
     # is compacted, reset or replaced. A chat with no record there (every chat that
     # is not a Conductor's, and every harness whose compaction Crew cannot see)
     # gets the text below unchanged.
-    from kiro_crew import held_blocks
-    from kiro_crew.dashboard.chat_utils import effective_session_key
-
-    _held_key = effective_session_key(slot)
     if not _seats and self._work_ledger_wake_loop(loop, wake_message):
         held_blocks.seats_silent(_held_key)
     tagged = held_blocks.lean_wake(_held_key, tagged, starts_turn=True)
@@ -369,6 +375,7 @@ async def _fire_dashboard_nudge(
             trigger_text,
             _fired_generation,
             fixed_patrol=_fixed_patrol,
+            held_snapshot=_held_snapshot,
         )
 
     # The session picks idle vs running: an idle slot runs the wake through the
@@ -425,6 +432,7 @@ async def _start_dashboard_wake_turn(
     fired_generation: int,
     *,
     fixed_patrol: bool = False,
+    held_snapshot: Any = None,
 ) -> MonitorDispatchResult:
     """Start *loop*'s wake turn on idle *slot*: the fire's turn starter.
 
@@ -432,6 +440,9 @@ async def _start_dashboard_wake_turn(
     prompt, *visible* the nudge row, and *fired_generation* the config
     generation the fire snapshotted with the message. *fixed_patrol* says the
     row that message was snapshotted from carried exactly the shipped patrol.
+    *held_snapshot* is what the ledger snapshot in *tagged* leaves the context
+    holding (``held_blocks.lean_snapshot``), kept for the turn's build once the
+    turn is on its way.
     """
     from kiro_crew import crew_pause
     from kiro_crew.dashboard.chat import (
@@ -695,6 +706,11 @@ async def _start_dashboard_wake_turn(
             turn_slot,
             _run_dashboard_turn(),
         )
+    if held_snapshot is not None:
+        from kiro_crew import held_blocks
+        from kiro_crew.dashboard.chat_utils import effective_session_key
+
+        held_blocks.keep_fired(effective_session_key(turn_slot), tagged, held_snapshot)
     task = spawn_guarded_turn(dashboard_state, turn_slot, turn_coro)
     # Mirror dashboard /api/chat/send path so slot.running == True and sidebar
     # shows the "turn active" three-dots indicator immediately.

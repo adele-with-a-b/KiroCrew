@@ -1004,13 +1004,15 @@ async def _turn_build_prompt(turn: _ChatTurn) -> None:
         turn._needs_reinjection = _needs_reinjection
         # What this chat's context already holds (``held_blocks``; a Conductor's
         # only). A wake the fire shortened against a context that turns out to be
-        # gone gets its lines back here, ahead of the request, and the fixed wake
-        # lines this prompt carries are recorded until the turn's end settles them.
+        # gone gets its lines and its ledger snapshot back here, ahead of the
+        # request, and the fixed wake lines and snapshot rows this prompt carries
+        # are recorded until the turn's end settles them.
         _owed_wake_lines = held_open_for_turn(
             turn,
             context_is_new=_context_is_new,
             provider_has_history=_provider_has_history,
             needs_reinjection=_needs_reinjection,
+            wake_text=message,
         )
         if _owed_wake_lines:
             _request_prefix_context = f"{_owed_wake_lines}\n\n{_request_prefix_context}"

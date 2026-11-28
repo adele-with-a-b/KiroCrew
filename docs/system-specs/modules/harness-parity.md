@@ -244,8 +244,9 @@ from it in `agent_sdk/backends_turns.py`): the harnesses whose compaction, start
 by Kiro Crew or by the harness itself, sends a frame this client reads (kiro, kas,
 codex, claude). It has two readers. A Conductor chat's record of the fixed
 blocks its context holds (`held_blocks.py`) is opened only for a provider that
-answers True, so a Conductor on a harness outside the set gets every wake line
-and every resumed block on every message. The other is the reply-format rules
+answers True, so a Conductor on a harness outside the set gets every wake line,
+the whole session-ledger snapshot, the project and runtime blocks and every
+resumed block on every message. The other is the reply-format rules
 block: the context builder asks the turn's provider (`LLMProvider.reports_compaction`, False on the base
 class) and binds the block as the provider's delivery envelope only on a True.
 A harness outside the set, a provider that does not say, and a turn with no

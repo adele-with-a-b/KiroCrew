@@ -28,7 +28,12 @@ _ChatTurn = Any
 
 
 def held_open_for_turn(
-    turn: _ChatTurn, *, context_is_new: bool, provider_has_history: bool, needs_reinjection: bool
+    turn: _ChatTurn,
+    *,
+    context_is_new: bool,
+    provider_has_history: bool,
+    needs_reinjection: bool,
+    wake_text: str = "",
 ) -> str:
     """Open the session's record for this build, or drop it; return the wake lines owed.
 
@@ -40,6 +45,10 @@ def held_open_for_turn(
     starts with no history, or it re-sends after a compaction. A wake the fire had
     already shortened against the context that is gone then gets its lines back:
     they are returned here, for the build to put before the request.
+
+    *wake_text* is the turn's own text. When a fire started the turn with it, the
+    ledger snapshot that fire composed is recorded here, and a context that cannot
+    hold the earlier one gets the whole block back with the lines, set apart.
     """
     key = turn.session_key
     if not (
@@ -51,6 +60,9 @@ def held_open_for_turn(
     fresh = (context_is_new and not provider_has_history) or needs_reinjection
     owed = held_blocks.owed_wake_lines(key) if fresh and turn._directive_self_wake else ""
     held_blocks.begin_turn(key, fresh=fresh)
+    if turn._directive_self_wake:
+        snapshot = held_blocks.fired_snapshot(key, wake_text, fresh=fresh)
+        owed = "\n\n".join(part for part in (owed, snapshot) if part)
     return owed
 
 

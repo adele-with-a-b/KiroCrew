@@ -1028,10 +1028,23 @@ def _remove_store_shell(dir_path: Path, *, lock_gone: bool) -> None:
 
 
 #: Ceiling for the injected snapshot block. A nudge turn carries this every
-#: cycle, so it must stay small even against a clamped-but-full record.
+#: cycle, so it must stay small even against a clamped-but-full record. (A
+#: Conductor's wake carries it once per model context and then its changed rows:
+#: ``held_blocks.lean_snapshot``.)
 _SNAPSHOT_MAX_CHARS = 1600
 _SNAPSHOT_FIELD_MAX = 300
 _SNAPSHOT_TRIED_TAIL = 3
+#: The snapshot's first line. A name, because ``held_blocks.lean_snapshot`` tells by
+#: it whether a nudge body opens with a snapshot.
+SNAPSHOT_HEADER = (
+    "[work ledger — durable state for this session; authoritative over memory of prior cycles]"
+)
+_SNAPSHOT_CUT_MARK = "…"
+
+
+def snapshot_is_cut(block: str) -> bool:
+    """Whether *block* is a snapshot cut at its ceiling, so rows past the cut are not in it."""
+    return len(block) == _SNAPSHOT_MAX_CHARS and block.endswith(_SNAPSHOT_CUT_MARK)
 
 
 def render_snapshot(slot_key: str) -> str:
@@ -1053,9 +1066,7 @@ def render_snapshot(slot_key: str) -> str:
         v = " ".join(v.split())
         return v[:_SNAPSHOT_FIELD_MAX]
 
-    lines = [
-        "[work ledger — durable state for this session; authoritative over memory of prior cycles]"
-    ]
+    lines = [SNAPSHOT_HEADER]
     if state["goal"]:
         lines.append(f"goal: {_field(state['goal'])}")
     if state["phase"]:
@@ -1069,7 +1080,7 @@ def render_snapshot(slot_key: str) -> str:
         lines.append(f"artifact {k}: {_field(v)}")
     block = "\n".join(lines)
     if len(block) > _SNAPSHOT_MAX_CHARS:
-        block = block[: _SNAPSHOT_MAX_CHARS - 1] + "…"
+        block = block[: _SNAPSHOT_MAX_CHARS - 1] + _SNAPSHOT_CUT_MARK
     return block
 
 

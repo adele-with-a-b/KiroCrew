@@ -127,7 +127,9 @@ name is refused: update a release instead of adding one.
   because an unmarked story with no worker is a backlog row yet holds a seat.
 - A work-ledger patrol turn ends with two `[seats]` lines when the board has
   something to start or close (a Conductor is sent the first only when it
-  changed since the last one it was sent, and the second once per context),
+  changed since the last one it was sent, and the second once per context;
+  its own session ledger's snapshot at the top of a patrol turn follows the
+  same rule: whole once per context, then only the rows that changed),
   counted the same way: the stories holding a seat
   with no worker, then, only while a seat is free (`concurrency_cap` minus the
   seats held, or with no goal recorded), the marked backlog and its next pick,

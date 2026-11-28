@@ -1,7 +1,7 @@
 """A Conductor's context is sent each fixed block once, not at every wake.
 
 Measured on a live Conductor conversation over one day: 37% of the characters Crew
-sent it were lines the same context already held. Four causes, each pinned here on
+sent it were lines the same context already held. Six causes, each pinned here on
 the route that delivers it:
 
 1. a Stop on Claude Code re-armed the whole after-compaction re-send, though the
@@ -13,6 +13,11 @@ the route that delivers it:
 3. every wake carried the ``[seats]`` fact line, moved or not (``TestTheSeatsLine``);
 4. every resumed turn carried the resumed header, the critical rules, the response
    preferences and the reply-format rules (``TestAResumedTurn``).
+
+5. every fired wake opened with the whole session-ledger snapshot, though no row of
+   it had moved (``TestTheLedgerSnapshot``, ``TestWhereTheSnapshotRides``);
+6. nearly every turn carried the project line and the runtime line
+   (``TestTheProjectAndRuntimeLines``).
 
 "Once per context" is the model's context: ``TestWhatEndsAContext`` covers a
 compaction, a context that starts empty and a wake shortened against a context that
@@ -879,3 +884,499 @@ class TestTheRecord:
         held_blocks.begin_turn(MagicMock(), fresh=True)
         assert held_blocks.lean_wake(MagicMock(), _wake("it_1")) == _wake("it_1")
         assert not held_blocks.tracked("")
+
+
+# ── the session-ledger snapshot of a fired wake ────────────────────────────
+
+CHANGES = getattr(held_blocks, "LEDGER_CHANGES_HEADER", "<no changes header in this tree>")
+REMOVED = getattr(held_blocks, "LEDGER_ROW_REMOVED", "<no removed line in this tree>")
+CUT_OFF = getattr(held_blocks, "LEDGER_ROW_CUT_OFF", "<no cut-off line in this tree>")
+NEWS_ONLY = "[work-ledger wake] item={} status=done\n\n[auto-nudge cycle 1]"
+
+
+def _ledger(*, next_step: str = "merge pr-7 once its checks are green", **over) -> dict:
+    """A made-up session ledger, in the shape ``session_ledger.read_state`` returns."""
+    state = {
+        "goal": "ship the wake fix and keep the board moving",
+        "phase": "executing",
+        "next": next_step,
+        "tried": [{"approach": "one wide worker", "rejected_because": "too slow"}],
+        "artifacts": {"pr-7": "open, checks green", "worker": "chat-12 holds it_7"},
+    }
+    state.update(over)
+    return state
+
+
+def _snapshot(state: dict) -> str:
+    from kiro_crew import session_ledger
+
+    with patch.object(session_ledger, "read_state", return_value=state):
+        return session_ledger.render_snapshot("chat-conductor")
+
+
+async def _fired_on(state: dict, item: str = "it_1") -> str:
+    """The prompt one fire starts an idle Conductor's turn with, on this ledger."""
+    from kiro_crew import session_ledger
+
+    with patch.object(session_ledger, "read_state", return_value=state):
+        return await _fired(_wake(item))
+
+
+def _whole(state: dict, item: str = "it_1") -> str:
+    """A fired wake as every chat without a record gets it."""
+    return f"{_wake(item)}\n\n[auto-nudge cycle 1]\n{_snapshot(state)}\n\n{PATROL}"
+
+
+def _wake_turn(prompt: str, *, fresh: bool = False, kept: bool = True, around: str = "{}") -> str:
+    """The build and the end of the turn a fire started with *prompt*; the lines owed it.
+
+    The route a real turn takes: ``held_open_for_turn``, ``held_note_prompt`` and the
+    settle. *around* is what a build may put around the wake before it gets there.
+    """
+    import inspect
+
+    from kiro_crew.dashboard.held_context import held_note_prompt, held_open_for_turn
+
+    turn = SimpleNamespace(
+        session_key=KEY,
+        slot=_slot(),
+        client=SimpleNamespace(reports_compaction=True),
+        _directive_self_wake=True,
+    )
+    text = around.format(prompt)
+    takes_text = "wake_text" in inspect.signature(held_open_for_turn).parameters
+    with patch("kiro_crew.dashboard.held_context.is_conductor_slot", return_value=True):
+        owed = held_open_for_turn(
+            turn,
+            context_is_new=fresh,
+            provider_has_history=False,
+            needs_reinjection=False,
+            **({"wake_text": text} if takes_text else {}),
+        )
+    held_note_prompt(turn, owed, text)
+    held_blocks.settle_turn(KEY, kept=kept)
+    return owed
+
+
+class TestTheLedgerSnapshot:
+    """Point 5: the snapshot rode every wake whole, though no row had moved."""
+
+    @pytest.mark.asyncio
+    async def test_a_context_gets_it_whole_once_and_nothing_while_no_row_moves(self):
+        state = _ledger()
+        first = await _fired_on(state)
+        assert first == _whole(state), "the first wake of a context carries every row"
+        _wake_turn(first, fresh=True)
+
+        later = await _fired_on(state, "it_2")
+
+        assert later == NEWS_ONLY.format("it_2")
+
+    @pytest.mark.asyncio
+    async def test_a_changed_row_goes_out_under_a_line_that_says_the_rest_stands(self):
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+
+        later = await _fired_on(_ledger(next_step="rebase pr-7"), "it_2")
+
+        assert later == f"{NEWS_ONLY.format('it_2')}\n{CHANGES}\nnext: rebase pr-7"
+        assert "still stands" in CHANGES and "session_ledger_read" in CHANGES
+        assert CHANGES != _snapshot(_ledger()).split("\n")[0], "a part must not read as the whole"
+
+    @pytest.mark.asyncio
+    async def test_a_new_row_and_a_changed_artifact_go_out_and_no_other(self):
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(
+            artifacts={
+                "worker": "chat-12 holds it_7",
+                "pr-7": "merged",
+                "pr-9": "open, review asked",
+            }
+        )
+
+        later = await _fired_on(moved, "it_2")
+
+        assert later.split("\n")[3:] == [
+            CHANGES,
+            "artifact pr-7: merged",
+            "artifact pr-9: open, review asked",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_removed_row_is_said_as_removed(self):
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+
+        later = await _fired_on(_ledger(artifacts={"pr-7": "open, checks green"}), "it_2")
+
+        assert later.split("\n")[3:] == [CHANGES, f"{REMOVED}artifact worker"]
+
+    @pytest.mark.asyncio
+    async def test_a_tried_row_is_an_entry_added_never_one_removed(self):
+        """The snapshot shows the newest three; one that left the view was still tried."""
+        tried = [{"approach": f"approach {n}", "rejected_because": ""} for n in range(1, 5)]
+        _wake_turn(await _fired_on(_ledger(tried=tried[:3])), fresh=True)
+
+        later = await _fired_on(_ledger(tried=tried), "it_2")
+
+        assert later.split("\n")[3:] == [CHANGES, "tried: approach 4"]
+
+    @pytest.mark.asyncio
+    async def test_the_changes_a_turn_kept_are_held_and_a_row_that_moves_back_goes_out(self):
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        _wake_turn(await _fired_on(_ledger(next_step="rebase pr-7"), "it_2"))
+
+        assert await _fired_on(_ledger(next_step="rebase pr-7"), "it_3") == NEWS_ONLY.format("it_3")
+        back = await _fired_on(_ledger(), "it_4")
+        assert back.split("\n")[3:] == [CHANGES, "next: merge pr-7 once its checks are green"]
+
+    @pytest.mark.asyncio
+    async def test_a_removal_a_turn_kept_is_held(self):
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        gone = _ledger(artifacts={"pr-7": "open, checks green"})
+        _wake_turn(await _fired_on(gone, "it_2"))
+
+        assert await _fired_on(gone, "it_3") == NEWS_ONLY.format("it_3"), "said removed twice"
+        again = await _fired_on(_ledger(), "it_4")
+        assert again.split("\n")[3:] == [CHANGES, "artifact worker: chat-12 holds it_7"]
+
+    @pytest.mark.asyncio
+    async def test_a_wake_that_fired_and_started_no_turn_leaves_the_record_as_it_was(self):
+        """What a context holds is what a turn kept, never what a fire composed."""
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(next_step="rebase pr-7")
+
+        unsent = await _fired_on(moved, "it_2")  # no turn was built for it
+        again = await _fired_on(moved, "it_2")
+
+        assert again == unsent, "a wake no turn took changed what the next one says"
+        assert again.split("\n")[3:] == [CHANGES, "next: rebase pr-7"]
+
+    @pytest.mark.asyncio
+    async def test_a_turn_the_harness_did_not_keep_sends_its_rows_again(self):
+        first = await _fired_on(_ledger())
+        _wake_turn(first, fresh=True, kept=False)
+
+        assert await _fired_on(_ledger()) == first
+
+        _wake_turn(first)
+        changes = await _fired_on(_ledger(next_step="rebase pr-7"), "it_2")
+        assert CHANGES in changes
+        _wake_turn(changes, kept=False)
+
+        assert await _fired_on(_ledger(next_step="rebase pr-7"), "it_2") == changes
+
+    @pytest.mark.asyncio
+    async def test_a_compaction_sends_it_whole_again_once(self):
+        from kiro_crew.session_parts import turn_context
+
+        state = _ledger()
+        _wake_turn(await _fired_on(state), fresh=True)
+        manager = SimpleNamespace(_fold_key=lambda key: key, _compaction=MagicMock())
+
+        turn_context.mark_needs_reinjection(manager, KEY)
+
+        after = await _fired_on(state, "it_2")
+        assert after == _whole(state, "it_2")
+        _wake_turn(after, fresh=True)
+        assert await _fired_on(state, "it_3") == NEWS_ONLY.format("it_3"), "once, not from now on"
+
+    @pytest.mark.asyncio
+    async def test_a_restart_sends_it_whole_again_once(self):
+        """The record is in memory: a new process knows nothing a context holds."""
+        state = _ledger()
+        _wake_turn(await _fired_on(state), fresh=True)
+
+        held_blocks._records.clear()
+
+        after = await _fired_on(state, "it_2")
+        assert after == _whole(state, "it_2")
+        _wake_turn(after)  # the resumed conversation: the record starts from this turn
+        assert await _fired_on(state, "it_3") == NEWS_ONLY.format("it_3")
+
+    @pytest.mark.asyncio
+    async def test_a_wake_shortened_for_a_context_that_is_gone_gets_the_whole_block_back(self):
+        """A new conversation: the fire cannot know, the build can."""
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(next_step="rebase pr-7")
+        short = await _fired_on(moved, "it_2")
+        assert _snapshot(moved) not in short
+
+        owed = _wake_turn(short, fresh=True)
+
+        assert owed == "\n".join([SUFFIX, POINTER, PATROL, "", _snapshot(moved)])
+        assert await _fired_on(moved, "it_3") == NEWS_ONLY.format(
+            "it_3"
+        ), "the new context holds it"
+
+    @pytest.mark.asyncio
+    async def test_the_block_owed_to_a_compacted_context_is_not_sent_beside_the_re_send(
+        self, tmp_path
+    ):
+        """A compaction flagged late: the owed block and the re-send are one snapshot."""
+        from kiro_crew import session_ledger
+
+        state = _ledger()
+        builder = _builder(tmp_path)
+        _begin(fresh=True)
+        with patch.object(session_ledger, "read_state", return_value=state):
+            message, _ = builder.build_message(
+                "[auto-nudge cycle 2]",
+                is_new_session=False,
+                session_key=KEY,
+                runtime_source="dashboard",
+                needs_reinjection=True,
+                request_prefix_context=_snapshot(state),
+            )
+
+        assert message.count(_folded(_snapshot(state).split("\n")[0])) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_wake_is_found_whatever_the_build_put_around_it(self):
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        changes = await _fired_on(_ledger(next_step="rebase pr-7"), "it_2")
+
+        _wake_turn(changes, around="[a notice the build put first]\n\n{}\n\n[Skill: x]")
+
+        assert await _fired_on(_ledger(next_step="rebase pr-7"), "it_3") == NEWS_ONLY.format("it_3")
+
+    @pytest.mark.asyncio
+    async def test_a_snapshot_cut_at_its_ceiling_never_says_removed(self):
+        """Past the cut a row is not shown; whether it is gone the snapshot cannot say."""
+        wide = {f"pr-{n}": "open, waits on review " * 12 for n in range(1, 8)}
+        state = _ledger(artifacts=wide)
+        assert _snapshot(state).endswith("…"), "the control: this one is cut"
+        _wake_turn(await _fired_on(state), fresh=True)
+        shown = [row for row in _snapshot(state).split("\n") if row.startswith("artifact ")]
+        longer = _ledger(next_step="rebase pr-7 " * 30, artifacts=wide)
+        pushed_out = [
+            row.split(": ")[0]
+            for row in shown
+            if row.split(": ")[0] + ": " not in _snapshot(longer)
+        ]
+        assert pushed_out, "the control: a longer row pushed one past the cut"
+
+        later = await _fired_on(longer, "it_2")
+
+        assert CHANGES in later and REMOVED not in later
+        for label in pushed_out:
+            assert f"{CUT_OFF}{label}" in later
+
+    @pytest.mark.asyncio
+    async def test_changes_no_shorter_than_the_block_go_out_as_the_block(self):
+        small = _ledger(goal="", phase="", tried=[], artifacts={}, next_step="a")
+        _wake_turn(await _fired_on(small), fresh=True)
+        moved = _ledger(goal="", phase="", tried=[], artifacts={}, next_step="b")
+
+        later = await _fired_on(moved, "it_2")
+
+        assert later == f"{NEWS_ONLY.format('it_2')}\n{_snapshot(moved)}"
+        _wake_turn(later)
+        assert await _fired_on(moved, "it_3") == NEWS_ONLY.format("it_3"), "the whole block counts"
+
+    @pytest.mark.asyncio
+    async def test_a_chat_with_no_record_gets_the_whole_block_every_time(self):
+        state = _ledger()
+
+        assert await _fired_on(state) == _whole(state)
+        assert await _fired_on(state) == _whole(state)
+        assert not held_blocks.tracked(KEY), "a fire opened a record; only a build may"
+
+    @pytest.mark.asyncio
+    async def test_a_chat_that_is_no_conductor_never_gets_a_record_from_a_fire(self):
+        from kiro_crew.dashboard.held_context import held_note_prompt, held_open_for_turn
+
+        state = _ledger()
+        first = await _fired_on(state)
+        turn = SimpleNamespace(
+            session_key=KEY,
+            slot=_slot(),
+            client=SimpleNamespace(reports_compaction=True),
+            _directive_self_wake=True,
+        )
+        with patch("kiro_crew.dashboard.held_context.is_conductor_slot", return_value=False):
+            owed = held_open_for_turn(
+                turn, context_is_new=True, provider_has_history=False, needs_reinjection=False
+            )
+        held_note_prompt(turn, owed, first)
+        held_blocks.settle_turn(KEY, kept=True)
+
+        assert owed == "" and KEY not in held_blocks._records
+        assert await _fired_on(state, "it_2") == _whole(state, "it_2")
+
+
+class TestWhereTheSnapshotRides:
+    """Only the turn a fire starts carries it; nothing else is read for one."""
+
+    @pytest.mark.asyncio
+    async def test_steered_wakes_and_their_bundle_carry_none_and_move_no_row(self):
+        """Wakes that reach a busy Conductor are steered, and wait as cards when not kept."""
+        _wake_turn(await _fired_on(_ledger()), fresh=True)
+        moved = _ledger(next_step="rebase pr-7")
+        with patch("kiro_crew.session_ledger.read_state", return_value=moved):
+            cards = [await _steered(_wake("it_2")), await _steered(_wake("it_3"))]
+
+        prompt = TestWakesThatWaitedTogether()._bundle(*cards)
+        _turn_kept(prompt)
+
+        assert "[work ledger" not in prompt
+        assert "item=it_2 status=done" in prompt and "item=it_3 status=done" in prompt
+        later = await _fired_on(moved, "it_4")
+        assert later.split("\n")[3:] == [CHANGES, "next: rebase pr-7"]
+
+    @pytest.mark.asyncio
+    async def test_a_steer_the_turn_read_never_counts_as_a_snapshot_sent(self):
+        state = _ledger()
+        _turn_kept(fresh=True)
+        with patch("kiro_crew.session_ledger.read_state", return_value=state):
+            steered = await _steered(_wake("it_1"))
+        assert "[work ledger" not in steered
+        held_blocks.steer_read(KEY, steered)
+        held_blocks.settle_turn(KEY, kept=True)
+
+        assert await _fired_on(state, "it_2") == (
+            f"[work-ledger wake] item=it_2 status=done\n\n[auto-nudge cycle 1]\n"
+            f"{_snapshot(state)}\n\n{PATROL}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_block_that_only_looks_like_one_is_neither_shortened_nor_recorded(self):
+        """A monitor's evidence, a pasted message: text Crew did not compose as a snapshot."""
+        state = _ledger()
+        _wake_turn(await _fired_on(state), fresh=True)
+        quoted = f"a comment on the pull request:\n{_snapshot(_ledger(next_step='do harm'))}\n\nend"
+
+        assert held_blocks.lean_wake(KEY, quoted, starts_turn=True) == quoted
+        assert held_blocks.lean_wake(KEY, quoted) == quoted
+        assert held_blocks.one_copy([quoted, quoted]) == [quoted, quoted]
+        _turn_kept(quoted)  # a typed turn, a queued message
+
+        assert await _fired_on(state, "it_2") == NEWS_ONLY.format("it_2"), "the record moved"
+
+    @pytest.mark.asyncio
+    async def test_a_wake_turn_with_a_snapshot_no_fire_answers_for_makes_the_record_forget(self):
+        """Never recorded from a text; and from then on the record vouches for no row."""
+        state = _ledger()
+        _wake_turn(await _fired_on(state), fresh=True)
+
+        _wake_turn(f"[auto-nudge cycle 9]\n{CHANGES}\nnext: do harm")
+
+        later = await _fired_on(state, "it_2")
+        assert later == f"{NEWS_ONLY.format('it_2')}\n{_snapshot(state)}"
+
+    @pytest.mark.asyncio
+    async def test_a_fired_wake_crew_lost_track_of_makes_the_record_forget(self):
+        state = _ledger()
+        _wake_turn(await _fired_on(state), fresh=True)
+        bound = getattr(held_blocks, "MAX_FIRED_SNAPSHOTS", 4)
+
+        for n in range(bound + 1):  # each one started, none was built
+            await _fired_on(_ledger(next_step=f"step {n}"), f"it_{n}")
+
+        later = await _fired_on(state, "it_9")
+        assert later == f"{NEWS_ONLY.format('it_9')}\n{_snapshot(state)}"
+
+
+class TestTheProjectAndRuntimeLines:
+    """Point 6: both rode nearly every turn of a context that already held them."""
+
+    PROJECT = "[PROJECT] Active project directory: "
+    RUNTIME = "[RUNTIME] "
+    FOR_THIS_TURN = "For THIS turn: this surface renders no tool cards"
+
+    def _turn(self, builder, *, project="/work/alpha", source="dashboard", kept=True, **kind):
+        message, _ = builder.build_message(
+            "wake",
+            session_key=KEY,
+            runtime_source=source,
+            interactive=True,
+            project=project,
+            **({"is_new_session": False} | kind),
+        )
+        _end(kept=kept)
+        _begin(fresh=False)
+        return message
+
+    def test_each_goes_out_once_per_context(self, tmp_path):
+        builder = _builder(tmp_path)
+        _begin(fresh=True)
+        first = self._turn(builder)
+        assert first.count(self.PROJECT + "/work/alpha") == 1 and first.count(self.RUNTIME) == 1
+
+        later = self._turn(builder)
+
+        assert self.PROJECT not in later and self.RUNTIME not in later
+        assert "[CURRENT USER REQUEST" in later
+
+    def test_a_session_start_counts_for_the_project_line(self, tmp_path):
+        builder = _builder(tmp_path)
+        _begin(fresh=True)
+        assert self.PROJECT in self._turn(builder, is_new_session=True)
+
+        assert self.PROJECT not in self._turn(builder)
+
+    def test_a_changed_project_goes_out_and_the_runtime_line_does_not(self, tmp_path):
+        builder = _builder(tmp_path)
+        _begin(fresh=True)
+        self._turn(builder)
+
+        moved = self._turn(builder, project="/work/beta")
+
+        assert self.PROJECT + "/work/beta" in moved and self.RUNTIME not in moved
+        assert self.PROJECT not in self._turn(builder, project="/work/beta")
+        assert self.PROJECT + "/work/alpha" in self._turn(builder), "back is a change too"
+
+    def test_a_turn_another_interface_carries_always_names_itself(self, tmp_path):
+        """A message typed in a linked Slack thread runs in the same chat."""
+        builder = _builder(tmp_path)
+        _begin(fresh=True)
+        dashboard = self._turn(builder)
+        self._turn(builder)
+
+        for _ in range(2):
+            slack = self._turn(builder, source="slack")
+            assert self.RUNTIME in slack and self.FOR_THIS_TURN in slack
+            assert self.PROJECT in slack
+        back = self._turn(builder)
+
+        runtime_line = next(row for row in dashboard.split("\n") if row.startswith(self.RUNTIME))
+        assert runtime_line in back, "the context ended on Slack's line"
+        assert self.FOR_THIS_TURN not in back
+        assert self.RUNTIME not in self._turn(builder)
+
+    def test_a_turn_the_harness_did_not_keep_does_not_count(self, tmp_path):
+        builder = _builder(tmp_path)
+        _begin(fresh=True)
+        self._turn(builder, kept=False)
+
+        again = self._turn(builder)
+
+        assert self.PROJECT in again and self.RUNTIME in again
+        assert self.PROJECT not in self._turn(builder), "kept this time"
+
+    def test_a_compaction_brings_both_back(self, tmp_path):
+        builder = _builder(tmp_path)
+        _begin(fresh=True)
+        self._turn(builder)
+        assert self.PROJECT not in self._turn(builder), "the control: the context held it"
+        held_blocks.drop(KEY)  # what mark_needs_reinjection does
+        _begin(fresh=True)
+
+        after = self._turn(builder, needs_reinjection=True)
+
+        assert self.PROJECT in after and self.RUNTIME in after
+
+    def test_a_chat_with_no_record_gets_both_on_every_turn(self, tmp_path):
+        builder = _builder(tmp_path)
+        turns = []
+        for _ in range(2):
+            message, _ = builder.build_message(
+                "wake",
+                session_key=KEY,
+                runtime_source="dashboard",
+                interactive=True,
+                project="/work/alpha",
+                is_new_session=False,
+            )
+            turns.append(message)
+
+        assert turns[0] == turns[1]
+        assert self.PROJECT in turns[1] and self.RUNTIME in turns[1]
