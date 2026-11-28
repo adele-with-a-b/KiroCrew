@@ -865,7 +865,68 @@ async def _settle_session_model(
             "msg msg-info",
             meta=gn.gateway_notice_meta(gn.GATEWAY_NOTICE_MODEL_UNAVAILABLE, model=str(slot.model)),
         )
+    elif is_new or resumed:
+        _say_refused_pin(slot, client)
     return withheld_pin
+
+
+def _say_refused_pin(slot: Any, client: Any) -> None:
+    """Write the transcript row for a model this spawn's session refused or withheld.
+
+    The session records the id it would not run as ``model_pin_refused`` and stays on
+    the harness's default for its whole life: nothing offers the pin again until the
+    session starts again or a person picks a model. :func:`_pinned_model_verdict`
+    reports that only where it can judge the pin against the advertised list; on a
+    harness that resolves the model from that list, and on an empty list, it answers
+    "unknown", and the chat ran on another model with no row. This is that row. It
+    states the lifetime the code has and changes nothing about it.
+
+    One row per stamp: called for a fresh or reloaded session only, and a retry that
+    starts the session again before any reply finds the row it already wrote, with the
+    same two models, after the last message or reply in the transcript.
+    """
+    refused = getattr(client, "model_pin_refused", "")
+    if not (isinstance(refused, str) and refused):
+        return
+    from kiro_crew.config.sections import DEFAULT_MODEL
+    from kiro_crew.dashboard import gateway_notice as gn
+
+    # ``served_model`` filters the default sentinel to "", and the chip reads that as
+    # the default's own name; the row names it the same way.
+    served = str(getattr(slot, "served_model", "") or "") or DEFAULT_MODEL
+    refused_safe, served_safe = redact(refused), redact(served)
+    if refused_safe == served_safe:
+        return
+    args = {"model": refused_safe, "served": served_safe}
+    for row in reversed(getattr(slot, "messages", None) or ()):
+        # A message or a reply ends the search: what is said before it belongs to
+        # an earlier start of the session. The turn runner does not write the
+        # message's own row, so a turn nobody typed is bounded by the last reply.
+        if row.get("role") in ("user", "assistant"):
+            break
+        # A stored row's meta also carries its own id, so the token and its
+        # values are compared, never the whole dict.
+        meta = row.get("meta") or {}
+        if (
+            row.get("role") == "notice"
+            and meta.get(gn.GATEWAY_NOTICE_META_KEY) == gn.GATEWAY_NOTICE_MODEL_PIN_REFUSED
+            and meta.get(gn.GATEWAY_NOTICE_ARGS_KEY) == args
+        ):
+            return
+    logger.warning(
+        "Slot %s asked for %s, which its session did not accept at start; "
+        "the session is on %s until it starts again or a model is picked",
+        getattr(slot, "key", ""),
+        refused_safe,
+        served_safe,
+    )
+    slot.append(
+        "notice",
+        f"⚠️ {refused_safe} was not accepted when this session started. This chat is "
+        f"running on {served_safe} until the session restarts or you pick a model.",
+        "msg msg-info",
+        meta=gn.gateway_notice_meta(gn.GATEWAY_NOTICE_MODEL_PIN_REFUSED, **args),
+    )
 
 
 def _is_bedrock_profile_id(model: str) -> bool:

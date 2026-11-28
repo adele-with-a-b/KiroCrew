@@ -1078,22 +1078,42 @@ async def _on_acp_transient_exhausted(turn: _ChatTurn, exc, _fb_candidate) -> No
     # Persisted notice card (withheld-pin pattern): the explanation has
     # to survive a reload because the state it explains does (the
     # session stays on the fallback until the restore probe succeeds).
-    slot.append(
-        "notice",
-        f"⚠️ {_fb_primary_safe} is throttled — running on {_fb_cand_safe} "
-        f"until {_fb_primary_safe} recovers.",
-        "msg msg-info",
-        # No primary name to show: the row keeps its English wording.
-        meta=(
-            gn.gateway_notice_meta(
-                gn.GATEWAY_NOTICE_MODEL_THROTTLED_FALLBACK,
+    from kiro_crew.llm_helpers import model_road_down_cause
+
+    if slot._fallback_primary_model and model_road_down_cause(exc):
+        # The retries were spent on the model account, which reads as a
+        # transient 5xx. Say the account, never a throttle. The cause is the
+        # one classification the work ledger reads; nothing of the provider's
+        # own wording is carried.
+        slot.append(
+            "notice",
+            f"⚠️ {_fb_primary_safe} could not be used: its model account could not sign in. "
+            f"This chat is running on {_fb_cand_safe} until the next turn starts, "
+            f"when {_fb_primary_safe} is tried again.",
+            "msg msg-info",
+            meta=gn.gateway_notice_meta(
+                gn.GATEWAY_NOTICE_MODEL_ACCOUNT_FALLBACK,
                 primary=_fb_primary_safe,
                 fallback=_fb_cand_safe,
-            )
-            if slot._fallback_primary_model
-            else None
-        ),
-    )
+            ),
+        )
+    else:
+        slot.append(
+            "notice",
+            f"⚠️ {_fb_primary_safe} is throttled — running on {_fb_cand_safe} "
+            f"until {_fb_primary_safe} recovers.",
+            "msg msg-info",
+            # No primary name to show: the row keeps its English wording.
+            meta=(
+                gn.gateway_notice_meta(
+                    gn.GATEWAY_NOTICE_MODEL_THROTTLED_FALLBACK,
+                    primary=_fb_primary_safe,
+                    fallback=_fb_cand_safe,
+                )
+                if slot._fallback_primary_model
+                else None
+            ),
+        )
     logger.info(
         "Re-queuing slot %s on fallback model %s (candidate %d of chain)",
         slot.key,

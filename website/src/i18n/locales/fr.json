@@ -13862,6 +13862,8 @@
         "model_unavailable": "{{model}} n’est pas proposé pour le moment — cette session utilise auto à la place. Choisis un autre modèle dans la zone de saisie, ou laisse tel quel : ton choix de modèle est conservé et sera utilisé automatiquement dès qu’il sera de nouveau proposé.",
         "compaction_continuing": "Le contexte a été compacté en plein tour et la réponse s’est arrêtée là — poursuite automatique.",
         "model_throttled_fallback": "{{primary}} est limité — {{fallback}} est utilisé jusqu’à ce que {{primary}} soit rétabli.",
+        "model_account_fallback": "{{primary}} n’a pas pu être utilisé : son compte de modèle n’a pas pu se connecter. Ce chat utilise {{fallback}} jusqu’au début du prochain tour, où {{primary}} sera réessayé.",
+        "model_pin_refused": "{{model}} n’a pas été accepté au démarrage de cette session. Ce chat utilise {{served}} jusqu’au redémarrage de la session ou jusqu’à ce que tu choisisses un modèle.",
         "refusal_fallback_same_model": "La nouvelle tentative automatique a été ignorée parce que le modèle de repli (`agent.refusal_fallback_model`) est le même que ton modèle actuel — retenter sur le même modèle se heurte au même filtre. Choisis un autre modèle pour le repli afin que la nouvelle tentative soit automatique.",
         "session_reconnecting": "L’agent a perdu la session de ce chat — reconnexion…",
         "session_reconnect_give_up": "Impossible de reconnecter la session de ce chat. Renvoie ton message, ou lance un nouveau chat si cela se reproduit.",

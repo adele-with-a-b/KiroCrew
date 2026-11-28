@@ -13862,6 +13862,8 @@
         "model_unavailable": "{{model}} non è disponibile al momento — questa sessione usa auto al suo posto. Scegli un altro modello dal compositore, oppure lascia così: la tua scelta del modello resta salvata e verrà usata automaticamente quando sarà di nuovo disponibile.",
         "compaction_continuing": "Il contesto è stato compattato a metà turno e la risposta si è fermata lì — continuo automaticamente.",
         "model_throttled_fallback": "{{primary}} è limitato — è in uso {{fallback}} finché {{primary}} non torna disponibile.",
+        "model_account_fallback": "Non è stato possibile usare {{primary}}: il suo account del modello non è riuscito ad accedere. Questa chat usa {{fallback}} fino all’inizio del prossimo turno, quando {{primary}} verrà riprovato.",
+        "model_pin_refused": "{{model}} non è stato accettato all’avvio di questa sessione. Questa chat usa {{served}} finché la sessione non si riavvia o non scegli un modello.",
         "refusal_fallback_same_model": "Il ritentativo automatico è stato saltato perché il modello di riserva (`agent.refusal_fallback_model`) è lo stesso del tuo modello attuale — ritentare con lo stesso modello incontra lo stesso filtro. Scegli un modello diverso per la riserva così il ritentativo avviene automaticamente.",
         "session_reconnecting": "L’agente ha perso la sessione di questa chat — riconnessione…",
         "session_reconnect_give_up": "Impossibile riconnettere la sessione di questa chat. Invia di nuovo il messaggio o avvia una nuova chat se continua a succedere.",

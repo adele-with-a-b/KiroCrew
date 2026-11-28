@@ -403,6 +403,18 @@ describe('the recovery, cancelled-replay, end-of-turn and admission rows', () =>
       text: 'p is throttled — running on f until p recovers.',
       tone: 'warn',
     })
+    // The same walk when the turn died on its model account: the row names the account.
+    expect(resolveGatewayNotice(row('notice', 'model_account_fallback', { primary: 'p', fallback: 'f' }), [], 0)).toEqual({
+      card: 'notice',
+      text: 'p could not be used: its model account could not sign in. This chat is running on f until the next turn starts, when p is tried again.',
+      tone: 'warn',
+    })
+    // A session that refused its model when it started: asked for, serving, and how long.
+    expect(resolveGatewayNotice(row('notice', 'model_pin_refused', { model: 'm', served: 's' }), [], 0)).toEqual({
+      card: 'notice',
+      text: 'm was not accepted when this session started. This chat is running on s until the session restarts or you pick a model.',
+      tone: 'warn',
+    })
     // The mode a harness's session moved to, by the name the session advertised.
     expect(resolveGatewayNotice(row('notice', 'harness_mode_changed', { mode: 'Plan' }), [], 0)).toEqual({
       card: 'notice',

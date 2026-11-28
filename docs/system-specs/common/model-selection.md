@@ -893,6 +893,19 @@ its own once the cache refreshes with a list that carries it.
   `providers/acp_runtime_start.py` on the shared one) is recorded in `model_pin_refused` the same
   way, so the cron acquire step in `slack/gateway_runtime/cron_fire.py` annotates the result and
   blanks the pinned model on the usage row instead of billing a model that never ran.
+  A dashboard chat says it in its transcript. A session that refused or withheld its
+  model at start runs on the harness's default for that session's whole life: nothing
+  offers the pin again until the session starts again, when the kept pin is pushed
+  once more, or a person picks a model. Where `_pinned_model_verdict` can judge the
+  pin against the advertised list it reports the withhold with the `model_unavailable`
+  row. Where it answers "unknown" (a harness that resolves the model from its
+  advertised list, an empty list, a pin the harness refused although the list serves
+  it) `_say_refused_pin` (`dashboard/chat_turn/model_fallback.py`) writes one
+  `model_pin_refused` row for the fresh or reloaded session: the id asked for, the id
+  the session serves (the default's own name when the session names none), and that it
+  lasts until the session restarts or a model is picked. A retry that starts the
+  session again before any reply finds that row after the last message or reply and
+  adds none. A session that took its pin, and a warm session, write nothing.
   Both refusals carry `advertised_but_refused` from the same verdict, which selects
   the adapter-mismatch wording; `AcpModelUnavailable` requires `backend=` and shows
   the `kiro-cli whoami` hint only for backends that sign in through the host

@@ -56,6 +56,13 @@ GATEWAY_NOTICE_COMPACTION_CONTINUING = "compaction_continuing"
 GATEWAY_NOTICE_MODEL_ACCESS_FALLBACK = "model_access_fallback"
 GATEWAY_NOTICE_MODEL_UNAVAILABLE = "model_unavailable"
 GATEWAY_NOTICE_MODEL_THROTTLED_FALLBACK = "model_throttled_fallback"
+# The same walk when the turn died on its model account, not on a throttle
+# (``llm_helpers.model_road_down_cause``). ``notice_args``: ``primary``, ``fallback``.
+GATEWAY_NOTICE_MODEL_ACCOUNT_FALLBACK = "model_account_fallback"
+# A session that refused or withheld its model when it started and gave the
+# dashboard no verdict to report (``_settle_session_model``). ``notice_args``:
+# ``model``, the id asked for, and ``served``, the id the session runs on.
+GATEWAY_NOTICE_MODEL_PIN_REFUSED = "model_pin_refused"
 # Refusal-fallback (`agent.refusal_fallback_model`) ``notice`` row: the
 # configured fallback equals the model that just refused, so the one retry is
 # skipped (`_refusal_fallback_is_same_model`). A separate row from the terminal
