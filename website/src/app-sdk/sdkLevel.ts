@@ -32,5 +32,9 @@
  * answering mode, where Crew draws the answer line and holds the keys; the card
  * hands over the message text, and the person's Shift+Enter, received by Crew,
  * sends it once as their message and ends the mode.
+ * Level 22 lets the card whose answering mode is on move while the person answers:
+ * right after Crew tells it their Enter (`kept`), a declared `key` or a `button`,
+ * one `card.step` or `card.jumpTo` counts as their press, though focus is in
+ * Crew's line.
  */
-export const APP_SDK_LEVEL = 21
+export const APP_SDK_LEVEL = 22

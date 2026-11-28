@@ -124,6 +124,38 @@ describe('AnsweringBar', () => {
     expect(sends).toEqual([])
   })
 
+  it('Enter, a declared key, keep, next and a card button are each noted as the person’s press for the card, once', async () => {
+    enter()
+    expect(mode.takePress(frame)).toBe(false)
+    const presses: (() => Promise<void> | void)[] = [
+      () => press(line(), { key: 'Enter' }),
+      () => press(line(), { key: 'Tab', code: 'Tab' }),
+      () => press(document.body, { key: 'Tab', code: 'Tab' }),
+      () => { fireEvent.click(screen.getByTestId('answering-keep')) },
+      () => { fireEvent.click(screen.getAllByTestId('answering-button')[1]) },
+    ]
+    for (const p of presses) {
+      await p()
+      expect(mode.takePress(frame)).toBe(true)
+      expect(mode.takePress(frame)).toBe(false)
+    }
+    // Typing, Shift, and opening the whole message are not presses for the card.
+    fireEvent.change(line(), { target: { value: 'yes' } })
+    await press(document.body, { key: 'Shift', shiftKey: true })
+    expect(mode.takePress(frame)).toBe(false)
+  })
+
+  it('a key or click that is not the person’s is told to the card but noted as no press', async () => {
+    enter()
+    trust.all = false
+    await press(line(), { key: 'Enter' })
+    await press(line(), { key: 'Tab', code: 'Tab' })
+    fireEvent.click(screen.getByTestId('answering-keep'))
+    fireEvent.click(screen.getAllByTestId('answering-button')[1])
+    expect(told.map((m) => (m.type === 'answering' ? m.event.kind : m.type))).toEqual(['kept', 'key'])
+    expect(mode.takePress(frame)).toBe(false)
+  })
+
   it('Escape leaves the mode and sends nothing', async () => {
     enter()
     hand('Q1a go', 1)

@@ -149,6 +149,10 @@ export interface FrameHostOptions {
   /** A pinned card stopped standing where it was: closed, unpinned, turned into
    *  an overlay or gone. The answering mode it started ends. */
   onCardGone?(frame: PreviewFrame): void
+  /** Whether `frame`'s step or jump may count as the person's press though focus
+   *  is not in the card: its own answering mode is on and Crew just relayed their
+   *  key or click to it (`AnsweringMode.takePress`). Asking uses that press up. */
+  relayedPress?(frame: PreviewFrame): boolean
 }
 
 /** What a card's `step` names, in the chat its show sat in. */
@@ -609,15 +613,23 @@ export class FrameHost {
     return age >= 0 && age <= CLICK_GRANT_MS
   }
 
-  /** Why the card `frame` may not step for `invocation`, or the scope it steps in. */
-  private stepScope(frame: PreviewFrame, invocation: number): (ShowScope & { slot: string }) | StepRefusal {
+  /** Why the card `frame` may not step for `invocation`, or the scope it steps in.
+   *  `pressed`: a press Crew relayed to the card stands in for a click in it
+   *  (`relayedPress`); a step passes it, an answering `enter` never does. */
+  private stepScope(frame: PreviewFrame, invocation: number, pressed = false): (ShowScope & { slot: string }) | StepRefusal {
     if (!frame.visible || frame.overlay || invocation !== frame.invocation) return 'not_shown'
     if (!frame.pinned) return 'not_pinned'
-    if (!hasGesture(frame.el)) return 'no_click'
+    if (!(pressed || hasGesture(frame.el))) return 'no_click'
     const scope = frame.scopes.get(invocation)
     if (!scope) return 'not_shown'
     if (!scope.messages) return 'not_approved'
     return scope.slot ? { ...scope, slot: scope.slot } : 'not_on_screen'
+  }
+
+  /** The person's press Crew relayed to `frame` while its answering mode is on,
+   *  used up by this ask (a step or a jump, nothing else): false outside the mode. */
+  private relayedPress(frame: PreviewFrame): boolean {
+    return this.opts.relayedPress?.(frame) === true
   }
 
   /** A pinned card's `step`: the host brings the label into view, and the card is
@@ -630,7 +642,7 @@ export class FrameHost {
         ? { type: 'stepped', request: msg.request, ok: true }
         : { type: 'stepped', request: msg.request, ok: false, reason: result })
     }
-    const scope = this.stepScope(frame, msg.invocation)
+    const scope = this.stepScope(frame, msg.invocation, this.relayedPress(frame))
     const onStep = this.opts.onStep
     if (typeof scope === 'string' || !onStep) { reply(typeof scope === 'string' ? scope : 'not_on_screen'); return }
     this.steps.get(frame)?.()
@@ -707,8 +719,9 @@ export class FrameHost {
       return
     }
     if (msg.type === 'jump') {
-      // A `jump` always needs a click in the card.
-      const scope = this.scopeOf(frame, msg.invocation)
+      // A `jump` always needs a click in the card, or, while the card's answering
+      // mode is on, the press Crew just relayed to it.
+      const scope = this.scopeOf(frame, msg.invocation, this.relayedPress(frame))
       if (!scope?.slot || !scope.messages) return
       this.opts.onJump?.(frame.appName, msg.target, scope)
       return

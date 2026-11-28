@@ -1495,7 +1495,9 @@ since the 3 seconds count from the show. The first open of either kind that
 reaches the dashboard uses the allowance up whether it opens anything or not;
 so do `leave`, `hide`, pinning the card and the next show.
 A hover show has no allowance, and `jumpTo`, `step` and links in the card always
-need a click (or a key) in the card:
+need a click (or a key) in the card. The one other press that counts, for `jumpTo`
+and `step` only, is the one Crew tells the card about while its answering mode is
+on (level 22, below):
 
 - `card.openPanelTab(tab, payload)` opens `tab`, one of this app's own
   `contributes.panelTabs`, in that chat's side panel. Another app's tab, or a tab the
@@ -1548,7 +1550,8 @@ need a click (or a key) in the card:
   cleaned of control characters), is said once by the chat's polite live region,
   the one Alt+↑ / Alt+↓ speaks in; nothing is drawn. A key in the card counts as
   the click, so an arrow-key handler inside the card may call it; a key the
-  dashboard passes to the card never does (arrows are never passed). It resolves
+  dashboard passes to the card never does (arrows are never passed), except a key,
+  Enter or button told to the card whose answering mode is on (level 22). It resolves
   `{ ok: true }` once the card is shown at the label, after that show, or `{ ok:
   false, reason }`: `not_pinned` (pin it first), `no_click`, `not_shown`,
   `not_approved`, `not_on_screen` as for the opens, `not_found` (no such message,
@@ -1597,6 +1600,16 @@ answer kept so far in one press:
   folded as "N answers sent" with the app's name, the whole message behind "Show
   full message". With nothing kept, or while the card has not yet handed a message
   for the line as it stands, Shift+Enter sends nothing and the line says why.
+- Moving while the person answers (level 22). Focus is in Crew's line, not in your
+  card, so a `card.step` or `card.jumpTo` would be `no_click`. Instead, each
+  `kept`, `key` or `button` event Crew tells you about is the person's press for
+  your card: call `card.step(...)` or `card.jumpTo(...)` from your `answering(event)`
+  handler, at once, on the latest show's `link.card`. One event allows ONE move, the
+  first you ask for (a refused one uses it up too), within 1 second of the event:
+  move first, then do any slow work. A `draft` (typing) and `ended` allow none, and
+  nothing your card posts makes a press. Only the card whose mode is on may use it,
+  and it ends with the mode. A dashboard at level 21 answers such a `step`
+  `no_click` and drops the `jumpTo`.
 - No message from the card ever sends: the card cannot press, and a key or click the
   card's own frame saw is never Crew's. The mode ends with nothing sent on Escape
   (`escaped`), on `card.answering.leave()` (`left`), when the chat on screen changes
